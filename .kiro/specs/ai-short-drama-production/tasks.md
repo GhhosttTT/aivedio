@@ -20,7 +20,7 @@
 ## 任务列表
 
 - [ ] 1. 搭建项目基础设施
-  - [ ] 1.1 初始化项目结构和配置开发环境
+  - [x] 1.1 初始化项目结构和配置开发环境
     - 创建标准 Python 项目结构（src/、tests/、docs/、models/、storage/）
     - 配置 pyproject.toml 和 requirements.txt（包含所有 AI 模型依赖）
     - 配置代码格式化工具（black、isort、mypy）
