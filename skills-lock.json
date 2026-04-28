@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "product-requirements": {
+      "source": "cexll/myclaude",
+      "sourceType": "github",
+      "skillPath": "skills/product-requirements/SKILL.md",
+      "computedHash": "0333518feab4652ee6c9da8525e7e0d73941c7a771deef313b7aad01de5e30de"
+    }
+  }
+}
