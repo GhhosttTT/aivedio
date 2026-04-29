@@ -193,5 +193,28 @@
 
 **下一步：任务 4.2 - 编写 SubtitleGenerator 单元测试和集成测试（单元测试已完成，集成测试可选）**
 **下一步：任务 4.3 - 编写 SubtitleGenerator 属性测试（可选，跳过）**
-**下一步：任务 4.4 - 实现视频合成服务（VideoComposer）**
+
+### 2024-01-XX 完成任务 4.4
+
+**任务 4.4：实现视频合成服务（VideoComposer）**
+- ✅ 创建 `src/services/video_composer.py`
+  - 实现 `concat_videos()` 方法（拼接多个视频）
+  - 实现 `sync_audio_video()` 方法（同步音视频，替换音轨）
+  - 实现 `add_bgm()` 方法（添加背景音乐）
+  - 实现 `compose_video()` 方法（完整合成流程）
+  - 实现 `_get_duration()` 方法（获取媒体文件时长）
+  - 实现 `_concat_audio()` 方法（拼接多个音频）
+  - 实现 `_cleanup_temp_files()` 方法（清理临时文件）
+  - 使用 FFmpeg concat demuxer 拼接视频
+  - 使用 FFmpeg amix 滤镜混合音频
+  - 支持自动时长对齐（-shortest 参数）
+  - 实现全局单例模式（`get_video_composer()` 和 `cleanup_video_composer()`）
+- ✅ 创建单元测试 `tests/test_services/test_video_composer.py`
+  - 22 个测试用例，全部通过 ✅
+  - 测试覆盖所有核心功能（视频拼接、音视频同步、背景音乐、完整合成、单例模式）
+  - 使用 Mock 模拟 FFmpeg 和 FFprobe
+
+**下一步：任务 4.5 - 编写 VideoComposer 集成测试（可选，跳过）**
+**下一步：任务 4.6 - 编写 VideoComposer 属性测试（可选，跳过）**
+**下一步：任务 5.1 - 实现任务编排服务（TaskOrchestrator）**
 

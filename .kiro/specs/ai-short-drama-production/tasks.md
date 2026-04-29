@@ -269,7 +269,7 @@
     - **属性 12：字幕文件格式正确性**
     - **验证需求：8.1**
 
-  - [ ] 4.4 实现视频合成服务（VideoComposer）
+  - [x] 4.4 实现视频合成服务（VideoComposer）
     - 实现 concat_videos() 方法
     - 实现 sync_audio_video() 方法
     - 实现 add_bgm() 方法
