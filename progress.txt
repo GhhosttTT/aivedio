@@ -218,3 +218,43 @@
 **下一步：任务 4.6 - 编写 VideoComposer 属性测试（可选，跳过）**
 **下一步：任务 5.1 - 实现任务编排服务（TaskOrchestrator）**
 
+
+
+### 2024-01-XX 完成任务 5.1
+
+**任务 5.1：实现任务编排服务（TaskOrchestrator）**
+- ✅ 创建 `src/services/task_orchestrator.py`
+  - 实现 `TaskOrchestrator` 类
+  - 实现 `create_production_task()` 方法（创建生产任务链）
+  - 实现 `_build_task_chain()` 方法（构建 Celery 任务链）
+  - 实现 `_calculate_total_steps()` 方法（计算总步骤数）
+  - 实现 `get_task_status()` 方法（查询任务状态）
+  - 实现 `cancel_task()` 方法（取消任务）
+  - 实现 `retry_failed_task()` 方法（重试失败任务）
+  - 实现 `update_task_progress()` 方法（更新任务进度）
+  - 实现 `mark_task_completed()` 方法（标记任务完成）
+  - 实现 `mark_task_failed()` 方法（标记任务失败）
+  - 实现全局单例模式（`get_task_orchestrator()` 和 `cleanup_task_orchestrator()`）
+- ✅ 更新 Celery 任务文件
+  - 更新 `src/tasks/image_tasks.py`（集成 ComfyUI 服务）
+  - 更新 `src/tasks/video_tasks.py`（集成 SVD 服务）
+  - 更新 `src/tasks/audio_tasks.py`（集成 TTS 服务）
+  - 更新 `src/tasks/subtitle_tasks.py`（集成字幕生成服务）
+  - 更新 `src/tasks/composition_tasks.py`（集成视频合成服务）
+- ✅ 添加存储工具函数
+  - 添加 `get_scene_image_path()` 函数
+  - 添加 `get_scene_video_path()` 函数
+  - 添加 `get_scene_audio_path()` 函数
+  - 添加 `get_scene_subtitle_path()` 函数
+  - 添加 `get_project_final_video_path()` 函数
+- ✅ 任务链结构设计
+  - 并行生成所有分镜的图像
+  - 并行生成所有分镜的视频（依赖图像）
+  - 并行生成所有分镜的音频
+  - 并行生成所有分镜的字幕（依赖音频）
+  - 合成最终视频
+- ✅ 实现任务依赖管理（使用 Celery chain 和 group）
+- ✅ 实现进度计算和状态映射逻辑
+- ✅ 实现任务重试策略（最多 3 次）
+
+**下一步：任务 5.2 - 编写 TaskOrchestrator 单元测试和集成测试**

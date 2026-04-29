@@ -271,3 +271,72 @@ __all__ = [
     "get_project_storage_path",
     "cleanup_project_files"
 ]
+
+
+def get_scene_image_path(project_id: int, scene_id: int) -> str:
+    """
+    获取分镜图像路径
+    
+    Args:
+        project_id: 项目ID
+        scene_id: 分镜ID
+    
+    Returns:
+        str: 图像文件路径
+    """
+    return str(storage_manager.get_image_path(project_id, scene_id))
+
+
+def get_scene_video_path(project_id: int, scene_id: int) -> str:
+    """
+    获取分镜视频路径
+    
+    Args:
+        project_id: 项目ID
+        scene_id: 分镜ID
+    
+    Returns:
+        str: 视频文件路径
+    """
+    return str(storage_manager.get_video_path(project_id, scene_id))
+
+
+def get_scene_audio_path(project_id: int, scene_id: int) -> str:
+    """
+    获取分镜音频路径
+    
+    Args:
+        project_id: 项目ID
+        scene_id: 分镜ID
+    
+    Returns:
+        str: 音频文件路径
+    """
+    return str(storage_manager.get_audio_path(project_id, scene_id))
+
+
+def get_scene_subtitle_path(project_id: int, scene_id: int) -> str:
+    """
+    获取分镜字幕路径
+    
+    Args:
+        project_id: 项目ID
+        scene_id: 分镜ID
+    
+    Returns:
+        str: 字幕文件路径
+    """
+    return str(storage_manager.get_subtitle_path(project_id, scene_id))
+
+
+def get_project_final_video_path(project_id: int) -> str:
+    """
+    获取项目最终视频路径
+    
+    Args:
+        project_id: 项目ID
+    
+    Returns:
+        str: 最终视频文件路径
+    """
+    return str(storage_manager.get_final_video_path(project_id))

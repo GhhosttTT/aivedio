@@ -195,3 +195,100 @@ def log_gpu_status(device_id: int = 0):
         f"已用 {memory_info['used']:.0f}MB ({memory_info['usage_percent']:.1f}%), "
         f"可用 {memory_info['free']:.0f}MB"
     )
+
+
+def get_gpu_info(device_id: int = 0) -> Optional[Dict]:
+    """
+    获取 GPU 基本信息
+    
+    Args:
+        device_id: GPU 设备 ID
+        
+    Returns:
+        GPU 信息字典，包含 name、memory_total_mb、driver_version 等字段
+        如果 GPU 不可用则返回 None
+    """
+    try:
+        import torch
+        
+        if not torch.cuda.is_available():
+            return None
+        
+        if device_id >= torch.cuda.device_count():
+            logger.error(f"GPU 设备 {device_id} 不存在")
+            return None
+        
+        props = torch.cuda.get_device_properties(device_id)
+        
+        return {
+            "device_id": device_id,
+            "name": torch.cuda.get_device_name(device_id),
+            "memory_total_mb": round(props.total_memory / (1024**2), 2),
+            "compute_capability": f"{props.major}.{props.minor}",
+            "multi_processor_count": props.multi_processor_count
+        }
+        
+    except Exception as e:
+        logger.error(f"获取 GPU 信息失败: {e}")
+        return None
+
+
+def get_gpu_memory_usage(device_id: int = 0) -> Optional[Dict]:
+    """
+    获取 GPU 显存使用情况（简化版本）
+    
+    Args:
+        device_id: GPU 设备 ID
+        
+    Returns:
+        显存使用情况字典，包含 used_mb、free_mb 等字段
+        如果 GPU 不可用则返回 None
+    """
+    try:
+        import torch
+        
+        if not torch.cuda.is_available():
+            return None
+        
+        if device_id >= torch.cuda.device_count():
+            return None
+        
+        torch.cuda.set_device(device_id)
+        
+        total = torch.cuda.get_device_properties(device_id).total_memory / (1024**2)
+        allocated = torch.cuda.memory_allocated(device_id) / (1024**2)
+        free = total - allocated
+        
+        return {
+            "total_mb": round(total, 2),
+            "used_mb": round(allocated, 2),
+            "free_mb": round(free, 2)
+        }
+        
+    except Exception as e:
+        logger.error(f"获取 GPU 显存使用情况失败: {e}")
+        return None
+
+
+def print_gpu_info(device_id: int = 0):
+    """
+    打印 GPU 信息到控制台
+    
+    Args:
+        device_id: GPU 设备 ID
+    """
+    gpu_info = get_gpu_info(device_id)
+    
+    if gpu_info is None:
+        print("  GPU 不可用")
+        return
+    
+    print(f"  GPU {device_id}: {gpu_info['name']}")
+    print(f"  显存: {gpu_info['memory_total_mb']:.0f} MB")
+    print(f"  计算能力: {gpu_info.get('compute_capability', 'N/A')}")
+    
+    # 显示显存使用情况
+    memory_usage = get_gpu_memory_usage(device_id)
+    if memory_usage:
+        print(f"  已用显存: {memory_usage['used_mb']:.0f} MB")
+        print(f"  可用显存: {memory_usage['free_mb']:.0f} MB")

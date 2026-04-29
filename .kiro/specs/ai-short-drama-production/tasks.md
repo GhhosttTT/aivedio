@@ -293,7 +293,7 @@
     - **验证需求：9.6**
 
 - [ ] 5. 实现任务编排和调度
-  - [ ] 5.1 实现任务编排服务（TaskOrchestrator）
+  - [x] 5.1 实现任务编排服务（TaskOrchestrator）
     - 实现 create_production_task() 方法
     - 实现 get_task_status() 方法
     - 实现 cancel_task() 方法
