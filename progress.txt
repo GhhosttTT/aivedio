@@ -830,3 +830,50 @@
 
 **总结：**
 任务 12.4 已成功完成！创建了完整的用户文档体系，包括快速开始指南、用户手册、最佳实践指南和示例剧本。文档详细、实用，能够帮助用户快速上手并优化使用体验。
+
+
+## 2026-04-29
+
+### 修复 ProjectManager 以支持 User 模型
+
+**问题描述：**
+- Project 模型添加了 user_id 字段（必需），导致 ProjectManager 测试失败
+- Character 和 Scene 模型的字段与 ProjectManager 使用的字段不匹配
+
+**修复内容：**
+1. 修改 `ProjectManager.create_project()` 方法
+   - 添加 `user_id` 参数（必需）
+   - 在创建 Project 时传递 user_id
+   - 移除 `total_scenes` 字段（模型中不存在）
+
+2. 修改 `ProjectManager.add_character()` 方法
+   - 移除 `appearance`、`personality`、`voice_speaker`、`voice_emotion` 参数
+   - 只保留 `name`、`description`、`visual_description` 参数
+   - 与 Character 模型字段匹配
+
+3. 修改 `ProjectManager.add_scene()` 方法
+   - 移除 `title` 和 `description` 参数
+   - 使用 `visual_description` 参数（与 Scene 模型匹配）
+   - 移除 `visual_prompt` 参数，改用 `image_prompt`
+   - 移除更新 `project.total_scenes` 的逻辑（字段不存在）
+
+4. 修改 `ProjectManager.delete_project()` 方法
+   - 移除对 `project.storage_path` 的引用（字段不存在）
+   - 使用 `get_project_storage_path(project_id)` 函数获取存储路径
+
+5. 更新所有测试
+   - 添加 `test_user` fixture（创建测试用户）
+   - 在所有调用 `create_project` 的地方传递 `user_id=test_user.id`
+   - 更新 `add_character` 和 `add_scene` 的调用，使用正确的参数名
+
+**测试结果：**
+- ✅ 所有 23 个 ProjectManager 测试通过
+- ✅ 修复了 User 模型相关的所有问题
+
+**文件变更：**
+- 修改：`src/services/project_manager.py`
+- 修改：`tests/test_services/test_project_manager.py`
+
+**下一步：**
+- 检查其他服务是否也需要类似的修复
+- 运行全量测试确保所有测试通过
