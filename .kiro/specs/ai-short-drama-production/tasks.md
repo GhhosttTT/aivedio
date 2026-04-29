@@ -337,7 +337,7 @@
     - 配置异常处理中间件
     - _需求：13.1, 13.2, 13.3, 13.4, 14.4, 16.6_
 
-  - [ ] 7.2 实现 RESTful API 端点
+  - [x] 7.2 实现 RESTful API 端点
     - POST /api/projects - 创建项目
     - GET /api/projects/{id} - 获取项目详情
     - PUT /api/projects/{id} - 更新项目
