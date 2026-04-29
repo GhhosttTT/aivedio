@@ -1,0 +1,123 @@
+{
+  "workflow": {
+    "name": "AI Short Drama Image Generation",
+    "description": "使用 Stable Diffusion XL 生成短剧分镜图像",
+    "version": "1.0.0"
+  },
+  "nodes": {
+    "checkpoint_loader": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "sd_xl_base_1.0.safetensors"
+      }
+    },
+    "clip_text_encode_positive": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "",
+        "clip": ["checkpoint_loader", 1]
+      }
+    },
+    "clip_text_encode_negative": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "nsfw, nude, lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry",
+        "clip": ["checkpoint_loader", 1]
+      }
+    },
+    "empty_latent_image": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {
+        "width": 1024,
+        "height": 1024,
+        "batch_size": 1
+      }
+    },
+    "ksampler": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": 0,
+        "steps": 20,
+        "cfg": 7.0,
+        "sampler_name": "euler",
+        "scheduler": "normal",
+        "denoise": 1.0,
+        "model": ["checkpoint_loader", 0],
+        "positive": ["clip_text_encode_positive", 0],
+        "negative": ["clip_text_encode_negative", 0],
+        "latent_image": ["empty_latent_image", 0]
+      }
+    },
+    "vae_decode": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": ["ksampler", 0],
+        "vae": ["checkpoint_loader", 2]
+      }
+    },
+    "save_image": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "filename_prefix": "short_drama",
+        "images": ["vae_decode", 0]
+      }
+    }
+  },
+  "parameters": {
+    "default": {
+      "width": 1024,
+      "height": 1024,
+      "steps": 20,
+      "cfg_scale": 7.0,
+      "sampler": "euler",
+      "scheduler": "normal",
+      "seed": -1
+    },
+    "presets": {
+      "fast": {
+        "steps": 15,
+        "cfg_scale": 6.0,
+        "description": "快速生成，质量略低"
+      },
+      "balanced": {
+        "steps": 20,
+        "cfg_scale": 7.0,
+        "description": "平衡质量和速度（推荐）"
+      },
+      "quality": {
+        "steps": 30,
+        "cfg_scale": 8.0,
+        "description": "高质量生成，速度较慢"
+      }
+    },
+    "resolutions": {
+      "square_1024": {
+        "width": 1024,
+        "height": 1024,
+        "description": "正方形 1:1"
+      },
+      "landscape_16_9": {
+        "width": 1344,
+        "height": 768,
+        "description": "横屏 16:9"
+      },
+      "portrait_9_16": {
+        "width": 768,
+        "height": 1344,
+        "description": "竖屏 9:16"
+      }
+    }
+  },
+  "negative_prompt": {
+    "default": "nsfw, nude, lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry",
+    "additional": [
+      "deformed",
+      "ugly",
+      "mutilated",
+      "disfigured",
+      "mutation",
+      "bad proportions",
+      "gross proportions"
+    ]
+  }
+}

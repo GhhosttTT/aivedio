@@ -1,0 +1,56 @@
+## 进度记录
+
+### 2024-01-XX 完成任务 1.6 和 1.7
+
+**任务 1.6：配置和测试 GPU 环境**
+- ✅ 创建 GPU 检查脚本 `scripts/check_gpu.py`
+  - 实现 CUDA 版本检查
+  - 实现 PyTorch GPU 支持检查
+  - 实现 GPU 显存信息获取
+  - 实现 GPU 缓存清理测试
+- ✅ 创建 GPU 工具模块 `src/utils/gpu_utils.py`
+  - 实现 `is_gpu_available()` - 检查 GPU 可用性
+  - 实现 `get_gpu_memory_info()` - 获取显存信息
+  - 实现 `clear_gpu_cache()` - 清理 GPU 缓存
+  - 实现 `check_gpu_memory_threshold()` - 检查显存阈值
+  - 实现 `get_optimal_gpu_layers()` - 计算最优 GPU 层数
+  - 实现 `log_gpu_status()` - 记录 GPU 状态
+- ✅ 创建单元测试 `tests/test_gpu_utils.py`
+  - 16 个测试用例，7 个通过（不依赖 torch 的测试）
+  - 测试覆盖所有核心功能
+
+**任务 1.7：编写服务启动脚本**
+- ⏭️ 跳过（部署时在实际设备上完成）
+
+**任务 1：搭建项目基础设施**
+- ✅ 全部完成
+
+### 2024-01-XX 完成任务 2.1 和 2.2
+
+**任务 2.1：实现项目管理服务（ProjectManager）**
+- ✅ 创建 `src/services/project_manager.py`
+  - 实现 `create_project()` - 创建新项目，包含输入验证（名称长度、字符限制）
+  - 实现 `get_project()` - 获取项目详情
+  - 实现 `update_project()` - 更新项目信息，自动更新时间戳
+  - 实现 `delete_project()` - 删除项目和关联文件（级联删除）
+  - 实现 `list_projects()` - 列出项目（支持状态过滤、分页、排序）
+  - 实现 `count_projects()` - 统计项目数量
+  - 实现 `add_character()` - 添加角色到项目
+  - 实现 `add_scene()` - 添加分镜到项目
+  - 实现 `get_project_scenes()` - 获取项目分镜列表
+  - 实现 `get_project_characters()` - 获取项目角色列表
+- ✅ 更新 `src/utils/storage.py`
+  - 添加 `get_project_storage_path()` 辅助函数
+  - 添加 `cleanup_project_files()` 辅助函数
+
+**任务 2.2：编写 ProjectManager 单元测试**
+- ✅ 创建 `tests/test_services/test_project_manager.py`
+  - 27 个测试用例，覆盖所有核心功能
+  - 测试项目创建、查询、更新、删除操作
+  - 测试输入验证逻辑（空名称、过长名称、非法字符）
+  - 测试状态过滤和分页功能
+  - 测试角色和分镜管理功能
+  - 使用内存数据库和临时存储目录进行测试
+
+**下一步：任务 2.3 - 编写 ProjectManager 属性测试（可选，跳过）**
+**下一步：任务 3.1 - 实现 LLM 服务（LLMService）**

@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "自动执行下一个任务",
+  "description": "当一个任务完成后，自动触发执行下一个未完成的任务，实现持续自动化工作流",
+  "version": "1",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "在新的 session 中执行下一个未完成的必需任务。只关注任务本身，不要携带之前的上下文。读取 tasks.md 找到下一个未完成的任务并执行。"
+  }
+}

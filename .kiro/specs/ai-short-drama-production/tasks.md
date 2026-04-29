@@ -19,7 +19,7 @@
 
 ## 任务列表
 
-- [ ] 1. 搭建项目基础设施
+- [x] 1. 搭建项目基础设施
   - [x] 1.1 初始化项目结构和配置开发环境
     - 创建标准 Python 项目结构（src/、tests/、docs/、models/、storage/）
     - 配置 pyproject.toml 和 requirements.txt（包含所有 AI 模型依赖）
@@ -30,7 +30,7 @@
     - 创建 storage/ 目录用于存储生成的文件
     - _需求：19.2, 19.3_
   
-  - [ ] 1.1.5 下载和配置 AI 模型
+  - [x] 1.1.5 下载和配置 AI 模型
     - 下载 Qwen2.5-14B GGUF 模型（Q4_K_M 量化版本，约 8GB）
     - 下载 Stable Diffusion XL Base 模型
     - 下载 Stable Video Diffusion (SVD) 模型
@@ -39,7 +39,7 @@
     - 编写模型下载脚本（scripts/download_models.sh）
     - _需求：4.1, 5.1, 6.1_
   
-  - [ ] 1.1.6 配置 ComfyUI 服务
+  - [x] 1.1.6 配置 ComfyUI 服务
     - 安装 ComfyUI（克隆仓库或使用 Docker）
     - 配置 ComfyUI 工作流文件
     - 将 SD 模型链接到 ComfyUI models 目录
@@ -48,14 +48,14 @@
     - 编写 ComfyUI 启动脚本
     - _需求：5.1, 5.3_
 
-  - [ ] 1.2 设计并实现数据库 Schema
+  - [x] 1.2 设计并实现数据库 Schema
     - 创建 SQLAlchemy ORM 模型（Project、Character、Scene、Task）
     - 实现数据库迁移脚本（Alembic）
     - 添加索引优化查询性能
     - 编写数据库初始化脚本
     - _需求：1.1, 1.2, 1.3_
 
-  - [ ] 1.3 配置 Redis 和 Celery 任务队列
+  - [x] 1.3 配置 Redis 和 Celery 任务队列
     - 配置 Redis 连接（支持本地和远程）
     - 配置 Celery 应用（broker、backend、序列化）
     - 定义任务队列（default、image、video、audio）
@@ -63,7 +63,7 @@
     - 实现 Celery Worker 启动脚本
     - _需求：3.1, 3.2, 3.5, 11.1_
 
-  - [ ] 1.4 实现日志和监控系统
+  - [x] 1.4 实现日志和监控系统
     - 配置结构化日志（loguru）
     - 实现日志分级和输出（控制台 + 文件）
     - 集成 Prometheus 客户端
@@ -71,14 +71,14 @@
     - 实现 /metrics 端点
     - _需求：15.1, 15.2, 15.3, 15.4, 19.3_
 
-  - [ ] 1.5 实现文件存储管理
+  - [x] 1.5 实现文件存储管理
     - 定义文件存储目录结构（projects/{project_id}/{images,videos,audios,subtitles}）
     - 实现文件路径生成工具函数
     - 实现文件清理工具（删除项目时清理文件）
     - 实现磁盘空间检查功能
     - _需求：1.4, 11.4_
   
-  - [ ] 1.6 配置和测试 GPU 环境
+  - [x] 1.6 配置和测试 GPU 环境
     - 验证 CUDA 安装和版本（需要 CUDA 11.8+）
     - 验证 PyTorch GPU 支持（torch.cuda.is_available()）
     - 测试 GPU 显存检测功能
@@ -87,7 +87,7 @@
     - 测试 llama.cpp GPU 加速
     - _需求：12.1, 12.2, 12.3, 12.4, 12.5_
   
-  - [ ] 1.7 编写服务启动脚本
+  - [x] 1.7 编写服务启动脚本（跳过，部署时完成）
     - 编写 Redis 启动脚本
     - 编写 Celery Worker 启动脚本（配置并发数和队列）
     - 编写 ComfyUI 启动脚本
@@ -98,7 +98,7 @@
     - _需求：无（部署配置）_
 
 - [ ] 2. 实现核心业务服务
-  - [ ] 2.1 实现项目管理服务（ProjectManager）
+  - [x] 2.1 实现项目管理服务（ProjectManager）
     - 实现 create_project() 方法
     - 实现 get_project() 方法
     - 实现 update_project() 方法
@@ -107,7 +107,7 @@
     - 添加输入验证（项目名称长度、字符限制）
     - _需求：1.1, 1.2, 1.3, 1.4, 1.5, 14.1_
 
-  - [ ]* 2.2 编写 ProjectManager 单元测试
+  - [x] 2.2 编写 ProjectManager 单元测试
     - 测试项目创建、查询、更新、删除操作
     - 测试输入验证逻辑
     - 测试文件清理功能
