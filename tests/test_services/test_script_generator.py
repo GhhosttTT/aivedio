@@ -27,6 +27,19 @@ class TestScriptGenerator:
         session.close()
     
     @pytest.fixture
+    def test_user(self, db_session):
+        """创建测试用户"""
+        from src.database.models import User
+        user = User(
+            username="testuser",
+            email="test@example.com",
+            hashed_password="hashed_password_here"
+        )
+        db_session.add(user)
+        db_session.commit()
+        return user
+    
+    @pytest.fixture
     def mock_llm_service(self):
         """创建 Mock LLM 服务"""
         mock_service = MagicMock()
@@ -38,13 +51,14 @@ class TestScriptGenerator:
         return ScriptGenerator(db=db_session, llm_service=mock_llm_service)
     
     @pytest.fixture
-    def sample_project(self, db_session):
+    def sample_project(self, db_session, test_user):
         """创建示例项目"""
         project = Project(
             name="测试项目",
             theme="爱情故事",
             outline="一个关于爱情的故事",
-            status=ProjectStatus.DRAFT
+            status=ProjectStatus.DRAFT,
+            user_id=test_user.id
         )
         db_session.add(project)
         db_session.commit()
@@ -263,7 +277,7 @@ class TestScriptGenerator:
         scene = Scene(
             project_id=sample_project.id,
             scene_number=1,
-            description="原始描述",
+            visual_description="原始描述",
             dialogue="原始对话",
             character_name="小明"
         )
@@ -295,7 +309,7 @@ class TestScriptGenerator:
         updated_scene = db_session.query(Scene).filter(
             Scene.id == scene.id
         ).first()
-        assert updated_scene.description == "新描述"
+        assert updated_scene.visual_description == "新描述"
         assert updated_scene.dialogue == "新对话"
     
     def test_regenerate_scene_project_not_found(
@@ -332,7 +346,9 @@ class TestScriptGenerator:
         scene = Scene(
             project_id=sample_project.id,
             scene_number=1,
-            description="公园里，阳光明媚，两个人在散步"
+            visual_description="公园里，阳光明媚，两个人在散步",
+            dialogue="你好",
+            character_name="小明"
         )
         db_session.add(scene)
         db_session.commit()
@@ -398,7 +414,7 @@ class TestScriptGenerator:
         ).all()
         assert len(scenes) == 2
         assert scenes[0].scene_number == 1
-        assert scenes[0].description == "场景1"
+        assert scenes[0].visual_description == "场景1"
         assert scenes[1].scene_number == 2
     
     def test_parse_script_with_colon_variants(self, script_generator):

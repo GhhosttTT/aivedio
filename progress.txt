@@ -910,3 +910,43 @@
 
 **总结：**
 成功修复了所有 ProjectManager 相关的测试（单元测试 + 属性测试），共 30 个测试全部通过！
+
+
+## 2026-04-29
+
+### 完成任务 3.4 - 修复 ScriptGenerator 测试以支持 User 模型
+
+**问题描述：**
+- Project 模型添加了 user_id 字段（必需），导致 ScriptGenerator 测试失败
+- Scene 模型使用 `visual_description` 字段，但 ScriptGenerator 和测试中使用的是 `description`
+
+**修复内容：**
+1. 修改测试文件 `tests/test_services/test_script_generator.py`
+   - 添加 `test_user` fixture（创建测试用户）
+   - 修改 `sample_project` fixture，添加 `user_id=test_user.id`
+   - 修改 `test_regenerate_scene_success` 测试，使用 `visual_description` 字段
+   - 修改 `test_generate_visual_prompt` 测试，使用 `visual_description` 字段并添加必需字段
+   - 修改 `test_save_script_to_db` 测试，断言使用 `visual_description` 字段
+
+2. 修改 `src/services/script_generator.py`
+   - 修改 `_save_script_to_db()` 方法，使用 `visual_description` 而不是 `description`
+   - 修改 `regenerate_scene()` 方法，使用 `scene.visual_description` 字段
+   - 修改 `_build_regenerate_prompt()` 方法，使用 `scene.visual_description` 字段
+   - 修改 `generate_visual_prompt()` 方法，使用 `scene.visual_description` 字段
+
+**测试结果：**
+- ✅ 所有 15 个 ScriptGenerator 测试通过
+- ✅ 修复了 User 模型相关的所有问题
+- ✅ 修复了 Scene 模型字段名不匹配的问题
+
+**文件变更：**
+- 修改：`tests/test_services/test_script_generator.py`
+- 修改：`src/services/script_generator.py`
+- 修改：`.kiro/specs/ai-short-drama-production/tasks.md`（标记任务 3.4 为完成）
+
+**总结：**
+成功修复了所有 ScriptGenerator 相关的测试！现在 Project 模型的 user_id 字段和 Scene 模型的 visual_description 字段都得到了正确处理。
+
+**下一步：**
+- 任务 3.5 - 编写 ScriptGenerator 属性测试（可选，跳过）
+- 继续查找下一个未完成的任务

@@ -373,7 +373,7 @@ class ScriptGenerator:
                 scene = Scene(
                     project_id=project.id,
                     scene_number=scene_data.get("scene_number"),
-                    description=scene_data.get("description", ""),
+                    visual_description=scene_data.get("description", ""),
                     dialogue=scene_data.get("dialogue"),
                     character_name=scene_data.get("speaker")
                 )
@@ -451,7 +451,7 @@ class ScriptGenerator:
             
             # 更新数据库
             if new_description:
-                scene.description = new_description
+                scene.visual_description = new_description
             if new_scene_data.get("dialogue"):
                 scene.dialogue = new_scene_data.get("dialogue")
             if new_scene_data.get("speaker"):
@@ -463,7 +463,7 @@ class ScriptGenerator:
             
             return {
                 "scene_number": scene_number,
-                "description": scene.description,
+                "description": scene.visual_description,
                 "dialogue": scene.dialogue,
                 "speaker": scene.character_name
             }
@@ -504,7 +504,7 @@ class ScriptGenerator:
 角色：{', '.join(character_names)}
 
 分镜 {scene.scene_number}：
-场景描述：{new_description or scene.description}
+场景描述：{new_description or scene.visual_description}
 
 请按照以下格式输出：
 
@@ -539,7 +539,7 @@ class ScriptGenerator:
         """
         # 构建正面提示词
         positive_parts = [
-            scene.description,
+            scene.visual_description,
             style,
             "高质量",
             "细节丰富",
