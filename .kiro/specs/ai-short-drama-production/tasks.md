@@ -150,7 +150,7 @@
     - 测试错误处理
     - _需求：4.1, 4.2, 4.5_
 
-  - [ ] 3.3 实现剧本生成服务（ScriptGenerator）
+  - [x] 3.3 实现剧本生成服务（ScriptGenerator）
     - 实现 generate_script() 方法（调用 LLMService）
     - 实现 parse_script() 方法（解析 LLM 输出）
     - 实现 regenerate_scene() 方法

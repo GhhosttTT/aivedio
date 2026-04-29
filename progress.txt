@@ -75,4 +75,28 @@
 
 **下一步：任务 3.1.5 - 测试 LLM 服务部署（需要实际模型文件，跳过）**
 **下一步：任务 3.2 - 编写 LLMService 集成测试（可选，跳过）**
-**下一步：任务 3.3 - 实现剧本生成服务（ScriptGenerator）**
+
+### 2024-01-XX 完成任务 3.3
+
+**任务 3.3：实现剧本生成服务（ScriptGenerator）**
+- ✅ 创建 `src/services/script_generator.py`
+  - 实现 `generate_script()` 方法（调用 LLMService 生成剧本）
+  - 实现 `parse_script()` 方法（解析 LLM 输出为结构化数据）
+  - 实现 `_parse_characters()` 方法（解析角色信息）
+  - 实现 `_parse_scenes()` 方法（解析分镜信息）
+  - 实现 `_parse_scene_fields()` 方法（解析分镜字段）
+  - 实现 `_save_script_to_db()` 方法（保存剧本到数据库）
+  - 实现 `regenerate_scene()` 方法（重新生成指定分镜）
+  - 实现 `_build_regenerate_prompt()` 方法（构建重新生成 Prompt）
+  - 实现 `generate_visual_prompt()` 方法（生成图像生成提示词）
+  - 添加输入验证（主题和大纲至少一个非空）
+  - 添加错误处理（ScriptParseError 异常）
+  - 支持中英文冒号混用解析
+- ✅ 创建单元测试 `tests/test_services/test_script_generator.py`
+  - 15 个测试用例，全部通过 ✅
+  - 测试覆盖所有核心功能（生成、解析、重新生成、视觉提示词）
+  - 使用内存数据库和 Mock LLM 服务
+
+**下一步：任务 3.4 - 编写 ScriptGenerator 单元测试和集成测试（已完成单元测试，集成测试可选）**
+**下一步：任务 3.5 - 编写 ScriptGenerator 属性测试（可选，跳过）**
+**下一步：任务 3.6 - 实现 ComfyUI 服务（ComfyUIService）**
