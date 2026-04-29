@@ -53,4 +53,26 @@
   - 使用内存数据库和临时存储目录进行测试
 
 **下一步：任务 2.3 - 编写 ProjectManager 属性测试（可选，跳过）**
-**下一步：任务 3.1 - 实现 LLM 服务（LLMService）**
+
+### 2024-01-XX 完成任务 3.1
+
+**任务 3.1：实现 LLM 服务（LLMService）**
+- ✅ 创建 `src/services/llm_service.py`
+  - 实现 `LLMService` 类初始化（加载 GGUF 模型）
+  - 配置 CPU offload（n_gpu_layers 参数，默认 20 层）
+  - 实现 `generate()` 方法（支持 temperature、top_p、max_tokens、stream）
+  - 实现 `_generate_stream()` 方法（流式生成文本）
+  - 实现 `generate_script_prompt()` 方法（构建剧本生成 Prompt）
+  - 实现 `unload_model()` 方法（释放资源）
+  - 实现 `_warmup_model()` 方法（模型预热）
+  - 实现 `get_model_info()` 方法（获取模型信息）
+  - 添加错误处理（模型加载失败、显存不足、空提示词）
+  - 实现全局单例模式（`get_llm_service()` 和 `cleanup_llm_service()`）
+- ✅ 创建单元测试 `tests/test_services/test_llm_service.py`
+  - 15 个测试用例，全部通过 ✅
+  - 测试覆盖所有核心功能（初始化、生成、Prompt 构建、卸载、单例模式）
+  - 使用 Mock 模拟 llama_cpp 模块
+
+**下一步：任务 3.1.5 - 测试 LLM 服务部署（需要实际模型文件，跳过）**
+**下一步：任务 3.2 - 编写 LLMService 集成测试（可选，跳过）**
+**下一步：任务 3.3 - 实现剧本生成服务（ScriptGenerator）**
