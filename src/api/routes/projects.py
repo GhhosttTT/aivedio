@@ -17,9 +17,9 @@ from src.api.schemas import (
     MessageResponse,
     ProductionTaskResponse
 )
-from src.services.project_manager import ProjectManager
-from src.services.script_generator import ScriptGenerator  
-from src.services.task_orchestrator import TaskOrchestrator
+from src.services.project_manager import ProjectManager, get_project_manager
+from src.services.script_generator import ScriptGenerator, get_script_generator
+from src.services.task_orchestrator import TaskOrchestrator, get_task_orchestrator
 from src.database.session import get_db_session
 from src.services.llm_service import get_llm_service
 from src.utils.logger import get_logger

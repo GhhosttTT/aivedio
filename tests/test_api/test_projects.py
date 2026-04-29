@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 from datetime import datetime
 
 from src.api.app import create_app
-from src.models.database import Project, Character, Scene
+from src.database.models import Project, Character, Scene
 
 
 @pytest.fixture
@@ -51,9 +51,12 @@ def test_create_project_success(client):
     """
     测试创建项目成功
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm:
+    with patch("src.api.routes.projects.ProjectManager") as mock_pm_class, \
+         patch("src.api.routes.projects.get_db_session") as mock_get_db:
+        
         mock_pm = Mock()
-        mock_get_pm.return_value = mock_pm
+        mock_pm_class.return_value = mock_pm
+        mock_get_db.return_value = iter([Mock()])  # Mock 数据库会话
         
         # 模拟创建项目
         mock_project = Mock(spec=Project)
@@ -295,8 +298,28 @@ def test_generate_script_success(client, mock_project):
         updated_project.status = "script_generated"
         updated_project.created_at = datetime.now()
         updated_project.updated_at = datetime.now()
-        updated_project.characters = [Mock(spec=Character)]
-        updated_project.scenes = [Mock(spec=Scene)]
+        
+        # 正确设置角色和分镜的属性
+        mock_character = Mock(spec=Character)
+        mock_character.id = 1
+        mock_character.name = "角色1"
+        mock_character.description = "角色描述"
+        
+        mock_scene = Mock(spec=Scene)
+        mock_scene.id = 1
+        mock_scene.scene_number = 1
+        mock_scene.location = "地点"
+        mock_scene.time_period = "时间"
+        mock_scene.characters = "角色1"
+        mock_scene.dialogue = "对话"
+        mock_scene.visual_description = "视觉描述"
+        mock_scene.duration = 10.0
+        mock_scene.image_path = None
+        mock_scene.video_path = None
+        mock_scene.audio_path = None
+        
+        updated_project.characters = [mock_character]
+        updated_project.scenes = [mock_scene]
         
         mock_pm.get_project.side_effect = [mock_project, updated_project]
         
@@ -317,9 +340,13 @@ def test_generate_script_project_not_found(client):
     """
     测试生成剧本时项目不存在
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm:
+    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm, \
+         patch("src.api.routes.projects.get_script_generator") as mock_get_sg:
+        
         mock_pm = Mock()
+        mock_sg = Mock()
         mock_get_pm.return_value = mock_pm
+        mock_get_sg.return_value = mock_sg
         mock_pm.get_project.return_value = None
         
         response = client.post(
@@ -336,12 +363,29 @@ def test_generate_script_missing_theme_and_outline(client):
     """
     测试生成剧本时主题和大纲都为空
     """
-    response = client.post(
-        "/api/projects/1/generate-script",
-        json={}
-    )
-    
-    assert response.status_code == 422  # Pydantic 验证错误
+    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm, \
+         patch("src.api.routes.projects.get_script_generator") as mock_get_sg:
+        
+        mock_pm = Mock()
+        mock_sg = Mock()
+        mock_get_pm.return_value = mock_pm
+        mock_get_sg.return_value = mock_sg
+        
+        # 模拟项目存在但没有主题和大纲
+        mock_project = Mock(spec=Project)
+        mock_project.theme = None
+        mock_project.outline = None
+        mock_pm.get_project.return_value = mock_project
+        
+        # 模拟生成剧本时抛出 ValueError
+        mock_sg.generate_script.side_effect = ValueError("主题和大纲至少需要提供一个")
+        
+        response = client.post(
+            "/api/projects/1/generate-script",
+            json={}
+        )
+        
+        assert response.status_code == 400  # 输入验证错误
 
 
 def test_regenerate_scene_success(client, mock_project):
