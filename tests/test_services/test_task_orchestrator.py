@@ -334,15 +334,15 @@ class TestMarkTaskFailed:
 class TestSingletonPattern:
     """测试单例模式"""
     
-    def test_get_task_orchestrator(self, db_session):
+    def test_get_task_orchestrator(self):
         """测试获取单例实例"""
-        orchestrator1 = get_task_orchestrator(db_session)
-        orchestrator2 = get_task_orchestrator(db_session)
+        orchestrator1 = get_task_orchestrator()
+        orchestrator2 = get_task_orchestrator()
         assert orchestrator1 is orchestrator2
     
-    def test_cleanup_task_orchestrator(self, db_session):
+    def test_cleanup_task_orchestrator(self):
         """测试清理单例实例"""
-        orchestrator1 = get_task_orchestrator(db_session)
+        orchestrator1 = get_task_orchestrator()
         cleanup_task_orchestrator()
-        orchestrator2 = get_task_orchestrator(db_session)
+        orchestrator2 = get_task_orchestrator()
         assert orchestrator1 is not orchestrator2
