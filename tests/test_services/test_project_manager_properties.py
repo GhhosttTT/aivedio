@@ -13,8 +13,9 @@ from hypothesis import given, strategies as st, settings, assume
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.database.models import Base, Project, ProjectStatus
+from src.database.models import Base, Project, ProjectStatus, User
 from src.services.project_manager import ProjectManager
+from src.utils.storage import get_project_storage_path
 
 
 # 自定义策略：生成有效的项目名称
@@ -95,9 +96,20 @@ def create_test_db_and_manager():
     SessionLocal = sessionmaker(bind=engine)
     session = SessionLocal()
     
+    # 创建测试用户
+    user = User(
+        username="testuser",
+        email="test@example.com",
+        hashed_password="hashed_password_123",
+        is_active=1
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    
     manager = ProjectManager(session)
     
-    return session, manager
+    return session, manager, user
 
 
 class TestProjectManagerProperties:
@@ -129,12 +141,13 @@ class TestProjectManagerProperties:
         3. 检索到的信息与创建时提供的信息一致
         """
         # 为每个示例创建新的数据库和管理器
-        session, project_manager = create_test_db_and_manager()
+        session, project_manager, test_user = create_test_db_and_manager()
         
         try:
             # 创建项目
             project = project_manager.create_project(
                 name=name,
+                user_id=test_user.id,
                 theme=theme,
                 outline=outline
             )
@@ -202,11 +215,11 @@ class TestProjectManagerProperties:
         3. 其他未更新的字段保持不变
         """
         # 为每个示例创建新的数据库和管理器
-        session, project_manager = create_test_db_and_manager()
+        session, project_manager, test_user = create_test_db_and_manager()
         
         try:
             # 创建项目
-            project = project_manager.create_project(name=original_name)
+            project = project_manager.create_project(name=original_name, user_id=test_user.id)
             
             original_id = project.id
             original_created_at = project.created_at
@@ -279,13 +292,13 @@ class TestProjectManagerProperties:
         3. 删除操作返回成功
         """
         # 为每个示例创建新的数据库和管理器
-        session, project_manager = create_test_db_and_manager()
+        session, project_manager, test_user = create_test_db_and_manager()
         
         try:
             # 创建项目
-            project = project_manager.create_project(name=name, theme=theme)
+            project = project_manager.create_project(name=name, user_id=test_user.id, theme=theme)
             project_id = project.id
-            storage_path = project.storage_path
+            storage_path = get_project_storage_path(project_id)
             
             # 验证存储目录存在
             assert storage_path is not None
@@ -342,13 +355,13 @@ class TestProjectManagerProperties:
         3. 列表中的项目数量与创建的项目数量一致
         """
         # 为每个示例创建新的数据库和管理器
-        session, project_manager = create_test_db_and_manager()
+        session, project_manager, test_user = create_test_db_and_manager()
         
         try:
             # 创建多个项目
             created_projects = []
             for name in project_names:
-                project = project_manager.create_project(name=name)
+                project = project_manager.create_project(name=name, user_id=test_user.id)
                 created_projects.append(project)
                 
                 # 添加小延迟确保时间戳不同
@@ -404,13 +417,13 @@ class TestProjectManagerProperties:
         2. 不同项目的 ID 不应该重复
         """
         # 为每个示例创建新的数据库和管理器
-        session, project_manager = create_test_db_and_manager()
+        session, project_manager, test_user = create_test_db_and_manager()
         
         try:
             # 创建多个项目
             project_ids = []
             for name in project_names:
-                project = project_manager.create_project(name=name)
+                project = project_manager.create_project(name=name, user_id=test_user.id)
                 project_ids.append(project.id)
             
             # 验证所有 ID 都是唯一的
@@ -444,19 +457,19 @@ class TestProjectManagerProperties:
         2. 不同状态的项目数量应该正确
         """
         # 为每个示例创建新的数据库和管理器
-        session, project_manager = create_test_db_and_manager()
+        session, project_manager, test_user = create_test_db_and_manager()
         
         try:
             # 创建草稿项目
             draft_projects = []
             for i in range(draft_count):
-                project = project_manager.create_project(name=f"草稿项目{i}")
+                project = project_manager.create_project(name=f"草稿项目{i}", user_id=test_user.id)
                 draft_projects.append(project)
             
             # 创建完成项目
             completed_projects = []
             for i in range(completed_count):
-                project = project_manager.create_project(name=f"完成项目{i}")
+                project = project_manager.create_project(name=f"完成项目{i}", user_id=test_user.id)
                 project_manager.update_project(
                     project.id,
                     status=ProjectStatus.COMPLETED
@@ -509,13 +522,13 @@ class TestProjectManagerProperties:
         3. 所有页的项目合并后应该等于总项目数
         """
         # 为每个示例创建新的数据库和管理器
-        session, project_manager = create_test_db_and_manager()
+        session, project_manager, test_user = create_test_db_and_manager()
         
         try:
             # 创建项目
             created_projects = []
             for i in range(total_count):
-                project = project_manager.create_project(name=f"项目{i}")
+                project = project_manager.create_project(name=f"项目{i}", user_id=test_user.id)
                 created_projects.append(project)
                 import time
                 time.sleep(0.01)
