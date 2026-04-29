@@ -1,0 +1,70 @@
+{
+    "project": {
+        "name": "友情的力量",
+        "description": "一个关于友情和成长的温馨故事",
+        "theme": "友情、成长、温馨、励志、校园生活",
+        "outline": "故事发生在一所小学，讲述两个性格迥异的好朋友小明（活泼开朗）和小红（内向细心）在面对学校运动会的挑战时，如何互相帮助、共同成长的故事。故事分为三个部分：1) 相遇与成为朋友；2) 面对运动会的挑战和分歧；3) 克服困难并取得成功。"
+    },
+    "characters": [
+        {
+            "name": "小明",
+            "description": "一个10岁的活泼开朗的男孩，喜欢运动，特别擅长跑步",
+            "personality": "乐观、勇敢、有时候有点冲动，但心地善良"
+        },
+        {
+            "name": "小红",
+            "description": "一个10岁的内向细心的女孩，喜欢阅读，擅长跳远",
+            "personality": "聪明、细心、温柔，但有时候缺乏自信"
+        }
+    ],
+    "scenes": [
+        {
+            "scene_number": 1,
+            "title": "相遇",
+            "description": "阳光明媚的校园操场，绿色的草坪上有红色的跑道，远处可以看到教学楼。小明穿着蓝色运动服，正在跑道上奔跑，脸上洋溢着自信的笑容。小红坐在操场边的长椅上看书，穿着粉色连衣裙。",
+            "dialogue": "小明：（气喘吁吁地跑过来）你好！我叫小明，你在看什么书呀？\n小红：（抬起头，有点害羞）你好，我叫小红。我在看《小王子》。\n小明：（兴奋地）哇，我也喜欢这本书！我们可以做朋友吗？\n小红：（微笑）好啊，我也想交朋友。",
+            "visual_prompt": "A sunny school playground with green grass and red running track, a teaching building in the distance. A 10-year-old boy in blue sportswear running on the track with a confident smile. A 10-year-old girl in pink dress sitting on a bench reading a book. Warm lighting, cheerful atmosphere, anime style.",
+            "duration": 10
+        },
+        {
+            "scene_number": 2,
+            "title": "运动会的挑战",
+            "description": "学校体育馆内，墙上挂着运动会的海报。小明和小红站在海报前，小明看起来很兴奋，小红看起来有点担心。",
+            "dialogue": "小明：（指着海报）小红，我们一起参加运动会吧！我报名跑步，你报名跳远！\n小红：（犹豫地）可是...我不太擅长运动，我怕做不好。\n小明：（鼓励地）没关系！我们可以互相帮助，一起练习！\n小红：（有点不确定）真的可以吗？\n小明：（坚定地）当然可以！朋友就是要互相帮助的！",
+            "visual_prompt": "Inside a school gymnasium, sports meet posters on the wall. A boy in blue sportswear looking excited, pointing at the poster. A girl in pink dress looking worried. Indoor lighting, motivational atmosphere, anime style.",
+            "duration": 12
+        },
+        {
+            "scene_number": 3,
+            "title": "训练中的分歧",
+            "description": "操场上，小明在教小红跑步技巧，但小红跑得很慢，看起来很沮丧。小明看起来有点着急。",
+            "dialogue": "小明：（有点着急）小红，你要跑快一点！摆臂要更用力！\n小红：（气喘吁吁，有点委屈）我...我已经很努力了...\n小明：（不耐烦地）可是你这样怎么能赢呢？\n小红：（眼泪在眼眶里打转）对不起...我可能真的不适合运动...\n小明：（意识到自己说错话了）小红，我...我不是那个意思...",
+            "visual_prompt": "On the school playground, a boy teaching a girl running techniques. The girl running slowly looking frustrated, the boy looking anxious. Afternoon lighting, tense atmosphere, anime style.",
+            "duration": 12
+        },
+        {
+            "scene_number": 4,
+            "title": "互相理解",
+            "description": "操场边的长椅上，小明和小红坐在一起，夕阳的余晖洒在他们身上。小明看起来很内疚，小红在安慰他。",
+            "dialogue": "小明：（低着头）小红，对不起，我不应该那样说你。\n小红：（温柔地）没关系，我知道你是为我好。其实...我也想变得更勇敢。\n小明：（抬起头）那我们换个方式吧！你教我跳远，我教你跑步，我们互相学习！\n小红：（眼睛一亮）这个主意好！我们一起加油！\n小明：（伸出手）一起加油！\n小红：（握住小明的手）一起加油！",
+            "visual_prompt": "On a bench by the playground, a boy and a girl sitting together in the sunset glow. The boy looking guilty, the girl comforting him. Warm sunset lighting, heartwarming atmosphere, anime style.",
+            "duration": 15
+        },
+        {
+            "scene_number": 5,
+            "title": "运动会的成功",
+            "description": "运动会现场，观众席上坐满了学生和老师。小明在跑道上冲过终点线，获得第一名。小红在跳远区完成了一次完美的跳跃，也获得了好成绩。他们互相拥抱庆祝。",
+            "dialogue": "小明：（兴奋地）小红，你做到了！你跳得太棒了！\n小红：（开心地）你也是！你跑得好快！\n小明：（自豪地）这都是因为我们互相帮助！\n小红：（感动地）是啊，有你这个朋友真好！\n小明：（笑着）我们永远都是好朋友！\n小红：（笑着）永远都是！",
+            "visual_prompt": "At the sports meet venue, stands full of students and teachers. A boy crossing the finish line on the track, winning first place. A girl completing a perfect long jump, also achieving good results. They hugging each other in celebration. Bright daylight, joyful atmosphere, anime style.",
+            "duration": 15
+        }
+    ],
+    "metadata": {
+        "total_duration": 64,
+        "scene_count": 5,
+        "character_count": 2,
+        "genre": "温馨励志",
+        "target_audience": "儿童、家庭",
+        "language": "中文"
+    }
+}
