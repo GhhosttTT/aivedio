@@ -149,4 +149,27 @@
 
 **下一步：任务 3.8.5 - 测试 SVD 服务部署（需要实际模型文件，跳过）**
 **下一步：任务 3.9 - 编写 SVDService 集成测试（可选，跳过）**
-**下一步：任务 3.10 - 实现 TTS 服务（TTSService）**
+
+### 2024-01-XX 完成任务 3.10
+
+**任务 3.10：实现 TTS 服务（TTSService）**
+- ✅ 创建 `src/services/tts_service.py`
+  - 实现 `TTSService` 类初始化（配置 API 密钥和 HTTP 客户端）
+  - 实现 `generate_speech()` 方法（调用 MiMo-V2-TTS API 生成语音）
+  - 实现 `_download_audio()` 方法（下载音频文件）
+  - 实现 `list_speakers()` 方法（获取可用说话人列表）
+  - 实现 `check_quota()` 方法（检查 API 配额）
+  - 实现 `close()` 方法（关闭 HTTP 客户端）
+  - 添加重试逻辑（最多 3 次，指数退避）
+  - 处理配额不足错误（TTSQuotaError）
+  - 支持可配置参数（说话人、情感、语速）
+  - 实现全局单例模式（`get_tts_service()` 和 `cleanup_tts_service()`）
+- ✅ 创建单元测试 `tests/test_services/test_tts_service.py`
+  - 15 个测试用例，全部通过 ✅
+  - 测试覆盖所有核心功能（初始化、生成、说话人列表、配额检查、重试、单例模式）
+  - 使用 Mock 模拟 httpx 模块
+
+**下一步：任务 3.10.5 - 测试 TTS API 集成（需要实际 API 密钥，跳过）**
+**下一步：任务 3.11 - 编写 TTSService 集成测试（可选，跳过）**
+**下一步：任务 4.1 - 实现字幕生成服务（SubtitleGenerator）**
+

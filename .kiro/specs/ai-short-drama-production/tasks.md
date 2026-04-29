@@ -222,7 +222,7 @@
     - 测试重试逻辑
     - _需求：6.1, 6.2, 6.3, 6.4, 6.5_
 
-  - [ ] 3.10 实现 TTS 服务（TTSService）
+  - [x] 3.10 实现 TTS 服务（TTSService）
     - 实现 TTSService 类初始化（配置 API 密钥）
     - 实现 generate_speech() 方法（调用 MiMo-V2-TTS API）
     - 实现 list_speakers() 方法（获取可用说话人）
