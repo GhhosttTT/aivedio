@@ -224,10 +224,18 @@ class TestProjectManagerProperties:
                 outline=new_outline
             )
             
+            # 计算期望值（与 ProjectManager 的处理逻辑一致）
+            expected_theme = new_theme.strip() if new_theme else None
+            expected_outline = new_outline.strip() if new_outline else None
+            if expected_theme == '':
+                expected_theme = None
+            if expected_outline == '':
+                expected_outline = None
+            
             # 验证更新后的值
             assert updated_project.name == new_name
-            assert updated_project.theme == new_theme
-            assert updated_project.outline == new_outline
+            assert updated_project.theme == expected_theme
+            assert updated_project.outline == expected_outline
             
             # 验证 updated_at 时间戳增加
             assert updated_project.updated_at > original_updated_at
@@ -240,8 +248,8 @@ class TestProjectManagerProperties:
             # 通过 ID 重新检索，验证更新已持久化
             retrieved_project = project_manager.get_project(project.id)
             assert retrieved_project.name == new_name
-            assert retrieved_project.theme == new_theme
-            assert retrieved_project.outline == new_outline
+            assert retrieved_project.theme == expected_theme
+            assert retrieved_project.outline == expected_outline
             assert retrieved_project.updated_at == updated_project.updated_at
             
         finally:

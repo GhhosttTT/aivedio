@@ -64,11 +64,16 @@ class ProjectManager:
         
         try:
             # 创建项目对象
+            # 对于可选文本字段，strip 后如果为空字符串则设为 None
+            stripped_description = description.strip() if description else None
+            stripped_theme = theme.strip() if theme else None
+            stripped_outline = outline.strip() if outline else None
+            
             project = Project(
                 name=name.strip(),
-                description=description.strip() if description else None,
-                theme=theme.strip() if theme else None,
-                outline=outline.strip() if outline else None,
+                description=stripped_description if stripped_description else None,
+                theme=stripped_theme if stripped_theme else None,
+                outline=stripped_outline if stripped_outline else None,
                 status=ProjectStatus.DRAFT,
                 total_scenes=0
             )
@@ -160,6 +165,12 @@ class ProjectManager:
                         if len(value) > 100:
                             raise ValueError("项目名称不能超过100个字符")
                         value = value.strip()
+                    
+                    # 对可选文本字段进行 strip，空字符串转为 None
+                    if field in ['description', 'theme', 'outline'] and value:
+                        value = value.strip()
+                        if not value:  # strip 后为空字符串
+                            value = None
                     
                     if field == 'status' and isinstance(value, str):
                         # 转换字符串为枚举
