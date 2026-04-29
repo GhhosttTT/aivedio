@@ -78,3 +78,22 @@ def setup_logger():
 
 # 导出 logger
 __all__ = ["logger", "setup_logger"]
+
+
+def get_logger(name: str = None):
+    """
+    获取 logger 实例
+    
+    Args:
+        name: logger 名称（通常是模块名）
+    
+    Returns:
+        logger 实例
+    """
+    if name:
+        return logger.bind(name=name)
+    return logger
+
+
+# 更新导出
+__all__ = ["logger", "setup_logger", "get_logger"]

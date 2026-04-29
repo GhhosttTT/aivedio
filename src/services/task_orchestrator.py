@@ -72,7 +72,7 @@ class TaskOrchestrator:
         # 查询项目的所有分镜
         scenes = self.db.query(Scene).filter(
             Scene.project_id == project_id
-        ).order_by(Scene.sequence_number).all()
+        ).order_by(Scene.scene_number).all()
         
         if not scenes:
             raise ValueError(f"项目没有分镜: {project_id}")

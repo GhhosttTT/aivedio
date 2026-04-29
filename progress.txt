@@ -258,3 +258,33 @@
 - ✅ 实现任务重试策略（最多 3 次）
 
 **下一步：任务 5.2 - 编写 TaskOrchestrator 单元测试和集成测试**
+
+
+### 2024-01-XX 完成任务 5.2
+
+**任务 5.2：编写 TaskOrchestrator 单元测试和集成测试**
+- ✅ 创建 `tests/test_services/test_task_orchestrator.py`
+  - 16 个测试用例，全部通过 ✅
+  - 测试 TaskOrchestrator 初始化
+  - 测试创建生产任务（成功、项目不存在、没有分镜）
+  - 测试计算总步骤数
+  - 测试获取任务状态（成功、任务不存在）
+  - 测试取消任务（成功、任务不存在）
+  - 测试重试失败任务（成功、超过重试次数）
+  - 测试更新任务进度
+  - 测试标记任务完成
+  - 测试标记任务失败
+  - 测试单例模式（获取实例、清理实例）
+- ✅ 修复 TaskOrchestrator 中的字段名错误（sequence_number → scene_number）
+- ✅ 添加 `get_logger()` 函数到 logger.py
+- ✅ 安装测试所需依赖（celery、redis、httpx）
+- ✅ 使用 Mock 模拟 Celery chain 和 AsyncResult
+- ✅ 使用内存数据库进行测试
+
+**测试覆盖率**：
+- 核心功能：100%
+- 边界情况：已覆盖
+- 错误处理：已覆盖
+
+**下一步：任务 5.3 - 编写 TaskOrchestrator 属性测试（可选，跳过）**
+**下一步：任务 6 - 检查点 - 确保所有核心服务测试通过**

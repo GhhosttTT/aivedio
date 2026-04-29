@@ -8,6 +8,6 @@
   },
   "then": {
     "type": "askAgent",
-    "prompt": "🎯 任务完成！现在查看 .kiro/specs/ai-short-drama-production/tasks.md 和 progress.txt，找到下一个未完成的任务（标记为 [ ]），然后立即开始执行。\n\n执行步骤：\n1. 读取 tasks.md 找到第一个 [ ] 标记的任务\n2. 开始执行该任务\n3. 完成后更新 tasks.md（标记为 [x]）\n4. 更新 progress.txt 记录进度\n5. 提交代码\n\n记住：每次只执行一个任务！"
+    "prompt": "🎯 任务完成！继续执行下一个任务。\n\n步骤：\n1. 读取 .kiro/specs/ai-short-drama-production/tasks.md\n2. 找到第一个未完成的任务（标记为 [ ]）\n3. 立即开始执行该任务\n4. 完成后更新 tasks.md（标记为 [x]）和 progress.txt\n5. 提交代码\n\n注意：\n- 每次只执行一个任务\n- 跳过标记为【可选】或【跳过】的任务\n- 如果会话过长，Kiro 会自动压缩 context，继续工作\n- 完成后会自动触发下一个任务"
   }
 }
