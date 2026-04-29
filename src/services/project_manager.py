@@ -31,6 +31,7 @@ class ProjectManager:
     def create_project(
         self,
         name: str,
+        user_id: int,
         description: Optional[str] = None,
         theme: Optional[str] = None,
         outline: Optional[str] = None
@@ -40,6 +41,7 @@ class ProjectManager:
         
         Args:
             name: 项目名称（1-100字符）
+            user_id: 用户 ID
             description: 项目描述（可选）
             theme: 剧本主题（可选）
             outline: 剧本大纲（可选）
@@ -71,11 +73,11 @@ class ProjectManager:
             
             project = Project(
                 name=name.strip(),
+                user_id=user_id,
                 description=stripped_description if stripped_description else None,
                 theme=stripped_theme if stripped_theme else None,
                 outline=stripped_outline if stripped_outline else None,
-                status=ProjectStatus.DRAFT,
-                total_scenes=0
+                status=ProjectStatus.DRAFT
             )
             
             # 保存到数据库
@@ -87,11 +89,7 @@ class ProjectManager:
             storage_path = get_project_storage_path(project.id)
             os.makedirs(storage_path, exist_ok=True)
             
-            # 更新存储路径
-            project.storage_path = storage_path
-            self.db.commit()
-            
-            logger.info(f"创建项目成功: id={project.id}, name='{project.name}'")
+            logger.info(f"创建项目成功: id={project.id}, name='{project.name}', user_id={user_id}")
             
             return project
             
@@ -221,9 +219,10 @@ class ProjectManager:
         
         try:
             # 删除项目文件
-            if project.storage_path and os.path.exists(project.storage_path):
-                cleanup_project_files(project.storage_path)
-                logger.info(f"删除项目文件: path={project.storage_path}")
+            storage_path = get_project_storage_path(project_id)
+            if os.path.exists(storage_path):
+                cleanup_project_files(storage_path)
+                logger.info(f"删除项目文件: path={storage_path}")
             
             # 删除数据库记录（级联删除关联的角色、分镜、任务）
             self.db.delete(project)
@@ -324,10 +323,7 @@ class ProjectManager:
         project_id: int,
         name: str,
         description: Optional[str] = None,
-        appearance: Optional[str] = None,
-        personality: Optional[str] = None,
-        voice_speaker: Optional[str] = None,
-        voice_emotion: Optional[str] = None
+        visual_description: Optional[str] = None
     ) -> Character:
         """
         添加角色到项目
@@ -336,10 +332,7 @@ class ProjectManager:
             project_id: 项目ID
             name: 角色名称
             description: 角色描述
-            appearance: 外貌特征
-            personality: 性格特点
-            voice_speaker: 配音说话人
-            voice_emotion: 配音情感
+            visual_description: 视觉描述（外貌特征）
             
         Returns:
             创建的角色对象
@@ -360,10 +353,7 @@ class ProjectManager:
                 project_id=project_id,
                 name=name.strip(),
                 description=description,
-                appearance=appearance,
-                personality=personality,
-                voice_speaker=voice_speaker,
-                voice_emotion=voice_emotion
+                visual_description=visual_description
             )
             
             self.db.add(character)
@@ -386,11 +376,10 @@ class ProjectManager:
         self,
         project_id: int,
         scene_number: int,
-        description: str,
+        visual_description: str,
         dialogue: Optional[str] = None,
         character_name: Optional[str] = None,
-        visual_prompt: Optional[str] = None,
-        title: Optional[str] = None
+        image_prompt: Optional[str] = None
     ) -> Scene:
         """
         添加分镜到项目
@@ -398,11 +387,10 @@ class ProjectManager:
         Args:
             project_id: 项目ID
             scene_number: 分镜序号
-            description: 场景描述
+            visual_description: 视觉描述（场景描述）
             dialogue: 对话内容
             character_name: 说话角色
-            visual_prompt: 图像生成提示词
-            title: 分镜标题
+            image_prompt: 图像生成提示词
             
         Returns:
             创建的分镜对象
@@ -415,25 +403,20 @@ class ProjectManager:
         if not project:
             raise ValueError(f"项目不存在: id={project_id}")
         
-        if not description or len(description.strip()) == 0:
+        if not visual_description or len(visual_description.strip()) == 0:
             raise ValueError("场景描述不能为空")
         
         try:
             scene = Scene(
                 project_id=project_id,
                 scene_number=scene_number,
-                title=title,
-                description=description.strip(),
-                dialogue=dialogue,
-                character_name=character_name,
-                visual_prompt=visual_prompt or description.strip()
+                visual_description=visual_description.strip(),
+                dialogue=dialogue or "",
+                character_name=character_name or "",
+                image_prompt=image_prompt or visual_description.strip()
             )
             
             self.db.add(scene)
-            
-            # 更新项目的总分镜数
-            project.total_scenes = max(project.total_scenes, scene_number)
-            
             self.db.commit()
             self.db.refresh(scene)
             

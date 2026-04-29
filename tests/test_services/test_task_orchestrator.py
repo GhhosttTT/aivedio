@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.database.models import (
     Base, Project, Scene, Task as TaskModel,
-    TaskStatus, TaskType, ProjectStatus
+    TaskStatus, ProjectStatus
 )
 from src.services.task_orchestrator import (
     TaskOrchestrator,
@@ -34,12 +34,23 @@ def db_session():
 @pytest.fixture
 def sample_project(db_session):
     """创建示例项目"""
+    # 创建用户
+    from src.database.models import User
+    user = User(
+        username="test_user",
+        email="test@example.com",
+        hashed_password="hashed_password"
+    )
+    db_session.add(user)
+    db_session.commit()
+    
+    # 创建项目
     project = Project(
         name="测试项目",
         description="测试描述",
         theme="测试主题",
         status=ProjectStatus.SCRIPT_GENERATED,
-        total_scenes=3
+        user_id=user.id
     )
     db_session.add(project)
     db_session.commit()
@@ -55,10 +66,10 @@ def sample_scenes(db_session, sample_project):
         scene = Scene(
             project_id=sample_project.id,
             scene_number=i + 1,
-            description=f"场景 {i + 1} 描述",
-            dialogue=f"对话 {i + 1}",
             character_name=f"角色 {i + 1}",
-            visual_prompt=f"视觉提示词 {i + 1}"
+            dialogue=f"对话 {i + 1}",
+            visual_description=f"场景 {i + 1} 描述",
+            image_prompt=f"视觉提示词 {i + 1}"
         )
         db_session.add(scene)
         scenes.append(scene)
@@ -153,7 +164,6 @@ class TestGetTaskStatus:
         # 创建任务记录
         task = TaskModel(
             project_id=sample_project.id,
-            task_type=TaskType.VIDEO_COMPOSITION,
             status=TaskStatus.RUNNING,
             celery_task_id="test-task-id",
             total_steps=10,
@@ -192,9 +202,9 @@ class TestCancelTask:
         # 创建运行中的任务
         task = TaskModel(
             project_id=sample_project.id,
-            task_type=TaskType.VIDEO_COMPOSITION,
             status=TaskStatus.RUNNING,
-            celery_task_id="running-task-id"
+            celery_task_id="running-task-id",
+            total_steps=10
         )
         orchestrator.db.add(task)
         orchestrator.db.commit()
@@ -224,10 +234,10 @@ class TestRetryFailedTask:
         # 创建失败的任务
         task = TaskModel(
             project_id=sample_project.id,
-            task_type=TaskType.VIDEO_COMPOSITION,
             status=TaskStatus.FAILED,
             celery_task_id="failed-task-id",
-            retry_count=0
+            retry_count=0,
+            total_steps=10
         )
         orchestrator.db.add(task)
         orchestrator.db.commit()
@@ -247,10 +257,10 @@ class TestRetryFailedTask:
         """测试重试次数超过上限"""
         task = TaskModel(
             project_id=sample_project.id,
-            task_type=TaskType.VIDEO_COMPOSITION,
             status=TaskStatus.FAILED,
             celery_task_id="failed-task-id",
-            retry_count=3
+            retry_count=3,
+            total_steps=10
         )
         orchestrator.db.add(task)
         orchestrator.db.commit()
@@ -266,10 +276,10 @@ class TestUpdateTaskProgress:
         """测试更新任务进度"""
         task = TaskModel(
             project_id=sample_project.id,
-            task_type=TaskType.VIDEO_COMPOSITION,
             status=TaskStatus.RUNNING,
             celery_task_id="test-task-id",
-            progress=0.0
+            progress=0.0,
+            total_steps=10
         )
         orchestrator.db.add(task)
         orchestrator.db.commit()
@@ -289,9 +299,9 @@ class TestMarkTaskCompleted:
         """测试标记任务完成"""
         task = TaskModel(
             project_id=sample_project.id,
-            task_type=TaskType.VIDEO_COMPOSITION,
             status=TaskStatus.RUNNING,
-            celery_task_id="test-task-id"
+            celery_task_id="test-task-id",
+            total_steps=10
         )
         orchestrator.db.add(task)
         orchestrator.db.commit()
@@ -303,7 +313,7 @@ class TestMarkTaskCompleted:
         # 验证
         orchestrator.db.refresh(task)
         assert task.status == TaskStatus.COMPLETED
-        assert task.result["output_path"] == output_path
+        assert task.result_path == output_path
         assert task.progress == 100.0
 
 
@@ -314,9 +324,9 @@ class TestMarkTaskFailed:
         """测试标记任务失败"""
         task = TaskModel(
             project_id=sample_project.id,
-            task_type=TaskType.VIDEO_COMPOSITION,
             status=TaskStatus.RUNNING,
-            celery_task_id="test-task-id"
+            celery_task_id="test-task-id",
+            total_steps=10
         )
         orchestrator.db.add(task)
         orchestrator.db.commit()

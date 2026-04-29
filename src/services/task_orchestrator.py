@@ -79,29 +79,10 @@ class TaskOrchestrator:
         
         logger.info(f"创建生产任务链: project_id={project_id}, scenes={len(scenes)}")
         
-        # 创建任务记录
-        from src.database.models import TaskType
-        task_model = TaskModel(
-            project_id=project_id,
-            task_type=TaskType.VIDEO_COMPOSITION,  # 使用枚举类型
-            status=TaskStatus.PENDING,
-            total_steps=self._calculate_total_steps(
-                len(scenes),
-                generate_images,
-                generate_videos,
-                generate_audios,
-                generate_subtitles
-            ),
-            progress=0.0
-        )
-        self.db.add(task_model)
-        self.db.commit()
-        self.db.refresh(task_model)
-        
         # 构建任务链
         task_chain = self._build_task_chain(
             project_id=project_id,
-            task_id=task_model.id,
+            task_id=0,  # 临时ID，稍后更新
             scenes=scenes,
             generate_images=generate_images,
             generate_videos=generate_videos,
@@ -114,11 +95,23 @@ class TaskOrchestrator:
         # 提交任务链
         result = task_chain.apply_async()
         
-        # 更新任务记录
-        task_model.celery_task_id = result.id
-        task_model.status = TaskStatus.RUNNING
-        task_model.started_at = datetime.utcnow()
+        # 创建任务记录
+        task_model = TaskModel(
+            project_id=project_id,
+            celery_task_id=result.id,
+            status=TaskStatus.RUNNING,
+            total_steps=self._calculate_total_steps(
+                len(scenes),
+                generate_images,
+                generate_videos,
+                generate_audios,
+                generate_subtitles
+            ),
+            progress=0.0
+        )
+        self.db.add(task_model)
         self.db.commit()
+        self.db.refresh(task_model)
         
         logger.info(f"任务链已提交: task_id={task_model.id}, celery_task_id={result.id}")
         
@@ -200,7 +193,7 @@ class TaskOrchestrator:
             image_tasks = group([
                 generate_image_task.s(
                     scene_id=scene.id,
-                    prompt=scene.visual_prompt or scene.description,
+                    prompt=scene.image_prompt or scene.visual_description,
                     project_id=project_id,
                     task_id=task_id
                 )
@@ -311,8 +304,7 @@ class TaskOrchestrator:
             "current_step": task_model.current_step,
             "total_steps": task_model.total_steps,
             "created_at": task_model.created_at.isoformat() if task_model.created_at else None,
-            "started_at": task_model.started_at.isoformat() if task_model.started_at else None,
-            "completed_at": task_model.completed_at.isoformat() if task_model.completed_at else None,
+            "updated_at": task_model.updated_at.isoformat() if task_model.updated_at else None,
             "error_message": task_model.error_message
         }
         
@@ -356,7 +348,6 @@ class TaskOrchestrator:
         
         # 更新任务状态
         task_model.status = TaskStatus.CANCELLED
-        task_model.completed_at = datetime.utcnow()
         task_model.error_message = "任务已被用户取消"
         self.db.commit()
         
@@ -435,8 +426,7 @@ class TaskOrchestrator:
         task_model = self.db.query(TaskModel).filter(TaskModel.id == task_id).first()
         if task_model:
             task_model.status = TaskStatus.COMPLETED
-            task_model.completed_at = datetime.utcnow()
-            task_model.result = {"output_path": output_path}
+            task_model.result_path = output_path
             task_model.progress = 100.0
             self.db.commit()
             logger.info(f"任务已完成: task_id={task_id}, output_path={output_path}")
@@ -452,7 +442,6 @@ class TaskOrchestrator:
         task_model = self.db.query(TaskModel).filter(TaskModel.id == task_id).first()
         if task_model:
             task_model.status = TaskStatus.FAILED
-            task_model.completed_at = datetime.utcnow()
             task_model.error_message = error_message
             self.db.commit()
             logger.error(f"任务失败: task_id={task_id}, error={error_message}")
