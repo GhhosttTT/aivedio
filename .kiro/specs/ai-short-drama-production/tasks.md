@@ -171,7 +171,7 @@
     - **属性 6：分镜重新生成隔离性**
     - **验证需求：2.4**
 
-  - [ ] 3.6 实现 ComfyUI 服务（ComfyUIService）
+  - [x] 3.6 实现 ComfyUI 服务（ComfyUIService）
     - 实现 ComfyUIService 类初始化
     - 实现 generate_image() 方法（调用 ComfyUI API）
     - 实现 load_workflow() 方法（加载工作流配置）

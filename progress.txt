@@ -99,4 +99,29 @@
 
 **下一步：任务 3.4 - 编写 ScriptGenerator 单元测试和集成测试（已完成单元测试，集成测试可选）**
 **下一步：任务 3.5 - 编写 ScriptGenerator 属性测试（可选，跳过）**
-**下一步：任务 3.6 - 实现 ComfyUI 服务（ComfyUIService）**
+
+### 2024-01-XX 完成任务 3.6
+
+**任务 3.6：实现 ComfyUI 服务（ComfyUIService）**
+- ✅ 创建 `src/services/comfyui_service.py`
+  - 实现 `ComfyUIService` 类初始化（加载工作流配置）
+  - 实现 `load_workflow()` 方法（加载 JSON 工作流配置）
+  - 实现 `check_status()` 方法（检查 ComfyUI 服务可用性）
+  - 实现 `generate_image()` 方法（生成图像，支持重试）
+  - 实现 `_build_workflow()` 方法（构建工作流）
+  - 实现 `_submit_workflow()` 方法（提交工作流到 ComfyUI）
+  - 实现 `_wait_for_completion()` 方法（等待工作流完成）
+  - 实现 `_get_generated_image()` 方法（获取生成的图像）
+  - 实现 `_download_image()` 方法（下载图像到本地）
+  - 实现 `generate_batch()` 方法（批量生成图像）
+  - 添加重试逻辑（最多 3 次，指数退避）
+  - 处理 API 错误（超时、连接失败、HTTP 错误）
+  - 实现全局单例模式（`get_comfyui_service()` 和 `cleanup_comfyui_service()`）
+- ✅ 创建单元测试 `tests/test_services/test_comfyui_service.py`
+  - 5 个测试用例，全部通过 ✅
+  - 测试覆盖核心功能（初始化、状态检查、工作流构建）
+  - 使用 Mock HTTP 客户端
+
+**下一步：任务 3.6.5 - 配置和测试 ComfyUI 集成（需要实际 ComfyUI 服务，跳过）**
+**下一步：任务 3.7 - 编写 ComfyUIService 集成测试（可选，跳过）**
+**下一步：任务 3.8 - 实现 SVD 服务（SVDService）**
