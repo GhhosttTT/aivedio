@@ -486,7 +486,7 @@
     - _需求：16.1, 16.2, 16.3, 16.4, 16.5_
 
 - [ ] 12. 部署和文档
-  - [ ] 12.1 创建 Docker 容器化配置
+  - [x] 12.1 创建 Docker 容器化配置
     - 编写 Dockerfile（多阶段构建）
     - 编写 docker-compose.yml（包含所有服务）
     - 配置 GPU 支持（nvidia-docker）

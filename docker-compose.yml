@@ -1,0 +1,196 @@
+# AI 短剧自动化生产平台 - Docker Compose 配置
+version: '3.8'
+
+services:
+  # Redis 服务（消息队列和缓存）
+  redis:
+    image: redis:7-alpine
+    container_name: short-drama-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # PostgreSQL 数据库（可选，默认使用 SQLite）
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: short-drama-postgres
+  #   environment:
+  #     POSTGRES_DB: short_drama
+  #     POSTGRES_USER: short_drama_user
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U short_drama_user"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   restart: unless-stopped
+
+  # ComfyUI 服务（图像生成）
+  comfyui:
+    image: comfyui/comfyui:latest
+    container_name: short-drama-comfyui
+    ports:
+      - "8188:8188"
+    volumes:
+      - ./models:/app/models
+      - ./configs/comfyui:/app/configs
+      - comfyui_output:/app/output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8188/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # FastAPI 应用服务
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: short-drama-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models:ro
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+      - ./configs:/app/configs
+      - ./.env:/app/.env
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - DATABASE_URL=sqlite:///./short_drama.db
+      # 如果使用 PostgreSQL，取消注释下面的行
+      # - DATABASE_URL=postgresql://short_drama_user:${POSTGRES_PASSWORD:-changeme}@postgres:5432/short_drama
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - COMFYUI_BASE_URL=http://comfyui:8188
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    depends_on:
+      redis:
+        condition: service_healthy
+      comfyui:
+        condition: service_healthy
+      # postgres:
+      #   condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Celery Worker 服务（异步任务处理）
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: short-drama-celery-worker
+    command: celery -A src.tasks.celery_app worker --loglevel=info --concurrency=2 --queues=default,image,video,audio
+    volumes:
+      - ./models:/app/models:ro
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+      - ./configs:/app/configs
+      - ./.env:/app/.env
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - DATABASE_URL=sqlite:///./short_drama.db
+      # 如果使用 PostgreSQL，取消注释下面的行
+      # - DATABASE_URL=postgresql://short_drama_user:${POSTGRES_PASSWORD:-changeme}@postgres:5432/short_drama
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - COMFYUI_BASE_URL=http://comfyui:8188
+    depends_on:
+      redis:
+        condition: service_healthy
+      comfyui:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Celery Beat 服务（定时任务调度，可选）
+  # celery-beat:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: short-drama-celery-beat
+  #   command: celery -A src.tasks.celery_app beat --loglevel=info
+  #   volumes:
+  #     - ./logs:/app/logs
+  #     - ./.env:/app/.env
+  #   environment:
+  #     - REDIS_URL=redis://redis:6379/0
+  #     - CELERY_BROKER_URL=redis://redis:6379/1
+  #     - CELERY_RESULT_BACKEND=redis://redis:6379/2
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+
+  # Flower 服务（Celery 监控，可选）
+  # flower:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: short-drama-flower
+  #   command: celery -A src.tasks.celery_app flower --port=5555
+  #   ports:
+  #     - "5555:5555"
+  #   environment:
+  #     - CELERY_BROKER_URL=redis://redis:6379/1
+  #     - CELERY_RESULT_BACKEND=redis://redis:6379/2
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+
+volumes:
+  redis_data:
+    driver: local
+  # postgres_data:
+  #   driver: local
+  comfyui_output:
+    driver: local
+
+networks:
+  default:
+    name: short-drama-network
