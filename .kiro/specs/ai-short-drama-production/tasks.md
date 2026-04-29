@@ -248,7 +248,7 @@
     - _需求：7.1, 7.2, 7.3, 7.4, 7.5_
 
 - [ ] 4. 实现后处理服务
-  - [ ] 4.1 实现字幕生成服务（SubtitleGenerator）
+  - [x] 4.1 实现字幕生成服务（SubtitleGenerator）
     - 实现 generate_srt() 方法
     - 实现 calculate_timing() 方法
     - 实现 burn_subtitle() 方法（使用 FFmpeg）

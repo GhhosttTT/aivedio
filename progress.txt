@@ -171,5 +171,27 @@
 
 **下一步：任务 3.10.5 - 测试 TTS API 集成（需要实际 API 密钥，跳过）**
 **下一步：任务 3.11 - 编写 TTSService 集成测试（可选，跳过）**
-**下一步：任务 4.1 - 实现字幕生成服务（SubtitleGenerator）**
+
+### 2024-01-XX 完成任务 4.1
+
+**任务 4.1：实现字幕生成服务（SubtitleGenerator）**
+- ✅ 创建 `src/services/subtitle_generator.py`
+  - 实现 `generate_srt()` 方法（生成 SRT 字幕文件）
+  - 实现 `_split_text()` 方法（处理超长对话，自动分行）
+  - 实现 `_format_time()` 方法（格式化时间为 SRT 格式）
+  - 实现 `calculate_timing()` 方法（计算字幕时间轴）
+  - 实现 `_get_audio_duration()` 方法（获取音频时长）
+  - 实现 `burn_subtitle()` 方法（使用 FFmpeg 烧录字幕到视频）
+  - 实现 `_color_to_ass()` 方法（颜色转换为 ASS 格式）
+  - 支持字幕样式配置（字体、颜色、描边）
+  - 支持超长对话自动分行（最大字符数和行数限制）
+  - 实现全局单例模式（`get_subtitle_generator()` 和 `cleanup_subtitle_generator()`）
+- ✅ 创建单元测试 `tests/test_services/test_subtitle_generator.py`
+  - 19 个测试用例，全部通过 ✅
+  - 测试覆盖所有核心功能（SRT 生成、文本分割、时间计算、字幕烧录、单例模式）
+  - 使用 Mock 模拟 FFmpeg 和 FFprobe
+
+**下一步：任务 4.2 - 编写 SubtitleGenerator 单元测试和集成测试（单元测试已完成，集成测试可选）**
+**下一步：任务 4.3 - 编写 SubtitleGenerator 属性测试（可选，跳过）**
+**下一步：任务 4.4 - 实现视频合成服务（VideoComposer）**
 
