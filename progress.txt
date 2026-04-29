@@ -124,4 +124,29 @@
 
 **下一步：任务 3.6.5 - 配置和测试 ComfyUI 集成（需要实际 ComfyUI 服务，跳过）**
 **下一步：任务 3.7 - 编写 ComfyUIService 集成测试（可选，跳过）**
-**下一步：任务 3.8 - 实现 SVD 服务（SVDService）**
+
+### 2024-01-XX 完成任务 3.8
+
+**任务 3.8：实现 SVD 服务（SVDService）**
+- ✅ 创建 `src/services/svd_service.py`
+  - 实现 `SVDService` 类初始化（加载 SVD 模型）
+  - 实现 `load_model()` 方法（加载模型，支持 GPU/CPU）
+  - 实现 `unload_model()` 方法（卸载模型释放资源）
+  - 实现 `check_gpu_memory()` 方法（显存监控）
+  - 实现 `generate_video()` 方法（图生视频，支持重试）
+  - 实现 `get_model_info()` 方法（获取模型信息）
+  - 配置视频生成参数（帧数、帧率、运动强度、噪声增强）
+  - 添加 GPU 缓存清理逻辑（显存不足时自动清理）
+  - 添加重试逻辑（最多 3 次，指数退避）
+  - 支持 FP16 精度优化（GPU 模式）
+  - 支持 CPU offload 优化
+  - 实现全局单例模式（`get_svd_service()` 和 `cleanup_svd_service()`）
+- ✅ 创建单元测试 `tests/test_services/test_svd_service.py`
+  - 11 个测试用例，全部通过 ✅
+  - 测试覆盖所有核心功能（初始化、加载、卸载、显存检查、单例模式）
+  - 使用 Mock 模拟 torch 和 diffusers 模块
+  - 修复了 Mock 设置问题（在导入前 patch DIFFUSERS_AVAILABLE）
+
+**下一步：任务 3.8.5 - 测试 SVD 服务部署（需要实际模型文件，跳过）**
+**下一步：任务 3.9 - 编写 SVDService 集成测试（可选，跳过）**
+**下一步：任务 3.10 - 实现 TTS 服务（TTSService）**

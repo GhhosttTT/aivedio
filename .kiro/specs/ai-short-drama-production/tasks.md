@@ -196,7 +196,7 @@
     - 测试重试逻辑和错误处理
     - _需求：5.1, 5.2, 5.3, 5.4_
 
-  - [ ] 3.8 实现 SVD 服务（SVDService）
+  - [x] 3.8 实现 SVD 服务（SVDService）
     - 实现 SVDService 类初始化（加载 SVD 模型）
     - 实现 generate_video() 方法（图生视频）
     - 实现 check_gpu_memory() 方法（显存监控）
