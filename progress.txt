@@ -877,3 +877,36 @@
 **下一步：**
 - 检查其他服务是否也需要类似的修复
 - 运行全量测试确保所有测试通过
+
+
+### 修复 ProjectManager 属性测试
+
+**修复内容：**
+1. 修改 `create_test_db_and_manager()` 辅助函数
+   - 创建测试用户（User）
+   - 返回 session, manager, user 三元组
+
+2. 更新所有属性测试
+   - 在所有 `create_test_db_and_manager()` 调用中接收 test_user
+   - 在所有 `create_project()` 调用中传递 `user_id=test_user.id`
+
+3. 修复 `test_property_3_project_deletion_integrity`
+   - 移除对 `project.storage_path` 的引用
+   - 使用 `get_project_storage_path(project_id)` 函数
+   - 导入 `get_project_storage_path` 函数
+
+**测试结果：**
+- ✅ 所有 7 个属性测试通过
+- ✅ 属性 1：项目创建幂等性
+- ✅ 属性 2：项目更新保持一致性
+- ✅ 属性 3：项目删除完整性
+- ✅ 属性 4：项目列表排序正确性
+- ✅ 额外属性：项目 ID 唯一性
+- ✅ 额外属性：项目状态过滤正确性
+- ✅ 额外属性：项目分页正确性
+
+**文件变更：**
+- 修改：`tests/test_services/test_project_manager_properties.py`
+
+**总结：**
+成功修复了所有 ProjectManager 相关的测试（单元测试 + 属性测试），共 30 个测试全部通过！
