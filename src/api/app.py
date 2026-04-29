@@ -162,6 +162,13 @@ def register_routes(app: FastAPI):
     
     包括健康检查、项目管理、任务管理等路由
     """
+    # 导入路由
+    from src.api.routes import projects_router, tasks_router
+    
+    # 注册业务路由
+    app.include_router(projects_router)
+    app.include_router(tasks_router)
+    
     # 健康检查端点
     @app.get("/health", tags=["健康检查"])
     async def health_check():

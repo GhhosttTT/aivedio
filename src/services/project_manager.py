@@ -501,3 +501,38 @@ class ProjectManager:
         except Exception as e:
             logger.error(f"获取项目角色失败: project_id={project_id}, error={e}")
             raise
+
+
+# ==================== 单例模式 ====================
+
+_project_manager_instance: Optional[ProjectManager] = None
+
+
+def get_project_manager() -> ProjectManager:
+    """
+    获取 ProjectManager 单例实例
+    
+    Returns:
+        ProjectManager 实例
+    """
+    global _project_manager_instance
+    
+    if _project_manager_instance is None:
+        from src.database.session import get_db_session
+        db_session = next(get_db_session())
+        _project_manager_instance = ProjectManager(db_session)
+        logger.info("ProjectManager 实例已创建")
+    
+    return _project_manager_instance
+
+
+def cleanup_project_manager():
+    """
+    清理 ProjectManager 单例实例
+    """
+    global _project_manager_instance
+    
+    if _project_manager_instance is not None:
+        _project_manager_instance = None
+        logger.info("ProjectManager 实例已清理")
+

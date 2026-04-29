@@ -560,3 +560,30 @@ class ScriptGenerator:
         logger.debug(f"生成视觉提示词: {positive_prompt[:100]}...")
         
         return positive_prompt, negative_prompt
+
+
+
+# ==================== 单例模式 ====================
+
+_script_generator_instance: Optional['ScriptGenerator'] = None
+
+
+def get_script_generator() -> 'ScriptGenerator':
+    """获取 ScriptGenerator 单例实例"""
+    global _script_generator_instance
+    if _script_generator_instance is None:
+        from src.database.session import get_db_session
+        from src.services.llm_service import get_llm_service
+        db_session = next(get_db_session())
+        llm_service = get_llm_service()
+        _script_generator_instance = ScriptGenerator(db_session, llm_service)
+        logger.info("ScriptGenerator 实例已创建")
+    return _script_generator_instance
+
+
+def cleanup_script_generator():
+    """清理 ScriptGenerator 单例实例"""
+    global _script_generator_instance
+    if _script_generator_instance is not None:
+        _script_generator_instance = None
+        logger.info("ScriptGenerator 实例已清理")

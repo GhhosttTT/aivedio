@@ -462,18 +462,17 @@ class TaskOrchestrator:
 _task_orchestrator: Optional[TaskOrchestrator] = None
 
 
-def get_task_orchestrator(db_session: Session) -> TaskOrchestrator:
+def get_task_orchestrator() -> TaskOrchestrator:
     """
     获取任务编排服务实例（单例模式）
-    
-    Args:
-        db_session: 数据库会话
     
     Returns:
         TaskOrchestrator: 任务编排服务实例
     """
     global _task_orchestrator
     if _task_orchestrator is None:
+        from src.database.session import get_db_session
+        db_session = next(get_db_session())
         _task_orchestrator = TaskOrchestrator(db_session)
     return _task_orchestrator
 
