@@ -96,8 +96,21 @@ def configure_middlewares(app: FastAPI):
     """
     配置中间件
     
-    包括请求日志、性能监控等
+    包括请求日志、性能监控、速率限制等
     """
+    # 配置速率限制中间件
+    from src.api.rate_limiter import RateLimitMiddleware, get_redis_client
+    from src.config import settings
+    
+    redis_client = get_redis_client()
+    app.add_middleware(
+        RateLimitMiddleware,
+        default_rate=60,  # 默认 60 次/分钟
+        default_period=60,
+        redis_client=redis_client
+    )
+    logger.info("速率限制中间件配置完成")
+    
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
         """
