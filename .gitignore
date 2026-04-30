@@ -35,6 +35,11 @@ env/
 *~
 .DS_Store
 
+# Kiro AI 工具相关（开发工具，不需要提交）
+.kiro/
+.agents/
+.trae/
+
 # Environment Variables
 .env
 .env.local
@@ -54,6 +59,7 @@ storage/images/
 storage/videos/
 storage/audios/
 storage/subtitles/
+storage/temp/
 *.mp4
 *.mp3
 *.wav
@@ -105,3 +111,22 @@ Thumbs.db
 # ComfyUI
 comfyui/output/
 comfyui/temp/
+
+# 临时脚本和状态文件（不需要提交）
+*.bat
+*.sh
+*_COMPLETE.md
+*_STATUS*.md
+*_SUMMARY.md
+COMMIT_MESSAGE.txt
+progress.txt
+skills-lock.json
+PUSH_*.md
+如何推送到GitHub.md
+
+# Node modules (前端)
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.next/
+frontend/out/
