@@ -191,7 +191,7 @@ class TaskOrchestrator:
         # 1. 图像生成任务（并行）
         if generate_images:
             image_tasks = group([
-                generate_image_task.s(
+                generate_image_task.si(
                     scene.id,
                     scene.image_prompt or scene.visual_description,
                     project_id,
@@ -204,7 +204,7 @@ class TaskOrchestrator:
         # 2. 视频生成任务（并行，依赖图像）
         if generate_videos:
             video_tasks = group([
-                generate_video_task.s(
+                generate_video_task.si(
                     scene.id,
                     project_id,
                     task_id
@@ -216,7 +216,7 @@ class TaskOrchestrator:
         # 3. 音频生成任务（并行）
         if generate_audios:
             audio_tasks = group([
-                generate_audio_task.s(
+                generate_audio_task.si(
                     scene.id,
                     scene.dialogue or "",
                     scene.character_name or "default",
@@ -230,7 +230,7 @@ class TaskOrchestrator:
         # 4. 字幕生成任务（并行，依赖音频）
         if generate_subtitles:
             subtitle_tasks = group([
-                generate_subtitle_task.s(
+                generate_subtitle_task.si(
                     scene.id,
                     project_id,
                     task_id
@@ -240,7 +240,7 @@ class TaskOrchestrator:
             tasks.append(subtitle_tasks)
         
         # 5. 最终合成任务
-        compose_task = compose_final_video_task.s(
+        compose_task = compose_final_video_task.si(
             project_id,
             task_id,
             add_bgm=add_bgm,

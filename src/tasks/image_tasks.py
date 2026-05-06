@@ -95,7 +95,22 @@ def generate_image_task(
         
         # 构建增强提示词（翻译为英文 + 加入角色描述）
         enhanced_prompt = prompt
+        character_appearance = None
+        
         if scene.character_name:
+            # 查询角色外貌特征
+            from src.database.models import Character
+            character = db.query(Character).filter(
+                Character.project_id == project_id,
+                Character.name == scene.character_name
+            ).first()
+            
+            if character and character.appearance:
+                character_appearance = character.appearance
+                logger.info(f"角色 '{scene.character_name}' 外貌特征: {character_appearance}")
+            else:
+                logger.warning(f"角色 '{scene.character_name}' 没有设置外貌特征，可能导致角色外观不一致")
+            
             # 使用 Prompt Enhancer 将中文提示词翻译并增强为英文
             from src.services.prompt_enhancer import get_prompt_enhancer
             enhancer = get_prompt_enhancer()
@@ -104,12 +119,17 @@ def generate_image_task(
                 enhanced_prompt = enhancer.enhance_prompt(
                     visual_description=prompt,
                     character_name=scene.character_name,
+                    character_appearance=character_appearance,
                     scene_context=None
                 )
                 logger.info(f"提示词已增强并翻译: {enhanced_prompt[:80]}...")
             except Exception as e:
                 logger.warning(f"提示词增强失败，使用原始提示词: {e}")
-                enhanced_prompt = f"{scene.character_name}, {prompt}"
+                # 如果增强失败，至少要把角色外貌特征加入提示词
+                if character_appearance:
+                    enhanced_prompt = f"{scene.character_name} ({character_appearance}), {prompt}"
+                else:
+                    enhanced_prompt = f"{scene.character_name}, {prompt}"
         else:
             # 没有角色名，仍然需要翻译为英文
             from src.services.prompt_enhancer import get_prompt_enhancer
@@ -119,6 +139,7 @@ def generate_image_task(
                 enhanced_prompt = enhancer.enhance_prompt(
                     visual_description=prompt,
                     character_name=None,
+                    character_appearance=None,
                     scene_context=None
                 )
                 logger.info(f"提示词已增强并翻译: {enhanced_prompt[:80]}...")
@@ -134,14 +155,14 @@ def generate_image_task(
         # 调用 ComfyUI 服务生成图像
         self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "调用 ComfyUI"})
         
-        # 使用适合 SVD 的分辨率和高质量参数
+        # 使用优化参数 (真实感 + RTX 3060 友好)
         result_path = comfyui_service.generate_image(
             prompt=enhanced_prompt,  # 使用增强提示词
             output_path=image_path,
-            width=kwargs.get("width", 1024),  # SVD 推荐宽度
-            height=kwargs.get("height", 576),  # SVD 推荐高度 (16:9)
-            steps=kwargs.get("steps", 30),  # 增加步数提高质量
-            cfg_scale=kwargs.get("cfg_scale", 7.5),  # 稍微提高 CFG 增强提示词遵循
+            width=kwargs.get("width", 1024),  # RTX 3060 推荐宽度
+            height=kwargs.get("height", 576),  # RTX 3060 推荐高度 (16:9)
+            steps=kwargs.get("steps", 28),  # 优化步数 (平衡质量和速度)
+            cfg_scale=kwargs.get("cfg_scale", 6.0),  # 降低 CFG 增强真实感
             reference_image=reference_image,  # 传递参考图像
             use_ipadapter=True if reference_image else False  # 有参考图像时启用 IP-Adapter
         )

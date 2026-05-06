@@ -157,10 +157,16 @@ class ProjectListResponse(BaseModel):
 
 class GenerateScriptRequest(BaseModel):
     """
-    生成剧本请求模型
+    生成剧本请求模型（增强版，支持章节结构）
     """
     theme: Optional[str] = Field(None, max_length=200, description="剧本主题")
     outline: Optional[str] = Field(None, max_length=1000, description="剧本大纲")
+    num_scenes: int = Field(10, ge=5, le=50, description="分镜数量（默认 10）")
+    num_characters: int = Field(2, ge=1, le=10, description="角色数量（默认 2）")
+    style: str = Field("现代都市", max_length=50, description="风格偏好（默认'现代都市'）")
+    num_chapters: int = Field(3, ge=1, le=10, description="章节数量（默认 3，新增）")
+    temperature: float = Field(0.7, ge=0.0, le=2.0, description="LLM 温度参数（默认 0.7）")
+    max_tokens: int = Field(8192, ge=1024, le=16384, description="最大生成 token 数（默认 8192）")
     
     @field_validator("theme", "outline")
     @classmethod

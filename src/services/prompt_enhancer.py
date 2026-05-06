@@ -35,6 +35,7 @@ class PromptEnhancer:
         self,
         visual_description: str,
         character_name: str = None,
+        character_appearance: str = None,
         scene_context: str = None
     ) -> str:
         """
@@ -45,6 +46,7 @@ class PromptEnhancer:
         Args:
             visual_description: 原始视觉描述
             character_name: 角色名称（可选）
+            character_appearance: 角色外貌特征（可选，用于区分不同角色）
             scene_context: 场景上下文（可选）
         
         Returns:
@@ -59,36 +61,61 @@ class PromptEnhancer:
         
         try:
             # 构建增强提示词的 prompt
-            system_prompt = """你是一个专业的 Stable Diffusion 图像提示词工程师。你的任务是将简短的场景描述转换为详细、专业的图像生成提示词。
+            system_prompt = """你是一个专业的真实感图像提示词工程师。你的任务是生成接近真实照片的提示词,避免 AI 感。
 
-要求：
-1. 使用英文输出（Stable Diffusion 对英文理解更好）
-2. **必须包含以下要素**：
-   - **主体描述（人物必须明确出现在画面中）**：如果提到角色，必须用 "1girl/1boy/1man/1woman [角色名]" 开头
-   - 环境/背景描述
-   - 光线和氛围
-   - 艺术风格（写实、电影感）
-   - 构图和视角
-3. **强制规则**：
-   - 如果场景中有角色，必须在提示词开头明确标注人物存在（例如："1woman Su Wan, ..."）
-   - 添加质量保证词：(masterpiece, best quality, ultra-detailed)
-   - 确保人物不会被忽略：在描述中加入人物的具体动作、表情、位置
-4. 保持简洁但详细，50-100 个单词
-5. 负面提示词单独返回（不要包含在主提示词中）
-6. 使用逗号分隔不同的描述元素
+核心原则:
+1. **真实感优先** - 像真实照片,不是完美的 CG
+2. **自然光影** - 使用 natural lighting, ambient light, 不用 perfect lighting
+3. **适度瑕疵** - 添加 film grain, subtle noise, slight imperfections
+4. **纪实风格** - 使用 candid shot, documentary style, raw photo
+5. **避免过度修饰** - 不用 ultra-detailed, flawless, perfect 等词
+6. **角色特征明确** - 如果提供了角色外貌特征，必须详细描述以区分不同角色
 
-示例输入："白月光车祸现场"
-示例输出："cinematic shot of a car accident scene at night, broken glass scattered on wet asphalt road, emergency lights flashing red and blue, dramatic lighting with rain falling, smoke rising from damaged vehicle, realistic photography style, high detail, 8k, professional cinematography, moody atmosphere, shallow depth of field"
+必须包含的真实感元素:
+- raw photo / candid shot (纪实风格)
+- natural lighting / ambient light (自然光)
+- film grain / subtle noise (胶片颗粒)
+- realistic skin texture (真实皮肤)
+- slight imperfections (轻微瑕疵)
+- natural colors (自然色彩)
+- unposed / authentic (自然姿态)
+
+角色外貌描述规范（重要！用于区分不同角色）:
+- 必须包含：年龄段、发型、发色、脸型、身材特征
+- 服装风格：根据角色身份描述（如"商务西装"、"休闲装"、"传统服饰"）
+- 气质特征：如"温柔气质"、"霸道总裁气场"、"邻家女孩感"
+- 独特标识：如"戴眼镜"、"有胡须"、"长发披肩"等
+
+禁止使用的词汇:
+- ❌ (masterpiece:1.2), (best quality:1.2) - 太完美
+- ❌ ultra-detailed, hyper-realistic - 过度渲染
+- ❌ perfect, flawless - 不真实
+- ❌ professional photography - 太专业
+- ❌ 8k, high resolution - 过度强调质量
+- ❌ handsome, beautiful（太泛化，必须用具体特征替代）
+
+推荐使用的词汇:
+- ✅ raw photo, candid shot - 纪实感
+- ✅ natural lighting, soft light - 自然光
+- ✅ film grain, subtle noise - 胶片感
+- ✅ realistic, authentic - 真实感
+- ✅ documentary style - 纪录片风格
 
 示例输入："苏晚拿着匿名信站在花园里"
-示例输出："(masterpiece, best quality), 1woman Su Wan, standing in garden holding anonymous letter, calm expression, elegant dress, Lin Family estate background, soft natural lighting, cinematic composition, detailed facial features, realistic photography, 8k, ultra-detailed"
+角色外貌："25岁女性，长发披肩，温柔气质，穿着优雅连衣裙"
+示例输出："raw photo, candid shot, 1woman age 25 with long flowing hair, gentle temperament, elegant dress, standing in garden holding anonymous letter, natural expression with slight concern, realistic facial features, natural skin texture, Lin Family estate garden background with real flowers, natural daylight, soft ambient lighting, film grain, subtle color grading, documentary photography style, authentic moment, unposed, 35mm film aesthetic, natural colors, slight imperfections, real life scene"
 
-请严格按照上述要求生成提示词。**确保人物一定会出现在画面中**。"""
+示例输入："林家少爷在书房看文件"
+角色外貌："30岁男性，短发，戴金丝眼镜，商务西装，成熟稳重气质"
+示例输出："raw photo, candid shot, 1man age 30 with short hair, wearing gold-rimmed glasses, business suit, mature and composed demeanor, sitting in study room reviewing documents, natural expression, realistic facial features, natural skin texture, luxury study room background with bookshelves, natural window light, ambient shadows, film grain, documentary photography style, authentic moment, unposed, 35mm film aesthetic, natural colors, slight imperfections, real life scene"
+
+请严格遵循真实感原则和角色特征明确性,生成自然、真实且能区分不同角色的提示词。"""
 
             user_prompt = f"""请将以下场景描述转换为详细的 Stable Diffusion 图像提示词：
 
 场景描述：{visual_description}
 {f'主要角色：{character_name}' if character_name else ''}
+{f'角色外貌特征：{character_appearance}（必须在提示词中详细体现这些特征以区分角色）' if character_appearance else ''}
 {f'场景上下文：{scene_context}' if scene_context else ''}
 
 生成的提示词（英文）："""
@@ -128,6 +155,7 @@ class PromptEnhancer:
                 - scene_number: 分镜编号
                 - visual_description: 视觉描述
                 - character_name: 角色名称（可选）
+                - character_appearance: 角色外貌特征（可选）
         
         Returns:
             字典，key 为 scene_number，value 为增强后的提示词
@@ -140,6 +168,7 @@ class PromptEnhancer:
             enhanced_prompt = self.enhance_prompt(
                 visual_description=scene.get('visual_description', ''),
                 character_name=scene.get('character_name'),
+                character_appearance=scene.get('character_appearance'),
                 scene_context=scene.get('context')
             )
             

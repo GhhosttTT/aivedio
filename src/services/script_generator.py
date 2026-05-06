@@ -72,11 +72,12 @@ class ScriptGenerator:
         num_scenes: int = 10,
         num_characters: int = 2,
         style: str = "现代都市",
+        num_chapters: int = 3,
         temperature: float = 0.7,
-        max_tokens: int = 4096
+        max_tokens: int = 8192
     ) -> Dict:
         """
-        生成剧本
+        生成剧本（增强版，支持章节结构）
         
         Args:
             project_id: 项目ID
@@ -85,8 +86,9 @@ class ScriptGenerator:
             num_scenes: 分镜数量（默认 10）
             num_characters: 角色数量（默认 2）
             style: 风格偏好（默认"现代都市"）
+            num_chapters: 章节数量（默认 3，新增）
             temperature: LLM 温度参数（默认 0.7）
-            max_tokens: 最大生成 token 数（默认 4096）
+            max_tokens: 最大生成 token 数（默认 8192，增加以支持更详细的内容）
             
         Returns:
             包含剧本信息的字典
@@ -105,10 +107,11 @@ class ScriptGenerator:
         if not project:
             raise ValueError(f"项目不存在: {project_id}")
         
-        logger.info(f"开始为项目 {project_id} 生成剧本")
+        logger.info(f"开始为项目 {project_id} 生成剧本（增强版）")
         logger.info(
             f"参数: theme={theme}, outline={outline}, "
-            f"num_scenes={num_scenes}, num_characters={num_characters}, style={style}"
+            f"num_scenes={num_scenes}, num_characters={num_characters}, "
+            f"style={style}, num_chapters={num_chapters}"
         )
         
         # 通过 WebSocket 推送开始消息
@@ -119,13 +122,17 @@ class ScriptGenerator:
         })
         
         try:
-            # 构建 Prompt
-            prompt = self.llm_service.generate_script_prompt(
+            # 导入增强版 Prompt 生成函数
+            from src.services.enhanced_script_prompt import generate_enhanced_script_prompt
+            
+            # 构建增强版 Prompt
+            prompt = generate_enhanced_script_prompt(
                 theme=theme,
                 outline=outline,
                 num_scenes=num_scenes,
                 num_characters=num_characters,
-                style=style
+                style=style,
+                num_chapters=num_chapters
             )
             
             # 推送 Prompt 构建完成
@@ -589,15 +596,23 @@ English prompt (cinematic portrait):"""
             parsed_script: 解析后的剧本
         """
         try:
-            # 保存角色
+            # 保存角色并自动生成外貌特征
             characters_data = parsed_script.get("characters", [])
             for char_data in characters_data:
+                # 使用 LLM 为角色生成独特的外貌特征
+                appearance = self._generate_character_appearance(
+                    char_data.get("name"),
+                    char_data.get("description")
+                )
+                
                 character = Character(
                     project_id=project.id,
                     name=char_data.get("name"),
-                    description=char_data.get("description")
+                    description=char_data.get("description"),
+                    appearance=appearance  # 自动生成的外貌特征
                 )
                 self.db.add(character)
+                logger.info(f"角色 '{char_data.get('name')}' 外貌特征已生成: {appearance}")
             
             # 保存分镜
             scenes_data = parsed_script.get("scenes", [])
@@ -618,6 +633,62 @@ English prompt (cinematic portrait):"""
         except Exception as e:
             self.db.rollback()
             logger.error(f"保存剧本到数据库失败: {e}")
+            raise
+    
+    def _generate_character_appearance(self, character_name: str, character_description: str) -> str:
+        """
+        使用 LLM 为角色生成独特的外貌特征
+        
+        Args:
+            character_name: 角色名称
+            character_description: 角色描述
+            
+        Returns:
+            外貌特征描述
+        """
+        try:
+            prompt = f"""你是一个专业的角色设计师。请根据角色名称和描述，生成详细的外貌特征，用于图像生成时区分不同角色。
+
+角色名称：{character_name}
+角色描述：{character_description}
+
+请生成详细的外貌特征，必须包含：
+1. 年龄段（如"25岁"、"30岁"）
+2. 性别
+3. 发型和发色（如"短发"、"长发披肩"、"微卷黑发"）
+4. 脸型特征（如"瓜子脸"、"方脸"）
+5. 身材特征（如"身材苗条"、"身材挺拔"）
+6. 服装风格（如"商务西装"、"优雅连衣裙"、"休闲装"）
+7. 气质特征（如"温柔气质"、"霸道总裁气场"、"成熟稳重"）
+8. 独特标识（如"戴金丝眼镜"、"略带胡茬"、"精致妆容"）
+
+要求：
+- 外貌特征要具体、独特，能明显区分不同角色
+- 避免使用"帅气"、"美丽"等泛化词汇
+- 使用具体的视觉特征描述
+- 输出格式：一句话，用逗号分隔各个特征
+- 示例："30岁男性，短发，戴金丝眼镜，商务西装，成熟稳重气质，身材挺拔"
+
+外貌特征："""
+            
+            appearance = self.llm_service.generate(
+                prompt=prompt,
+                max_tokens=150,
+                temperature=0.7
+            )
+            
+            # 清理结果
+            appearance = appearance.strip()
+            if appearance.startswith('"') and appearance.endswith('"'):
+                appearance = appearance[1:-1]
+            
+            logger.info(f"角色 '{character_name}' 外貌特征生成成功: {appearance}")
+            return appearance
+            
+        except Exception as e:
+            logger.warning(f"角色外貌特征生成失败，使用默认描述: {e}")
+            # 降级：使用角色描述作为外貌特征
+            return character_description or f"{character_name}的外貌特征"
             raise
     
     def regenerate_scene(

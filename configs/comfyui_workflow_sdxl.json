@@ -114,64 +114,58 @@
     "default": {
       "width": 1024,
       "height": 576,
-      "steps": 8,
-      "cfg_scale": 2.0,
-      "sampler": "euler_ancestral",
-      "scheduler": "sgm_uniform",
+      "steps": 28,
+      "cfg_scale": 6.0,
+      "sampler": "dpmpp_2m_karras",
+      "scheduler": "karras",
       "seed": -1,
-      "ipadapter_weight": 0.85,
-      "ipadapter_lora_strength": 0.6
+      "ipadapter_weight": 0.8,
+      "ipadapter_lora_strength": 0.7
     },
     "presets": {
-      "ultra_fast": {
-        "steps": 4,
-        "cfg_scale": 1.5,
-        "ipadapter_weight": 0.75,
-        "description": "超快速（4步），LCM 极速模式"
+      "realistic": {
+        "steps": 28,
+        "cfg_scale": 6.0,
+        "ipadapter_weight": 0.8,
+        "description": "真实感模式（推荐）- 降低AI感"
       },
       "fast": {
-        "steps": 8,
-        "cfg_scale": 2.0,
-        "ipadapter_weight": 0.85,
-        "description": "快速（8步），推荐日常使用"
-      },
-      "balanced": {
-        "steps": 12,
-        "cfg_scale": 2.5,
-        "ipadapter_weight": 0.9,
-        "description": "平衡（12步），质量更好"
+        "steps": 20,
+        "cfg_scale": 6.0,
+        "ipadapter_weight": 0.75,
+        "description": "快速模式 - RTX 3060 友好"
       },
       "quality": {
-        "steps": 15,
-        "cfg_scale": 3.0,
-        "ipadapter_weight": 0.95,
-        "description": "高质量（15步），最终成品"
+        "steps": 35,
+        "cfg_scale": 6.5,
+        "ipadapter_weight": 0.85,
+        "description": "高质量模式 - 更多细节"
       }
     },
     "resolutions": {
       "landscape_16_9": {
         "width": 1024,
         "height": 576,
-        "description": "横屏 16:9（推荐）"
+        "description": "横屏 16:9（推荐 RTX 3060）"
+      },
+      "landscape_16_9_hd": {
+        "width": 1280,
+        "height": 720,
+        "description": "横屏 16:9 高清（需要更多显存）"
       },
       "portrait_9_16": {
         "width": 576,
         "height": 1024,
         "description": "竖屏 9:16"
-      },
-      "square": {
-        "width": 1024,
-        "height": 1024,
-        "description": "正方形 1:1"
       }
     }
   },
   "negative_prompt": {
-    "default": "(worst quality, low quality:1.5), (ugly:1.4), deformed, distorted, disfigured, bad anatomy, bad hands, missing limbs, extra limbs, fused fingers, too many fingers, long neck, mutation, mutated, blurry, jpeg artifacts, text, watermark, signature, cartoon, anime, 3d render, plastic skin, doll-like, nsfw, nude",
+    "default": "CGI, 3D render, cartoon, anime, illustration, painting, drawing, art, sketch, artificial, synthetic, fake, overly smooth skin, plastic skin, doll-like, too perfect, flawless, airbrushed, over-processed, over-saturated, unnatural colors, studio lighting, professional photography, posed, staged, (worst quality:1.2), (low quality:1.2), bad anatomy, bad hands, blurry, watermark, text, missing fingers, extra fingers, deformed, disfigured, ugly, gross proportions, malformed limbs",
     "additional": [
-      "gross proportions",
-      "malformed limbs",
-      "bad proportions"
+      "反AI感词汇: CGI, 3D render, plastic skin, too perfect, flawless, airbrushed",
+      "反过度处理: over-processed, over-saturated, studio lighting",
+      "反摆拍感: professional photography, posed, staged"
     ]
   },
   "ipadapter_config": {

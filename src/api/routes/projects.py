@@ -305,9 +305,19 @@ async def generate_script(project_id: int, request: GenerateScriptRequest):
         theme = request.theme if request.theme else db_project.theme
         outline = request.outline if request.outline else db_project.outline
         
-        # 生成剧本
+        # 生成剧本（使用增强版参数）
         logger.info(f"开始生成剧本: project_id={project_id}")
-        script_generator.generate_script(project_id, theme=theme, outline=outline)
+        script_generator.generate_script(
+            project_id=project_id,
+            theme=theme,
+            outline=outline,
+            num_scenes=request.num_scenes,
+            num_characters=request.num_characters,
+            style=request.style,
+            num_chapters=request.num_chapters,
+            temperature=request.temperature,
+            max_tokens=request.max_tokens
+        )
         
         # 更新项目状态
         project_manager.update_project(project_id, status="script_generated")
