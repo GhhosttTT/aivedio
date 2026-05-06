@@ -25,12 +25,12 @@ opencv-python==4.8.1.78
 ffmpeg-python==0.2.0
 
 # AI 模型
-torch==2.1.1
-torchvision==0.16.1
+torch>=2.2.0
+torchvision>=0.17.0
 diffusers==0.24.0
 transformers==4.35.2
 accelerate==0.25.0
-xformers==0.0.23
+xformers>=0.0.23
 
 # HTTP 客户端
 httpx==0.25.2

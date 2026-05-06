@@ -5,6 +5,7 @@ import { ArrowLeft, Play, RefreshCw, Download, Sparkles } from 'lucide-react';
 import { projectApi } from '../api/client';
 import { ScriptPreview } from '../components/ScriptPreview';
 import { ProductionProgress } from '../components/ProductionProgress';
+import { useWebSocket } from '../hooks/useWebSocket';
 import type { Project } from '../types';
 
 /**
@@ -25,16 +26,53 @@ export const ProjectDetail: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'script' | 'production'>('script');
     const [generating, setGenerating] = useState(false);
     const [starting, setStarting] = useState(false);
+    
+    // WebSocket 连接
+    const { messages } = useWebSocket(id || '');
 
     useEffect(() => {
         if (id) {
             loadProject(Number(id));
         }
     }, [id]);
+    
+    // 监听 WebSocket 消息
+    useEffect(() => {
+        if (!messages || messages.length === 0) return;
+        
+        const lastMessage = messages[messages.length - 1];
+        console.log('收到 WebSocket 消息:', lastMessage);
+        
+        // 处理剧本生成相关消息
+        if (lastMessage.type === 'script_generation_start') {
+            setGenerating(true);
+            console.log('开始生成剧本');
+        } else if (lastMessage.type === 'script_generation_complete') {
+            setGenerating(false);
+            console.log('剧本生成完成');
+            // 重新加载项目数据
+            if (id) {
+                loadProject(Number(id));
+            }
+            alert(`✅ ${lastMessage.message}`);
+        } else if (lastMessage.type === 'script_generation_error') {
+            setGenerating(false);
+            console.error('剧本生成失败:', lastMessage.error);
+            alert(`❌ 剧本生成失败: ${lastMessage.message}`);
+        } else if (lastMessage.type === 'progress') {
+            // 显示进度消息（可选）
+            console.log(`进度: ${lastMessage.current_step} - ${lastMessage.message}`);
+        }
+    }, [messages, id]);
 
     const loadProject = async (projectId: number) => {
         try {
             const data = await projectApi.getProject(projectId);
+            console.log('加载项目数据:', data);
+            console.log('分镜数量:', data.scenes?.length);
+            if (data.scenes && data.scenes.length > 0) {
+                console.log('第一个分镜:', data.scenes[0]);
+            }
             setProject(data);
             
             // 如果正在生产或已完成，切换到生产标签

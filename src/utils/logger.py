@@ -38,6 +38,7 @@ def setup_logger():
         colorize=True,
         backtrace=True,
         diagnose=True,
+        encoding="utf-8",  # Windows 下强制使用 UTF-8
     )
     
     # 创建日志目录
@@ -55,6 +56,7 @@ def setup_logger():
         backtrace=True,
         diagnose=True,
         enqueue=True,  # 异步写入
+        encoding="utf-8",
     )
     
     # 添加错误日志文件
@@ -69,6 +71,7 @@ def setup_logger():
         backtrace=True,
         diagnose=True,
         enqueue=True,
+        encoding="utf-8",
     )
     
     logger.info("日志系统初始化完成")

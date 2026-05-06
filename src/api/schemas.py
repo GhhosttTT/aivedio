@@ -80,6 +80,28 @@ class CharacterResponse(BaseModel):
     id: int
     name: str
     description: Optional[str] = None
+    personality: Optional[str] = None
+    appearance: Optional[str] = None
+
+
+class CharacterCreate(BaseModel):
+    """
+    创建角色请求模型
+    """
+    name: str = Field(..., min_length=1, max_length=100, description="角色名称")
+    description: Optional[str] = Field(None, max_length=500, description="角色描述")
+    personality: Optional[str] = Field(None, max_length=200, description="角色性格")
+    appearance: Optional[str] = Field(None, max_length=500, description="角色外貌")
+
+
+class CharacterReferenceResponse(BaseModel):
+    """
+    角色参考图像响应模型
+    """
+    id: int
+    character_id: int
+    image_path: str
+    description: Optional[str] = None
 
 
 class SceneResponse(BaseModel):
@@ -90,11 +112,13 @@ class SceneResponse(BaseModel):
     
     id: int
     scene_number: int
-    location: str
-    time_period: str
-    characters: str
-    dialogue: str
+    location: Optional[str] = None
+    time_period: Optional[str] = None
+    characters: Optional[str] = None
+    character_name: Optional[str] = None  # 允许为空，某些分镜可能没有角色
+    dialogue: Optional[str] = None  # 允许为空，某些分镜可能没有对话
     visual_description: str
+    image_prompt: Optional[str] = None
     duration: Optional[float] = None
     image_path: Optional[str] = None
     video_path: Optional[str] = None

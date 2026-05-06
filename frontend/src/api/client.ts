@@ -5,7 +5,7 @@ import type { Project } from '../types';
  * API 客户端配置
  */
 const apiClient = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api',
+    baseURL: (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api',
     timeout: 30000,
     headers: {
         'Content-Type': 'application/json'
@@ -21,10 +21,19 @@ apiClient.interceptors.request.use((config) => {
     return config;
 });
 
-// 响应拦截器 - 处理错误
+// 响应拦截器 - 处理错误和 401/403
 apiClient.interceptors.response.use(
     (response) => response.data,
     (error) => {
+        // 处理 401 未授权或 403 禁止访问错误
+        if (error.response?.status === 401 || error.response?.status === 403) {
+            console.warn('Token 失效或权限不足，清除认证状态');
+            localStorage.removeItem('auth_token');
+            // 如果不在登录页，跳转到登录页
+            if (!window.location.pathname.includes('/login')) {
+                window.location.href = '/login';
+            }
+        }
         console.error('API 请求失败:', error);
         return Promise.reject(error);
     }
@@ -37,8 +46,14 @@ export const authApi = {
     /**
      * 用户登录
      */
-    login: async (username: string, password: string): Promise<{ token: string; user: any }> => {
-        return apiClient.post('/auth/login', { username, password });
+    login: async (username: string, password: string): Promise<{ access_token: string; refresh_token: string; user: any }> => {
+        const response = await apiClient.post('/auth/login', { username, password });
+        // 响应拦截器已经返回了 response.data，所以 response 就是数据本身
+        return {
+            access_token: (response as any).access_token,
+            refresh_token: '',
+            user: { id: 1, username: username }
+        };
     },
 
     /**
@@ -104,13 +119,15 @@ export const projectApi = {
     },
 
     /**
-     * 生成剧本
+     * 生成剧本（设置10分钟超时，等待LLM完成）
      */
     generateScript: async (id: number, data?: {
         theme?: string;
         outline?: string;
     }): Promise<Project> => {
-        return apiClient.post(`/projects/${id}/generate-script`, data || {});
+        return apiClient.post(`/projects/${id}/generate-script`, data || {}, {
+            timeout: 900000  // 15分钟超时，等待LLM生成完成
+        });
     },
 
     /**
@@ -140,6 +157,23 @@ export const projectApi = {
         error_message?: string;
     }> => {
         return apiClient.post(`/projects/${id}/produce`);
+    },
+
+    /**
+     * 重新生成图像（不重新生成剧本）
+     */
+    regenerateImages: async (id: number): Promise<{
+        task_id: string;
+        project_id: number;
+        status: string;
+        progress: number;
+        current_step: string;
+        total_steps: number;
+        created_at: string;
+        updated_at: string;
+        error_message?: string;
+    }> => {
+        return apiClient.post(`/projects/${id}/regenerate-images`);
     },
 };
 

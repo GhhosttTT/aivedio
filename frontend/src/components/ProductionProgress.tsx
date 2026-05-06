@@ -3,11 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
     Image, Video, Mic, FileText, Film, 
     CheckCircle, XCircle, Loader, Clock,
-    AlertCircle, Play, X
+    AlertCircle, Play, X, RefreshCw
 } from 'lucide-react';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { taskApi } from '../api/client';
-import type { Project, Scene } from '../types';
+import { taskApi, projectApi } from '../api/client';
+import type { Project } from '../types';
 
 interface ProductionProgressProps {
     project: Project;
@@ -15,7 +15,6 @@ interface ProductionProgressProps {
 }
 
 interface TaskProgress {
-    scene_id: number;
     image: 'pending' | 'processing' | 'completed' | 'failed';
     video: 'pending' | 'processing' | 'completed' | 'failed';
     audio: 'pending' | 'processing' | 'completed' | 'failed';
@@ -37,9 +36,35 @@ export const ProductionProgress: React.FC<ProductionProgressProps> = ({ project,
     const [currentPhase, setCurrentPhase] = useState('准备中');
     const [cancelling, setCancelling] = useState(false);
     const [taskId, setTaskId] = useState<string | null>(null);
+    const [selectedImage, setSelectedImage] = useState<{url: string, sceneNumber: number} | null>(null);
+    const [regenerating, setRegenerating] = useState(false);
 
     // WebSocket 连接
     const { messages, isConnected } = useWebSocket(String(project.id));
+
+    // 根据项目状态初始化进度
+    useEffect(() => {
+        if (project.status === 'completed') {
+            setOverallProgress(100);
+            setCurrentPhase('已完成');
+        } else if (project.status === 'failed') {
+            setCurrentPhase('失败');
+        } else if (project.status === 'in_production') {
+            setCurrentPhase('制作中');
+        }
+        
+        // 初始化每个分镜的任务状态（无论项目状态如何）
+        const initialProgress: Record<number, TaskProgress> = {};
+        project.scenes?.forEach(scene => {
+            initialProgress[scene.scene_number] = {
+                image: scene.image_path ? 'completed' : 'pending',
+                video: scene.video_path ? 'completed' : 'pending',
+                audio: scene.audio_path ? 'completed' : 'pending',
+                subtitle: (scene as any).subtitle_path ? 'completed' : 'pending'
+            } as TaskProgress;
+        });
+        setTaskProgress(initialProgress);
+    }, [project.status, project.scenes]);
 
     // 处理 WebSocket 消息
     useEffect(() => {
@@ -47,15 +72,19 @@ export const ProductionProgress: React.FC<ProductionProgressProps> = ({ project,
             const latestMessage = messages[messages.length - 1];
             
             if (latestMessage.type === 'progress') {
-                setOverallProgress(latestMessage.progress * 100);
+                setOverallProgress((latestMessage.progress ?? 0) * 100);
                 setCurrentPhase(latestMessage.current_step || '处理中');
                 
                 if (latestMessage.scene_id && latestMessage.task_type) {
+                    const sceneId = latestMessage.scene_id;
+                    const taskType = latestMessage.task_type as keyof TaskProgress;
+                    const status = latestMessage.status as TaskProgress[keyof TaskProgress];
+                    
                     setTaskProgress(prev => ({
                         ...prev,
-                        [latestMessage.scene_id]: {
-                            ...prev[latestMessage.scene_id],
-                            [latestMessage.task_type]: latestMessage.status
+                        [sceneId]: {
+                            ...prev[sceneId],
+                            [taskType]: status
                         }
                     }));
                 }
@@ -99,6 +128,24 @@ export const ProductionProgress: React.FC<ProductionProgressProps> = ({ project,
         } catch (error) {
             console.error('重试任务失败:', error);
             alert('重试任务失败，请重试');
+        }
+    };
+
+    const handleRegenerateImages = async () => {
+        if (!confirm('确定要重新生成图像吗？这将清除所有已生成的图像并重新开始。')) {
+            return;
+        }
+        
+        setRegenerating(true);
+        try {
+            await projectApi.regenerateImages(project.id);
+            onReload();
+            alert('✅ 重新生成任务已启动');
+        } catch (error) {
+            console.error('重新生成图像失败:', error);
+            alert('❌ 重新生成图像失败，请重试');
+        } finally {
+            setRegenerating(false);
         }
     };
 
@@ -164,12 +211,35 @@ export const ProductionProgress: React.FC<ProductionProgressProps> = ({ project,
                         </p>
                     </div>
 
-                    {/* WebSocket 连接状态 */}
-                    <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-red-400'} animate-pulse`} />
-                        <span className="text-sm text-slate-400">
-                            {isConnected ? '实时连接' : '连接断开'}
-                        </span>
+                    <div className="flex items-center gap-4">
+                        {/* 重新制作按钮 */}
+                        {(project.status === 'in_production' || project.status === 'failed' || project.status === 'completed') && (
+                            <button
+                                onClick={handleRegenerateImages}
+                                disabled={regenerating}
+                                className="px-4 py-2 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <RefreshCw size={16} className={regenerating ? 'animate-spin' : ''} />
+                                <span>{regenerating ? '重新生成中...' : '重新制作'}</span>
+                            </button>
+                        )}
+
+                        {/* 刷新按钮 */}
+                        <button
+                            onClick={onReload}
+                            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-white flex items-center gap-2 transition-colors"
+                        >
+                            <RefreshCw size={16} />
+                            <span>刷新</span>
+                        </button>
+
+                        {/* WebSocket 连接状态 */}
+                        <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-red-400'} animate-pulse`} />
+                            <span className="text-sm text-slate-400">
+                                {isConnected ? '实时连接' : '连接断开'}
+                            </span>
+                        </div>
                     </div>
                 </div>
 
@@ -247,8 +317,8 @@ export const ProductionProgress: React.FC<ProductionProgressProps> = ({ project,
                                                 <h4 className="text-lg font-semibold text-white mb-1">
                                                     分镜 {scene.scene_number}
                                                 </h4>
-                                                <p className="text-sm text-slate-400 line-clamp-1">
-                                                    {scene.description}
+                                                <p className="text-sm text-slate-400 line-clamp-2">
+                                                    {scene.visual_description}
                                                 </p>
                                             </div>
                                         </div>
@@ -258,9 +328,15 @@ export const ProductionProgress: React.FC<ProductionProgressProps> = ({ project,
                                             {tasks.map((task) => (
                                                 <div
                                                     key={task.type}
-                                                    className={`p-4 rounded-lg border transition-all ${
+                                                    onClick={() => {
+                                                        if (task.type === 'image' && scene.image_path && task.status === 'completed') {
+                                                            const imageUrl = `http://localhost:8000/${scene.image_path.replace(/\\/g, '/')}`;
+                                                            setSelectedImage({ url: imageUrl, sceneNumber: scene.scene_number });
+                                                        }
+                                                    }}
+                                                    className={`p-4 rounded-lg border transition-all cursor-pointer ${
                                                         task.status === 'completed'
-                                                            ? 'bg-emerald-500/10 border-emerald-500/30'
+                                                            ? 'bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20'
                                                             : task.status === 'failed'
                                                             ? 'bg-red-500/10 border-red-500/30'
                                                             : task.status === 'processing'
@@ -295,7 +371,7 @@ export const ProductionProgress: React.FC<ProductionProgressProps> = ({ project,
             )}
 
             {/* 错误信息 */}
-            {project.status === 'failed' && project.error_message && (
+            {project.status === 'failed' && (project as any).error_message && (
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -308,11 +384,41 @@ export const ProductionProgress: React.FC<ProductionProgressProps> = ({ project,
                                 制作失败
                             </h4>
                             <p className="text-red-300/80">
-                                {project.error_message}
+                                {(project as any).error_message}
                             </p>
                         </div>
                     </div>
                 </motion.div>
+            )}
+
+            {/* 图片查看弹窗 */}
+            {selectedImage && (
+                <div 
+                    className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-8"
+                    onClick={() => setSelectedImage(null)}
+                >
+                    <div className="relative max-w-6xl max-h-full">
+                        <button
+                            onClick={() => setSelectedImage(null)}
+                            className="absolute -top-12 right-0 text-white hover:text-slate-300 transition-colors"
+                        >
+                            <X size={32} />
+                        </button>
+                        <div className="bg-slate-900 rounded-lg overflow-hidden border border-slate-700">
+                            <div className="p-4 border-b border-slate-700">
+                                <h3 className="text-white font-semibold">
+                                    分镜 {selectedImage.sceneNumber} - 生成图像
+                                </h3>
+                            </div>
+                            <img
+                                src={selectedImage.url}
+                                alt={`分镜 ${selectedImage.sceneNumber}`}
+                                className="max-w-full max-h-[80vh] object-contain"
+                                onClick={(e) => e.stopPropagation()}
+                            />
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

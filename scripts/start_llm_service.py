@@ -334,7 +334,7 @@ def main():
     args = parse_args()
     
     # 设置日志
-    setup_logger(level="DEBUG" if args.verbose else "INFO")
+    setup_logger()
     
     logger.info("LLM 服务启动脚本")
     logger.info("=" * 60)

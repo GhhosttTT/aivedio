@@ -6,6 +6,7 @@
 """
 
 import re
+import time
 from typing import Optional, Dict, List, Tuple
 from sqlalchemy.orm import Session
 
@@ -13,6 +14,30 @@ from src.services.llm_service import LLMService, get_llm_service
 from src.database.models import Project, Character, Scene, ProjectStatus
 from src.services.project_manager import ProjectManager
 from src.utils.logger import logger
+import asyncio
+
+
+def _send_websocket_message(project_id: int, message: dict):
+    """
+    发送 WebSocket 消息（兼容同步和异步环境）
+    
+    Args:
+        project_id: 项目 ID
+        message: 消息内容
+    """
+    try:
+        from src.api.websocket import manager
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # 如果事件循环正在运行，创建任务
+            asyncio.create_task(manager.broadcast(project_id, message))
+            logger.debug(f"WebSocket 消息已调度: {message.get('type')}")
+        else:
+            # 否则直接运行
+            loop.run_until_complete(manager.broadcast(project_id, message))
+            logger.debug(f"WebSocket 消息已发送: {message.get('type')}")
+    except Exception as e:
+        logger.warning(f"WebSocket 推送失败: {e}, 消息类型: {message.get('type')}")
 
 
 class ScriptParseError(Exception):
@@ -86,6 +111,13 @@ class ScriptGenerator:
             f"num_scenes={num_scenes}, num_characters={num_characters}, style={style}"
         )
         
+        # 通过 WebSocket 推送开始消息
+        _send_websocket_message(project_id, {
+            "type": "script_generation_start",
+            "project_id": project_id,
+            "message": "开始生成剧本..."
+        })
+        
         try:
             # 构建 Prompt
             prompt = self.llm_service.generate_script_prompt(
@@ -96,20 +128,74 @@ class ScriptGenerator:
                 style=style
             )
             
-            # 调用 LLM 生成剧本
+            # 推送 Prompt 构建完成
+            _send_websocket_message(project_id, {
+                "type": "progress",
+                "project_id": project_id,
+                "current_step": "构建提示词",
+                "progress": 0.1,
+                "message": "正在构建提示词..."
+            })
+            
+            # 调用 LLM 生成剧本（使用流式输出）
             logger.info("调用 LLM 生成剧本...")
+            
+            # 用于累积生成的文本
+            generated_chunks = []
+            last_update_time = time.time()
+            update_interval = 2.0  # 每2秒更新一次进度
+            
+            def stream_callback(chunk: str):
+                """流式输出回调函数"""
+                nonlocal last_update_time
+                generated_chunks.append(chunk)
+                
+                current_time = time.time()
+                # 每隔一定时间推送进度
+                if current_time - last_update_time >= update_interval:
+                    total_length = len(''.join(generated_chunks))
+                    logger.info(f"LLM 生成进度: {total_length} 字符")
+                    _send_websocket_message(project_id, {
+                        "type": "progress",
+                        "project_id": project_id,
+                        "current_step": "LLM 生成中",
+                        "progress": 0.2 + (min(total_length / max_tokens, 0.4)),  # 从 0.2 到 0.6
+                        "message": f"AI 正在创作剧本...已生成 {total_length} 字符"
+                    })
+                    last_update_time = current_time
+            
             script_text = self.llm_service.generate(
                 prompt=prompt,
                 max_tokens=max_tokens,
-                temperature=temperature
+                temperature=temperature,
+                stream=True,
+                callback=stream_callback
             )
             
             logger.info(f"LLM 生成完成，输出长度: {len(script_text)} 字符")
             logger.debug(f"生成的剧本: {script_text[:200]}...")
             
+            # 推送 LLM 生成完成
+            _send_websocket_message(project_id, {
+                "type": "progress",
+                "project_id": project_id,
+                "current_step": "解析剧本",
+                "progress": 0.6,
+                "message": f"AI 创作完成（{len(script_text)} 字符），正在解析..."
+            })
+            
             # 解析剧本
             logger.info("开始解析剧本...")
             parsed_script = self.parse_script(script_text)
+            
+            # 推送解析完成
+            _send_websocket_message(project_id, {
+                "type": "progress",
+                "project_id": project_id,
+                "current_step": "保存数据",
+                "progress": 0.8,
+                "message": f"解析成功：{len(parsed_script.get('characters', []))} 个角色，{len(parsed_script.get('scenes', []))} 个分镜"
+            })
             
             # 保存到数据库
             logger.info("保存剧本到数据库...")
@@ -123,15 +209,40 @@ class ScriptGenerator:
                 total_scenes=len(parsed_script.get("scenes", []))
             )
             
+            # 推送完成消息
+            _send_websocket_message(project_id, {
+                "type": "script_generation_complete",
+                "project_id": project_id,
+                "progress": 1.0,
+                "current_step": "完成",
+                "message": f"剧本生成成功！共 {len(parsed_script.get('scenes', []))} 个分镜",
+                "characters_count": len(parsed_script.get('characters', [])),
+                "scenes_count": len(parsed_script.get('scenes', []))
+            })
+            
             logger.info(f"剧本生成完成，共 {len(parsed_script.get('scenes', []))} 个分镜")
             
             return parsed_script
             
         except ScriptParseError as e:
             logger.error(f"剧本解析失败: {e}")
+            # 推送错误消息
+            _send_websocket_message(project_id, {
+                "type": "script_generation_error",
+                "project_id": project_id,
+                "error": str(e),
+                "message": f"剧本解析失败: {e}"
+            })
             raise
         except Exception as e:
             logger.error(f"剧本生成失败: {e}")
+            # 推送错误消息
+            _send_websocket_message(project_id, {
+                "type": "script_generation_error",
+                "project_id": project_id,
+                "error": str(e),
+                "message": f"剧本生成失败: {e}"
+            })
             raise RuntimeError(f"剧本生成失败: {e}") from e
     
     def parse_script(self, script_text: str) -> Dict:
@@ -303,13 +414,45 @@ class ScriptGenerator:
         """
         scene_data = {}
         
-        # 解析场景描述
-        description_match = re.search(
-            r'-\s*场景描述[：:]\s*(.+)',
+        # 解析环境描述
+        environment_match = re.search(
+            r'-\s*环境描述[：:]\s*(.+)',
             scene_content
         )
-        if description_match:
-            scene_data["description"] = description_match.group(1).strip()
+        if environment_match:
+            scene_data["environment"] = environment_match.group(1).strip()
+        
+        # 解析人物描述
+        character_desc_match = re.search(
+            r'-\s*人物描述[：:]\s*(.+)',
+            scene_content
+        )
+        if character_desc_match:
+            scene_data["character_description"] = character_desc_match.group(1).strip()
+        
+        # 解析镜头描述
+        camera_match = re.search(
+            r'-\s*镜头描述[：:]\s*(.+)',
+            scene_content
+        )
+        if camera_match:
+            scene_data["camera"] = camera_match.group(1).strip()
+        
+        # 解析光线描述
+        lighting_match = re.search(
+            r'-\s*光线描述[：:]\s*(.+)',
+            scene_content
+        )
+        if lighting_match:
+            scene_data["lighting"] = lighting_match.group(1).strip()
+        
+        # 解析氛围描述
+        atmosphere_match = re.search(
+            r'-\s*氛围描述[：:]\s*(.+)',
+            scene_content
+        )
+        if atmosphere_match:
+            scene_data["atmosphere"] = atmosphere_match.group(1).strip()
         
         # 解析出现角色
         characters_match = re.search(
@@ -346,6 +489,95 @@ class ScriptGenerator:
         if emotion_match:
             scene_data["emotion"] = emotion_match.group(1).strip()
         
+        # 生成图像提示词（基于所有详细描述）
+        # 首先收集所有中文描述
+        chinese_parts = []
+        
+        if scene_data.get("environment"):
+            chinese_parts.append(scene_data["environment"])
+        
+        if scene_data.get("character_description"):
+            chinese_parts.append(scene_data["character_description"])
+        
+        if scene_data.get("camera"):
+            chinese_parts.append(scene_data["camera"])
+        
+        if scene_data.get("lighting"):
+            chinese_parts.append(scene_data["lighting"])
+        
+        if scene_data.get("atmosphere"):
+            chinese_parts.append(scene_data["atmosphere"])
+        
+        # 使用 LLM 将中文描述翻译为专业的英文摄影提示词
+        if chinese_parts and self.llm_service:
+            try:
+                chinese_text = ", ".join(chinese_parts)
+                
+                translation_prompt = f"""You are a professional photography and digital art prompt engineer. Translate the following Chinese scene description into a detailed English Stable Diffusion image prompt for HIGH-QUALITY CINEMATIC PORTRAIT.
+
+CRITICAL STYLE REQUIREMENTS:
+1. Style: cinematic portrait photography, similar to high-end fashion photos or movie stills
+2. Face: beautiful detailed face, delicate facial features, flawless skin, soft natural makeup, expressive eyes with catchlights, perfect symmetry
+3. Hair: detailed hair strands, realistic hair texture, natural flow
+4. Clothing: highly detailed clothing, intricate patterns, rich textures, elegant draping
+5. Lighting: cinematic lighting, soft diffused light, warm golden tones, volumetric lighting, bokeh background, lens flare, rim light
+6. Atmosphere: dreamy, ethereal, elegant, graceful, sophisticated, cinematic mood
+7. Quality: ultra-detailed, 8k uhd, RAW photo, masterpiece, best quality, professional photography
+8. Camera: shot on professional DSLR, 85mm f/1.4 lens, shallow depth of field, sharp focus on face
+9. Color: rich colors, professional color grading, warm tones, cinematic color palette
+
+MANDATORY QUALITY TAGS (must include at the beginning):
+"masterpiece, best quality, ultra-detailed, 8k uhd, RAW photo, photorealistic, realistic, cinematic"
+
+MANDATORY STYLE TAGS (must include):
+"beautiful detailed face, delicate features, soft lighting, bokeh, professional photography, shot on 85mm f/1.4 lens, sharp focus, natural skin texture"
+
+MANDATORY ENDING TAGS (must include at the end):
+"highly detailed, professional color grading, cinematic lighting, elegant, graceful"
+
+Output ONLY the prompt, no explanations.
+AVOID: cartoon, anime, illustration, painting, drawing, sketch, flat colors, simple shading, low quality
+
+Chinese description:
+{chinese_text}
+
+English prompt (cinematic portrait):"""
+                
+                english_prompt = self.llm_service.generate(
+                    prompt=translation_prompt,
+                    max_tokens=300,
+                    temperature=0.3  # 低温度确保翻译准确
+                )
+                
+                # 清理结果
+                english_prompt = english_prompt.strip()
+                if english_prompt.startswith('"') and english_prompt.endswith('"'):
+                    english_prompt = english_prompt[1:-1]
+                
+                logger.info(f"提示词翻译成功: {chinese_text[:50]}... -> {english_prompt[:80]}...")
+                scene_data["image_prompt"] = english_prompt
+                
+            except Exception as e:
+                logger.warning(f"提示词翻译失败，使用中文: {e}")
+                # 降级：直接使用中文 + 质量标签
+                visual_parts = chinese_parts + [
+                    "masterpiece, best quality, ultra-detailed",
+                    "photorealistic, realistic",
+                    "professional photography, cinematic lighting, 8k uhd"
+                ]
+                scene_data["image_prompt"] = ", ".join(visual_parts)
+        else:
+            # 如果没有 LLM，直接使用中文 + 质量标签
+            visual_parts = chinese_parts + [
+                "masterpiece, best quality, ultra-detailed",
+                "photorealistic, realistic",
+                "professional photography, cinematic lighting, 8k uhd"
+            ]
+            scene_data["image_prompt"] = ", ".join(visual_parts)
+        
+        # 保存完整的视觉描述（用于数据库）
+        scene_data["description"] = scene_data.get("image_prompt", "")
+        
         return scene_data
     
     def _save_script_to_db(self, project: Project, parsed_script: Dict):
@@ -375,7 +607,8 @@ class ScriptGenerator:
                     scene_number=scene_data.get("scene_number"),
                     visual_description=scene_data.get("description", ""),
                     dialogue=scene_data.get("dialogue"),
-                    character_name=scene_data.get("speaker")
+                    character_name=scene_data.get("speaker"),
+                    image_prompt=scene_data.get("image_prompt")
                 )
                 self.db.add(scene)
             

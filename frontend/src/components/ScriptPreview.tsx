@@ -42,7 +42,8 @@ export const ScriptPreview: React.FC<ScriptPreviewProps> = ({ project, onReload 
         setEditDescription(scene.description);
     };
 
-    if (!project.script || !project.scenes || project.scenes.length === 0) {
+    // 只要有分镜就显示，不强制要求 script 字段
+    if (!project.scenes || project.scenes.length === 0) {
         return (
             <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-sm rounded-2xl p-12 text-center border border-slate-700/50">
                 <div className="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mx-auto mb-6">

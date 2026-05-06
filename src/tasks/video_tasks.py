@@ -16,6 +16,7 @@ logger = get_logger(__name__)
 @celery_app.task(bind=True, name="generate_video")
 def generate_video_task(
     self,
+    previous_result,
     scene_id: int,
     project_id: int,
     task_id: int,
@@ -26,6 +27,7 @@ def generate_video_task(
     
     Args:
         self: 任务实例
+        previous_result: 前一个任务的返回值（在任务链中自动传递，可忽略）
         scene_id: 分镜ID
         project_id: 项目ID
         task_id: 任务ID

@@ -1,0 +1,66 @@
+{
+  "workflow": {
+    "name": "Juggernaut XL v9 - Photorealistic Portrait",
+    "description": "使用 Juggernaut XL v9 模型生成照片级真实感人像",
+    "version": "1.0.0"
+  },
+  "nodes": {
+    "checkpoint_loader": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors"
+      }
+    },
+    "clip_text_encode_positive": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "",
+        "clip": ["checkpoint_loader", 1]
+      }
+    },
+    "clip_text_encode_negative": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "(worst quality, low quality:1.8), (ugly, deformed, distorted:1.6), disfigured, bad anatomy, bad hands, missing limbs, extra limbs, fused fingers, too many fingers, long neck, mutation, mutated, blurry, out of focus, jpeg artifacts, text, watermark, signature, logo, (cartoon:1.8), (anime:1.8), (illustration:1.8), (painting:1.8), (drawing:1.8), (sketch:1.8), (artwork:1.8), (digital art:1.8), (3d render:1.6), (cgi:1.6), plastic skin, doll-like, nsfw, nude, gross proportions, malformed limbs, bad proportions, extra arms, extra legs, poorly drawn face, flat color, vector art, comic book, manga, chibi",
+        "clip": ["checkpoint_loader", 1]
+      }
+    },
+    "empty_latent_image": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {
+        "width": 1024,
+        "height": 1024,
+        "batch_size": 1
+      }
+    },
+    "ksampler": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": 0,
+        "steps": 25,
+        "cfg": 7.0,
+        "sampler_name": "dpmpp_2m_sde",
+        "scheduler": "karras",
+        "denoise": 1.0,
+        "model": ["checkpoint_loader", 0],
+        "positive": ["clip_text_encode_positive", 0],
+        "negative": ["clip_text_encode_negative", 0],
+        "latent_image": ["empty_latent_image", 0]
+      }
+    },
+    "vae_decode": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": ["ksampler", 0],
+        "vae": ["checkpoint_loader", 2]
+      }
+    },
+    "save_image": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "filename_prefix": "juggernaut_test",
+        "images": ["vae_decode", 0]
+      }
+    }
+  }
+}

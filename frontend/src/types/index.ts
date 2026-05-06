@@ -25,9 +25,10 @@ export interface Scene {
     id: number;
     project_id: number;
     scene_number: number;
-    character_name: string;
-    dialogue: string;
+    character_name?: string;  // 允许为空，某些分镜可能没有角色
+    dialogue?: string;  // 允许为空，某些分镜可能没有对话
     visual_description: string;
+    description?: string;  // 别名，与 visual_description 相同
     image_prompt?: string;
     image_path?: string;
     video_path?: string;
@@ -46,6 +47,7 @@ export interface Project {
     user_id: number;
     created_at: string;
     updated_at: string;
+    error_message?: string;
     
     // 关联数据
     characters?: Character[];

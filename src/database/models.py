@@ -85,6 +85,8 @@ class Character(Base):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
+    personality = Column(String(200), nullable=True)  # 角色性格
+    appearance = Column(String(500), nullable=True)   # 角色外貌
     visual_description = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -99,8 +101,8 @@ class Scene(Base):
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     scene_number = Column(Integer, nullable=False)
-    character_name = Column(String(100), nullable=False)
-    dialogue = Column(Text, nullable=False)
+    character_name = Column(String(100), nullable=True)  # 允许为空，某些分镜可能没有角色
+    dialogue = Column(Text, nullable=True)  # 允许为空，某些分镜可能没有对话
     visual_description = Column(Text, nullable=False)
     image_prompt = Column(Text, nullable=True)
     image_path = Column(String(500), nullable=True)

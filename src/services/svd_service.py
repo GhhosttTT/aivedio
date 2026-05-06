@@ -103,24 +103,24 @@ class SVDService:
             if self.device == "cuda":
                 memory_info = get_gpu_memory_info()
                 logger.info(
-                    f"GPU 显存: {memory_info['used_gb']:.2f}GB / "
-                    f"{memory_info['total_gb']:.2f}GB"
+                    f"GPU 显存: {memory_info['used']:.2f}MB / "
+                    f"{memory_info['total']:.2f}MB"
                 )
                 
-                # 检查显存是否足够（SVD 需要约 8-10GB）
-                if memory_info['free_gb'] < 8.0:
+                # 检查显存是否足够（SVD 需要约 8-10GB = 8192-10240MB）
+                if memory_info['free'] < 8192.0:
                     logger.warning(
-                        f"GPU 显存不足（可用: {memory_info['free_gb']:.2f}GB），"
+                        f"GPU 显存不足（可用: {memory_info['free']:.2f}MB），"
                         "尝试清理缓存..."
                     )
                     clear_gpu_cache()
                     
                     # 再次检查
                     memory_info = get_gpu_memory_info()
-                    if memory_info['free_gb'] < 8.0:
+                    if memory_info['free'] < 8192.0:
                         raise SVDError(
-                            f"GPU 显存不足（可用: {memory_info['free_gb']:.2f}GB），"
-                            "需要至少 8GB 可用显存"
+                            f"GPU 显存不足（可用: {memory_info['free']:.2f}MB），"
+                            "需要至少 8GB (8192MB) 可用显存"
                         )
             
             # 加载模型
@@ -146,8 +146,8 @@ class SVDService:
             if self.device == "cuda":
                 memory_info = get_gpu_memory_info()
                 logger.info(
-                    f"模型加载后 GPU 显存: {memory_info['used_gb']:.2f}GB / "
-                    f"{memory_info['total_gb']:.2f}GB"
+                    f"模型加载后 GPU 显存: {memory_info['used']:.2f}MB / "
+                    f"{memory_info['total']:.2f}MB"
                 )
             
         except Exception as e:
@@ -211,14 +211,15 @@ class SVDService:
         
         try:
             memory_info = get_gpu_memory_info()
-            available_gb = memory_info['free_gb']
+            available_mb = memory_info['free']
+            required_mb = required_gb * 1024
             
             logger.debug(
-                f"GPU 显存检查: 可用 {available_gb:.2f}GB, "
-                f"需要 {required_gb:.2f}GB"
+                f"GPU 显存检查: 可用 {available_mb:.2f}MB, "
+                f"需要 {required_mb:.2f}MB ({required_gb:.2f}GB)"
             )
             
-            return available_gb >= required_gb
+            return available_mb >= required_mb
             
         except Exception as e:
             logger.warning(f"检查 GPU 显存失败: {e}")
@@ -319,8 +320,8 @@ class SVDService:
                 if self.device == "cuda":
                     memory_info = get_gpu_memory_info()
                     logger.info(
-                        f"生成后 GPU 显存: {memory_info['used_gb']:.2f}GB / "
-                        f"{memory_info['total_gb']:.2f}GB"
+                        f"生成后 GPU 显存: {memory_info['used']:.2f}MB / "
+                        f"{memory_info['total']:.2f}MB"
                     )
                 
                 return output_path

@@ -109,10 +109,16 @@ class ProjectManager:
             项目对象，不存在则返回None
         """
         try:
-            project = self.db.query(Project).filter(Project.id == project_id).first()
+            from sqlalchemy.orm import joinedload
+            
+            # 使用 joinedload 预加载关联数据
+            project = self.db.query(Project).options(
+                joinedload(Project.characters),
+                joinedload(Project.scenes)
+            ).filter(Project.id == project_id).first()
             
             if project:
-                logger.debug(f"获取项目: id={project_id}, name='{project.name}'")
+                logger.debug(f"获取项目: id={project_id}, name='{project.name}', scenes={len(project.scenes)}, characters={len(project.characters)}")
             else:
                 logger.warning(f"项目不存在: id={project_id}")
             

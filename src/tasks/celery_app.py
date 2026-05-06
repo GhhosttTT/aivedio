@@ -4,6 +4,17 @@ Celery 应用配置
 """
 
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# 加载 .env 文件
+env_path = Path(__file__).parent.parent.parent / '.env'
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
+    print(f"✓ Celery 已加载环境变量: {env_path}")
+else:
+    print(f"⚠ .env 文件不存在: {env_path}")
+
 from celery import Celery
 from kombu import Queue, Exchange
 

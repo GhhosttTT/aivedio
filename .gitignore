@@ -45,27 +45,40 @@ env/
 .env.local
 
 # AI Models (大文件不提交到 Git)
-models/*.gguf
-models/*.safetensors
-models/*.bin
-models/*.pth
-models/*.pt
-models/stable-diffusion-xl-base-1.0/
-models/stable-video-diffusion-img2vid-xt/
+models/
+ComfyUI/models/
+*.gguf
+*.safetensors
+*.bin
+*.pth
+*.pt
+*.ckpt
+*.onnx
+stable-diffusion-xl-base-1.0/
+stable-video-diffusion-img2vid-xt/
+qwen/
+svd/
 
-# Generated Files
-storage/projects/
-storage/images/
-storage/videos/
-storage/audios/
-storage/subtitles/
-storage/temp/
+# Generated Files (生成的图片和视频)
+storage/
+output/
+results/
+ComfyUI/output/
+ComfyUI/input/
+ComfyUI/temp/
 *.mp4
+*.avi
+*.mov
+*.mkv
 *.mp3
 *.wav
+*.ogg
 *.png
 *.jpg
 *.jpeg
+*.gif
+*.webp
+*.bmp
 
 # Logs
 logs/
@@ -108,9 +121,8 @@ tmp/
 Thumbs.db
 .DS_Store
 
-# ComfyUI
-comfyui/output/
-comfyui/temp/
+# ComfyUI (整个目录不上传，包含模型和大文件)
+ComfyUI/
 
 # 临时脚本和状态文件（不需要提交）
 *.bat
@@ -130,3 +142,14 @@ frontend/dist/
 frontend/build/
 frontend/.next/
 frontend/out/
+
+# 项目临时文件
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+short_drama.db
+short_drama.db-journal
+.env
+.env.local
+.env.production

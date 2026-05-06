@@ -208,7 +208,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         # 特定路径的速率限制配置
         self.path_limiters = {
-            "/api/auth/login": RateLimiter(5, 60, redis_client),  # 登录：5次/分钟
+            "/api/auth/login": RateLimiter(30, 60, redis_client),  # 登录：30次/分钟
             "/api/auth/register": RateLimiter(3, 60, redis_client),  # 注册：3次/分钟
             "/api/projects": RateLimiter(30, 60, redis_client),  # 项目列表：30次/分钟
         }
@@ -271,11 +271,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         Returns:
             响应对象
         """
-        # 跳过健康检查和静态文件
+        # 跳过健康检查、静态文件和 OPTIONS 预检请求
         if request.url.path in ["/health", "/", "/docs", "/redoc", "/openapi.json"]:
             return await call_next(request)
         
         if request.url.path.startswith("/storage/"):
+            return await call_next(request)
+        
+        # 跳过 OPTIONS 请求（CORS 预检）
+        if request.method == "OPTIONS":
             return await call_next(request)
         
         # 获取标识符和限制器

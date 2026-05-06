@@ -28,7 +28,7 @@ export const Login: React.FC = () => {
 
         try {
             const response = await authApi.login(formData.username, formData.password);
-            login(response.token, response.user);
+            login(response.access_token, response.user);
             navigate('/projects');
         } catch (err: any) {
             setError(err.response?.data?.message || '登录失败，请检查用户名和密码');

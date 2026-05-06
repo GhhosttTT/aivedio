@@ -16,6 +16,7 @@ logger = get_logger(__name__)
 @celery_app.task(bind=True, name="generate_audio")
 def generate_audio_task(
     self,
+    previous_result,
     scene_id: int,
     text: str,
     speaker: str,
@@ -28,6 +29,7 @@ def generate_audio_task(
     
     Args:
         self: 任务实例
+        previous_result: 前一个任务的返回值（在任务链中自动传递，可忽略）
         scene_id: 分镜ID
         text: 对话文本
         speaker: 说话人

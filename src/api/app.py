@@ -161,9 +161,9 @@ def configure_static_files(app: FastAPI):
     
     # 挂载静态文件目录
     app.mount(
-        "/static",
-        StaticFiles(directory=storage_path),
-        name="static"
+        "/storage",
+        StaticFiles(directory="storage", html=False),
+        name="storage"
     )
     
     logger.info(f"静态文件服务配置完成: path={storage_path}")
@@ -179,11 +179,17 @@ def register_routes(app: FastAPI):
     from src.api.routes import projects_router, tasks_router
     from src.api.routes.websocket import router as websocket_router
     from src.api.routes.auth import router as auth_router
+    from src.api.routes.characters import router as characters_router
+    from src.api.character_reference import router as character_reference_router
+    from src.api.character_auto_reference import router as character_auto_router
     
     # 注册业务路由
     app.include_router(auth_router)
     app.include_router(projects_router)
     app.include_router(tasks_router)
+    app.include_router(characters_router)
+    app.include_router(character_reference_router)
+    app.include_router(character_auto_router)
     app.include_router(websocket_router)
     
     # 健康检查端点

@@ -192,10 +192,10 @@ class TaskOrchestrator:
         if generate_images:
             image_tasks = group([
                 generate_image_task.s(
-                    scene_id=scene.id,
-                    prompt=scene.image_prompt or scene.visual_description,
-                    project_id=project_id,
-                    task_id=task_id
+                    scene.id,
+                    scene.image_prompt or scene.visual_description,
+                    project_id,
+                    task_id
                 )
                 for scene in scenes
             ])
@@ -205,9 +205,9 @@ class TaskOrchestrator:
         if generate_videos:
             video_tasks = group([
                 generate_video_task.s(
-                    scene_id=scene.id,
-                    project_id=project_id,
-                    task_id=task_id
+                    scene.id,
+                    project_id,
+                    task_id
                 )
                 for scene in scenes
             ])
@@ -217,11 +217,11 @@ class TaskOrchestrator:
         if generate_audios:
             audio_tasks = group([
                 generate_audio_task.s(
-                    scene_id=scene.id,
-                    text=scene.dialogue or "",
-                    speaker=scene.character_name or "default",
-                    project_id=project_id,
-                    task_id=task_id
+                    scene.id,
+                    scene.dialogue or "",
+                    scene.character_name or "default",
+                    project_id,
+                    task_id
                 )
                 for scene in scenes
             ])
@@ -231,9 +231,9 @@ class TaskOrchestrator:
         if generate_subtitles:
             subtitle_tasks = group([
                 generate_subtitle_task.s(
-                    scene_id=scene.id,
-                    project_id=project_id,
-                    task_id=task_id
+                    scene.id,
+                    project_id,
+                    task_id
                 )
                 for scene in scenes
             ])
@@ -241,8 +241,8 @@ class TaskOrchestrator:
         
         # 5. 最终合成任务
         compose_task = compose_final_video_task.s(
-            project_id=project_id,
-            task_id=task_id,
+            project_id,
+            task_id,
             add_bgm=add_bgm,
             bgm_path=bgm_path
         )

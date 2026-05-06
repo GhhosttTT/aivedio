@@ -11,6 +11,39 @@
         "ckpt_name": "sd_xl_base_1.0.safetensors"
       }
     },
+    "load_reference_image": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": ""
+      }
+    },
+    "ipadapter_model_loader": {
+      "class_type": "IPAdapterModelLoader",
+      "inputs": {
+        "ipadapter_file": "ip-adapter-faceid-plusv2_sd15.bin"
+      }
+    },
+    "clip_vision_loader": {
+      "class_type": "CLIPVisionLoader",
+      "inputs": {
+        "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+      }
+    },
+    "ipadapter_apply": {
+      "class_type": "IPAdapterAdvanced",
+      "inputs": {
+        "model": ["checkpoint_loader", 0],
+        "ipadapter": ["ipadapter_model_loader", 0],
+        "image": ["load_reference_image", 0],
+        "clip_vision": ["clip_vision_loader", 0],
+        "weight": 0.8,
+        "weight_type": "linear",
+        "combine_embeds": "concat",
+        "start_at": 0.0,
+        "end_at": 1.0,
+        "embeds_scaling": "V only"
+      }
+    },
     "clip_text_encode_positive": {
       "class_type": "CLIPTextEncode",
       "inputs": {
@@ -42,7 +75,7 @@
         "sampler_name": "euler",
         "scheduler": "normal",
         "denoise": 1.0,
-        "model": ["checkpoint_loader", 0],
+        "model": ["ipadapter_apply", 0],
         "positive": ["clip_text_encode_positive", 0],
         "negative": ["clip_text_encode_negative", 0],
         "latent_image": ["empty_latent_image", 0]

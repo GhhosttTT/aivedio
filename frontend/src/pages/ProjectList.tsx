@@ -228,12 +228,14 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({ isOpen, onClose
         outline: ''
     });
     const [creating, setCreating] = useState(false);
+    const [error, setError] = useState('');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.name.trim()) return;
 
         setCreating(true);
+        setError('');
         try {
             await projectApi.createProject({
                 name: formData.name,
@@ -243,8 +245,11 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({ isOpen, onClose
             });
             onSuccess();
             setFormData({ name: '', description: '', theme: '', outline: '' });
-        } catch (error) {
-            console.error('创建项目失败:', error);
+        } catch (err: any) {
+            console.error('创建项目失败:', err);
+            // 显示后端返回的错误信息
+            const errorMessage = err.response?.data?.detail || err.message || '创建项目失败';
+            setError(errorMessage);
         } finally {
             setCreating(false);
         }
@@ -273,6 +278,17 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({ isOpen, onClose
                     </h2>
 
                     <form onSubmit={handleSubmit} className="space-y-6">
+                        {/* 错误提示 */}
+                        {error && (
+                            <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm"
+                            >
+                                {error}
+                            </motion.div>
+                        )}
+
                         {/* 项目名称 */}
                         <div>
                             <label className="block text-sm font-medium text-slate-300 mb-2">

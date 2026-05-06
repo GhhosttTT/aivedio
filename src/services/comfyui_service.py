@@ -42,37 +42,51 @@ class ComfyUIService:
             max_retries: 最大重试次数（默认 3）
         """
         self.base_url = (base_url or os.getenv("COMFYUI_BASE_URL", "http://127.0.0.1:8188")).rstrip("/")
-        self.workflow_path = workflow_path or os.getenv("COMFYUI_WORKFLOW_PATH", "./configs/comfyui_workflow.json")
+        # 根据是否有参考图像选择工作流
+        self.workflow_path_ipadapter = os.getenv("COMFYUI_WORKFLOW_PATH", "./configs/comfyui_workflow_sdxl.json")
+        self.workflow_path_txt2img = "./configs/comfyui_workflow_txt2img.json"
         self.timeout = timeout
         self.max_retries = max_retries
         
-        # HTTP 客户端
-        self.client = httpx.Client(timeout=timeout)
+        # HTTP 客户端（禁用代理，直接连接本地服务）
+        # httpx 0.24+ 版本使用 trust_env=False 来忽略环境变量中的代理设置
+        self.client = httpx.Client(timeout=timeout, trust_env=False)
         
-        # 工作流配置
+        # 工作流配置（动态加载）
         self.workflow_config: Optional[Dict] = None
+        self.current_workflow_type: str = None  # 'ipadapter' or 'txt2img'
         
         # 加载工作流配置
         self.load_workflow()
         
         logger.info(f"ComfyUI 服务初始化完成: {self.base_url}")
     
-    def load_workflow(self):
+    def load_workflow(self, workflow_type: str = 'ipadapter'):
         """
         加载工作流配置文件
         
+        Args:
+            workflow_type: 工作流类型 ('ipadapter' or 'txt2img')
+            
         Raises:
             FileNotFoundError: 如果配置文件不存在
             ComfyUIError: 如果配置文件格式错误
         """
+        # 如果工作流类型没有变化，不重新加载
+        if self.current_workflow_type == workflow_type and self.workflow_config:
+            return
+        
+        workflow_path = self.workflow_path_ipadapter if workflow_type == 'ipadapter' else self.workflow_path_txt2img
+        
         try:
-            if not os.path.exists(self.workflow_path):
-                raise FileNotFoundError(f"工作流配置文件不存在: {self.workflow_path}")
+            if not os.path.exists(workflow_path):
+                raise FileNotFoundError(f"工作流配置文件不存在: {workflow_path}")
             
-            with open(self.workflow_path, 'r', encoding='utf-8') as f:
+            with open(workflow_path, 'r', encoding='utf-8') as f:
                 self.workflow_config = json.load(f)
             
-            logger.info(f"工作流配置加载成功: {self.workflow_path}")
+            self.current_workflow_type = workflow_type
+            logger.info(f"工作流配置加载成功: {workflow_path} (类型: {workflow_type})")
             logger.debug(f"工作流名称: {self.workflow_config.get('workflow', {}).get('name')}")
             
         except json.JSONDecodeError as e:
@@ -114,7 +128,9 @@ class ComfyUIService:
         steps: int = 20,
         cfg_scale: float = 7.0,
         seed: int = -1,
-        output_path: Optional[str] = None
+        output_path: Optional[str] = None,
+        reference_image: Optional[str] = None,  # 新增参数
+        use_ipadapter: bool = True  # 新增参数
     ) -> str:
         """
         生成图像
@@ -128,6 +144,8 @@ class ComfyUIService:
             cfg_scale: CFG 强度（默认 7.0）
             seed: 随机种子（-1 表示随机，默认 -1）
             output_path: 输出文件路径（可选）
+            reference_image: 参考图像路径（用于 IP-Adapter 角色一致性）
+            use_ipadapter: 是否使用 IP-Adapter（默认 True）
             
         Returns:
             生成的图像文件路径
@@ -146,7 +164,11 @@ class ComfyUIService:
         if seed == -1:
             seed = int(time.time() * 1000) % (2**32)
         
-        logger.info(f"开始生成图像: {width}x{height}, steps={steps}, cfg={cfg_scale}")
+        # 根据是否有参考图像选择工作流类型
+        workflow_type = 'ipadapter' if (use_ipadapter and reference_image) else 'txt2img'
+        self.load_workflow(workflow_type)
+        
+        logger.info(f"开始生成图像: {width}x{height}, steps={steps}, cfg={cfg_scale}, workflow={workflow_type}")
         logger.debug(f"提示词: {prompt[:100]}...")
         
         # 构建工作流
@@ -157,7 +179,9 @@ class ComfyUIService:
             height=height,
             steps=steps,
             cfg_scale=cfg_scale,
-            seed=seed
+            seed=seed,
+            reference_image=reference_image,
+            use_ipadapter=use_ipadapter
         )
         
         # 提交任务并等待完成（带重试）
@@ -168,6 +192,28 @@ class ComfyUIService:
                 return image_path
                 
             except Exception as e:
+                error_str = str(e)
+                # 如果是人脸检测失败，自动切换到纯文生图模式
+                if "InsightFace: No face detected" in error_str and reference_image:
+                    logger.warning(f"参考图像中未检测到人脸，切换到纯文生图模式")
+                    # 重新加载纯文生图工作流
+                    workflow_type = 'txt2img'
+                    self.load_workflow(workflow_type)
+                    # 重新构建工作流（不使用 IP-Adapter）
+                    workflow = self._build_workflow(
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        width=width,
+                        height=height,
+                        steps=steps,
+                        cfg_scale=cfg_scale,
+                        seed=seed,
+                        reference_image=None,  # 移除参考图像
+                        use_ipadapter=False  # 禁用 IP-Adapter
+                    )
+                    # 继续重试（不增加 attempt 计数）
+                    continue
+                
                 if attempt < self.max_retries - 1:
                     wait_time = 2 ** attempt  # 指数退避
                     logger.warning(f"生成失败（第 {attempt + 1} 次尝试），{wait_time} 秒后重试: {e}")
@@ -185,7 +231,9 @@ class ComfyUIService:
         height: int,
         steps: int,
         cfg_scale: float,
-        seed: int
+        seed: int,
+        reference_image: Optional[str] = None,
+        use_ipadapter: bool = True
     ) -> Dict:
         """
         构建 ComfyUI 工作流
@@ -198,29 +246,128 @@ class ComfyUIService:
             steps: 采样步数
             cfg_scale: CFG 强度
             seed: 随机种子
+            reference_image: 参考图像路径（用于 IP-Adapter）
+            use_ipadapter: 是否使用 IP-Adapter
             
         Returns:
-            工作流字典
+            工作流字典（ComfyUI API 格式）
         """
         # 深拷贝工作流配置
-        workflow = json.loads(json.dumps(self.workflow_config.get("nodes", {})))
+        workflow_nodes = json.loads(json.dumps(self.workflow_config.get("nodes", {})))
         
-        # 设置提示词
-        workflow["clip_text_encode_positive"]["inputs"]["text"] = prompt
-        workflow["clip_text_encode_negative"]["inputs"]["text"] = negative_prompt
+        # 将节点名称映射转换为 ComfyUI API 需要的数字 ID 格式
+        node_name_to_id = {name: str(idx + 1) for idx, name in enumerate(workflow_nodes.keys())}
+        workflow_api = {}
+        
+        for node_name, node_data in workflow_nodes.items():
+            node_id = node_name_to_id[node_name]
+            workflow_api[node_id] = {
+                "class_type": node_data["class_type"],
+                "inputs": {}
+            }
+            
+            # 转换输入参数
+            for input_key, input_value in node_data["inputs"].items():
+                if isinstance(input_value, list) and len(input_value) == 2:
+                    # 这是节点引用 [node_name, output_index]
+                    ref_node_name, output_idx = input_value
+                    if ref_node_name in node_name_to_id:
+                        # 转换为 [node_id, output_index]
+                        workflow_api[node_id]["inputs"][input_key] = [
+                            node_name_to_id[ref_node_name],
+                            output_idx
+                        ]
+                    else:
+                        workflow_api[node_id]["inputs"][input_key] = input_value
+                else:
+                    workflow_api[node_id]["inputs"][input_key] = input_value
+        
+        workflow = workflow_api
+        
+        # 动态查找节点 ID（根据 class_type）
+        def find_node_id(class_type: str) -> Optional[str]:
+            for node_id, node_data in workflow.items():
+                if node_data.get("class_type") == class_type:
+                    return node_id
+            return None
+        
+        clip_text_positive_id = find_node_id("CLIPTextEncode")
+        empty_latent_id = find_node_id("EmptyLatentImage")
+        ksampler_id = find_node_id("KSampler")
+        save_image_id = find_node_id("SaveImage")
+        load_image_id = find_node_id("LoadImage")
+        ipadapter_faceid_id = find_node_id("IPAdapterFaceID")
+        checkpoint_loader_id = find_node_id("CheckpointLoaderSimple")
+        lora_loader_id = find_node_id("LoraLoader")
+        
+        # 设置提示词（可能有两个 CLIPTextEncode 节点）
+        if clip_text_positive_id:
+            # 找到所有 CLIPTextEncode 节点
+            clip_nodes = [nid for nid, ndata in workflow.items() if ndata.get("class_type") == "CLIPTextEncode"]
+            if len(clip_nodes) >= 2:
+                # 按节点 ID 排序，确保第一个是正面，第二个是负面
+                clip_nodes.sort()
+                workflow[clip_nodes[0]]["inputs"]["text"] = prompt
+                workflow[clip_nodes[1]]["inputs"]["text"] = negative_prompt
+                logger.debug(f"设置提示词 - 正面节点: {clip_nodes[0]}, 负面节点: {clip_nodes[1]}")
         
         # 设置图像尺寸
-        workflow["empty_latent_image"]["inputs"]["width"] = width
-        workflow["empty_latent_image"]["inputs"]["height"] = height
+        if empty_latent_id:
+            workflow[empty_latent_id]["inputs"]["width"] = width
+            workflow[empty_latent_id]["inputs"]["height"] = height
         
         # 设置采样参数
-        workflow["ksampler"]["inputs"]["seed"] = seed
-        workflow["ksampler"]["inputs"]["steps"] = steps
-        workflow["ksampler"]["inputs"]["cfg"] = cfg_scale
+        if ksampler_id:
+            workflow[ksampler_id]["inputs"]["seed"] = seed
+            workflow[ksampler_id]["inputs"]["steps"] = steps
+            workflow[ksampler_id]["inputs"]["cfg"] = cfg_scale
+        
+        # 启用 IP-Adapter（如果有参考图像且启用了IP-Adapter）
+        if use_ipadapter and reference_image and ipadapter_faceid_id:
+            logger.info(f"启用 IP-Adapter，使用参考图像: {reference_image}")
+            # 连接 KSampler 到 IP-Adapter 应用节点
+            if ksampler_id:
+                workflow[ksampler_id]["inputs"]["model"] = [ipadapter_faceid_id, 0]
+            
+            # 将参考图像路径转换为 ComfyUI 可识别的格式
+            import os
+            from pathlib import Path
+            ref_image_path = Path(reference_image)
+            if not ref_image_path.is_absolute():
+                # 转换为绝对路径
+                ref_image_path = Path.cwd() / ref_image_path
+            
+            # 设置参考图像路径（使用绝对路径）
+            if load_image_id:
+                workflow[load_image_id]["inputs"]["image"] = str(ref_image_path)
+                logger.debug(f"参考图像绝对路径: {ref_image_path}")
+            
+            # 设置 IP-Adapter 权重（从配置中获取或使用默认值）
+            ipadapter_weight = self.workflow_config.get("parameters", {}).get("default", {}).get("ipadapter_weight", 0.8)
+            workflow[ipadapter_faceid_id]["inputs"]["weight"] = ipadapter_weight
+            
+            # 配置 FaceID Plus V2 模式（面部 + 全身一致性）
+            ipadapter_mode = self.workflow_config.get("ipadapter_config", {}).get("mode", "faceid_plus_v2")
+            if ipadapter_mode == "faceid_plus_v2":
+                # FaceID Plus V2：通过 LoRA 增强面部特征，同时保持整体外观
+                workflow[ipadapter_faceid_id]["inputs"]["weight_faceidv2"] = 1.0
+                logger.info(f"IP-Adapter FaceID Plus V2 已配置，权重: {ipadapter_weight}")
+                logger.info("将保持角色面部、服装、体型的整体一致性（FaceID + LoRA 增强）")
+            else:
+                logger.info(f"IP-Adapter 已配置，权重: {ipadapter_weight}")
+        else:
+            logger.debug("未启用 IP-Adapter")
+            # 如果没有参考图像或禁用IP-Adapter，直接连接到checkpoint_loader或lora_loader
+            if ksampler_id:
+                # 优先使用 LoraLoader（如果存在），否则使用 CheckpointLoader
+                model_source_id = lora_loader_id if lora_loader_id else checkpoint_loader_id
+                if model_source_id:
+                    workflow[ksampler_id]["inputs"]["model"] = [model_source_id, 0]
         
         # 设置输出文件名前缀
-        filename_prefix = f"short_drama_{uuid.uuid4().hex[:8]}"
-        workflow["save_image"]["inputs"]["filename_prefix"] = filename_prefix
+        if save_image_id:
+            filename_prefix = f"short_drama_{uuid.uuid4().hex[:8]}"
+            workflow[save_image_id]["inputs"]["filename_prefix"] = filename_prefix
         
         return workflow
     

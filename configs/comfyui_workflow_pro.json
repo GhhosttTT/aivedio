@@ -1,0 +1,248 @@
+{
+  "workflow": {
+    "name": "AI Short Drama Professional Workflow",
+    "description": "专业级 AI 短剧工作流 - JSON 提示词 + IP-Adapter 一致性 + SDXL 高质量",
+    "version": "3.0.0",
+    "features": [
+      "JSON 结构化提示词支持",
+      "IP-Adapter FaceID 角色一致性",
+      "SDXL + LCM 快速生成",
+      "智能降级机制"
+    ]
+  },
+  "nodes": {
+    "checkpoint_loader": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "sd_xl_base_1.0.safetensors"
+      }
+    },
+    "lcm_lora_loader": {
+      "class_type": "LoraLoader",
+      "inputs": {
+        "model": ["checkpoint_loader", 0],
+        "clip": ["checkpoint_loader", 1],
+        "lora_name": "lcm-lora-sdxl.safetensors",
+        "strength_model": 1.0,
+        "strength_clip": 1.0
+      }
+    },
+    "ipadapter_loader": {
+      "class_type": "IPAdapterUnifiedLoaderFaceID",
+      "inputs": {
+        "model": ["lcm_lora_loader", 0],
+        "preset": "FACEID PLUS V2",
+        "lora_strength": 0.6,
+        "provider": "CPU"
+      }
+    },
+    "clip_vision_loader": {
+      "class_type": "CLIPVisionLoader",
+      "inputs": {
+        "clip_name": "CLIP-ViT-bigG-14-laion2B-39B-b160k.safetensors"
+      }
+    },
+    "load_reference_image": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": ""
+      }
+    },
+    "apply_ipadapter": {
+      "class_type": "IPAdapterFaceID",
+      "inputs": {
+        "model": ["ipadapter_loader", 0],
+        "ipadapter": ["ipadapter_loader", 1],
+        "image": ["load_reference_image", 0],
+        "weight": 0.9,
+        "weight_faceidv2": 1.2,
+        "weight_type": "linear",
+        "combine_embeds": "concat",
+        "start_at": 0.0,
+        "end_at": 1.0,
+        "embeds_scaling": "V only",
+        "insightface": null
+      }
+    },
+    "clip_text_encode_positive": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "",
+        "clip": ["lcm_lora_loader", 1]
+      }
+    },
+    "clip_text_encode_negative": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "(worst quality, low quality, normal quality:1.8), (ugly, deformed, distorted:1.6), disfigured, bad anatomy, bad hands, missing limbs, extra limbs, fused fingers, too many fingers, long neck, mutation, mutated, blurry, out of focus, jpeg artifacts, text, watermark, signature, logo, (cartoon:1.8), (anime:1.8), (illustration:1.8), (painting:1.8), (drawing:1.8), (sketch:1.8), (artwork:1.8), (digital art:1.8), (3d render:1.6), (cgi:1.6), plastic skin, doll-like, nsfw, nude, gross proportions, malformed limbs, bad proportions, extra arms, extra legs, poorly drawn face, flat color, vector art, comic book, manga, chibi",
+        "clip": ["lcm_lora_loader", 1]
+      }
+    },
+    "empty_latent_image": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {
+        "width": 1280,
+        "height": 720,
+        "batch_size": 1
+      }
+    },
+    "ksampler": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": 0,
+        "steps": 20,
+        "cfg": 7.0,
+        "sampler_name": "euler_ancestral",
+        "scheduler": "normal",
+        "denoise": 1.0,
+        "model": ["apply_ipadapter", 0],
+        "positive": ["clip_text_encode_positive", 0],
+        "negative": ["clip_text_encode_negative", 0],
+        "latent_image": ["empty_latent_image", 0]
+      }
+    },
+    "vae_decode": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": ["ksampler", 0],
+        "vae": ["checkpoint_loader", 2]
+      }
+    },
+    "save_image": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "filename_prefix": "short_drama_pro",
+        "images": ["vae_decode", 0]
+      }
+    }
+  },
+  "parameters": {
+    "default": {
+      "width": 1024,
+      "height": 576,
+      "steps": 8,
+      "cfg_scale": 2.0,
+      "sampler": "euler_ancestral",
+      "scheduler": "sgm_uniform",
+      "seed": -1,
+      "ipadapter_weight": 0.85,
+      "ipadapter_lora_strength": 0.6
+    },
+    "presets": {
+      "ultra_fast": {
+        "steps": 4,
+        "cfg_scale": 1.5,
+        "ipadapter_weight": 0.75,
+        "description": "超快速（4步），LCM 极速模式"
+      },
+      "fast": {
+        "steps": 8,
+        "cfg_scale": 2.0,
+        "ipadapter_weight": 0.85,
+        "description": "快速（8步），推荐日常使用"
+      },
+      "balanced": {
+        "steps": 12,
+        "cfg_scale": 2.5,
+        "ipadapter_weight": 0.9,
+        "description": "平衡（12步），质量更好"
+      },
+      "quality": {
+        "steps": 15,
+        "cfg_scale": 3.0,
+        "ipadapter_weight": 0.95,
+        "description": "高质量（15步），最终成品"
+      }
+    },
+    "resolutions": {
+      "landscape_16_9": {
+        "width": 1024,
+        "height": 576,
+        "description": "横屏 16:9（推荐）"
+      },
+      "portrait_9_16": {
+        "width": 576,
+        "height": 1024,
+        "description": "竖屏 9:16（短视频）"
+      },
+      "square": {
+        "width": 1024,
+        "height": 1024,
+        "description": "正方形 1:1"
+      }
+    }
+  },
+  "prompt_templates": {
+    "character_description": {
+      "format": "json",
+      "fields": {
+        "appearance": "外貌描述（年龄、性别、发型、服装）",
+        "expression": "表情和情绪",
+        "pose": "姿势和动作",
+        "lighting": "光线和环境",
+        "style": "艺术风格（photorealistic, cinematic, anime等）",
+        "camera": "镜头角度（close-up, medium shot, wide shot）"
+      },
+      "example": {
+        "appearance": "25岁亚洲男性，黑色短发，穿着白色衬衫和黑色西装",
+        "expression": "严肃专注的表情，眼神坚定",
+        "pose": "站立姿势，双手插在口袋里",
+        "lighting": "柔和的侧光，背景虚化",
+        "style": "photorealistic, cinematic",
+        "camera": "medium shot"
+      }
+    }
+  },
+  "negative_prompt": {
+    "default": "(worst quality, low quality:1.5), (ugly:1.4), deformed, distorted, disfigured, bad anatomy, bad hands, missing limbs, extra limbs, fused fingers, too many fingers, long neck, mutation, mutated, blurry, jpeg artifacts, text, watermark, signature, cartoon, anime, 3d render, plastic skin, doll-like, nsfw, nude",
+    "additional": [
+      "gross proportions",
+      "malformed limbs",
+      "bad proportions",
+      "extra arms",
+      "extra legs"
+    ]
+  },
+  "ipadapter_config": {
+    "enabled": true,
+    "mode": "faceid_plus_v2",
+    "face_detection": true,
+    "style_transfer": false,
+    "composition_transfer": false,
+    "weight_range": {
+      "min": 0.7,
+      "max": 1.0,
+      "default": 0.85
+    },
+    "lora_strength_range": {
+      "min": 0.3,
+      "max": 1.0,
+      "default": 0.6
+    },
+    "reference_image_requirements": {
+      "min_images": 1,
+      "recommended_images": 3,
+      "types": ["full_body", "half_body", "close_up"],
+      "quality": "high_resolution",
+      "angles": ["front", "side", "three_quarter"],
+      "face_visibility": "clear and visible",
+      "resolution_min": "512x512"
+    },
+    "best_practices": [
+      "使用清晰的人脸照片作为参考（正面或3/4侧面）",
+      "参考图像分辨率至少 512x512",
+      "确保人脸在图像中占比适中（不要太小）",
+      "多角度参考图效果更佳（全身+半身+特写）",
+      "避免使用卡通、动漫风格的参考图",
+      "光线充足的照片效果更好"
+    ],
+    "notes": [
+      "使用 SDXL + LCM LoRA 实现 4-8 步快速生成",
+      "IP-Adapter FaceID Plus V2 保证角色一致性",
+      "CFG 降低到 2.0 适配 LCM 特性",
+      "使用 sgm_uniform scheduler 提升质量",
+      "分辨率建议 1024x576 或更高",
+      "如果参考图像无人脸，自动降级为纯文生图"
+    ]
+  }
+}
