@@ -17,6 +17,15 @@ import httpx
 from src.utils.logger import logger
 from src.services.workflow_manager import WorkflowManager, get_workflow_manager
 from src.models.workflow_config import WorkflowType
+from src.services.parameter_optimizer import (
+    get_parameter_optimizer,
+    SceneType,
+    QualityMode
+)
+from src.services.prompt_optimizer import (
+    get_prompt_optimizer,
+    OptimizationMode
+)
 
 
 class ComfyUIError(Exception):
@@ -53,6 +62,12 @@ class ComfyUIService:
         
         # 使用 WorkflowManager 管理工作流配置
         self.workflow_manager = get_workflow_manager()
+        
+        # 初始化参数优化器
+        self.parameter_optimizer = get_parameter_optimizer()
+        
+        # 初始化提示词优化器
+        self.prompt_optimizer = get_prompt_optimizer()
         
         # 当前工作流类型（用于向后兼容）
         self.current_workflow_type: Optional[WorkflowType] = None
@@ -143,7 +158,15 @@ class ComfyUIService:
         seed: int = -1,
         output_path: Optional[str] = None,
         reference_image: Optional[str] = None,  # 新增参数
-        use_ipadapter: bool = True  # 新增参数
+        use_ipadapter: bool = True,  # 新增参数
+        # 优化器相关参数
+        scene_type: Optional[str] = None,  # 场景类型（portrait, landscape, action等）
+        quality_mode: Optional[str] = None,  # 质量模式（fast, normal, high_quality, ultra）
+        enable_prompt_optimization: bool = True,  # 是否启用提示词优化
+        enable_parameter_optimization: bool = True,  # 是否启用参数优化
+        enable_realism: bool = False,  # 是否启用真实感模式
+        gpu_vram_gb: Optional[int] = None,  # GPU 显存大小（GB）
+        optimization_mode: Optional[str] = None  # 提示词优化模式（quality, realism, artistic, balanced）
     ) -> str:
         """
         生成图像
@@ -159,6 +182,13 @@ class ComfyUIService:
             output_path: 输出文件路径（可选）
             reference_image: 参考图像路径（用于 IP-Adapter 角色一致性）
             use_ipadapter: 是否使用 IP-Adapter（默认 True）
+            scene_type: 场景类型（portrait, landscape, action等，用于参数优化）
+            quality_mode: 质量模式（fast, normal, high_quality, ultra，用于参数优化）
+            enable_prompt_optimization: 是否启用提示词优化（默认 True）
+            enable_parameter_optimization: 是否启用参数优化（默认 True）
+            enable_realism: 是否启用真实感模式（默认 False）
+            gpu_vram_gb: GPU 显存大小（GB，用于分辨率优化）
+            optimization_mode: 提示词优化模式（quality, realism, artistic, balanced）
             
         Returns:
             生成的图像文件路径
@@ -169,13 +199,100 @@ class ComfyUIService:
         if not prompt or len(prompt.strip()) == 0:
             raise ValueError("提示词不能为空")
         
-        # 使用默认负面提示词
+        # 保存原始提示词
+        original_prompt = prompt
+        original_negative_prompt = negative_prompt
+        
+        # ==================== 提示词优化 ====================
+        if enable_prompt_optimization:
+            try:
+                # 根据场景类型和真实感模式优化提示词
+                if scene_type:
+                    optimized_result = self.prompt_optimizer.optimize_for_scene(
+                        prompt=prompt,
+                        scene_type=scene_type,
+                        enable_realism=enable_realism
+                    )
+                else:
+                    # 使用指定的优化模式或默认模式
+                    if optimization_mode:
+                        mode = OptimizationMode(optimization_mode)
+                    elif enable_realism:
+                        mode = OptimizationMode.REALISM
+                    else:
+                        mode = OptimizationMode.BALANCED
+                    
+                    optimized_result = self.prompt_optimizer.optimize(
+                        prompt=prompt,
+                        mode=mode
+                    )
+                
+                # 使用优化后的提示词
+                prompt = optimized_result.positive_prompt
+                
+                # 如果没有提供负面提示词，使用优化后的负面提示词
+                if not negative_prompt:
+                    negative_prompt = optimized_result.negative_prompt
+                
+                logger.info(f"提示词优化完成 - 模式: {optimized_result.optimization_mode}, 单词数: {optimized_result.word_count}")
+                logger.debug(f"原始提示词: {original_prompt}")
+                logger.debug(f"优化后提示词: {prompt}")
+                
+            except Exception as e:
+                logger.warning(f"提示词优化失败，使用原始提示词: {e}")
+                prompt = original_prompt
+        
+        # 使用默认负面提示词（如果仍然没有）
         if not negative_prompt:
             workflow_config = self.workflow_manager.get_current_workflow()
             if workflow_config:
                 negative_prompt = workflow_config.negative_prompt.default
             else:
                 negative_prompt = ""
+        
+        # ==================== 参数优化 ====================
+        if enable_parameter_optimization:
+            try:
+                # 转换场景类型和质量模式
+                scene_type_enum = None
+                if scene_type:
+                    try:
+                        scene_type_enum = SceneType(scene_type.lower())
+                    except ValueError:
+                        logger.warning(f"无效的场景类型: {scene_type}，使用默认值")
+                
+                quality_mode_enum = None
+                if quality_mode:
+                    try:
+                        quality_mode_enum = QualityMode(quality_mode.lower())
+                    except ValueError:
+                        logger.warning(f"无效的质量模式: {quality_mode}，使用默认值")
+                
+                # 优化参数
+                optimized_params = self.parameter_optimizer.optimize(
+                    scene_type=scene_type_enum,
+                    quality_mode=quality_mode_enum,
+                    has_reference_image=(reference_image is not None),
+                    gpu_vram_gb=gpu_vram_gb,
+                    base_width=width,
+                    base_height=height,
+                    custom_params={
+                        "steps": steps,
+                        "cfg_scale": cfg_scale
+                    }
+                )
+                
+                # 应用优化后的参数
+                steps = optimized_params.steps
+                cfg_scale = optimized_params.cfg_scale
+                width = optimized_params.width
+                height = optimized_params.height
+                
+                logger.info(f"参数优化完成 - steps: {steps}, cfg: {cfg_scale}, 分辨率: {width}x{height}")
+                logger.debug(f"优化决策: {optimized_params.decision_reasons}")
+                
+            except Exception as e:
+                logger.warning(f"参数优化失败，使用原始参数: {e}")
         
         # 生成随机种子
         if seed == -1:
