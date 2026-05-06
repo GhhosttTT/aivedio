@@ -15,6 +15,8 @@ from pathlib import Path
 import httpx
 
 from src.utils.logger import logger
+from src.services.workflow_manager import WorkflowManager, get_workflow_manager
+from src.models.workflow_config import WorkflowType
 
 
 class ComfyUIError(Exception):
@@ -37,14 +39,11 @@ class ComfyUIService:
         
         Args:
             base_url: ComfyUI 服务地址（默认从环境变量读取）
-            workflow_path: 工作流配置文件路径（默认从环境变量读取）
+            workflow_path: 工作流配置文件路径（默认从环境变量读取，已弃用，使用 WorkflowManager）
             timeout: 请求超时时间（秒，默认 300）
             max_retries: 最大重试次数（默认 3）
         """
         self.base_url = (base_url or os.getenv("COMFYUI_BASE_URL", "http://127.0.0.1:8188")).rstrip("/")
-        # 根据是否有参考图像选择工作流
-        self.workflow_path_ipadapter = os.getenv("COMFYUI_WORKFLOW_PATH", "./configs/comfyui_workflow_sdxl.json")
-        self.workflow_path_txt2img = "./configs/comfyui_workflow_txt2img.json"
         self.timeout = timeout
         self.max_retries = max_retries
         
@@ -52,49 +51,63 @@ class ComfyUIService:
         # httpx 0.24+ 版本使用 trust_env=False 来忽略环境变量中的代理设置
         self.client = httpx.Client(timeout=timeout, trust_env=False)
         
-        # 工作流配置（动态加载）
-        self.workflow_config: Optional[Dict] = None
-        self.current_workflow_type: str = None  # 'ipadapter' or 'txt2img'
+        # 使用 WorkflowManager 管理工作流配置
+        self.workflow_manager = get_workflow_manager()
         
-        # 加载工作流配置
-        self.load_workflow()
+        # 当前工作流类型（用于向后兼容）
+        self.current_workflow_type: Optional[WorkflowType] = None
         
-        logger.info(f"ComfyUI 服务初始化完成: {self.base_url}")
+        # 加载默认工作流配置
+        try:
+            self.workflow_manager.load_workflow(workflow_type=WorkflowType.BASIC)
+            self.current_workflow_type = WorkflowType.BASIC
+            logger.info(f"ComfyUI 服务初始化完成: {self.base_url}")
+        except Exception as e:
+            logger.warning(f"加载默认工作流失败: {e}，将在首次使用时加载")
+            logger.info(f"ComfyUI 服务初始化完成: {self.base_url} (未加载工作流)")
     
-    def load_workflow(self, workflow_type: str = 'ipadapter'):
+    def load_workflow(self, workflow_type: Optional[WorkflowType] = None):
         """
-        加载工作流配置文件
+        加载工作流配置文件（使用 WorkflowManager）
         
         Args:
-            workflow_type: 工作流类型 ('ipadapter' or 'txt2img')
+            workflow_type: 工作流类型（WorkflowType 枚举）
             
         Raises:
-            FileNotFoundError: 如果配置文件不存在
             ComfyUIError: 如果配置文件格式错误
         """
-        # 如果工作流类型没有变化，不重新加载
-        if self.current_workflow_type == workflow_type and self.workflow_config:
-            return
-        
-        workflow_path = self.workflow_path_ipadapter if workflow_type == 'ipadapter' else self.workflow_path_txt2img
-        
         try:
-            if not os.path.exists(workflow_path):
-                raise FileNotFoundError(f"工作流配置文件不存在: {workflow_path}")
+            if workflow_type is None:
+                # 如果没有指定类型，使用当前类型或默认类型
+                workflow_type = self.current_workflow_type or WorkflowType.BASIC
             
-            with open(workflow_path, 'r', encoding='utf-8') as f:
-                self.workflow_config = json.load(f)
+            # 使用 WorkflowManager 加载工作流
+            config = self.workflow_manager.switch_workflow(workflow_type)
             
             self.current_workflow_type = workflow_type
-            logger.info(f"工作流配置加载成功: {workflow_path} (类型: {workflow_type})")
-            logger.debug(f"工作流名称: {self.workflow_config.get('workflow', {}).get('name')}")
+            logger.info(f"工作流配置加载成功: {config.workflow.name} (类型: {workflow_type})")
             
-        except json.JSONDecodeError as e:
-            error_msg = f"工作流配置文件格式错误: {e}"
-            logger.error(error_msg)
-            raise ComfyUIError(error_msg) from e
         except Exception as e:
             error_msg = f"加载工作流配置失败: {e}"
+            logger.error(error_msg)
+            raise ComfyUIError(error_msg) from e
+    
+    def switch_workflow(self, workflow_type: WorkflowType):
+        """
+        切换工作流类型
+        
+        Args:
+            workflow_type: 目标工作流类型
+            
+        Raises:
+            ComfyUIError: 如果切换失败
+        """
+        try:
+            config = self.workflow_manager.switch_workflow(workflow_type)
+            self.current_workflow_type = workflow_type
+            logger.info(f"工作流切换成功: {config.workflow.name}")
+        except Exception as e:
+            error_msg = f"切换工作流失败: {e}"
             logger.error(error_msg)
             raise ComfyUIError(error_msg) from e
     
@@ -158,17 +171,27 @@ class ComfyUIService:
         
         # 使用默认负面提示词
         if not negative_prompt:
-            negative_prompt = self.workflow_config.get("negative_prompt", {}).get("default", "")
+            workflow_config = self.workflow_manager.get_current_workflow()
+            if workflow_config:
+                negative_prompt = workflow_config.negative_prompt.default
+            else:
+                negative_prompt = ""
         
         # 生成随机种子
         if seed == -1:
             seed = int(time.time() * 1000) % (2**32)
         
         # 根据是否有参考图像选择工作流类型
-        workflow_type = 'ipadapter' if (use_ipadapter and reference_image) else 'txt2img'
-        self.load_workflow(workflow_type)
+        if use_ipadapter and reference_image:
+            target_workflow_type = WorkflowType.IPADAPTER
+        else:
+            target_workflow_type = WorkflowType.TXT2IMG
         
-        logger.info(f"开始生成图像: {width}x{height}, steps={steps}, cfg={cfg_scale}, workflow={workflow_type}")
+        # 切换到目标工作流（如果需要）
+        if self.current_workflow_type != target_workflow_type:
+            self.load_workflow(target_workflow_type)
+        
+        logger.info(f"开始生成图像: {width}x{height}, steps={steps}, cfg={cfg_scale}, workflow={target_workflow_type}")
         logger.debug(f"提示词: {prompt[:100]}...")
         
         # 构建工作流
@@ -197,8 +220,7 @@ class ComfyUIService:
                 if "InsightFace: No face detected" in error_str and reference_image:
                     logger.warning(f"参考图像中未检测到人脸，切换到纯文生图模式")
                     # 重新加载纯文生图工作流
-                    workflow_type = 'txt2img'
-                    self.load_workflow(workflow_type)
+                    self.load_workflow(WorkflowType.TXT2IMG)
                     # 重新构建工作流（不使用 IP-Adapter）
                     workflow = self._build_workflow(
                         prompt=prompt,
@@ -252,8 +274,19 @@ class ComfyUIService:
         Returns:
             工作流字典（ComfyUI API 格式）
         """
-        # 深拷贝工作流配置
-        workflow_nodes = json.loads(json.dumps(self.workflow_config.get("nodes", {})))
+        # 从 WorkflowManager 获取当前工作流配置
+        workflow_config = self.workflow_manager.get_current_workflow()
+        if not workflow_config:
+            raise ComfyUIError("未加载工作流配置")
+        
+        # 深拷贝工作流配置的节点
+        workflow_nodes = {
+            name: {
+                "class_type": node.class_type,
+                "inputs": json.loads(json.dumps(node.inputs))
+            }
+            for name, node in workflow_config.nodes.items()
+        }
         
         # 将节点名称映射转换为 ComfyUI API 需要的数字 ID 格式
         node_name_to_id = {name: str(idx + 1) for idx, name in enumerate(workflow_nodes.keys())}
@@ -343,13 +376,12 @@ class ComfyUIService:
                 logger.debug(f"参考图像绝对路径: {ref_image_path}")
             
             # 设置 IP-Adapter 权重（从配置中获取或使用默认值）
-            ipadapter_weight = self.workflow_config.get("parameters", {}).get("default", {}).get("ipadapter_weight", 0.8)
+            ipadapter_weight = workflow_config.parameters.default.get("ipadapter_weight", 0.8)
             workflow[ipadapter_faceid_id]["inputs"]["weight"] = ipadapter_weight
             
             # 配置 FaceID Plus V2 模式（面部 + 全身一致性）
-            ipadapter_mode = self.workflow_config.get("ipadapter_config", {}).get("mode", "faceid_plus_v2")
-            if ipadapter_mode == "faceid_plus_v2":
-                # FaceID Plus V2：通过 LoRA 增强面部特征，同时保持整体外观
+            # 注意：ipadapter_config 可能不在 parameters.default 中，需要单独处理
+            if "weight_faceidv2" in workflow[ipadapter_faceid_id]["inputs"]:
                 workflow[ipadapter_faceid_id]["inputs"]["weight_faceidv2"] = 1.0
                 logger.info(f"IP-Adapter FaceID Plus V2 已配置，权重: {ipadapter_weight}")
                 logger.info("将保持角色面部、服装、体型的整体一致性（FaceID + LoRA 增强）")
