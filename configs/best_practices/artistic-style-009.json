@@ -1,0 +1,46 @@
+{
+  "id": "artistic-style-009",
+  "name": "艺术风格创作",
+  "description": "艺术风格创作配置，色彩丰富，创意性强，适合艺术创作",
+  "source": "civitai",
+  "source_url": "https://civitai.com/models/101055/sd-xl",
+  "author": "Stability AI",
+  "applicable_scenes": [
+    "general"
+  ],
+  "tags": [
+    "艺术",
+    "创意",
+    "色彩",
+    "风格化"
+  ],
+  "workflow_type": "sdxl",
+  "checkpoint": "sd_xl_base_1.0.safetensors",
+  "lora_models": [
+    "ArtisticStyle.safetensors",
+    "ColorEnhancer.safetensors"
+  ],
+  "sampling_steps": 30,
+  "cfg_scale": 9.0,
+  "sampler": "dpmpp_2m_sde",
+  "scheduler": "karras",
+  "resolution": "1024x1024",
+  "ipadapter_weight": null,
+  "prompt_template": "{subject}, artistic style, vibrant colors, creative composition, masterpiece, award winning",
+  "negative_prompt": "realistic, photorealistic, plain, boring, dull colors, amateur",
+  "additional_params": {
+    "denoise": 0.85,
+    "use_facedetailer": false,
+    "use_refiner": true,
+    "refiner_steps": 10
+  },
+  "quality_score": 88.0,
+  "realism_score": 70.0,
+  "consistency_score": 80.0,
+  "speed_score": 72.0,
+  "overall_score": 79.6,
+  "usage_count": 0,
+  "success_rate": 0.0,
+  "average_generation_time": 0.0,
+  "version": "1.0"
+}

@@ -1,0 +1,45 @@
+{
+  "id": "realistic-vision-indoor-006",
+  "name": "Realistic Vision 室内场景",
+  "description": "使用 Realistic Vision 生成真实的室内场景，光线自然，氛围感强",
+  "source": "civitai",
+  "source_url": "https://civitai.com/models/4201/realistic-vision",
+  "author": "SG_161222",
+  "applicable_scenes": [
+    "indoor",
+    "portrait"
+  ],
+  "tags": [
+    "室内",
+    "自然光",
+    "氛围",
+    "真实"
+  ],
+  "workflow_type": "basic",
+  "checkpoint": "realisticVisionV60B1_v51.safetensors",
+  "lora_models": [
+    "add_detail.safetensors"
+  ],
+  "sampling_steps": 25,
+  "cfg_scale": 7.0,
+  "sampler": "dpmpp_2m",
+  "scheduler": "karras",
+  "resolution": "768x1024",
+  "ipadapter_weight": 0.75,
+  "prompt_template": "{subject}, indoor scene, natural window light, soft shadows, cozy atmosphere, realistic, photorealistic",
+  "negative_prompt": "outdoor, harsh lighting, artificial, fake, CGI, 3D render",
+  "additional_params": {
+    "denoise": 0.75,
+    "use_facedetailer": true,
+    "face_denoise": 0.4
+  },
+  "quality_score": 87.0,
+  "realism_score": 90.0,
+  "consistency_score": 85.0,
+  "speed_score": 80.0,
+  "overall_score": 87.1,
+  "usage_count": 0,
+  "success_rate": 0.0,
+  "average_generation_time": 0.0,
+  "version": "1.0"
+}

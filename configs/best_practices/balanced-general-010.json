@@ -1,0 +1,42 @@
+{
+  "id": "balanced-general-010",
+  "name": "平衡通用配置",
+  "description": "平衡的通用配置，质量、速度、一致性都不错，适合大多数场景",
+  "source": "official",
+  "source_url": "https://github.com/comfyanonymous/ComfyUI",
+  "author": "ComfyUI Official",
+  "applicable_scenes": [
+    "general"
+  ],
+  "tags": [
+    "通用",
+    "平衡",
+    "稳定",
+    "推荐"
+  ],
+  "workflow_type": "basic",
+  "checkpoint": "RealVisXL_V4.0.safetensors",
+  "lora_models": [],
+  "sampling_steps": 25,
+  "cfg_scale": 7.0,
+  "sampler": "dpmpp_2m",
+  "scheduler": "karras",
+  "resolution": "1024x1024",
+  "ipadapter_weight": 0.75,
+  "prompt_template": "{subject}, high quality, detailed, professional",
+  "negative_prompt": "low quality, blurry, distorted, bad anatomy",
+  "additional_params": {
+    "denoise": 0.75,
+    "use_facedetailer": true,
+    "face_denoise": 0.4
+  },
+  "quality_score": 85.0,
+  "realism_score": 85.0,
+  "consistency_score": 90.0,
+  "speed_score": 85.0,
+  "overall_score": 86.0,
+  "usage_count": 0,
+  "success_rate": 0.0,
+  "average_generation_time": 0.0,
+  "version": "1.0"
+}

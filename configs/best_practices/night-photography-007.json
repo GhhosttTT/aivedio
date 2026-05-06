@@ -1,0 +1,46 @@
+{
+  "id": "night-photography-007",
+  "name": "夜景摄影专用",
+  "description": "专门优化的夜景摄影配置，低光环境表现出色，噪点控制好",
+  "source": "community",
+  "source_url": null,
+  "author": "Community",
+  "applicable_scenes": [
+    "night",
+    "outdoor"
+  ],
+  "tags": [
+    "夜景",
+    "低光",
+    "氛围",
+    "专业"
+  ],
+  "workflow_type": "pro",
+  "checkpoint": "RealVisXL_V4.0.safetensors",
+  "lora_models": [
+    "LowLightEnhancer.safetensors"
+  ],
+  "sampling_steps": 32,
+  "cfg_scale": 7.5,
+  "sampler": "dpmpp_2m_sde",
+  "scheduler": "karras",
+  "resolution": "1280x720",
+  "ipadapter_weight": 0.7,
+  "prompt_template": "{subject}, night photography, low light, ambient lighting, city lights, long exposure, professional photography",
+  "negative_prompt": "daylight, bright, overexposed, noisy, grainy, low quality",
+  "additional_params": {
+    "denoise": 0.8,
+    "use_facedetailer": false,
+    "use_upscale": true,
+    "upscale_factor": 1.5
+  },
+  "quality_score": 85.0,
+  "realism_score": 88.0,
+  "consistency_score": 82.0,
+  "speed_score": 68.0,
+  "overall_score": 83.2,
+  "usage_count": 0,
+  "success_rate": 0.0,
+  "average_generation_time": 0.0,
+  "version": "1.0"
+}
