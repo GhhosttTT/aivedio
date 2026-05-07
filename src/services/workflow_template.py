@@ -264,6 +264,8 @@ class WorkflowTemplateManager:
                     "scheduler": "karras",
                     "width": 1024,
                     "height": 1024,
+                    "checkpoint": "dreamshaper_8.safetensors",  # 通用模型
+                    "lora_models": [],
                 },
                 "negative_prompt": "low quality, blurry, distorted, bad anatomy"
             },
@@ -328,6 +330,8 @@ class WorkflowTemplateManager:
                     "width": 1024,
                     "height": 1024,
                     "ipadapter_weight": 0.85,
+                    "checkpoint": "juggernautXL_v9Rundiffusionphoto2.safetensors",  # 适合人物的模型
+                    "lora_models": [],
                 },
                 "negative_prompt": "different person, multiple people, inconsistent face"
             },
@@ -383,6 +387,8 @@ class WorkflowTemplateManager:
                     "scheduler": "karras",
                     "width": 1024,
                     "height": 1024,
+                    "checkpoint": "RealVisXL_V4.0.safetensors",  # 真实感专用模型
+                    "lora_models": ["FilmGrain.safetensors"],  # Film Grain LoRA
                 },
                 "negative_prompt": "CGI, 3D render, plastic skin, airbrushed, fake, artificial"
             },
@@ -432,6 +438,8 @@ class WorkflowTemplateManager:
                     "height": 1024,
                     "upscale_factor": 1.5,
                     "denoise": 0.5,
+                    "checkpoint": "dreamshaper_8.safetensors",  # 通用高质量模型
+                    "lora_models": ["add_detail.safetensors"],  # 细节增强 LoRA
                 },
                 "negative_prompt": "low quality, blurry, pixelated"
             },
@@ -487,6 +495,8 @@ class WorkflowTemplateManager:
                     "scheduler": "normal",
                     "width": 768,
                     "height": 768,
+                    "checkpoint": "sd_xl_turbo_1.0.safetensors",  # SDXL Turbo 快速模型
+                    "lora_models": [],
                 },
                 "negative_prompt": "low quality, blurry"
             },
