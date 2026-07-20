@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     LOCALIZATION_TARGET_LANGUAGES: str = "en,es,pt,ar,id,th,vi,ja,ko"
     SUBTITLE_REMOVAL_BACKEND: str = "manual_mask"
     OCCLUSION_REMOVAL_BACKEND: str = "auto_video_inpaint"
+    OCCLUSION_MASK_DETECTOR_COMMAND: str = ""
+    OCCLUSION_AUTO_MASK_MIN_CONFIDENCE: float = 0.65
     OCCLUSION_MIN_QUALITY_SCORE: float = 0.92
     OCCLUSION_REMOVAL_TIMEOUT_SECONDS: int = 7200
     AUTO_VIDEO_INPAINT_COMMAND: str = ""
