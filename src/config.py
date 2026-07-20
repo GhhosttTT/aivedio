@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     # 源片出海译制配置
     LOCALIZATION_TARGET_LANGUAGES: str = "en,es,pt,ar,id,th,vi,ja,ko"
     SUBTITLE_REMOVAL_BACKEND: str = "manual_mask"
+    OCCLUSION_REMOVAL_BACKEND: str = "auto_video_inpaint"
+    OCCLUSION_MIN_QUALITY_SCORE: float = 0.92
+    OCCLUSION_REMOVAL_TIMEOUT_SECONDS: int = 7200
+    AUTO_VIDEO_INPAINT_COMMAND: str = ""
+    PROPINTER_COMMAND: str = ""
+    VSR_COMMAND: str = ""
     ASR_BACKEND: str = "faster_whisper"
     ASR_MODEL_PATH: str = "./models/faster-whisper-large-v3"
     TRANSLATION_BACKEND: str = "local_llm"

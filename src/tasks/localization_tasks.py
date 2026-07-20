@@ -3,6 +3,7 @@
 from src.database.database import get_db
 from src.database.models import LocalizationJobStatus, LocalizationStage
 from src.services.localization_pipeline import LocalizationPipeline
+from src.services.occlusion_removal import OcclusionRemovalError
 from src.tasks.celery_app import celery_app
 from src.utils.logger import get_logger
 
@@ -11,11 +12,7 @@ logger = get_logger(__name__)
 
 @celery_app.task(bind=True, name="run_localization_job")
 def run_localization_job_task(self, job_id: int):
-    """Run the source-video localization pipeline.
-
-    The task currently exposes the stage skeleton and fails clearly until model
-    backends are configured and implemented.
-    """
+    """Run the source-video localization pipeline."""
     db = next(get_db())
     pipeline = LocalizationPipeline(db)
 
@@ -52,7 +49,13 @@ def run_localization_job_task(self, job_id: int):
         )
         return {"job_id": job_id, "status": "completed"}
 
+    except OcclusionRemovalError as exc:
+        logger.warning("localization cleaning needs review: job_id={}, error={}", job_id, exc)
+        pipeline.mark_needs_review(job_id, str(exc))
+        raise
     except Exception as exc:
-        logger.error("出海译制任务失败: job_id={}, error={}", job_id, exc)
+        logger.error("localization job failed: job_id={}, error={}", job_id, exc)
         pipeline.mark_failed(job_id, str(exc))
         raise
+    finally:
+        db.close()
