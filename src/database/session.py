@@ -3,8 +3,9 @@
 """
 
 from src.database.database import get_db, SessionLocal, engine
+from src.database.models import Base
 
 # 别名
 get_db_session = get_db
 
-__all__ = ["get_db", "get_db_session", "SessionLocal", "engine"]
+__all__ = ["get_db", "get_db_session", "SessionLocal", "engine", "Base"]

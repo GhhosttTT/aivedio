@@ -15,6 +15,7 @@ from pathlib import Path
 import httpx
 
 from src.utils.logger import logger
+from src.config import settings
 from src.services.workflow_manager import WorkflowManager, get_workflow_manager
 from src.models.workflow_config import WorkflowType
 from src.services.parameter_optimizer import (
@@ -74,8 +75,9 @@ class ComfyUIService:
         
         # 加载默认工作流配置
         try:
-            self.workflow_manager.load_workflow(workflow_type=WorkflowType.BASIC)
-            self.current_workflow_type = WorkflowType.BASIC
+            default_workflow = WorkflowType(settings.COMFYUI_DEFAULT_WORKFLOW_TYPE)
+            self.workflow_manager.load_workflow(workflow_type=default_workflow)
+            self.current_workflow_type = default_workflow
             logger.info(f"ComfyUI 服务初始化完成: {self.base_url}")
         except Exception as e:
             logger.warning(f"加载默认工作流失败: {e}，将在首次使用时加载")

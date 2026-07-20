@@ -180,6 +180,7 @@ def register_routes(app: FastAPI):
     from src.api.routes.websocket import router as websocket_router
     from src.api.routes.auth import router as auth_router
     from src.api.routes.characters import router as characters_router
+    from src.api.routes.localization import router as localization_router
     from src.api.character_reference import router as character_reference_router
     from src.api.character_auto_reference import router as character_auto_router
     
@@ -188,6 +189,7 @@ def register_routes(app: FastAPI):
     app.include_router(projects_router)
     app.include_router(tasks_router)
     app.include_router(characters_router)
+    app.include_router(localization_router)
     app.include_router(character_reference_router)
     app.include_router(character_auto_router)
     app.include_router(websocket_router)

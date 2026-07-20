@@ -66,10 +66,16 @@ def generate_subtitle_task(
         # 生成字幕文件
         self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "生成 SRT"})
         
+        duration = subtitle_generator._get_audio_duration(scene.audio_path) or 2.0
         result_path = subtitle_generator.generate_srt(
-            text=scene.dialogue,
-            audio_path=scene.audio_path,
-            output_path=subtitle_path
+            dialogues=[
+                {
+                    "text": scene.dialogue,
+                    "start_time": 0.0,
+                    "duration": duration,
+                }
+            ],
+            output_path=subtitle_path,
         )
         
         # 更新数据库

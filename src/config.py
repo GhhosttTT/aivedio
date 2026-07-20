@@ -44,6 +44,27 @@ class Settings(BaseSettings):
     # TTS 配置
     TTS_API_KEY: str = ""
     TTS_BASE_URL: str = "https://mimo.xiaomi.com/api/v2/tts"
+
+    # 源片出海译制配置
+    LOCALIZATION_TARGET_LANGUAGES: str = "en,es,pt,ar,id,th,vi,ja,ko"
+    SUBTITLE_REMOVAL_BACKEND: str = "manual_mask"
+    ASR_BACKEND: str = "faster_whisper"
+    ASR_MODEL_PATH: str = "./models/faster-whisper-large-v3"
+    TRANSLATION_BACKEND: str = "local_llm"
+    MODERATION_BACKEND: str = "rules"
+    LOCALIZATION_CONCURRENCY: int = 1
+
+    # AI 生成短剧质量配置
+    GENERATION_PROVIDER: str = "local_comfyui"
+    GENERATION_PRIMARY_PROVIDER: str = "jimeng_api"
+    GENERATION_QUALITY_PROFILE: str = "hongguo_reference"
+    COMFYUI_DEFAULT_WORKFLOW_TYPE: str = "juggernaut"
+    JIMENG_ENDPOINT: str = ""
+    JIMENG_API_KEY: str = ""
+    KLING_ENDPOINT: str = ""
+    KLING_API_KEY: str = ""
+    HAILUO_ENDPOINT: str = ""
+    HAILUO_API_KEY: str = ""
     
     # 文件存储配置
     STORAGE_PATH: str = "./storage"

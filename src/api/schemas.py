@@ -123,6 +123,7 @@ class SceneResponse(BaseModel):
     image_path: Optional[str] = None
     video_path: Optional[str] = None
     audio_path: Optional[str] = None
+    subtitle_path: Optional[str] = None
 
 
 class ProjectResponse(BaseModel):
@@ -136,6 +137,8 @@ class ProjectResponse(BaseModel):
     description: Optional[str] = None
     theme: Optional[str] = None
     outline: Optional[str] = None
+    script: Optional[str] = None
+    final_video_path: Optional[str] = None
     status: str
     created_at: datetime
     updated_at: datetime

@@ -45,7 +45,7 @@ env/
 .env.local
 
 # AI Models (大文件不提交到 Git)
-models/
+/models/
 ComfyUI/models/
 *.gguf
 *.safetensors

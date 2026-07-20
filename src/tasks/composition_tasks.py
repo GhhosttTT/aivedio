@@ -6,7 +6,7 @@
 from typing import Optional
 from src.tasks.celery_app import celery_app
 from src.database.database import get_db
-from src.database.models import Project, Scene
+from src.database.models import Project, ProjectStatus, Scene
 from src.services.video_composer import get_video_composer
 from src.services.subtitle_generator import get_subtitle_generator
 from src.utils.storage import get_project_final_video_path
@@ -55,7 +55,7 @@ def compose_final_video_task(
         # 查询所有分镜（按顺序）
         scenes = db.query(Scene).filter(
             Scene.project_id == project_id
-        ).order_by(Scene.sequence_number).all()
+        ).order_by(Scene.scene_number).all()
         
         if not scenes:
             raise ValueError(f"项目没有分镜: {project_id}")
@@ -96,9 +96,13 @@ def compose_final_video_task(
         
         if audio_paths:
             temp_video_with_audio = final_video_path.replace(".mp4", "_with_audio.mp4")
+            audio_path = audio_paths[0]
+            if len(audio_paths) > 1:
+                merged_audio_path = final_video_path.replace(".mp4", "_merged_audio.mp3")
+                audio_path = video_composer._concat_audio(audio_paths, merged_audio_path)
             video_composer.sync_audio_video(
                 video_path=temp_video_path,
-                audio_paths=audio_paths,
+                audio_path=audio_path,
                 output_path=temp_video_with_audio
             )
             temp_video_path = temp_video_with_audio
@@ -137,7 +141,7 @@ def compose_final_video_task(
         
         # 更新项目状态
         project.final_video_path = final_video_path
-        project.status = "completed"
+        project.status = ProjectStatus.COMPLETED
         db.commit()
         
         logger.info(f"视频合成成功: project_id={project_id}, path={final_video_path}")
@@ -155,7 +159,7 @@ def compose_final_video_task(
         db = next(get_db())
         project = db.query(Project).filter(Project.id == project_id).first()
         if project:
-            project.status = "failed"
+            project.status = ProjectStatus.FAILED
             db.commit()
         
         raise

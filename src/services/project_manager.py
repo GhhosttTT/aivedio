@@ -6,6 +6,7 @@
 
 import os
 import shutil
+import json
 from typing import Optional, List, Dict
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -179,6 +180,8 @@ class ProjectManager:
                     if field == 'status' and isinstance(value, str):
                         # 转换字符串为枚举
                         value = ProjectStatus(value)
+                    if field == 'script' and value is not None and not isinstance(value, str):
+                        value = json.dumps(value, ensure_ascii=False)
                     
                     setattr(project, field, value)
                     updated_fields.append(field)
