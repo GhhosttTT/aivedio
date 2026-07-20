@@ -54,6 +54,7 @@ class LocalizationJobStatus(str, Enum):
 class LocalizationStage(str, Enum):
     """源片出海译制任务阶段"""
     UPLOADED = "uploaded"
+    PREPROCESSING = "preprocessing"
     CLEANING = "cleaning"
     ASR = "asr"
     TRANSLATION = "translation"
