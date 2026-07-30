@@ -140,3 +140,56 @@ def test_run_translation_stores_translated_subtitle_dir(db_session, tmp_path, mo
     db_session.refresh(job)
     assert job.translated_subtitle_dir == output_dir
     assert output_dir.endswith("translations")
+
+
+def test_run_rendering_stores_rendered_video_dir(db_session, tmp_path, monkeypatch):
+    monkeypatch.setattr("src.services.localization_pipeline.settings.STORAGE_PATH", str(tmp_path / "storage"))
+
+    user = User(username="render-user", email="render@example.com", hashed_password="x")
+    db_session.add(user)
+    db_session.commit()
+
+    project = Project(name="render project", user_id=user.id)
+    db_session.add(project)
+    db_session.commit()
+
+    clean_video = tmp_path / "clean.mp4"
+    clean_video.write_bytes(b"fake-video")
+    source_video = SourceVideo(
+        project_id=project.id,
+        original_filename="source.mp4",
+        file_path=str(tmp_path / "source.mp4"),
+        clean_video_path=str(clean_video),
+    )
+    db_session.add(source_video)
+    db_session.commit()
+
+    translated_dir = tmp_path / "translations"
+    translated_dir.mkdir()
+    job = LocalizationJob(
+        source_video_id=source_video.id,
+        target_languages=json.dumps(["en"]),
+        status=LocalizationJobStatus.QUEUED,
+        current_stage=LocalizationStage.UPLOADED,
+        translated_subtitle_dir=str(translated_dir),
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    def fake_render_all(_self, clean_video_path, translated_subtitle_dir, output_dir, target_languages):
+        assert clean_video_path == str(clean_video)
+        assert translated_subtitle_dir == str(translated_dir)
+        assert target_languages == ["en"]
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        return {}
+
+    monkeypatch.setattr(
+        "src.services.localization_pipeline.SubtitleRenderingService.render_all",
+        fake_render_all,
+    )
+
+    output_dir = LocalizationPipeline(db_session).run_rendering(job)
+
+    db_session.refresh(job)
+    assert job.rendered_video_dir == output_dir
+    assert output_dir.endswith("rendered")

@@ -20,6 +20,7 @@ from src.database.models import (
 )
 from src.services.asr_service import LocalASRService
 from src.services.occlusion_removal import OcclusionRemovalService
+from src.services.subtitle_rendering_service import SubtitleRenderingService
 from src.services.translation_service import SubtitleTranslationService
 from src.utils.logger import get_logger
 
@@ -195,7 +196,31 @@ class LocalizationPipeline:
         return str(output_dir)
 
     def run_rendering(self, job: LocalizationJob) -> str:
-        raise NotImplementedError("multilingual subtitle rendering is not implemented")
+        source_video = job.source_video
+        if not source_video:
+            raise LocalizationPipelineError(f"source video missing for job: {job.id}")
+        if not source_video.clean_video_path:
+            raise LocalizationPipelineError("clean master video is required before rendering")
+        if not job.translated_subtitle_dir:
+            raise LocalizationPipelineError("translated subtitles are required before rendering")
+
+        output_dir = (
+            self.storage_root
+            / f"project_{source_video.project_id}"
+            / "localization"
+            / f"job_{job.id}"
+            / "rendered"
+        )
+        languages = json.loads(job.target_languages)
+        SubtitleRenderingService().render_all(
+            source_video.clean_video_path,
+            job.translated_subtitle_dir,
+            str(output_dir),
+            languages,
+        )
+        job.rendered_video_dir = str(output_dir)
+        self.db.commit()
+        return str(output_dir)
 
     def run_moderation(self, job: LocalizationJob) -> str:
         raise NotImplementedError(f"moderation backend is not implemented: {settings.MODERATION_BACKEND}")
