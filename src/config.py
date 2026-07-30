@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     VSR_COMMAND: str = ""
     ASR_BACKEND: str = "faster_whisper"
     ASR_MODEL_PATH: str = "./models/faster-whisper-large-v3"
+    ASR_COMMAND: str = ""
+    ASR_DEVICE: str = "cuda"
+    ASR_COMPUTE_TYPE: str = "float16"
+    ASR_LANGUAGE: str = "zh"
+    ASR_TIMEOUT_SECONDS: int = 7200
     TRANSLATION_BACKEND: str = "local_llm"
     MODERATION_BACKEND: str = "rules"
     LOCALIZATION_CONCURRENCY: int = 1

@@ -18,6 +18,7 @@ from src.database.models import (
     Project,
     SourceVideo,
 )
+from src.services.asr_service import LocalASRService
 from src.services.occlusion_removal import OcclusionRemovalService
 from src.utils.logger import get_logger
 
@@ -152,7 +153,21 @@ class LocalizationPipeline:
         return result.clean_video_path
 
     def run_asr(self, job: LocalizationJob) -> str:
-        raise NotImplementedError(f"ASR backend is not implemented: {settings.ASR_BACKEND}")
+        source_video = job.source_video
+        if not source_video:
+            raise LocalizationPipelineError(f"source video missing for job: {job.id}")
+
+        output_dir = (
+            self.storage_root
+            / f"project_{source_video.project_id}"
+            / "localization"
+            / f"job_{job.id}"
+            / "asr"
+        )
+        result = LocalASRService().transcribe_video(source_video.file_path, str(output_dir))
+        job.transcript_path = result.transcript_json_path
+        self.db.commit()
+        return result.srt_path
 
     def run_translation(self, job: LocalizationJob) -> str:
         raise NotImplementedError(f"translation backend is not implemented: {settings.TRANSLATION_BACKEND}")
