@@ -9,6 +9,7 @@ from src.database import Base
 from src.database.models import LocalizationJob, LocalizationJobStatus, LocalizationStage, Project, SourceVideo, User
 from src.services.asr_service import ASRResult, ASRSegment
 from src.services.localization_pipeline import LocalizationPipeline
+from src.services.translation_service import TranslationResult
 
 
 @pytest.fixture()
@@ -77,3 +78,65 @@ def test_run_asr_stores_transcript_path(db_session, tmp_path, monkeypatch):
     db_session.refresh(job)
     assert job.transcript_path.endswith("transcript.json")
     assert srt_path.endswith("transcript.zh.srt")
+
+
+def test_run_translation_stores_translated_subtitle_dir(db_session, tmp_path, monkeypatch):
+    monkeypatch.setattr("src.services.localization_pipeline.settings.STORAGE_PATH", str(tmp_path / "storage"))
+
+    user = User(username="translate-user", email="translate@example.com", hashed_password="x")
+    db_session.add(user)
+    db_session.commit()
+
+    project = Project(name="translate project", user_id=user.id)
+    db_session.add(project)
+    db_session.commit()
+
+    video_path = tmp_path / "source.mp4"
+    video_path.write_bytes(b"fake-video")
+    source_video = SourceVideo(
+        project_id=project.id,
+        original_filename="source.mp4",
+        file_path=str(video_path),
+    )
+    db_session.add(source_video)
+    db_session.commit()
+
+    transcript = tmp_path / "transcript.json"
+    transcript.write_text(
+        json.dumps({"segments": [{"start": 0.0, "end": 1.0, "text": "你好"}]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    job = LocalizationJob(
+        source_video_id=source_video.id,
+        target_languages=json.dumps(["en", "es"]),
+        status=LocalizationJobStatus.QUEUED,
+        current_stage=LocalizationStage.UPLOADED,
+        transcript_path=str(transcript),
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    def fake_translate_transcript(_self, transcript_path, target_languages, output_dir):
+        assert transcript_path == str(transcript)
+        assert target_languages == ["en", "es"]
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        return {
+            language: TranslationResult(
+                language=language,
+                json_path=str(Path(output_dir) / f"{language}.json"),
+                srt_path=str(Path(output_dir) / f"{language}.srt"),
+                segments=[ASRSegment(start=0.0, end=1.0, text="hello")],
+            )
+            for language in target_languages
+        }
+
+    monkeypatch.setattr(
+        "src.services.localization_pipeline.SubtitleTranslationService.translate_transcript",
+        fake_translate_transcript,
+    )
+
+    output_dir = LocalizationPipeline(db_session).run_translation(job)
+
+    db_session.refresh(job)
+    assert job.translated_subtitle_dir == output_dir
+    assert output_dir.endswith("translations")

@@ -20,6 +20,7 @@ from src.database.models import (
 )
 from src.services.asr_service import LocalASRService
 from src.services.occlusion_removal import OcclusionRemovalService
+from src.services.translation_service import SubtitleTranslationService
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -170,7 +171,28 @@ class LocalizationPipeline:
         return result.srt_path
 
     def run_translation(self, job: LocalizationJob) -> str:
-        raise NotImplementedError(f"translation backend is not implemented: {settings.TRANSLATION_BACKEND}")
+        source_video = job.source_video
+        if not source_video:
+            raise LocalizationPipelineError(f"source video missing for job: {job.id}")
+        if not job.transcript_path:
+            raise LocalizationPipelineError("ASR transcript is required before translation")
+
+        output_dir = (
+            self.storage_root
+            / f"project_{source_video.project_id}"
+            / "localization"
+            / f"job_{job.id}"
+            / "translations"
+        )
+        languages = json.loads(job.target_languages)
+        SubtitleTranslationService().translate_transcript(
+            job.transcript_path,
+            languages,
+            str(output_dir),
+        )
+        job.translated_subtitle_dir = str(output_dir)
+        self.db.commit()
+        return str(output_dir)
 
     def run_rendering(self, job: LocalizationJob) -> str:
         raise NotImplementedError("multilingual subtitle rendering is not implemented")

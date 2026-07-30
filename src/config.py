@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     ASR_LANGUAGE: str = "zh"
     ASR_TIMEOUT_SECONDS: int = 7200
     TRANSLATION_BACKEND: str = "local_llm"
+    TRANSLATION_COMMAND: str = ""
+    TRANSLATION_TIMEOUT_SECONDS: int = 7200
+    TRANSLATION_MAX_SEGMENTS_PER_BATCH: int = 30
     MODERATION_BACKEND: str = "rules"
     LOCALIZATION_CONCURRENCY: int = 1
 
