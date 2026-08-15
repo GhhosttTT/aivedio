@@ -20,6 +20,7 @@ llama-cpp-python==0.2.20
 # 图像处理
 Pillow==10.1.0
 opencv-python==4.8.1.78
+rapidocr-onnxruntime==1.2.3
 
 # 视频处理
 ffmpeg-python==0.2.0

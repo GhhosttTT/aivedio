@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from src.services.asr_service import ASRSegment
 from src.services.translation_service import SubtitleTranslationService
 
 
@@ -108,3 +109,29 @@ def test_deepseek_translation_preserves_timing(tmp_path, monkeypatch):
     assert results["en"].segments[0].start == 0.0
     assert results["en"].segments[0].end == 1.0
     assert results["en"].segments[0].text == "Hello"
+
+
+def test_translation_context_extracts_domain_terms():
+    service = SubtitleTranslationService()
+    context = service._build_deterministic_context(
+        [
+            ASRSegment(start=0.0, end=1.0, text="\u4e0a\u754c\u6765\u4eba\u4e86", source="ocr"),
+            ASRSegment(start=1.0, end=2.0, text="\u4ed6\u662f\u4ed9\u5c0a", source="asr"),
+        ]
+    )
+
+    assert "\u4e0a\u754c" in context.glossary
+    assert "\u4ed9\u5c0a" in context.glossary
+    assert context.source_summary["ocr"] == 1
+
+
+def test_translation_prompt_includes_global_context():
+    service = SubtitleTranslationService()
+    segments = [ASRSegment(start=0.0, end=1.0, text="\u4e0a\u754c\u6765\u4eba\u4e86", source="ocr")]
+    context = service._build_deterministic_context(segments)
+
+    prompt = service._build_translation_prompt(segments, "en", context)
+
+    assert "Global context" in prompt
+    assert "\u4e0a\u754c" in prompt
+    assert "OCR-visible subtitle text" in prompt

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
+from collections import Counter
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional
 
 from src.config import settings
 from src.services.asr_service import ASRSegment
@@ -37,6 +39,13 @@ class TranslationResult:
     json_path: str
     srt_path: str
     segments: List[ASRSegment]
+
+
+@dataclass(frozen=True)
+class TranslationContext:
+    story_context: str
+    glossary: Dict[str, str]
+    source_summary: Dict[str, int]
 
 
 class SubtitleTranslationService:
@@ -134,10 +143,11 @@ class SubtitleTranslationService:
             raise TranslationError("DEEPSEEK_API_KEY is not configured")
 
         translated: List[ASRSegment] = []
+        context = self._build_translation_context(segments, provider="deepseek")
         batch_size = max(1, settings.TRANSLATION_MAX_SEGMENTS_PER_BATCH)
         for start in range(0, len(segments), batch_size):
             batch = segments[start : start + batch_size]
-            prompt = self._build_translation_prompt(batch, language)
+            prompt = self._build_translation_prompt(batch, language, context)
             response = self._call_deepseek(prompt)
             translated.extend(self._parse_llm_response(response, batch))
         return translated
@@ -191,10 +201,11 @@ class SubtitleTranslationService:
         from src.services.llm_service import get_llm_service
 
         translated: List[ASRSegment] = []
+        context = self._build_translation_context(segments, provider="local_llm")
         batch_size = max(1, settings.TRANSLATION_MAX_SEGMENTS_PER_BATCH)
         for start in range(0, len(segments), batch_size):
             batch = segments[start : start + batch_size]
-            prompt = self._build_translation_prompt(batch, language)
+            prompt = self._build_translation_prompt(batch, language, context)
             response = get_llm_service().generate(
                 prompt,
                 max_tokens=4096,
@@ -205,7 +216,134 @@ class SubtitleTranslationService:
             translated.extend(self._parse_llm_response(response, batch))
         return translated
 
-    def _build_translation_prompt(self, segments: List[ASRSegment], language: str) -> str:
+    def _build_translation_context(self, segments: List[ASRSegment], provider: str) -> TranslationContext:
+        fallback = self._build_deterministic_context(segments)
+        prompt = self._build_context_prompt(segments)
+        try:
+            if provider == "deepseek":
+                response = self._call_deepseek(prompt)
+            elif provider == "local_llm":
+                from src.services.llm_service import get_llm_service
+
+                response = get_llm_service().generate(
+                    prompt,
+                    max_tokens=2048,
+                    temperature=0.1,
+                    top_p=0.8,
+                    stop=None,
+                )
+            else:
+                return fallback
+            payload = self._extract_json(response)
+            story_context = str(payload.get("story_context", "")).strip() or fallback.story_context
+            glossary_items = payload.get("glossary", {})
+            glossary = dict(fallback.glossary)
+            if isinstance(glossary_items, dict):
+                for term, note in glossary_items.items():
+                    clean_term = str(term).strip()
+                    clean_note = str(note).strip()
+                    if clean_term and clean_note:
+                        glossary[clean_term] = clean_note
+            elif isinstance(glossary_items, list):
+                for item in glossary_items:
+                    if not isinstance(item, dict):
+                        continue
+                    clean_term = str(item.get("term", "")).strip()
+                    clean_note = str(item.get("note", item.get("meaning", ""))).strip()
+                    if clean_term and clean_note:
+                        glossary[clean_term] = clean_note
+            return TranslationContext(
+                story_context=story_context,
+                glossary=glossary,
+                source_summary=fallback.source_summary,
+            )
+        except Exception:
+            return fallback
+
+    def _build_deterministic_context(self, segments: List[ASRSegment]) -> TranslationContext:
+        source_summary = Counter(segment.source for segment in segments)
+        text = "\n".join(segment.text for segment in segments)
+        terms = self._extract_candidate_terms(text)
+        glossary = {
+            term: (
+                "Candidate recurring source term. Preserve its drama/fantasy meaning consistently; "
+                "do not translate it as a random literal place or common noun without context."
+            )
+            for term in terms
+        }
+        return TranslationContext(
+            story_context=(
+                "Use OCR-visible subtitles as the primary source when present. "
+                "Use ASR only to recover missing narration or spoken context."
+            ),
+            glossary=glossary,
+            source_summary=dict(source_summary),
+        )
+
+    def _extract_candidate_terms(self, text: str) -> List[str]:
+        known_domain_terms = [
+            "上界",
+            "下界",
+            "天庭",
+            "仙界",
+            "魔界",
+            "神界",
+            "灵根",
+            "灵力",
+            "渡劫",
+            "飞升",
+            "宗门",
+            "师尊",
+            "仙尊",
+            "魔尊",
+            "沈总",
+        ]
+        candidates: Counter[str] = Counter()
+        for term in known_domain_terms:
+            if term in text:
+                candidates[term] += text.count(term) + 3
+        for match in re.finditer(r"[\u4e00-\u9fff]{2,8}", text):
+            token = match.group(0)
+            if len(token) <= 1:
+                continue
+            candidates[token] += 1
+        return [
+            term
+            for term, _count in candidates.most_common(24)
+            if not self._looks_like_common_sentence(term)
+        ][:16]
+
+    def _looks_like_common_sentence(self, term: str) -> bool:
+        common_fragments = ("这个", "那个", "什么", "不是", "没有", "可以", "就是", "因为", "所以")
+        return any(fragment in term for fragment in common_fragments) and len(term) > 3
+
+    def _build_context_prompt(self, segments: List[ASRSegment]) -> str:
+        payload = [
+            {
+                "start": round(segment.start, 3),
+                "end": round(segment.end, 3),
+                "source": segment.source,
+                "text": segment.text,
+            }
+            for segment in segments
+        ]
+        return (
+            "Analyze this Chinese short-drama transcript before subtitle translation.\n"
+            "OCR-visible subtitle text is the primary source when present; ASR may contain background narration, "
+            "quiet dialogue, or recognition mistakes.\n"
+            "Identify story context, relationships, emotional tone, and special terms. "
+            "For fantasy/drama terms such as 上界, explain the concept instead of treating it as a normal place name.\n"
+            "Return strict JSON only in this format: "
+            '{"story_context":"...","glossary":{"source term":"meaning and translation guidance"}}.\n'
+            f"Transcript:\n{json.dumps(payload, ensure_ascii=False)}"
+        )
+
+    def _build_translation_prompt(
+        self,
+        segments: List[ASRSegment],
+        language: str,
+        context: Optional[TranslationContext] = None,
+    ) -> str:
         language_name = LANGUAGE_NAMES.get(language, language)
         payload = [
             {
@@ -218,6 +356,15 @@ class SubtitleTranslationService:
             }
             for index, segment in enumerate(segments, start=1)
         ]
+        context_payload = (
+            {
+                "story_context": context.story_context,
+                "glossary": context.glossary,
+                "source_summary": context.source_summary,
+            }
+            if context
+            else {}
+        )
         return (
             "You are a professional short-drama localization translator.\n"
             f"Translate the Chinese dialogue into {language_name}.\n"
@@ -225,10 +372,13 @@ class SubtitleTranslationService:
             "to read within its original subtitle duration.\n"
             "Preserve emotion, relationship tension, speaker intent, and genre tone. "
             "If OCR and ASR disagree, trust OCR-visible subtitle text more than ASR.\n"
+            "Use the story context and glossary to preserve world-building terms consistently. "
+            "Do not flatten fantasy titles, realms, organizations, or relationship terms into generic literal words.\n"
             "Keep the same number of items, do not split or merge subtitles, "
             "do not change start/end times, preserve meaning, make dialogue natural, "
             "and return strict JSON only in this format: "
             '{"segments":[{"index":1,"text":"translated text"}]}.\n'
+            f"Global context:\n{json.dumps(context_payload, ensure_ascii=False)}\n"
             f"Source segments:\n{json.dumps(payload, ensure_ascii=False)}"
         )
 
