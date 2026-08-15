@@ -21,6 +21,8 @@ class ASRSegment:
     start: float
     end: float
     text: str
+    source: str = "asr"
+    confidence: Optional[float] = None
 
     @property
     def duration(self) -> float:
@@ -62,7 +64,15 @@ class LocalASRService:
         if not segments:
             raise ASRError("ASR produced no transcript segments")
 
-        self._write_transcript_json(transcript_path, segments)
+        from src.services.subtitle_ocr_service import SubtitleOCRService, TranscriptFusionService
+
+        ocr_segments = SubtitleOCRService().extract_video_subtitles(str(source), str(out_dir))
+        if ocr_segments:
+            segments = TranscriptFusionService().fuse(segments, ocr_segments)
+            TranscriptFusionService().write_transcript(transcript_path, settings.ASR_LANGUAGE, segments)
+        else:
+            self._write_transcript_json(transcript_path, segments)
+
         self._write_srt(srt_path, segments)
         return ASRResult(
             audio_path=str(audio_path),

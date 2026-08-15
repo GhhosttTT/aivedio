@@ -208,13 +208,25 @@ class SubtitleTranslationService:
     def _build_translation_prompt(self, segments: List[ASRSegment], language: str) -> str:
         language_name = LANGUAGE_NAMES.get(language, language)
         payload = [
-            {"index": index, "text": segment.text}
+            {
+                "index": index,
+                "start": round(segment.start, 3),
+                "end": round(segment.end, 3),
+                "duration": round(segment.duration, 3),
+                "source": segment.source,
+                "text": segment.text,
+            }
             for index, segment in enumerate(segments, start=1)
         ]
         return (
             "You are a professional short-drama localization translator.\n"
             f"Translate the Chinese dialogue into {language_name}.\n"
-            "Keep the same number of items, preserve meaning, make dialogue natural, "
+            "Use the timing metadata to keep each translated line concise enough "
+            "to read within its original subtitle duration.\n"
+            "Preserve emotion, relationship tension, speaker intent, and genre tone. "
+            "If OCR and ASR disagree, trust OCR-visible subtitle text more than ASR.\n"
+            "Keep the same number of items, do not split or merge subtitles, "
+            "do not change start/end times, preserve meaning, make dialogue natural, "
             "and return strict JSON only in this format: "
             '{"segments":[{"index":1,"text":"translated text"}]}.\n'
             f"Source segments:\n{json.dumps(payload, ensure_ascii=False)}"

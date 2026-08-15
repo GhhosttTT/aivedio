@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     ASR_COMPUTE_TYPE: str = "float16"
     ASR_LANGUAGE: str = "zh"
     ASR_TIMEOUT_SECONDS: int = 7200
+    OCR_BACKEND: str = "disabled"
+    OCR_COMMAND: str = ""
+    OCR_MIN_CONFIDENCE: float = 0.55
+    OCR_TIMEOUT_SECONDS: int = 7200
+    OCR_ASR_MAX_GAP_SECONDS: float = 0.35
     TRANSLATION_BACKEND: str = "local_llm"
     TRANSLATION_COMMAND: str = ""
     TRANSLATION_TIMEOUT_SECONDS: int = 7200
