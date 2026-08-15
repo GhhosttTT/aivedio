@@ -226,6 +226,10 @@ export const localizationApi = {
         return apiClient.get(`/localization/projects/${projectId}/source-videos`);
     },
 
+    listProjectJobs: async (projectId: number): Promise<LocalizationJob[]> => {
+        return apiClient.get(`/localization/projects/${projectId}/jobs`);
+    },
+
     createJob: async (data: {
         source_video_id: number;
         target_languages: string[];

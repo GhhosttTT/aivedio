@@ -1,10 +1,38 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Upload, Globe2, RefreshCw, FileVideo, CheckCircle, AlertCircle } from 'lucide-react';
+import {
+    AlertCircle,
+    CheckCircle,
+    Download,
+    ExternalLink,
+    FileText,
+    FileVideo,
+    Globe2,
+    RefreshCw,
+    Upload,
+} from 'lucide-react';
 import { localizationApi, projectApi } from '../api/client';
 import type { LocalizationJob, Project, SourceVideo } from '../types';
 
-const defaultLanguages = ['en', 'es', 'pt', 'ja', 'ko'];
+const defaultLanguages = ['en'];
+const apiOrigin = 'http://127.0.0.1:8000';
+
+const toStorageUrl = (path?: string | null) => {
+    if (!path) return null;
+    const normalized = path.replace(/\\/g, '/').replace(/^\.?\//, '');
+    if (!normalized.startsWith('storage/')) return null;
+    return `${apiOrigin}/${normalized}`;
+};
+
+const buildRenderedVideoUrl = (job: LocalizationJob, language: string) => {
+    if (!job.rendered_video_dir) return null;
+    return toStorageUrl(`${job.rendered_video_dir}/${language}.mp4`);
+};
+
+const buildSubtitleUrl = (job: LocalizationJob, language: string) => {
+    if (!job.translated_subtitle_dir) return null;
+    return toStorageUrl(`${job.translated_subtitle_dir}/${language}.srt`);
+};
 
 export const LocalizationDashboard: React.FC = () => {
     const [projects, setProjects] = useState<Project[]>([]);
@@ -21,6 +49,10 @@ export const LocalizationDashboard: React.FC = () => {
         () => projects.find((project) => Number(project.id) === projectId),
         [projects, projectId],
     );
+
+    const primaryLanguage = job?.target_languages[0] || selectedLanguages[0] || 'en';
+    const primaryVideoUrl = job ? buildRenderedVideoUrl(job, primaryLanguage) : null;
+    const reportUrl = job ? toStorageUrl(job.moderation_report_path) : null;
 
     useEffect(() => {
         loadProjects();
@@ -42,7 +74,7 @@ export const LocalizationDashboard: React.FC = () => {
                 const latest = await localizationApi.getJob(job.id);
                 setJob(latest);
                 if (latest.status === 'completed') {
-                    setMessage('译制流程已完成');
+                    setMessage('译制完成，可以直接预览或下载视频');
                 } else if (latest.status === 'failed' || latest.status === 'needs_review') {
                     setMessage(`任务需要处理：${latest.error_message || latest.status}`);
                 }
@@ -63,9 +95,13 @@ export const LocalizationDashboard: React.FC = () => {
     };
 
     const loadSourceVideos = async (id: number) => {
-        const videos = await localizationApi.listSourceVideos(id);
+        const [videos, jobs] = await Promise.all([
+            localizationApi.listSourceVideos(id),
+            localizationApi.listProjectJobs(id),
+        ]);
         setSourceVideos(videos);
         setSelectedVideoId(videos[0]?.id ?? null);
+        setJob(jobs[0] ?? null);
     };
 
     const handleUpload = async () => {
@@ -93,11 +129,7 @@ export const LocalizationDashboard: React.FC = () => {
                 auto_start: true,
             });
             setJob(created);
-            if (created.status === 'completed') {
-                setMessage('译制流程已完成');
-            } else {
-                setMessage(`任务已提交，当前状态：${created.status} / ${created.current_stage}`);
-            }
+            setMessage(`任务已提交：${created.status} / ${created.current_stage}`);
         } finally {
             setLoading(false);
         }
@@ -116,7 +148,7 @@ export const LocalizationDashboard: React.FC = () => {
             <div className="relative max-w-7xl mx-auto px-6 py-10">
                 <div className="mb-8">
                     <h1 className="text-4xl font-bold text-white mb-3">源片出海译制</h1>
-                    <p className="text-slate-400">先把上传、字幕清理、转写、翻译、渲染和审核流程跑通，生成能力后续再接。</p>
+                    <p className="text-slate-400">上传源片后执行 ASR、翻译、字幕烧录和审核，完成后可直接预览成片。</p>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6">
@@ -213,7 +245,7 @@ export const LocalizationDashboard: React.FC = () => {
                                 <h2 className="text-2xl font-semibold text-white mb-2">
                                     {selectedProject?.name || '请选择项目'}
                                 </h2>
-                                <p className="text-slate-400">当前使用本地兜底能力，真实 ASR/翻译/去字幕服务接入后会替换占位产物。</p>
+                                <p className="text-slate-400">完成后优先展示第一种目标语言的视频，可在下方打开其他产物。</p>
                             </div>
                             <FileVideo className="text-slate-500" size={32} />
                         </div>
@@ -226,7 +258,7 @@ export const LocalizationDashboard: React.FC = () => {
                         )}
 
                         {job ? (
-                            <div className="space-y-4">
+                            <div className="space-y-5">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                     <Metric label="状态" value={job.status} />
                                     <Metric label="阶段" value={job.current_stage} />
@@ -234,12 +266,46 @@ export const LocalizationDashboard: React.FC = () => {
                                     <Metric label="语言" value={job.target_languages.join(', ')} />
                                 </div>
 
+                                {job.status === 'completed' && primaryVideoUrl && (
+                                    <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+                                        <div className="flex items-center justify-between gap-3 mb-3">
+                                            <div>
+                                                <div className="text-sm text-slate-400">成片预览</div>
+                                                <div className="text-white font-medium">{primaryLanguage}.mp4</div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <a
+                                                    href={primaryVideoUrl}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-white flex items-center gap-2"
+                                                >
+                                                    <ExternalLink size={16} />
+                                                    打开
+                                                </a>
+                                                <a
+                                                    href={primaryVideoUrl}
+                                                    download
+                                                    className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-white flex items-center gap-2"
+                                                >
+                                                    <Download size={16} />
+                                                    下载
+                                                </a>
+                                            </div>
+                                        </div>
+                                        <video src={primaryVideoUrl} controls className="w-full max-h-[560px] rounded-lg bg-black" />
+                                    </div>
+                                )}
+
                                 <div className="space-y-3">
-                                    <Artifact label="转写字幕" value={job.transcript_path} />
-                                    <Artifact label="译文字幕目录" value={job.translated_subtitle_dir} />
-                                    <Artifact label="渲染视频目录" value={job.rendered_video_dir} />
-                                    <Artifact label="审核报告" value={job.moderation_report_path} />
-                                    {job.error_message && <Artifact label="错误信息" value={job.error_message} />}
+                                    {job.target_languages.map((language) => (
+                                        <LanguageAssets key={language} job={job} language={language} />
+                                    ))}
+                                    <Artifact label="转写 JSON" value={job.transcript_path} href={toStorageUrl(job.transcript_path)} />
+                                    <Artifact label="审核报告" value={job.moderation_report_path} href={reportUrl} />
+                                    {job.status !== 'completed' && job.error_message && (
+                                        <Artifact label="错误信息" value={job.error_message} />
+                                    )}
                                 </div>
                             </div>
                         ) : (
@@ -263,9 +329,52 @@ const Metric: React.FC<{ label: string; value: string }> = ({ label, value }) =>
     </div>
 );
 
-const Artifact: React.FC<{ label: string; value?: string | null }> = ({ label, value }) => (
+const LanguageAssets: React.FC<{ job: LocalizationJob; language: string }> = ({ job, language }) => (
     <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
-        <div className="text-sm text-slate-400 mb-1">{label}</div>
-        <div className="text-sm text-slate-200 break-all">{value || '尚未生成'}</div>
+        <div className="flex items-center justify-between gap-3">
+            <div>
+                <div className="text-sm text-slate-400 mb-1">{language} 输出</div>
+                <div className="text-sm text-slate-200 break-all">{job.rendered_video_dir || '尚未生成'}</div>
+            </div>
+            <div className="flex flex-wrap gap-2 justify-end">
+                <AssetLink icon={<FileVideo size={16} />} label="视频" href={buildRenderedVideoUrl(job, language)} />
+                <AssetLink icon={<FileText size={16} />} label="字幕" href={buildSubtitleUrl(job, language)} />
+            </div>
+        </div>
     </div>
 );
+
+const Artifact: React.FC<{ label: string; value?: string | null; href?: string | null }> = ({ label, value, href }) => (
+    <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+        <div className="flex items-center justify-between gap-3">
+            <div>
+                <div className="text-sm text-slate-400 mb-1">{label}</div>
+                <div className="text-sm text-slate-200 break-all">{value || '尚未生成'}</div>
+            </div>
+            <AssetLink icon={<ExternalLink size={16} />} label="打开" href={href} />
+        </div>
+    </div>
+);
+
+const AssetLink: React.FC<{ icon: React.ReactNode; label: string; href?: string | null }> = ({ icon, label, href }) => {
+    if (!href) {
+        return (
+            <span className="px-3 py-2 bg-slate-800/50 text-slate-500 rounded-lg flex items-center gap-2">
+                {icon}
+                {label}
+            </span>
+        );
+    }
+
+    return (
+        <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-white flex items-center gap-2"
+        >
+            {icon}
+            {label}
+        </a>
+    );
+};

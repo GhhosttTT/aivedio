@@ -139,3 +139,15 @@ async def list_source_videos(project_id: int, db_session: Session = Depends(get_
         .order_by(SourceVideo.created_at.desc())
         .all()
     )
+
+
+@router.get("/projects/{project_id}/jobs", response_model=List[LocalizationJobResponse])
+async def list_project_localization_jobs(project_id: int, db_session: Session = Depends(get_db_session)):
+    jobs = (
+        db_session.query(LocalizationJob)
+        .join(SourceVideo, LocalizationJob.source_video_id == SourceVideo.id)
+        .filter(SourceVideo.project_id == project_id)
+        .order_by(LocalizationJob.created_at.desc())
+        .all()
+    )
+    return [_job_response(job) for job in jobs]

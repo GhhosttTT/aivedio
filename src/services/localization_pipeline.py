@@ -113,6 +113,8 @@ class LocalizationPipeline:
         job.current_stage = stage
         job.progress = max(0.0, min(progress, 100.0))
         job.status = status
+        if status == LocalizationJobStatus.COMPLETED:
+            job.error_message = None
         self.db.commit()
         self.db.refresh(job)
         return job
