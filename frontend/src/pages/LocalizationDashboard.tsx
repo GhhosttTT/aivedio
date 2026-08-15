@@ -34,6 +34,11 @@ const buildSubtitleUrl = (job: LocalizationJob, language: string) => {
     return toStorageUrl(`${job.translated_subtitle_dir}/${language}.srt`);
 };
 
+const buildStoryContextUrl = (job: LocalizationJob) => {
+    if (!job.translated_subtitle_dir) return null;
+    return toStorageUrl(`${job.translated_subtitle_dir}/story_context.json`);
+};
+
 export const LocalizationDashboard: React.FC = () => {
     const [projects, setProjects] = useState<Project[]>([]);
     const [projectId, setProjectId] = useState<number | null>(null);
@@ -53,6 +58,7 @@ export const LocalizationDashboard: React.FC = () => {
     const primaryLanguage = job?.target_languages[0] || selectedLanguages[0] || 'en';
     const primaryVideoUrl = job ? buildRenderedVideoUrl(job, primaryLanguage) : null;
     const reportUrl = job ? toStorageUrl(job.moderation_report_path) : null;
+    const storyContextUrl = job ? buildStoryContextUrl(job) : null;
 
     useEffect(() => {
         loadProjects();
@@ -301,6 +307,7 @@ export const LocalizationDashboard: React.FC = () => {
                                     {job.target_languages.map((language) => (
                                         <LanguageAssets key={language} job={job} language={language} />
                                     ))}
+                                    <Artifact label="剧情理解 JSON" value={storyContextUrl} href={storyContextUrl} />
                                     <Artifact label="转写 JSON" value={job.transcript_path} href={toStorageUrl(job.transcript_path)} />
                                     <Artifact label="审核报告" value={job.moderation_report_path} href={reportUrl} />
                                     {job.status !== 'completed' && job.error_message && (

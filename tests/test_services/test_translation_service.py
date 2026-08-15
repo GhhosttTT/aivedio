@@ -57,6 +57,7 @@ def test_command_translation_writes_language_outputs(tmp_path, monkeypatch):
     assert set(results) == {"en"}
     assert Path(results["en"].json_path).exists()
     assert Path(results["en"].srt_path).exists()
+    assert (tmp_path / "out" / "story_context.json").exists()
     assert "This is a test" in Path(results["en"].srt_path).read_text(encoding="utf-8")
     assert "00:00:01,500 --> 00:00:03,000" in Path(results["en"].srt_path).read_text(encoding="utf-8")
 
@@ -122,10 +123,12 @@ def test_translation_context_extracts_domain_terms():
 
     assert "\u4e0a\u754c" in context.glossary
     assert "\u4ed9\u5c0a" in context.glossary
+    assert context.story_summary
+    assert context.translation_style
     assert context.source_summary["ocr"] == 1
 
 
-def test_translation_prompt_includes_global_context():
+def test_translation_prompt_includes_story_package():
     service = SubtitleTranslationService()
     segments = [ASRSegment(start=0.0, end=1.0, text="\u4e0a\u754c\u6765\u4eba\u4e86", source="ocr")]
     context = service._build_deterministic_context(segments)
@@ -133,5 +136,33 @@ def test_translation_prompt_includes_global_context():
     prompt = service._build_translation_prompt(segments, "en", context)
 
     assert "Global context" in prompt
+    assert "story_summary" in prompt
+    assert "worldbuilding" in prompt
     assert "\u4e0a\u754c" in prompt
     assert "OCR-visible subtitle text" in prompt
+
+
+def test_context_payload_overrides_story_package():
+    service = SubtitleTranslationService()
+    fallback = service._build_deterministic_context(
+        [ASRSegment(start=0.0, end=1.0, text="\u4e0a\u754c\u6765\u4eba\u4e86", source="ocr")]
+    )
+
+    context = service._context_from_payload(
+        {
+            "story_summary": "A betrayed heroine faces a celestial power struggle.",
+            "characters": ["heroine: betrayed but resilient"],
+            "relationships": ["heroine and male lead: estranged spouses"],
+            "conflicts": ["forced marriage and revenge"],
+            "worldbuilding": ["\u4e0a\u754c is a celestial realm/order, not a normal location"],
+            "emotional_arc": ["humiliation to defiance"],
+            "glossary": {"\u4e0a\u754c": "celestial upper realm"},
+            "translation_style": "tense, concise revenge drama subtitles",
+        },
+        fallback,
+    )
+
+    assert "betrayed heroine" in context.story_summary
+    assert context.characters == ["heroine: betrayed but resilient"]
+    assert context.worldbuilding == ["\u4e0a\u754c is a celestial realm/order, not a normal location"]
+    assert context.glossary["\u4e0a\u754c"] == "celestial upper realm"
