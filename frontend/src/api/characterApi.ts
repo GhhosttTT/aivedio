@@ -24,28 +24,28 @@ export const characterApi = {
    * 创建角色
    */
   createCharacter: async (projectId: number, data: Omit<Character, 'id'>) => {
-    return apiClient.post<Character>(`/api/projects/${projectId}/characters`, data);
+    return apiClient.post<Character>(`/projects/${projectId}/characters`, data);
   },
 
   /**
    * 获取项目的所有角色
    */
   listCharacters: async (projectId: number) => {
-    return apiClient.get<Character[]>(`/api/projects/${projectId}/characters`);
+    return apiClient.get<Character[]>(`/projects/${projectId}/characters`);
   },
 
   /**
    * 获取角色详情
    */
   getCharacter: async (projectId: number, characterId: number) => {
-    return apiClient.get<Character>(`/api/projects/${projectId}/characters/${characterId}`);
+    return apiClient.get<Character>(`/projects/${projectId}/characters/${characterId}`);
   },
 
   /**
    * 删除角色
    */
   deleteCharacter: async (projectId: number, characterId: number) => {
-    return apiClient.delete<{ message: string }>(`/api/projects/${projectId}/characters/${characterId}`);
+    return apiClient.delete<{ message: string }>(`/projects/${projectId}/characters/${characterId}`);
   },
 
   /**
@@ -64,7 +64,7 @@ export const characterApi = {
     }
 
     return apiClient.post<CharacterReference>(
-      `/api/projects/${projectId}/characters/${characterId}/reference`,
+      `/projects/${projectId}/characters/${characterId}/reference`,
       formData,
       {
         headers: {
@@ -79,7 +79,7 @@ export const characterApi = {
    */
   listReferences: async (projectId: number, characterId: number) => {
     return apiClient.get<CharacterReference[]>(
-      `/api/projects/${projectId}/characters/${characterId}/references`
+      `/projects/${projectId}/characters/${characterId}/references`
     );
   },
 };

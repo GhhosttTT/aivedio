@@ -115,7 +115,7 @@ export const ProjectList: React.FC = () => {
                         }}
                     >
                         <AnimatePresence>
-                            {projects.map((project, index) => {
+                            {projects.map((project) => {
                                 const statusConfig = getStatusConfig(project.status);
                                 const StatusIcon = statusConfig.icon;
 

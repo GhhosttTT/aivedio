@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Project } from '../types';
+import type { LocalizationJob, Project, SourceVideo } from '../types';
 
 /**
  * API 客户端配置
@@ -207,6 +207,36 @@ export const taskApi = {
      */
     retryTask: async (taskId: string): Promise<{ message: string; detail: string }> => {
         return apiClient.post(`/tasks/${taskId}/retry`);
+    },
+};
+
+export const localizationApi = {
+    uploadSourceVideo: async (projectId: number, file: File): Promise<SourceVideo> => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return apiClient.post(`/localization/projects/${projectId}/source-videos`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+            timeout: 300000,
+        });
+    },
+
+    listSourceVideos: async (projectId: number): Promise<SourceVideo[]> => {
+        return apiClient.get(`/localization/projects/${projectId}/source-videos`);
+    },
+
+    createJob: async (data: {
+        source_video_id: number;
+        target_languages: string[];
+        auto_start?: boolean;
+        run_inline?: boolean;
+    }): Promise<LocalizationJob> => {
+        return apiClient.post('/localization/jobs', data, { timeout: 900000 });
+    },
+
+    getJob: async (jobId: number): Promise<LocalizationJob> => {
+        return apiClient.get(`/localization/jobs/${jobId}`);
     },
 };
 

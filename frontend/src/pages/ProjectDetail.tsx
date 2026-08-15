@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Play, RefreshCw, Download, Sparkles } from 'lucide-react';
+import { ArrowLeft, Play, Download, Sparkles } from 'lucide-react';
 import { projectApi } from '../api/client';
 import { ScriptPreview } from '../components/ScriptPreview';
 import { ProductionProgress } from '../components/ProductionProgress';
@@ -267,9 +267,9 @@ export const ProjectDetail: React.FC = () => {
                     transition={{ duration: 0.3 }}
                 >
                     {activeTab === 'script' ? (
-                        <ScriptPreview project={project} onReload={() => loadProject(id!)} />
+                        <ScriptPreview project={project} onReload={() => loadProject(Number(id))} />
                     ) : (
-                        <ProductionProgress project={project} onReload={() => loadProject(id!)} />
+                        <ProductionProgress project={project} onReload={() => loadProject(Number(id))} />
                     )}
                 </motion.div>
             </div>

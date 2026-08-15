@@ -46,3 +46,32 @@ export interface Project {
     final_video_path?: string | null;
     total_scenes?: number;
 }
+
+export interface SourceVideo {
+    id: number;
+    project_id: number;
+    original_filename: string;
+    file_path: string;
+    clean_video_path?: string | null;
+    duration?: number | null;
+    width?: number | null;
+    height?: number | null;
+    created_at: string;
+}
+
+export interface LocalizationJob {
+    id: number;
+    source_video_id: number;
+    celery_task_id?: string | null;
+    target_languages: string[];
+    status: string;
+    current_stage: string;
+    progress: number;
+    transcript_path?: string | null;
+    translated_subtitle_dir?: string | null;
+    rendered_video_dir?: string | null;
+    moderation_report_path?: string | null;
+    error_message?: string | null;
+    created_at: string;
+    updated_at: string;
+}

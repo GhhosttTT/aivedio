@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ProjectList } from './pages/ProjectList';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { VideoPreview } from './pages/VideoPreview';
+import { LocalizationDashboard } from './pages/LocalizationDashboard';
 import { Login } from './pages/Login';
 import { Navigation } from './components/Navigation';
 import { useAuthStore } from './store/authStore';
@@ -66,6 +67,18 @@ function App() {
                                 isAuthenticated ? (
                                     <PageTransition>
                                         <ProjectDetail />
+                                    </PageTransition>
+                                ) : (
+                                    <Navigate to="/login" replace />
+                                )
+                            }
+                        />
+                        <Route
+                            path="/localization"
+                            element={
+                                isAuthenticated ? (
+                                    <PageTransition>
+                                        <LocalizationDashboard />
                                     </PageTransition>
                                 ) : (
                                     <Navigate to="/login" replace />

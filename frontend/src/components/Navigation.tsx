@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Film, LogOut, User, Sparkles } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Film, Globe2, LogOut, User, Sparkles } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 
 /**
@@ -13,7 +13,6 @@ import { useAuthStore } from '../store/authStore';
  * - 清晰的视觉层级
  */
 export const Navigation: React.FC = () => {
-    const location = useLocation();
     const navigate = useNavigate();
     const { user, logout } = useAuthStore();
 
@@ -48,6 +47,13 @@ export const Navigation: React.FC = () => {
 
                     {/* 用户信息 */}
                     <div className="flex items-center gap-4">
+                        <Link
+                            to="/localization"
+                            className="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 rounded-xl flex items-center gap-2 transition-colors"
+                        >
+                            <Globe2 size={16} />
+                            <span className="text-sm">出海译制</span>
+                        </Link>
                         <div className="flex items-center gap-3 px-4 py-2 bg-slate-800/50 rounded-xl">
                             <div className="w-8 h-8 bg-gradient-to-br from-purple-500/30 to-blue-500/30 rounded-lg flex items-center justify-center">
                                 <User className="text-purple-400" size={16} />

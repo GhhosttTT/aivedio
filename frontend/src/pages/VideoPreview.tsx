@@ -31,7 +31,6 @@ export const VideoPreview: React.FC = () => {
     const [duration, setDuration] = useState(0);
     const [volume, setVolume] = useState(1);
     const [showControls, setShowControls] = useState(true);
-    const [isFullscreen, setIsFullscreen] = useState(false);
 
     useEffect(() => {
         if (id) {
@@ -92,10 +91,8 @@ export const VideoPreview: React.FC = () => {
     const toggleFullscreen = () => {
         if (!document.fullscreenElement) {
             videoRef.current?.requestFullscreen();
-            setIsFullscreen(true);
         } else {
             document.exitFullscreen();
-            setIsFullscreen(false);
         }
     };
 

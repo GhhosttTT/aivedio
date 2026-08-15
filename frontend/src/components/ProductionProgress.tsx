@@ -138,7 +138,7 @@ export const ProductionProgress: React.FC<ProductionProgressProps> = ({ project,
         
         setRegenerating(true);
         try {
-            await projectApi.regenerateImages(project.id);
+            await projectApi.regenerateImages(Number(project.id));
             onReload();
             alert('✅ 重新生成任务已启动');
         } catch (error) {

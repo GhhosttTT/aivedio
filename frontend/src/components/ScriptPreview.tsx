@@ -39,7 +39,7 @@ export const ScriptPreview: React.FC<ScriptPreviewProps> = ({ project, onReload 
 
     const startEdit = (scene: Scene) => {
         setEditingScene(scene.scene_number);
-        setEditDescription(scene.description);
+        setEditDescription(scene.visual_description || '');
     };
 
     // 只要有分镜就显示，不强制要求 script 字段
