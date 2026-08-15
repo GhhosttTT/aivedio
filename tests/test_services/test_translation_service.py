@@ -83,3 +83,28 @@ def test_local_llm_translation_preserves_timing(tmp_path, monkeypatch):
     assert results["en"].segments[0].start == 0.0
     assert results["en"].segments[0].end == 1.0
     assert results["en"].segments[0].text == "Hello"
+
+
+def test_deepseek_translation_preserves_timing(tmp_path, monkeypatch):
+    transcript = tmp_path / "transcript.json"
+    _write_source_transcript(transcript)
+
+    monkeypatch.setattr("src.services.translation_service.settings.TRANSLATION_BACKEND", "deepseek")
+    monkeypatch.setattr("src.services.translation_service.settings.DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "src.services.translation_service.SubtitleTranslationService._call_deepseek",
+        lambda _self, _prompt: json.dumps(
+            {
+                "segments": [
+                    {"index": 1, "text": "Hello"},
+                    {"index": 2, "text": "This is a test"},
+                ]
+            }
+        ),
+    )
+
+    results = SubtitleTranslationService().translate_transcript(str(transcript), ["en"], str(tmp_path / "out"))
+
+    assert results["en"].segments[0].start == 0.0
+    assert results["en"].segments[0].end == 1.0
+    assert results["en"].segments[0].text == "Hello"

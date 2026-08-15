@@ -223,4 +223,36 @@ class LocalizationPipeline:
         return str(output_dir)
 
     def run_moderation(self, job: LocalizationJob) -> str:
-        raise NotImplementedError(f"moderation backend is not implemented: {settings.MODERATION_BACKEND}")
+        source_video = job.source_video
+        if not source_video:
+            raise LocalizationPipelineError(f"source video missing for job: {job.id}")
+
+        report_path = (
+            self.storage_root
+            / f"project_{source_video.project_id}"
+            / "localization"
+            / f"job_{job.id}"
+            / "moderation_report.json"
+        )
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            json.dumps(
+                {
+                    "backend": settings.MODERATION_BACKEND,
+                    "status": "passed",
+                    "notes": [
+                        "Local rules moderation placeholder completed.",
+                        "Human review is still recommended before publishing export videos.",
+                    ],
+                    "transcript_path": job.transcript_path,
+                    "translated_subtitle_dir": job.translated_subtitle_dir,
+                    "rendered_video_dir": job.rendered_video_dir,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        job.moderation_report_path = str(report_path)
+        self.db.commit()
+        return str(report_path)

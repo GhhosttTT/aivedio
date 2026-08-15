@@ -110,8 +110,15 @@ class LocalASRService:
                 "faster-whisper is not installed. Install it or set ASR_BACKEND=command."
             ) from exc
 
+        configured_model = Path(settings.ASR_MODEL_PATH)
+        model_name_or_path = (
+            str(configured_model)
+            if configured_model.exists()
+            else settings.ASR_MODEL_SIZE
+        )
+
         model = WhisperModel(
-            settings.ASR_MODEL_PATH,
+            model_name_or_path,
             device=settings.ASR_DEVICE,
             compute_type=settings.ASR_COMPUTE_TYPE,
         )

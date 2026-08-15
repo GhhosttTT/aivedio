@@ -59,6 +59,22 @@ def test_manual_mask_without_candidates_requires_review(tmp_path, monkeypatch):
     assert (tmp_path / "out" / "occlusion_quality_report.json").exists()
 
 
+def test_detect_only_reuses_source_video_and_writes_reports(tmp_path, monkeypatch):
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"fake-video")
+    monkeypatch.setattr("src.services.occlusion_removal.settings.OCCLUSION_REMOVAL_BACKEND", "detect_only")
+
+    result = OcclusionRemovalService().run(str(video), str(tmp_path / "out"))
+
+    assert result.clean_video_path == str(video)
+    assert result.quality_score == 1.0
+    assert result.needs_manual_review is False
+    assert (tmp_path / "out" / "occlusion_removal_plan.json").exists()
+    assert (tmp_path / "out" / "occlusion_detection_report.json").exists()
+    assert (tmp_path / "out" / "occlusion_masks.json").exists()
+    assert (tmp_path / "out" / "occlusion_quality_report.json").exists()
+
+
 def test_unconfigured_auto_backend_fails_clearly(tmp_path, monkeypatch):
     video = tmp_path / "source.mp4"
     video.write_bytes(b"fake-video")

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+import urllib.error
+import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List
@@ -86,6 +88,8 @@ class SubtitleTranslationService:
     ) -> List[ASRSegment]:
         if settings.TRANSLATION_BACKEND == "command":
             return self._translate_with_command(segments, language, output_dir)
+        if settings.TRANSLATION_BACKEND == "deepseek":
+            return self._translate_with_deepseek(segments, language)
         if settings.TRANSLATION_BACKEND == "local_llm":
             return self._translate_with_local_llm(segments, language)
         raise TranslationError(f"unsupported translation backend: {settings.TRANSLATION_BACKEND}")
@@ -124,6 +128,64 @@ class SubtitleTranslationService:
         if not output_path.exists():
             raise TranslationError(f"translation command did not create output: {output_path}")
         return self._load_segments(output_path)
+
+    def _translate_with_deepseek(self, segments: List[ASRSegment], language: str) -> List[ASRSegment]:
+        if not settings.DEEPSEEK_API_KEY:
+            raise TranslationError("DEEPSEEK_API_KEY is not configured")
+
+        translated: List[ASRSegment] = []
+        batch_size = max(1, settings.TRANSLATION_MAX_SEGMENTS_PER_BATCH)
+        for start in range(0, len(segments), batch_size):
+            batch = segments[start : start + batch_size]
+            prompt = self._build_translation_prompt(batch, language)
+            response = self._call_deepseek(prompt)
+            translated.extend(self._parse_llm_response(response, batch))
+        return translated
+
+    def _call_deepseek(self, prompt: str) -> str:
+        base_url = settings.DEEPSEEK_BASE_URL.rstrip("/")
+        request = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data=json.dumps(
+                {
+                    "model": settings.DEEPSEEK_MODEL,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a professional short-drama subtitle translator. "
+                                "Return strict JSON only."
+                            ),
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.2,
+                    "stream": False,
+                },
+                ensure_ascii=False,
+            ).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=settings.DEEPSEEK_TIMEOUT_SECONDS) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise TranslationError(f"DeepSeek request failed with HTTP {exc.code}: {body}") from exc
+        except urllib.error.URLError as exc:
+            raise TranslationError(f"DeepSeek request failed: {exc}") from exc
+
+        choices = payload.get("choices", [])
+        if not choices:
+            raise TranslationError("DeepSeek response did not contain choices")
+        content = choices[0].get("message", {}).get("content", "")
+        if not content:
+            raise TranslationError("DeepSeek response message is empty")
+        return content
 
     def _translate_with_local_llm(self, segments: List[ASRSegment], language: str) -> List[ASRSegment]:
         from src.services.llm_service import get_llm_service

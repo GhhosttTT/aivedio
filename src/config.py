@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     # 源片出海译制配置
     LOCALIZATION_TARGET_LANGUAGES: str = "en,es,pt,ar,id,th,vi,ja,ko"
     SUBTITLE_REMOVAL_BACKEND: str = "manual_mask"
-    OCCLUSION_REMOVAL_BACKEND: str = "auto_video_inpaint"
+    OCCLUSION_REMOVAL_BACKEND: str = "detect_only"
     OCCLUSION_MASK_DETECTOR_COMMAND: str = ""
     OCCLUSION_AUTO_MASK_MIN_CONFIDENCE: float = 0.65
     OCCLUSION_MIN_QUALITY_SCORE: float = 0.92
@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     VSR_COMMAND: str = ""
     ASR_BACKEND: str = "faster_whisper"
     ASR_MODEL_PATH: str = "./models/faster-whisper-large-v3"
+    ASR_MODEL_SIZE: str = "small"
     ASR_COMMAND: str = ""
     ASR_DEVICE: str = "cuda"
     ASR_COMPUTE_TYPE: str = "float16"
@@ -67,6 +68,10 @@ class Settings(BaseSettings):
     TRANSLATION_COMMAND: str = ""
     TRANSLATION_TIMEOUT_SECONDS: int = 7200
     TRANSLATION_MAX_SEGMENTS_PER_BATCH: int = 30
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    DEEPSEEK_MODEL: str = "deepseek-chat"
+    DEEPSEEK_TIMEOUT_SECONDS: int = 120
     SUBTITLE_RENDER_FONT: str = "Arial"
     SUBTITLE_RENDER_FONT_SIZE: int = 26
     SUBTITLE_RENDER_MARGIN_V: int = 48

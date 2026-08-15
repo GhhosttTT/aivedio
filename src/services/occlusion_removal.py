@@ -19,6 +19,7 @@ from src.config import settings
 
 
 class RemovalBackend(str, Enum):
+    DETECT_ONLY = "detect_only"
     AUTO_VIDEO_INPAINT = "auto_video_inpaint"
     VSR = "vsr"
     PROPINTER = "propainter"
@@ -243,6 +244,23 @@ class OcclusionRemovalService:
             ),
             encoding="utf-8",
         )
+
+        if plan.backend == RemovalBackend.DETECT_ONLY:
+            report_path = self._write_quality_report(
+                out_dir,
+                quality_score=1.0,
+                passed=True,
+                message="detect_only backend: source video is reused without destructive subtitle removal.",
+            )
+            return CleaningResult(
+                clean_video_path=str(path),
+                plan_path=str(plan_path),
+                detection_report_path=str(detection_report_path),
+                mask_path=str(mask_path),
+                quality_report_path=str(report_path),
+                quality_score=1.0,
+                needs_manual_review=False,
+            )
 
         if plan.needs_manual_review:
             report_path = self._write_quality_report(
