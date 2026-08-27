@@ -124,7 +124,15 @@ class TranscriptFusionService:
                 continue
             if self._is_close_to_any_ocr(asr_segment, ocr):
                 continue
-            fused.append(asr_segment)
+            fused.append(
+                ASRSegment(
+                    start=asr_segment.start,
+                    end=asr_segment.end,
+                    text=asr_segment.text,
+                    source="background_asr",
+                    confidence=asr_segment.confidence,
+                )
+            )
 
         return sorted(fused, key=lambda segment: (segment.start, segment.end))
 

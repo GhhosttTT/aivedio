@@ -142,6 +142,61 @@ def test_translation_prompt_includes_story_package():
     assert "OCR-visible subtitle text" in prompt
 
 
+def test_translation_preserves_background_audio_source(tmp_path, monkeypatch):
+    transcript = tmp_path / "transcript.json"
+    transcript.write_text(
+        json.dumps(
+            {
+                "language": "zh",
+                "segments": [
+                    {
+                        "start": 0.0,
+                        "end": 1.5,
+                        "text": "\u753b\u9762\u5b57\u5e55",
+                        "source": "ocr",
+                        "confidence": 0.9,
+                    },
+                    {
+                        "start": 2.0,
+                        "end": 4.0,
+                        "text": "\u65e0\u5b57\u5e55\u80cc\u666f\u65c1\u767d",
+                        "source": "background_asr",
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    prompts = []
+
+    class FakeLLM:
+        def generate(self, prompt, *_args, **_kwargs):
+            prompts.append(prompt)
+            if "story_summary" in prompt and "segments" not in prompt:
+                return json.dumps({"story_summary": "background narration matters"})
+            return json.dumps(
+                {
+                    "segments": [
+                        {"index": 1, "text": "Visible subtitle."},
+                        {"index": 2, "text": "Background narration."},
+                    ]
+                }
+            )
+
+    monkeypatch.setattr("src.services.translation_service.settings.TRANSLATION_BACKEND", "local_llm")
+    monkeypatch.setattr("src.services.llm_service.get_llm_service", lambda: FakeLLM())
+
+    result = SubtitleTranslationService().translate_transcript(str(transcript), ["en"], str(tmp_path / "out"))
+
+    assert result["en"].segments[0].source == "ocr"
+    assert result["en"].segments[1].source == "background_asr"
+    target_payload = json.loads(Path(result["en"].json_path).read_text(encoding="utf-8"))
+    assert target_payload["segments"][1]["source"] == "background_asr"
+    assert any("background_audio" in prompt for prompt in prompts)
+
+
 def test_context_payload_overrides_story_package():
     service = SubtitleTranslationService()
     fallback = service._build_deterministic_context(

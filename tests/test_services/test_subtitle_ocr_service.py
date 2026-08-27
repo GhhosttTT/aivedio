@@ -60,3 +60,4 @@ def test_fusion_prefers_ocr_text_and_duration_when_overlapping():
     assert fused[0].end == 2.0
     assert fused[0].source == "ocr_asr_fused"
     assert fused[1].text == "没有字幕的旁白"
+    assert fused[1].source == "background_asr"

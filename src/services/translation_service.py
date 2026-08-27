@@ -403,6 +403,7 @@ class SubtitleTranslationService:
                 "start": round(segment.start, 3),
                 "end": round(segment.end, 3),
                 "source": segment.source,
+                "role": self._segment_role(segment),
                 "text": segment.text,
             }
             for segment in segments
@@ -437,6 +438,7 @@ class SubtitleTranslationService:
                 "end": round(segment.end, 3),
                 "duration": round(segment.duration, 3),
                 "source": segment.source,
+                "role": self._segment_role(segment),
                 "text": segment.text,
             }
             for index, segment in enumerate(segments, start=1)
@@ -455,6 +457,9 @@ class SubtitleTranslationService:
             "to read within its original subtitle duration.\n"
             "Preserve emotion, relationship tension, speaker intent, and genre tone. "
             "If OCR and ASR disagree, trust OCR-visible subtitle text more than ASR.\n"
+            "Segment role matters: main_subtitle means visible on-screen Chinese subtitle and should be translated as the main subtitle; "
+            "background_audio means no visible source subtitle but ASR captured important narration or off-screen speech, "
+            "so translate it as concise context without contradicting visible dialogue.\n"
             "Use the full story package to translate the line in context. "
             "Preserve plot facts, character relationships, worldbuilding, emotional intent, and term consistency. "
             "Do not flatten fantasy titles, realms, organizations, or relationship terms into generic literal words. "
@@ -469,6 +474,13 @@ class SubtitleTranslationService:
 
     def _write_story_context(self, path: Path, context: TranslationContext) -> None:
         path.write_text(json.dumps(context.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _segment_role(self, segment: ASRSegment) -> str:
+        if segment.source == "background_asr":
+            return "background_audio"
+        if "ocr" in segment.source:
+            return "main_subtitle"
+        return "audio_dialogue"
 
     def _parse_llm_response(
         self,
@@ -487,7 +499,15 @@ class SubtitleTranslationService:
             text = str(item.get("text", "")).strip()
             if not text:
                 raise TranslationError("LLM returned an empty translated segment")
-            translated.append(ASRSegment(start=source.start, end=source.end, text=text))
+            translated.append(
+                ASRSegment(
+                    start=source.start,
+                    end=source.end,
+                    text=text,
+                    source=source.source,
+                    confidence=source.confidence,
+                )
+            )
         return translated
 
     def _extract_json(self, response: str) -> dict:
@@ -519,7 +539,16 @@ class SubtitleTranslationService:
             end = float(item.get("end", start + float(item.get("duration", 0.0))))
             if end <= start:
                 raise TranslationError(f"invalid subtitle timing: start={start}, end={end}")
-            segments.append(ASRSegment(start=start, end=end, text=text))
+            confidence = item.get("confidence")
+            segments.append(
+                ASRSegment(
+                    start=start,
+                    end=end,
+                    text=text,
+                    source=str(item.get("source", "subtitle")),
+                    confidence=None if confidence is None else float(confidence),
+                )
+            )
         return segments
 
     def _write_json(self, path: Path, language: str, segments: Iterable[ASRSegment]) -> None:

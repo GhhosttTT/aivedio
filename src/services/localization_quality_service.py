@@ -272,6 +272,7 @@ class LocalizationQualityService:
                 "end": round(segment.end, 3),
                 "duration": round(segment.duration, 3),
                 "source": segment.source,
+                "role": self._segment_role(segment.source),
                 "confidence": segment.confidence,
                 "text": segment.text,
             }
@@ -284,6 +285,8 @@ class LocalizationQualityService:
                     "start": round(segment.start, 3),
                     "end": round(segment.end, 3),
                     "duration": round(segment.duration, 3),
+                    "source": segment.source,
+                    "role": self._segment_role(segment.source),
                     "text": segment.text,
                 }
                 for index, segment in enumerate(segments, start=1)
@@ -295,6 +298,8 @@ class LocalizationQualityService:
             "Evaluate three things: whether the Chinese source transcript is semantically plausible from OCR/ASR, "
             "whether each English/target translation is natural and faithful to the story, and whether timing is readable.\n"
             "Use OCR-visible segments as stronger evidence than ASR-only segments. "
+            "Distinguish main_subtitle from background_audio: main_subtitle should match visible Chinese subtitles, "
+            "while background_audio should provide important off-screen narration or speech when no visible subtitle exists. "
             "Review Chinese first: if the Chinese source is likely wrong or out of sync, mark the target translation as needs_review "
             "even when the English is fluent. Flag lines where the Chinese source likely needs correction before translation.\n"
             "Return strict JSON only in this format: "
@@ -337,6 +342,13 @@ class LocalizationQualityService:
             "duration": round(total_duration, 3),
             "source_counts": source_counts,
         }
+
+    def _segment_role(self, source: str) -> str:
+        if source == "background_asr":
+            return "background_audio"
+        if "ocr" in source:
+            return "main_subtitle"
+        return "audio_dialogue"
 
     def _score(self, issues: List[QualityIssue]) -> float:
         score = 1.0
