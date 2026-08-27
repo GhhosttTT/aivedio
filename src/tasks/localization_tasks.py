@@ -96,15 +96,17 @@ def run_localization_job_task(self, job_id: int):
         pipeline.update_stage(job_id, LocalizationStage.MODERATION, 95)
         pipeline.run_moderation(pipeline.get_job(job_id))
 
-        pipeline.update_stage(
-            job_id,
-            LocalizationStage.COMPLETED,
-            100,
-            status=LocalizationJobStatus.COMPLETED,
-        )
+        moderated_job = pipeline.get_job(job_id)
+        if moderated_job.status != LocalizationJobStatus.NEEDS_REVIEW:
+            pipeline.update_stage(
+                job_id,
+                LocalizationStage.COMPLETED,
+                100,
+                status=LocalizationJobStatus.COMPLETED,
+            )
         return {
             "job_id": job_id,
-            "status": "completed",
+            "status": pipeline.get_job(job_id).status.value,
             "preprocessing": preprocess_results,
         }
 

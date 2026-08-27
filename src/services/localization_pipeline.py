@@ -19,6 +19,7 @@ from src.database.models import (
     SourceVideo,
 )
 from src.services.asr_service import LocalASRService
+from src.services.localization_quality_service import LocalizationQualityService
 from src.services.occlusion_removal import OcclusionRemovalService
 from src.services.subtitle_rendering_service import SubtitleRenderingService
 from src.services.translation_service import SubtitleTranslationService
@@ -237,24 +238,21 @@ class LocalizationPipeline:
             / "moderation_report.json"
         )
         report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(
-            json.dumps(
-                {
-                    "backend": settings.MODERATION_BACKEND,
-                    "status": "passed",
-                    "notes": [
-                        "Local rules moderation placeholder completed.",
-                        "Human review is still recommended before publishing export videos.",
-                    ],
-                    "transcript_path": job.transcript_path,
-                    "translated_subtitle_dir": job.translated_subtitle_dir,
-                    "rendered_video_dir": job.rendered_video_dir,
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
+        if not job.transcript_path:
+            raise LocalizationPipelineError("source transcript is required before QA")
+        if not job.translated_subtitle_dir:
+            raise LocalizationPipelineError("translated subtitles are required before QA")
+
+        report = LocalizationQualityService().assess(
+            transcript_path=job.transcript_path,
+            translated_subtitle_dir=job.translated_subtitle_dir,
+            target_languages=json.loads(job.target_languages),
+            output_path=str(report_path),
+            rendered_video_dir=job.rendered_video_dir,
         )
         job.moderation_report_path = str(report_path)
+        if report.status != "passed":
+            job.status = LocalizationJobStatus.NEEDS_REVIEW
+            job.error_message = "Localization QA found issues; review moderation_report.json."
         self.db.commit()
         return str(report_path)

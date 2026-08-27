@@ -193,3 +193,67 @@ def test_run_rendering_stores_rendered_video_dir(db_session, tmp_path, monkeypat
     db_session.refresh(job)
     assert job.rendered_video_dir == output_dir
     assert output_dir.endswith("rendered")
+
+
+def test_run_moderation_writes_quality_report(db_session, tmp_path, monkeypatch):
+    monkeypatch.setattr("src.services.localization_pipeline.settings.STORAGE_PATH", str(tmp_path / "storage"))
+    monkeypatch.setattr("src.services.localization_quality_service.settings.TRANSLATION_BACKEND", "command")
+
+    user = User(username="qa-user", email="qa@example.com", hashed_password="x")
+    db_session.add(user)
+    db_session.commit()
+
+    project = Project(name="qa project", user_id=user.id)
+    db_session.add(project)
+    db_session.commit()
+
+    source_video = SourceVideo(
+        project_id=project.id,
+        original_filename="source.mp4",
+        file_path=str(tmp_path / "source.mp4"),
+    )
+    db_session.add(source_video)
+    db_session.commit()
+
+    transcript = tmp_path / "transcript.json"
+    transcript.write_text(
+        json.dumps(
+            {
+                "segments": [
+                    {
+                        "start": 0.0,
+                        "end": 2.0,
+                        "text": "\u4e0a\u754c\u6765\u4eba\u4e86",
+                        "source": "ocr",
+                        "confidence": 0.9,
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    translated_dir = tmp_path / "translations"
+    translated_dir.mkdir()
+    (translated_dir / "en.json").write_text(
+        json.dumps({"segments": [{"start": 0.0, "end": 2.0, "text": "Someone came from the upper realm."}]}),
+        encoding="utf-8",
+    )
+
+    job = LocalizationJob(
+        source_video_id=source_video.id,
+        target_languages=json.dumps(["en"]),
+        status=LocalizationJobStatus.QUEUED,
+        current_stage=LocalizationStage.UPLOADED,
+        transcript_path=str(transcript),
+        translated_subtitle_dir=str(translated_dir),
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    report_path = LocalizationPipeline(db_session).run_moderation(job)
+
+    payload = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    assert payload["status"] == "passed"
+    assert payload["source_summary"]["segments"] == 1
+    assert job.moderation_report_path == report_path
