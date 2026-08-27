@@ -1,14 +1,13 @@
-"""
-音频生成任务
-使用 Celery 异步执行音频生成任务
-"""
+"""Audio generation Celery tasks."""
 
-from src.tasks.celery_app import celery_app
 from src.database.database import get_db
 from src.database.models import Scene
+from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
+from src.services.subtitle_generator import get_subtitle_generator
 from src.services.tts_service import get_tts_service
-from src.utils.storage import get_scene_audio_path
+from src.tasks.celery_app import celery_app
 from src.utils.logger import get_logger
+from src.utils.storage import get_scene_audio_path
 
 logger = get_logger(__name__)
 
@@ -21,78 +20,60 @@ def generate_audio_task(
     speaker: str,
     project_id: int,
     task_id: int,
-    **kwargs
+    **kwargs,
 ):
-    """
-    生成音频任务（TTS）
-    
-    Args:
-        self: 任务实例
-        scene_id: 分镜ID
-        text: 对话文本
-        speaker: 说话人
-        project_id: 项目ID
-        task_id: 任务ID
-        **kwargs: 其他参数
-    
-    Returns:
-        dict: 包含生成结果的字典
-    """
-    logger.info(f"开始生成音频: scene_id={scene_id}, text={text[:50] if text else ''}...")
-    
-    # 更新任务状态
-    self.update_state(state="PROGRESS", meta={"current": 0, "total": 100, "step": "音频生成"})
-    
+    """Generate narration/dialogue audio for one scene."""
+    logger.info("Start audio generation: scene_id={}, text_len={}", scene_id, len(text or ""))
+    self.update_state(state="PROGRESS", meta={"current": 0, "total": 100, "step": "audio_generation"})
+
+    db = next(get_db())
     try:
-        # 获取数据库会话
-        db = next(get_db())
-        
-        # 查询分镜
         scene = db.query(Scene).filter(Scene.id == scene_id).first()
         if not scene:
-            raise ValueError(f"分镜不存在: {scene_id}")
-        
-        # 如果没有对话文本，跳过
-        if not text or text.strip() == "":
-            logger.info(f"分镜没有对话，跳过音频生成: scene_id={scene_id}")
-            return {
-                "scene_id": scene_id,
-                "audio_path": None,
-                "duration": 0.0,
-                "status": "skipped"
-            }
-        
-        # 获取 TTS 服务
-        tts_service = get_tts_service()
-        
-        # 生成音频路径
+            raise ValueError(f"Scene not found: {scene_id}")
+
+        if not text or not text.strip():
+            scene.audio_path = None
+            scene.audio_duration = 0.0
+            db.commit()
+            return {"scene_id": scene_id, "audio_path": None, "duration": 0.0, "status": "skipped"}
+
         audio_path = get_scene_audio_path(project_id, scene_id)
-        
-        # 调用 TTS 服务生成音频
-        self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "调用 TTS API"})
-        
-        result_path, duration = tts_service.generate_speech(
-            text=text,
-            output_path=audio_path,
-            speaker=speaker,
-            emotion=kwargs.get("emotion", "neutral"),
-            speed=kwargs.get("speed", 1.0)
-        )
-        
-        # 更新数据库
+        self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "tts_generation"})
+
+        try:
+            generated = get_tts_service().generate_speech(
+                text=text,
+                output_path=audio_path,
+                speaker=speaker,
+                emotion=kwargs.get("emotion", "neutral"),
+                speed=kwargs.get("speed", 1.0),
+            )
+            if isinstance(generated, tuple):
+                result_path, duration = generated
+            else:
+                result_path = generated
+                duration = get_subtitle_generator()._get_audio_duration(result_path)
+        except Exception as exc:
+            if not draft_fallback_enabled():
+                raise
+            logger.warning("Real TTS failed; using draft silent audio: scene_id={}, error={}", scene_id, exc)
+            result_path, duration = get_draft_media_service().generate_silent_audio(
+                text=text,
+                output_path=audio_path,
+            )
+
+        if not duration or duration <= 0:
+            duration = get_draft_media_service().estimate_dialogue_duration(text)
+
         scene.audio_path = result_path
         scene.audio_duration = duration
         db.commit()
-        
-        logger.info(f"音频生成成功: scene_id={scene_id}, path={result_path}, duration={duration}")
-        
-        return {
-            "scene_id": scene_id,
-            "audio_path": result_path,
-            "duration": duration,
-            "status": "completed"
-        }
-    
-    except Exception as e:
-        logger.error(f"音频生成失败: scene_id={scene_id}, error={e}")
+
+        logger.info("Audio generation completed: scene_id={}, path={}, duration={}", scene_id, result_path, duration)
+        return {"scene_id": scene_id, "audio_path": result_path, "duration": duration, "status": "completed"}
+    except Exception as exc:
+        logger.error("Audio generation failed: scene_id={}, error={}", scene_id, exc)
         raise
+    finally:
+        db.close()

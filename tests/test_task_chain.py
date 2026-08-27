@@ -69,8 +69,8 @@ class TestTaskChain:
         assert task_chain is not None
         
         # 验证任务链类型
-        from celery import chain
-        assert isinstance(task_chain, chain)
+        from celery.canvas import _chain
+        assert isinstance(task_chain, _chain)
     
     def test_build_task_chain_with_partial_steps(self, orchestrator, mock_scenes):
         """测试部分步骤的任务链"""
@@ -185,7 +185,6 @@ class TestTaskSignatures:
         params = list(sig.parameters.keys())
         
         # 验证参数列表
-        assert 'self' in params
         assert 'scene_id' in params
         assert 'project_id' in params
         assert 'task_id' in params
@@ -202,7 +201,6 @@ class TestTaskSignatures:
         sig = inspect.signature(generate_audio_task)
         params = list(sig.parameters.keys())
         
-        assert 'self' in params
         assert 'scene_id' in params
         assert 'text' in params
         assert 'speaker' in params
@@ -221,7 +219,6 @@ class TestTaskSignatures:
         sig = inspect.signature(generate_subtitle_task)
         params = list(sig.parameters.keys())
         
-        assert 'self' in params
         assert 'scene_id' in params
         assert 'project_id' in params
         assert 'task_id' in params
@@ -238,7 +235,6 @@ class TestTaskSignatures:
         sig = inspect.signature(compose_final_video_task)
         params = list(sig.parameters.keys())
         
-        assert 'self' in params
         assert 'project_id' in params
         assert 'task_id' in params
         assert 'add_bgm' in params

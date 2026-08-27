@@ -5,6 +5,7 @@ from typing import Optional
 
 from src.database.database import get_db
 from src.database.models import Character, Scene, Task as TaskModel
+from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, get_generation_provider
 from src.tasks.celery_app import celery_app
 from src.utils.logger import get_logger
@@ -101,7 +102,14 @@ def _save_first_reference(character: Optional[Character], project_id: int, scene
 
 
 def _update_progress(db, project_id: int, task_id: int) -> tuple[float, int, int]:
-    task_model = db.query(TaskModel).filter(TaskModel.celery_task_id == str(task_id)).first()
+    task_model = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if task_model is None:
+        task_model = (
+            db.query(TaskModel)
+            .filter(TaskModel.project_id == project_id)
+            .order_by(TaskModel.created_at.desc())
+            .first()
+        )
     completed_images = db.query(Scene).filter(
         Scene.project_id == project_id,
         Scene.image_path.isnot(None),
@@ -169,20 +177,37 @@ def generate_image_task(
         provider = get_generation_provider(kwargs.get("provider"))
 
         self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "generation_provider"})
-        result = provider.generate_image(
-            ImageGenerationRequest(
+        try:
+            result = provider.generate_image(
+                ImageGenerationRequest(
+                    prompt=enhanced_prompt,
+                    output_path=image_path,
+                    width=kwargs.get("width", 1024),
+                    height=kwargs.get("height", 576),
+                    steps=kwargs.get("steps", 28),
+                    cfg_scale=kwargs.get("cfg_scale", 6.0),
+                    reference_image=reference_image,
+                    use_ipadapter=reference_image is not None,
+                    quality_mode=kwargs.get("quality_mode"),
+                    optimization_mode=kwargs.get("optimization_mode"),
+                )
+            )
+        except Exception as exc:
+            if not draft_fallback_enabled():
+                raise
+            logger.warning("真实图片生成失败，使用草稿兜底图: scene_id={}, error={}", scene_id, exc)
+            draft_path = get_draft_media_service().generate_image(
                 prompt=enhanced_prompt,
                 output_path=image_path,
                 width=kwargs.get("width", 1024),
                 height=kwargs.get("height", 576),
-                steps=kwargs.get("steps", 28),
-                cfg_scale=kwargs.get("cfg_scale", 6.0),
-                reference_image=reference_image,
-                use_ipadapter=reference_image is not None,
-                quality_mode=kwargs.get("quality_mode"),
-                optimization_mode=kwargs.get("optimization_mode"),
+                scene_number=scene.scene_number,
             )
-        )
+            result = type(
+                "DraftImageResult",
+                (),
+                {"output_path": draft_path, "provider": "draft_fallback"},
+            )()
 
         scene.image_path = result.output_path
         db.commit()

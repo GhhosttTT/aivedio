@@ -6,7 +6,7 @@
 from typing import Optional
 from src.tasks.celery_app import celery_app
 from src.database.database import get_db
-from src.database.models import Project, ProjectStatus, Scene
+from src.database.models import Project, ProjectStatus, Scene, Task as TaskModel, TaskStatus
 from src.services.video_composer import get_video_composer
 from src.services.subtitle_generator import get_subtitle_generator
 from src.utils.storage import get_project_final_video_path
@@ -89,7 +89,7 @@ def compose_final_video_task(
         self.update_state(state="PROGRESS", meta={"current": 20, "total": 100, "step": "拼接视频"})
         
         temp_video_path = final_video_path.replace(".mp4", "_temp.mp4")
-        video_composer.concat_videos(video_paths, temp_video_path)
+        temp_video_path = video_composer.concat_videos(video_paths, temp_video_path)
         
         # 步骤 2: 同步音频（40%）
         self.update_state(state="PROGRESS", meta={"current": 40, "total": 100, "step": "同步音频"})
@@ -142,6 +142,18 @@ def compose_final_video_task(
         # 更新项目状态
         project.final_video_path = final_video_path
         project.status = ProjectStatus.COMPLETED
+        task_model = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+        if task_model is None:
+            task_model = (
+                db.query(TaskModel)
+                .filter(TaskModel.project_id == project_id)
+                .order_by(TaskModel.created_at.desc())
+                .first()
+            )
+        if task_model:
+            task_model.status = TaskStatus.COMPLETED
+            task_model.progress = 100.0
+            task_model.result_path = final_video_path
         db.commit()
         
         logger.info(f"视频合成成功: project_id={project_id}, path={final_video_path}")
@@ -160,7 +172,11 @@ def compose_final_video_task(
         project = db.query(Project).filter(Project.id == project_id).first()
         if project:
             project.status = ProjectStatus.FAILED
-            db.commit()
+        task_model = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+        if task_model:
+            task_model.status = TaskStatus.FAILED
+            task_model.error_message = str(e)
+        db.commit()
         
         raise
 

@@ -305,8 +305,14 @@ class SubtitleGenerator:
             
             # 构建 FFmpeg 命令
             # 使用 subtitles 滤镜烧录字幕
+            escaped_subtitle_path = (
+                Path(subtitle_path)
+                .as_posix()
+                .replace(":", "\\:")
+                .replace("'", "\\'")
+            )
             subtitle_filter = (
-                f"subtitles={subtitle_path}:"
+                f"subtitles=filename='{escaped_subtitle_path}':"
                 f"force_style='FontName={self.font_name},"
                 f"FontSize={self.font_size},"
                 f"PrimaryColour={self._color_to_ass(self.font_color)},"
