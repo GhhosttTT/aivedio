@@ -5,13 +5,15 @@
 
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+from uuid import uuid4
 from celery import chain, group
 from celery.result import AsyncResult, GroupResult
 from sqlalchemy.orm import Session
 
-from src.database.models import Project, Scene, Task as TaskModel, TaskStatus
+from src.database.models import Project, Scene, Task as TaskModel, TaskStatus, ProjectStatus
 from src.tasks.celery_app import celery_app
-from src.tasks.image_tasks import generate_image_task
+from src.tasks.image_tasks import generate_image_task, prepare_generation_task
+from src.tasks.review_tasks import review_generation_task
 from src.tasks.video_tasks import generate_video_task
 from src.tasks.audio_tasks import generate_audio_task
 from src.tasks.subtitle_tasks import generate_subtitle_task
@@ -79,44 +81,38 @@ class TaskOrchestrator:
         
         logger.info(f"创建生产任务链: project_id={project_id}, scenes={len(scenes)}")
         
-        # 构建任务链
-        task_chain = self._build_task_chain(
-            project_id=project_id,
-            task_id=0,  # 临时ID，稍后更新
-            scenes=scenes,
-            generate_images=generate_images,
-            generate_videos=generate_videos,
-            generate_audios=generate_audios,
-            generate_subtitles=generate_subtitles,
-            add_bgm=add_bgm,
-            bgm_path=bgm_path
-        )
-        
-        # 提交任务链
-        result = task_chain.apply_async()
-        
-        # 创建任务记录
+        if project.status == ProjectStatus.IN_PRODUCTION:
+            raise ValueError("项目正在制作，请等待当前任务结束")
+        # Persist the real task ID before a worker can consume the first step.
         task_model = TaskModel(
-            project_id=project_id,
-            celery_task_id=result.id,
-            status=TaskStatus.RUNNING,
+            project_id=project_id, celery_task_id=str(uuid4()),
+            status=TaskStatus.PENDING, progress=0.0,
             total_steps=self._calculate_total_steps(
-                len(scenes),
-                generate_images,
-                generate_videos,
-                generate_audios,
-                generate_subtitles
+                len(scenes), generate_images, generate_videos,
+                generate_audios, generate_subtitles,
             ),
-            progress=0.0
         )
         self.db.add(task_model)
+        self.db.flush()
+        task_chain = self._build_task_chain(
+            project_id, task_model.id, scenes, generate_images, generate_videos,
+            generate_audios, generate_subtitles, add_bgm, bgm_path,
+        )
+        result = task_chain.freeze()
+        task_model.celery_task_id = result.id
+        project.status = ProjectStatus.IN_PRODUCTION
+        project.final_video_path = None
         self.db.commit()
-        self.db.refresh(task_model)
-        
-        logger.info(f"任务链已提交: task_id={task_model.id}, celery_task_id={result.id}")
-        
+        try:
+            task_chain.apply_async()
+        except Exception as exc:
+            task_model.status = TaskStatus.FAILED
+            task_model.error_message = f"任务投递失败: {exc}"
+            project.status = ProjectStatus.FAILED
+            self.db.commit()
+            raise
         return result.id
-    
+
     def _calculate_total_steps(
         self,
         scene_count: int,
@@ -147,7 +143,7 @@ class TaskOrchestrator:
             steps += scene_count
         if generate_subtitles:
             steps += scene_count
-        steps += 1  # 最终合成步骤
+        steps += 3  # Preparation, sampled-frame review, final composition.
         return steps
     
     def _build_task_chain(
@@ -186,11 +182,11 @@ class TaskOrchestrator:
         Returns:
             chain: Celery 任务链
         """
-        tasks = []
+        tasks = [prepare_generation_task.si(project_id, task_id, generate_images)]
         
         # 1. 图像生成任务（并行）
         if generate_images:
-            image_tasks = group([
+            image_tasks = chain(*[
                 generate_image_task.si(
                     scene.id,
                     scene.image_prompt or scene.visual_description,
@@ -203,7 +199,7 @@ class TaskOrchestrator:
         
         # 2. 视频生成任务（并行，依赖图像）
         if generate_videos:
-            video_tasks = group([
+            video_tasks = chain(*[
                 generate_video_task.si(
                     scene.id,
                     project_id,
@@ -240,6 +236,7 @@ class TaskOrchestrator:
             tasks.append(subtitle_tasks)
         
         # 5. 最终合成任务
+        tasks.append(review_generation_task.si(project_id, task_id))
         compose_task = compose_final_video_task.si(
             project_id,
             task_id,
@@ -261,64 +258,24 @@ class TaskOrchestrator:
         Returns:
             dict: 任务状态信息
         """
-        result = AsyncResult(celery_task_id, app=celery_app)
-        
-        # 查询数据库中的任务记录
         task_model = self.db.query(TaskModel).filter(
             TaskModel.celery_task_id == celery_task_id
         ).first()
-        
         if not task_model:
-            return {
-                "status": "unknown",
-                "message": "任务不存在"
-            }
-        
-        # 计算进度
-        progress = 0
-        if task_model.total_steps and task_model.total_steps > 0:
-            # 从 progress 字段获取进度
-            progress = int(task_model.progress)
-        
-        # 获取 Celery 任务状态
-        celery_status = result.state
-        
-        # 映射 Celery 状态到系统状态
-        status_mapping = {
-            "PENDING": TaskStatus.PENDING,
-            "STARTED": TaskStatus.RUNNING,
-            "RETRY": TaskStatus.RUNNING,
-            "FAILURE": TaskStatus.FAILED,
-            "SUCCESS": TaskStatus.COMPLETED,
-            "REVOKED": TaskStatus.CANCELLED
-        }
-        
-        status = status_mapping.get(celery_status, TaskStatus.PENDING)
-        
-        response = {
-            "task_id": task_model.id,
-            "celery_task_id": celery_task_id,
+            return {"status": "unknown", "message": "任务不存在"}
+        return {
+            "task_id": task_model.id, "celery_task_id": celery_task_id,
             "project_id": task_model.project_id,
-            "status": status.value,
-            "progress": progress,
+            "status": task_model.status.value,
+            "progress": task_model.progress,
             "current_step": task_model.current_step,
             "total_steps": task_model.total_steps,
+            "error_message": task_model.error_message,
+            "error": task_model.error_message,
             "created_at": task_model.created_at.isoformat() if task_model.created_at else None,
             "updated_at": task_model.updated_at.isoformat() if task_model.updated_at else None,
-            "error_message": task_model.error_message
         }
-        
-        # 如果任务失败，添加错误信息
-        if celery_status == "FAILURE":
-            response["error"] = str(result.info)
-        
-        # 如果任务正在运行，添加元数据
-        if celery_status in ["STARTED", "RETRY"]:
-            if result.info:
-                response["meta"] = result.info
-        
-        return response
-    
+
     def cancel_task(self, celery_task_id: str) -> bool:
         """
         取消任务
@@ -344,11 +301,14 @@ class TaskOrchestrator:
             return False
         
         # 撤销 Celery 任务
-        celery_app.control.revoke(celery_task_id, terminate=True)
+        celery_app.control.revoke(celery_task_id, terminate=False)
         
         # 更新任务状态
+        was_pending = task_model.status == TaskStatus.PENDING
         task_model.status = TaskStatus.CANCELLED
-        task_model.error_message = "任务已被用户取消"
+        if was_pending:
+            task_model.project.status = ProjectStatus.FAILED
+        task_model.error_message = "已请求取消，当前步骤结束后停止后续生成"
         self.db.commit()
         
         logger.info(f"任务已取消: {celery_task_id}")
@@ -394,6 +354,9 @@ class TaskOrchestrator:
             
             # 更新原任务的重试次数
             task_model.retry_count += 1
+            replacement = self.db.query(TaskModel).filter(TaskModel.celery_task_id == new_task_id).first()
+            if replacement:
+                replacement.retry_count = task_model.retry_count
             self.db.commit()
             
             return new_task_id
@@ -411,7 +374,7 @@ class TaskOrchestrator:
         """
         task_model = self.db.query(TaskModel).filter(TaskModel.id == task_id).first()
         if task_model:
-            task_model.progress = progress
+            task_model.progress = max(task_model.progress, min(100.0, max(0.0, progress)))
             self.db.commit()
             logger.debug(f"任务进度已更新: task_id={task_id}, progress={progress}")
     

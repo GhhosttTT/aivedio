@@ -44,7 +44,9 @@ def test_local_comfyui_provider_delegates_image_generation():
         metadata={"width": 1024, "height": 576},
     )
     assert service.last_kwargs["prompt"] == "raw photo, short drama shot"
-    assert service.last_kwargs["enable_realism"] is True
+    assert service.last_kwargs["enable_realism"] is False
+    assert service.last_kwargs["enable_prompt_optimization"] is False
+    assert service.last_kwargs["enable_parameter_optimization"] is False
 
 
 @pytest.mark.parametrize(

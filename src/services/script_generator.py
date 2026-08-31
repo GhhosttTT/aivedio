@@ -7,6 +7,7 @@
 
 import re
 import time
+import json
 from typing import Optional, Dict, List, Tuple
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,8 @@ from src.services.llm_service import LLMService, get_llm_service
 from src.database.models import Project, Character, Scene, ProjectStatus
 from src.services.project_manager import ProjectManager
 from src.utils.logger import logger
+from src.services.generation_review import GenerationReviewService, TextReviewer, require_passed
+from src.utils.storage import storage_manager
 import asyncio
 
 
@@ -101,6 +104,8 @@ class ScriptGenerator:
         # 验证输入
         if not theme and not outline:
             raise ValueError("主题和大纲至少需要提供一个")
+        if isinstance(self.llm_service, LLMService) and not self.llm_service.is_loaded:
+            self.llm_service = get_llm_service()
         
         # 获取项目
         project = self.project_manager.get_project(project_id)
@@ -194,6 +199,27 @@ class ScriptGenerator:
             # 解析剧本
             logger.info("开始解析剧本...")
             parsed_script = self.parse_script(script_text)
+            if len(parsed_script["scenes"]) != num_scenes:
+                raise ScriptParseError(f"期望 {num_scenes} 个分镜，实际 {len(parsed_script['scenes'])} 个")
+            review_path = storage_manager.get_project_path(project_id) / "reviews" / "story.json"
+            reviewer = GenerationReviewService(TextReviewer(self.llm_service))
+            for attempt in range(2):
+                review = reviewer.review_story(parsed_script, review_path.with_name(f"story_attempt_{attempt}.json"))
+                from src.services.generation_review import write_report
+                write_report(review_path, review)
+                if review["status"] != "needs_review" or attempt == 1:
+                    break
+                correction = (
+                    prompt + "\n请根据审核只修复存在问题的情节和镜头，保留主题、角色及总分镜数。"
+                    "输出完整的修订剧本，保持原格式。\n原剧本：\n" + script_text
+                    + "\n审核意见：\n" + json.dumps(review["review"], ensure_ascii=False)
+                )
+                script_text = self.llm_service.generate(prompt=correction, max_tokens=max_tokens, temperature=0.3)
+                parsed_script = self.parse_script(script_text)
+                if len(parsed_script["scenes"]) != num_scenes:
+                    raise ScriptParseError("修订剧本分镜数量不符，需重新规划")
+            require_passed(review)
+            parsed_script["story_review"] = {"status": review["status"], "path": str(review_path), "input_hash": review["input_hash"]}
             
             # 推送解析完成
             _send_websocket_message(project_id, {
@@ -251,6 +277,9 @@ class ScriptGenerator:
                 "message": f"剧本生成失败: {e}"
             })
             raise RuntimeError(f"剧本生成失败: {e}") from e
+        finally:
+            from src.services.llm_service import cleanup_llm_service
+            cleanup_llm_service()
     
     def parse_script(self, script_text: str) -> Dict:
         """
@@ -274,7 +303,7 @@ class ScriptGenerator:
         try:
             # 提取剧本部分
             script_match = re.search(
-                r'【剧本】\s*(.*?)\s*【角色】',
+                r'【(?:剧本|故事大纲)】\s*(.*?)\s*【角色】',
                 script_text,
                 re.DOTALL
             )
@@ -410,181 +439,34 @@ class ScriptGenerator:
         return scenes
     
     def _parse_scene_fields(self, scene_content: str) -> Dict:
-        """
-        解析单个分镜的字段
-        
-        Args:
-            scene_content: 分镜内容文本
-            
-        Returns:
-            分镜字段字典
-        """
+        # Parse fields only. Prompt compilation happens once before rendering.
+        labels = {
+            "场景描述": "description", "环境描述": "environment",
+            "人物描述": "character_description", "镜头描述": "camera",
+            "光线描述": "lighting", "氛围描述": "atmosphere",
+            "故事节点": "story_beat", "对话": "dialogue",
+            "说话人": "speaker", "情感": "emotion", "图像提示词": "image_prompt",
+        }
         scene_data = {}
-        
-        # 解析环境描述
-        environment_match = re.search(
-            r'-\s*环境描述[：:]\s*(.+)',
-            scene_content
-        )
-        if environment_match:
-            scene_data["environment"] = environment_match.group(1).strip()
-        
-        # 解析人物描述
-        character_desc_match = re.search(
-            r'-\s*人物描述[：:]\s*(.+)',
-            scene_content
-        )
-        if character_desc_match:
-            scene_data["character_description"] = character_desc_match.group(1).strip()
-        
-        # 解析镜头描述
-        camera_match = re.search(
-            r'-\s*镜头描述[：:]\s*(.+)',
-            scene_content
-        )
-        if camera_match:
-            scene_data["camera"] = camera_match.group(1).strip()
-        
-        # 解析光线描述
-        lighting_match = re.search(
-            r'-\s*光线描述[：:]\s*(.+)',
-            scene_content
-        )
-        if lighting_match:
-            scene_data["lighting"] = lighting_match.group(1).strip()
-        
-        # 解析氛围描述
-        atmosphere_match = re.search(
-            r'-\s*氛围描述[：:]\s*(.+)',
-            scene_content
-        )
-        if atmosphere_match:
-            scene_data["atmosphere"] = atmosphere_match.group(1).strip()
-        
-        # 解析出现角色
-        characters_match = re.search(
-            r'-\s*出现角色[：:]\s*\[(.+?)\]',
-            scene_content
-        )
-        if characters_match:
-            characters_str = characters_match.group(1).strip()
+        for label, key in labels.items():
+            match = re.search(r"-\s*" + label + r"[：:]\s*([^\n\r]+)", scene_content)
+            if match:
+                scene_data[key] = match.group(1).strip()
+        match = re.search(r"-\s*出现角色[：:]\s*\[([^\]]*)\]", scene_content)
+        if match:
             scene_data["characters"] = [
-                c.strip() for c in characters_str.split(',')
+                name.strip() for name in re.split(r"[,，、]", match.group(1))
+                if name.strip() and name.strip() != "无"
             ]
-        
-        # 解析对话
-        dialogue_match = re.search(
-            r'-\s*对话[：:]\s*(.+)',
-            scene_content
-        )
-        if dialogue_match:
-            scene_data["dialogue"] = dialogue_match.group(1).strip()
-        
-        # 解析说话人
-        speaker_match = re.search(
-            r'-\s*说话人[：:]\s*(.+)',
-            scene_content
-        )
-        if speaker_match:
-            scene_data["speaker"] = speaker_match.group(1).strip()
-        
-        # 解析情感
-        emotion_match = re.search(
-            r'-\s*情感[：:]\s*(.+)',
-            scene_content
-        )
-        if emotion_match:
-            scene_data["emotion"] = emotion_match.group(1).strip()
-        
-        # 生成图像提示词（基于所有详细描述）
-        # 首先收集所有中文描述
-        chinese_parts = []
-        
-        if scene_data.get("environment"):
-            chinese_parts.append(scene_data["environment"])
-        
-        if scene_data.get("character_description"):
-            chinese_parts.append(scene_data["character_description"])
-        
-        if scene_data.get("camera"):
-            chinese_parts.append(scene_data["camera"])
-        
-        if scene_data.get("lighting"):
-            chinese_parts.append(scene_data["lighting"])
-        
-        if scene_data.get("atmosphere"):
-            chinese_parts.append(scene_data["atmosphere"])
-        
-        # 使用 LLM 将中文描述翻译为专业的英文摄影提示词
-        if chinese_parts and self.llm_service:
-            try:
-                chinese_text = ", ".join(chinese_parts)
-                
-                translation_prompt = f"""You are a professional photography and digital art prompt engineer. Translate the following Chinese scene description into a detailed English Stable Diffusion image prompt for HIGH-QUALITY CINEMATIC PORTRAIT.
-
-CRITICAL STYLE REQUIREMENTS:
-1. Style: cinematic portrait photography, similar to high-end fashion photos or movie stills
-2. Face: beautiful detailed face, delicate facial features, flawless skin, soft natural makeup, expressive eyes with catchlights, perfect symmetry
-3. Hair: detailed hair strands, realistic hair texture, natural flow
-4. Clothing: highly detailed clothing, intricate patterns, rich textures, elegant draping
-5. Lighting: cinematic lighting, soft diffused light, warm golden tones, volumetric lighting, bokeh background, lens flare, rim light
-6. Atmosphere: dreamy, ethereal, elegant, graceful, sophisticated, cinematic mood
-7. Quality: ultra-detailed, 8k uhd, RAW photo, masterpiece, best quality, professional photography
-8. Camera: shot on professional DSLR, 85mm f/1.4 lens, shallow depth of field, sharp focus on face
-9. Color: rich colors, professional color grading, warm tones, cinematic color palette
-
-MANDATORY QUALITY TAGS (must include at the beginning):
-"masterpiece, best quality, ultra-detailed, 8k uhd, RAW photo, photorealistic, realistic, cinematic"
-
-MANDATORY STYLE TAGS (must include):
-"beautiful detailed face, delicate features, soft lighting, bokeh, professional photography, shot on 85mm f/1.4 lens, sharp focus, natural skin texture"
-
-MANDATORY ENDING TAGS (must include at the end):
-"highly detailed, professional color grading, cinematic lighting, elegant, graceful"
-
-Output ONLY the prompt, no explanations.
-AVOID: cartoon, anime, illustration, painting, drawing, sketch, flat colors, simple shading, low quality
-
-Chinese description:
-{chinese_text}
-
-English prompt (cinematic portrait):"""
-                
-                english_prompt = self.llm_service.generate(
-                    prompt=translation_prompt,
-                    max_tokens=300,
-                    temperature=0.3  # 低温度确保翻译准确
-                )
-                
-                # 清理结果
-                english_prompt = english_prompt.strip()
-                if english_prompt.startswith('"') and english_prompt.endswith('"'):
-                    english_prompt = english_prompt[1:-1]
-                
-                logger.info(f"提示词翻译成功: {chinese_text[:50]}... -> {english_prompt[:80]}...")
-                scene_data["image_prompt"] = english_prompt
-                
-            except Exception as e:
-                logger.warning(f"提示词翻译失败，使用中文: {e}")
-                # 降级：直接使用中文 + 质量标签
-                visual_parts = chinese_parts + [
-                    "masterpiece, best quality, ultra-detailed",
-                    "photorealistic, realistic",
-                    "professional photography, cinematic lighting, 8k uhd"
-                ]
-                scene_data["image_prompt"] = ", ".join(visual_parts)
-        else:
-            # 如果没有 LLM，直接使用中文 + 质量标签
-            visual_parts = chinese_parts + [
-                "masterpiece, best quality, ultra-detailed",
-                "photorealistic, realistic",
-                "professional photography, cinematic lighting, 8k uhd"
-            ]
-            scene_data["image_prompt"] = ", ".join(visual_parts)
-        
-        # 保存完整的视觉描述（用于数据库）
-        scene_data["description"] = scene_data.get("image_prompt", "")
-        
+        for key in ("dialogue", "speaker"):
+            if scene_data.get(key) in {"无", "无对白", "None", "none"}:
+                scene_data[key] = None
+        if not scene_data.get("description"):
+            scene_data["description"] = "，".join(
+                scene_data[key] for key in (
+                    "environment", "character_description", "camera", "lighting", "atmosphere"
+                ) if scene_data.get(key)
+            )
         return scene_data
     
     def _save_script_to_db(self, project: Project, parsed_script: Dict):
@@ -599,20 +481,19 @@ English prompt (cinematic portrait):"""
             # 保存角色并自动生成外貌特征
             characters_data = parsed_script.get("characters", [])
             for char_data in characters_data:
-                # 使用 LLM 为角色生成独特的外貌特征
-                appearance = self._generate_character_appearance(
-                    char_data.get("name"),
-                    char_data.get("description")
-                )
-                
-                character = Character(
-                    project_id=project.id,
-                    name=char_data.get("name"),
-                    description=char_data.get("description"),
-                    appearance=appearance  # 自动生成的外貌特征
-                )
-                self.db.add(character)
-                logger.info(f"角色 '{char_data.get('name')}' 外貌特征已生成: {appearance}")
+                character = self.db.query(Character).filter(
+                    Character.project_id == project.id, Character.name == char_data.get("name")
+                ).first()
+                if character is None:
+                    character = Character(project_id=project.id, name=char_data.get("name"))
+                    self.db.add(character)
+                if not character.appearance:
+                    character.appearance = self._generate_character_appearance(
+                        char_data.get("name"), char_data.get("description")
+                    )
+                character.description = char_data.get("description")
+            # A newly approved script replaces the old scene list in this transaction.
+            self.db.query(Scene).filter(Scene.project_id == project.id).delete(synchronize_session="fetch")
             
             # 保存分镜
             scenes_data = parsed_script.get("scenes", [])
@@ -647,49 +528,33 @@ English prompt (cinematic portrait):"""
             外貌特征描述
         """
         try:
-            prompt = f"""你是一个专业的角色设计师。请根据角色名称和描述，生成详细的外貌特征，用于图像生成时区分不同角色。
-
-角色名称：{character_name}
-角色描述：{character_description}
-
-请生成详细的外貌特征，必须包含：
-1. 年龄段（如"25岁"、"30岁"）
-2. 性别
-3. 发型和发色（如"短发"、"长发披肩"、"微卷黑发"）
-4. 脸型特征（如"瓜子脸"、"方脸"）
-5. 身材特征（如"身材苗条"、"身材挺拔"）
-6. 服装风格（如"商务西装"、"优雅连衣裙"、"休闲装"）
-7. 气质特征（如"温柔气质"、"霸道总裁气场"、"成熟稳重"）
-8. 独特标识（如"戴金丝眼镜"、"略带胡茬"、"精致妆容"）
-
-要求：
-- 外貌特征要具体、独特，能明显区分不同角色
-- 避免使用"帅气"、"美丽"等泛化词汇
-- 使用具体的视觉特征描述
-- 输出格式：一句话，用逗号分隔各个特征
-- 示例："30岁男性，短发，戴金丝眼镜，商务西装，成熟稳重气质，身材挺拔"
-
-外貌特征："""
+            prompt = f"""Translate the character's known visual identity into English.
+Return only a concise phrase of at most 25 words: age, gender, hair, identifying clothing.
+Preserve supplied features. Do not invent elaborate accessories or generic beauty tags.
+Name: {character_name}
+Description: {character_description}
+English identity anchor:"""
             
             appearance = self.llm_service.generate(
                 prompt=prompt,
                 max_tokens=150,
-                temperature=0.7
+                temperature=0.2
             )
             
             # 清理结果
             appearance = appearance.strip()
             if appearance.startswith('"') and appearance.endswith('"'):
                 appearance = appearance[1:-1]
+            from src.services.shot_prompt_service import ShotPromptService
+            appearance = ShotPromptService.validate_prompt(appearance)
+            if len(appearance.split()) > 25:
+                raise ValueError("Identity anchor exceeds 25 words")
             
             logger.info(f"角色 '{character_name}' 外貌特征生成成功: {appearance}")
             return appearance
             
         except Exception as e:
-            logger.warning(f"角色外貌特征生成失败，使用默认描述: {e}")
-            # 降级：使用角色描述作为外貌特征
-            return character_description or f"{character_name}的外貌特征"
-            raise
+            raise ValueError(f"角色 {character_name} 的外貌锚点生成失败: {e}") from e
     
     def regenerate_scene(
         self,
@@ -754,8 +619,11 @@ English prompt (cinematic portrait):"""
             new_scene_data = self._parse_scene_fields(new_scene_text)
             
             # 更新数据库
-            if new_description:
-                scene.visual_description = new_description
+            scene.visual_description = new_description or new_scene_data.get("description") or scene.visual_description
+            scene.image_prompt = scene.image_path = scene.video_path = None
+            scene.audio_path = scene.subtitle_path = None
+            project.final_video_path = None
+            project.status = ProjectStatus.SCRIPT_GENERATED
             if new_scene_data.get("dialogue"):
                 scene.dialogue = new_scene_data.get("dialogue")
             if new_scene_data.get("speaker"):
@@ -776,6 +644,9 @@ English prompt (cinematic portrait):"""
             self.db.rollback()
             logger.error(f"重新生成分镜失败: {e}")
             raise RuntimeError(f"重新生成分镜失败: {e}") from e
+        finally:
+            from src.services.llm_service import cleanup_llm_service
+            cleanup_llm_service()
     
     def _build_regenerate_prompt(
         self,

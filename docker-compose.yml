@@ -115,7 +115,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: short-drama-celery-worker
-    command: celery -A src.tasks.celery_app worker --loglevel=info --concurrency=2 --queues=default,image,video,audio
+    command: celery -A src.tasks.celery_app worker --loglevel=info --concurrency=1 --queues=default,image,video,audio,localization
     volumes:
       - ./models:/app/models:ro
       - ./storage:/app/storage

@@ -2,8 +2,8 @@
 # Celery Worker 启动脚本
 
 WORKER_NAME="short_drama_worker"
-CONCURRENCY=2
-QUEUES="default,image,video,audio"
+CONCURRENCY=1
+QUEUES="default,image,video,audio,localization"
 LOG_LEVEL="info"
 
 echo "=== 启动 Celery Worker ==="

@@ -103,7 +103,9 @@ class LocalComfyUIProvider:
             scene_type=request.scene_type,
             quality_mode=request.quality_mode,
             optimization_mode=request.optimization_mode,
-            enable_realism=True,
+            enable_realism=False,
+            enable_prompt_optimization=False,
+            enable_parameter_optimization=False,
         )
         return GenerationResult(
             provider=self.name.value,

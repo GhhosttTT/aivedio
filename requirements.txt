@@ -15,7 +15,7 @@ alembic==1.12.1
 psycopg2-binary==2.9.9  # PostgreSQL（可选）
 
 # LLM 推理
-llama-cpp-python==0.2.20
+llama-cpp-python>=0.3.16,<0.4
 
 # 图像处理
 Pillow==10.1.0

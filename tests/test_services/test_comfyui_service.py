@@ -10,12 +10,7 @@ import sys
 from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 
-# Mock httpx 模块（如果未安装）
-if 'httpx' not in sys.modules:
-    sys.modules['httpx'] = MagicMock()
-    sys.modules['httpx'].Client = MagicMock
-    sys.modules['httpx'].TimeoutException = Exception
-    sys.modules['httpx'].ConnectError = Exception
+import httpx
 
 from src.services.comfyui_service import (
     ComfyUIService,
@@ -108,8 +103,8 @@ class TestComfyUIService:
             )
             
             assert service.base_url == "http://test:8188"
-            assert service.workflow_config is not None
-            assert service.workflow_config["workflow"]["name"] == "Test Workflow"
+            config = service.workflow_manager.get_current_workflow()
+            assert config.workflow.name == "Test Workflow"
     
     def test_init_workflow_not_found(self):
         """测试：工作流配置文件不存在时抛出异常"""
@@ -151,13 +146,12 @@ class TestComfyUIService:
             )
             
             # 验证工作流结构
-            assert workflow["clip_text_encode_positive"]["inputs"]["text"] == "test prompt"
-            assert workflow["clip_text_encode_negative"]["inputs"]["text"] == "bad"
-            assert workflow["empty_latent_image"]["inputs"]["width"] == 512
-            assert workflow["empty_latent_image"]["inputs"]["height"] == 512
-            assert workflow["ksampler"]["inputs"]["steps"] == 15
-            assert workflow["ksampler"]["inputs"]["cfg"] == 6.0
-            assert workflow["ksampler"]["inputs"]["seed"] == 12345
+            sampler = next(n["inputs"] for n in workflow.values() if n["class_type"] == "KSampler")
+            assert workflow[sampler["positive"][0]]["inputs"]["text"] == "test prompt"
+            assert workflow[sampler["negative"][0]]["inputs"]["text"] == "bad"
+            latent = workflow[sampler["latent_image"][0]]["inputs"]
+            assert (latent["width"], latent["height"]) == (512, 512)
+            assert (sampler["steps"], sampler["cfg"], sampler["seed"]) == (15, 6.0, 12345)
 
 
 if __name__ == "__main__":

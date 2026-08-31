@@ -1,10 +1,17 @@
 """Image generation Celery tasks."""
 
 import asyncio
+import hashlib
+import json
+import re
+from pathlib import Path
 from typing import Optional
 
 from src.database.database import get_db
-from src.database.models import Character, Scene, Task as TaskModel
+from src.database.models import Character, Project, Scene, Task as TaskModel
+from src.config import settings
+from src.services.shot_prompt_service import ShotPromptService, CompiledShot
+from src.services.generation_review import write_report
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, get_generation_provider
 from src.tasks.celery_app import celery_app
@@ -14,62 +21,71 @@ from src.utils.storage import get_scene_image_path
 logger = get_logger(__name__)
 
 
-def _enhance_prompt(scene: Scene, project_id: int, prompt: str, db) -> str:
-    character_appearance: Optional[str] = None
-
-    if scene.character_name:
-        character = (
-            db.query(Character)
-            .filter(Character.project_id == project_id, Character.name == scene.character_name)
-            .first()
-        )
-        if character and character.appearance:
-            character_appearance = character.appearance
-        else:
-            logger.warning("角色 {} 未配置外貌特征，可能影响一致性", scene.character_name)
-
-    try:
-        from src.services.prompt_enhancer import get_prompt_enhancer
-
-        enhancer = get_prompt_enhancer()
-        return enhancer.enhance_prompt(
-            visual_description=prompt,
-            character_name=scene.character_name,
-            character_appearance=character_appearance,
-            scene_context=None,
-        )
-    except Exception as exc:
-        logger.warning("提示词增强失败，使用原始提示词: {}", exc)
-        if scene.character_name and character_appearance:
-            return f"{scene.character_name} ({character_appearance}), {prompt}"
-        if scene.character_name:
-            return f"{scene.character_name}, {prompt}"
-        return prompt
-
-
-def _get_or_create_character(scene: Scene, project_id: int, db) -> Optional[Character]:
-    if not scene.character_name:
+def _visual_character(scene: Scene, project_id: int, db) -> Optional[Character]:
+    # Speaker and visible actor may differ, especially in narration and reaction shots.
+    project = db.query(Project).filter(Project.id == project_id).first()
+    plan = json.loads(project.script) if project and project.script else {}
+    item = next((s for s in plan.get("scenes", []) if s.get("scene_number") == scene.scene_number), {})
+    visible = item.get("characters")
+    if visible is None:
+        visible = [scene.character_name] if scene.character_name and scene.character_name in scene.visual_description else []
+    if len(visible) != 1:
         return None
+    return db.query(Character).filter(Character.project_id == project_id, Character.name == visible[0]).first()
 
-    character = (
-        db.query(Character)
-        .filter(Character.project_id == project_id, Character.name == scene.character_name)
-        .first()
-    )
-    if character:
-        return character
 
-    character = Character(
-        project_id=project_id,
-        name=scene.character_name,
-        description="Automatically detected from script",
-        personality=None,
-        appearance=None,
-    )
-    db.add(character)
-    db.commit()
-    db.refresh(character)
-    return character
+def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=None):
+    compiler = compiler or ShotPromptService()
+    character = _visual_character(scene, project_id, db)
+    appearance = character.appearance if character else None
+    if appearance and (re.search(r"[\u3400-\u9fff]", appearance) or len(appearance.split()) > 25):
+        from src.services.script_generator import ScriptGenerator
+        if compiler.llm_service is None:
+            from src.services.llm_service import get_llm_service
+            compiler.llm_service = get_llm_service()
+        appearance = ScriptGenerator(db, compiler.llm_service)._generate_character_appearance(character.name, appearance)
+        character.appearance = appearance
+        db.commit()
+    artifact = Path(get_scene_image_path(project_id, scene.id)).with_suffix(".prompt.json")
+    source_hash = compiler.source_hash(prompt, appearance)
+    if artifact.is_file():
+        cached = json.loads(artifact.read_text(encoding="utf-8"))
+        if cached.get("source_hash") == source_hash and cached.get("version") == 1:
+            compiler.validate_prompt(cached["prompt"])
+            return CompiledShot(**cached), character
+    compiled = compiler.compile(prompt, appearance)
+    write_report(artifact, compiled.to_dict())
+    return compiled, character
+
+
+@celery_app.task(bind=True, name="prepare_generation")
+def prepare_generation_task(self, project_id: int, task_id: int, compile_images: bool = True):
+    db = next(get_db())
+    try:
+        scenes = db.query(Scene).filter(Scene.project_id == project_id).order_by(Scene.scene_number).all()
+        if not scenes:
+            raise ValueError("Project has no scenes")
+        compiler = ShotPromptService()
+        from src.services.generation_review import GenerationReviewService, TextReviewer, fingerprint, require_passed
+        from src.tasks.review_tasks import current_story
+        from src.utils.storage import storage_manager
+        project = db.query(Project).filter(Project.id == project_id).first()
+        story = current_story(project, scenes)
+        review_path = storage_manager.get_project_path(project_id) / "reviews" / "production_story.json"
+        reviewed = json.loads(review_path.read_text(encoding="utf-8")) if review_path.is_file() else {}
+        if reviewed.get("input_hash") != fingerprint(story) or reviewed.get("status") != "passed":
+            from src.services.llm_service import get_llm_service
+            compiler.llm_service = get_llm_service()
+            reviewed = GenerationReviewService(TextReviewer(compiler.llm_service)).review_story(story, review_path)
+        require_passed(reviewed)
+        if compile_images:
+            for scene in scenes:
+                _prepare_prompt(scene, project_id, scene.image_prompt or scene.visual_description, db, compiler)
+        return {"prepared": len(scenes)}
+    finally:
+        from src.services.llm_service import cleanup_llm_service
+        cleanup_llm_service()
+        db.close()
 
 
 def _get_reference_image(character: Optional[Character], project_id: int) -> Optional[str]:
@@ -118,9 +134,7 @@ def _update_progress(db, project_id: int, task_id: int) -> tuple[float, int, int
     progress_percentage = (completed_images / total_scenes) * 25.0 if total_scenes else 0.0
 
     if task_model:
-        task_model.progress = progress_percentage
-        task_model.current_step = completed_images
-        db.commit()
+        progress_percentage = task_model.progress
 
     return progress_percentage, completed_images, total_scenes
 
@@ -166,32 +180,33 @@ def generate_image_task(
     db = next(get_db())
     try:
         scene = db.query(Scene).filter(Scene.id == scene_id).first()
-        if not scene:
+        if not scene or scene.project_id != project_id:
             raise ValueError(f"分镜不存在: {scene_id}")
 
-        character = _get_or_create_character(scene, project_id, db)
+        try:
+            compiled, character = _prepare_prompt(scene, project_id, prompt, db)
+        finally:
+            from src.services.llm_service import cleanup_llm_service
+            cleanup_llm_service()
         reference_image = _get_reference_image(character, project_id)
-        enhanced_prompt = _enhance_prompt(scene, project_id, prompt, db)
+        enhanced_prompt = compiled.prompt
 
         image_path = get_scene_image_path(project_id, scene_id)
         provider = get_generation_provider(kwargs.get("provider"))
+        seed = kwargs.get("seed", int(hashlib.sha256(f"{project_id}:{scene_id}".encode()).hexdigest()[:8], 16))
+        request = ImageGenerationRequest(
+            prompt=enhanced_prompt, negative_prompt=compiled.negative_prompt,
+            output_path=image_path, seed=seed,
+            width=kwargs.get("width", settings.GENERATION_WIDTH),
+            height=kwargs.get("height", settings.GENERATION_HEIGHT),
+            steps=kwargs.get("steps", settings.GENERATION_STEPS),
+            cfg_scale=kwargs.get("cfg_scale", settings.GENERATION_CFG),
+            reference_image=reference_image, use_ipadapter=reference_image is not None,
+        )
 
         self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "generation_provider"})
         try:
-            result = provider.generate_image(
-                ImageGenerationRequest(
-                    prompt=enhanced_prompt,
-                    output_path=image_path,
-                    width=kwargs.get("width", 1024),
-                    height=kwargs.get("height", 576),
-                    steps=kwargs.get("steps", 28),
-                    cfg_scale=kwargs.get("cfg_scale", 6.0),
-                    reference_image=reference_image,
-                    use_ipadapter=reference_image is not None,
-                    quality_mode=kwargs.get("quality_mode"),
-                    optimization_mode=kwargs.get("optimization_mode"),
-                )
-            )
+            result = provider.generate_image(request)
         except Exception as exc:
             if not draft_fallback_enabled():
                 raise
@@ -209,11 +224,15 @@ def generate_image_task(
                 {"output_path": draft_path, "provider": "draft_fallback"},
             )()
 
+        from dataclasses import asdict
+        write_report(Path(image_path).with_suffix(".generation.json"), {
+            "provider": result.provider, "request": asdict(request),
+            "status": "draft" if result.provider == "draft_fallback" else "generated",
+        })
         scene.image_path = result.output_path
         db.commit()
 
-        if character and not reference_image:
-            _save_first_reference(character, project_id, scene, result.output_path)
+        # Generated frames become references only after explicit human selection.
 
         progress, completed, total = _update_progress(db, project_id, task_id)
         _broadcast_progress(project_id, task_id, scene, progress, completed, total)

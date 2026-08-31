@@ -202,6 +202,13 @@ class RegenerateSceneRequest(BaseModel):
     重新生成分镜请求模型
     """
     scene_number: int = Field(..., ge=1, description="分镜编号")
+    new_description: Optional[str] = Field(None, min_length=1, max_length=1500)
+
+
+class SceneUpdate(BaseModel):
+    visual_description: str = Field(..., min_length=1, max_length=1500)
+    dialogue: Optional[str] = Field(None, max_length=2000)
+    character_name: Optional[str] = Field(None, max_length=100)
 
 
 # ==================== 任务相关模型 ====================

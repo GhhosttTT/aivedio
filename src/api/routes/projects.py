@@ -18,7 +18,7 @@ from src.api.schemas import (
     MessageResponse,
     ProductionTaskResponse
 )
-from src.api.dependencies import get_current_user
+from src.api.dependencies import get_current_user, require_project_access
 from src.services.project_manager import ProjectManager, get_project_manager
 from src.services.script_generator import ScriptGenerator, get_script_generator
 from src.services.task_orchestrator import TaskOrchestrator, get_task_orchestrator
@@ -29,7 +29,39 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/api/projects", tags=["项目管理"])
+router = APIRouter(prefix="/api/projects", tags=["项目管理"], dependencies=[Depends(require_project_access)])
+
+
+@router.get("/{project_id}/generation-review")
+async def get_generation_review(
+    project_id: int,
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    import json
+    from src.database.models import Project
+    from src.utils.storage import storage_manager
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    root = storage_manager.get_project_path(project_id) / "reviews"
+    reports = {
+        path.stem: json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted(root.glob("*.json"))
+    }
+    from src.tasks.review_tasks import current_story, generation_signature
+    from src.services.generation_review import fingerprint
+    for name in ("production_story", "generation"):
+        report = reports.get(name)
+        if report and report.get("status") == "passed":
+            try:
+                scenes = sorted(project.scenes, key=lambda scene: scene.scene_number)
+                expected = fingerprint(current_story(project, scenes)) if name == "production_story" else generation_signature(project, scenes)
+                if report.get("input_hash") != expected:
+                    report["status"] = "stale"
+            except (OSError, TypeError, ValueError):
+                report["status"] = "stale"
+    return {"project_id": project_id, "reports": reports}
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -82,7 +114,7 @@ async def create_project(
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
-async def get_project(project_id: int):
+async def get_project(project_id: int, db_session: Session = Depends(get_db_session)):
     """
     获取项目详情
     
@@ -98,7 +130,7 @@ async def get_project(project_id: int):
     try:
         logger.info(f"获取项目详情: project_id={project_id}")
         
-        project_manager = get_project_manager()
+        project_manager = ProjectManager(db_session)
         db_project = project_manager.get_project(project_id)
         
         if db_project is None:
@@ -121,7 +153,7 @@ async def get_project(project_id: int):
 
 
 @router.put("/{project_id}", response_model=ProjectResponse)
-async def update_project(project_id: int, project: ProjectUpdate):
+async def update_project(project_id: int, project: ProjectUpdate, db_session: Session = Depends(get_db_session)):
     """
     更新项目信息
     
@@ -138,7 +170,7 @@ async def update_project(project_id: int, project: ProjectUpdate):
     try:
         logger.info(f"更新项目: project_id={project_id}")
         
-        project_manager = get_project_manager()
+        project_manager = ProjectManager(db_session)
         
         # 构建更新数据（只包含非 None 的字段）
         update_data = {}
@@ -151,7 +183,7 @@ async def update_project(project_id: int, project: ProjectUpdate):
         if project.outline is not None:
             update_data["outline"] = project.outline
         if project.status is not None:
-            update_data["status"] = project.status
+            raise ValueError("生产状态由任务系统管理")
         
         db_project = project_manager.update_project(project_id, **update_data)
         
@@ -182,7 +214,7 @@ async def update_project(project_id: int, project: ProjectUpdate):
 
 
 @router.delete("/{project_id}", response_model=MessageResponse)
-async def delete_project(project_id: int):
+async def delete_project(project_id: int, db_session: Session = Depends(get_db_session)):
     """
     删除项目
     
@@ -198,7 +230,7 @@ async def delete_project(project_id: int):
     try:
         logger.info(f"删除项目: project_id={project_id}")
         
-        project_manager = get_project_manager()
+        project_manager = ProjectManager(db_session)
         success = project_manager.delete_project(project_id)
         
         if not success:
@@ -228,7 +260,9 @@ async def delete_project(project_id: int):
 async def list_projects(
     status_filter: Optional[str] = Query(None, description="按状态过滤"),
     page: int = Query(1, ge=1, description="页码"),
-    page_size: int = Query(10, ge=1, le=100, description="每页数量")
+    page_size: int = Query(10, ge=1, le=100, description="每页数量"),
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
 ):
     """
     列出项目
@@ -244,18 +278,15 @@ async def list_projects(
     try:
         logger.info(f"列出项目: status={status_filter}, page={page}, page_size={page_size}")
         
-        project_manager = get_project_manager()
+        project_manager = ProjectManager(db_session)
         
-        # 获取项目列表
-        projects = project_manager.list_projects(
-            status=status_filter,
-            offset=(page - 1) * page_size,
-            limit=page_size
-        )
-        
-        # 获取总数
-        total = project_manager.count_projects(status=status_filter)
-        
+        from src.database.models import Project
+        query = db_session.query(Project).filter(Project.user_id == current_user.id)
+        if status_filter:
+            query = query.filter(Project.status == status_filter)
+        total = query.count()
+        projects = query.order_by(Project.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
         return ProjectListResponse(
             total=total,
             page=page,
@@ -272,7 +303,7 @@ async def list_projects(
 
 
 @router.post("/{project_id}/generate-script", response_model=ProjectResponse)
-async def generate_script(project_id: int, request: GenerateScriptRequest):
+def generate_script(project_id: int, request: GenerateScriptRequest, db_session: Session = Depends(get_db_session)):
     """
     生成剧本
     
@@ -289,8 +320,8 @@ async def generate_script(project_id: int, request: GenerateScriptRequest):
     try:
         logger.info(f"生成剧本: project_id={project_id}")
         
-        project_manager = get_project_manager()
-        script_generator = get_script_generator()
+        project_manager = ProjectManager(db_session)
+        script_generator = ScriptGenerator(db_session)
         
         # 检查项目是否存在
         db_project = project_manager.get_project(project_id)
@@ -340,12 +371,12 @@ async def generate_script(project_id: int, request: GenerateScriptRequest):
         logger.error(f"剧本生成失败: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="生成剧本时发生错误"
+            detail=f"剧本生成与情节复审失败: {e}"
         )
 
 
 @router.post("/{project_id}/regenerate-scene", response_model=ProjectResponse)
-async def regenerate_scene(project_id: int, request: RegenerateSceneRequest):
+def regenerate_scene(project_id: int, request: RegenerateSceneRequest, db_session: Session = Depends(get_db_session)):
     """
     重新生成指定分镜
     
@@ -362,8 +393,8 @@ async def regenerate_scene(project_id: int, request: RegenerateSceneRequest):
     try:
         logger.info(f"重新生成分镜: project_id={project_id}, scene_number={request.scene_number}")
         
-        project_manager = get_project_manager()
-        script_generator = get_script_generator()
+        project_manager = ProjectManager(db_session)
+        script_generator = ScriptGenerator(db_session)
         
         # 检查项目是否存在
         db_project = project_manager.get_project(project_id)
@@ -375,7 +406,7 @@ async def regenerate_scene(project_id: int, request: RegenerateSceneRequest):
             )
         
         # 重新生成分镜
-        script_generator.regenerate_scene(project_id, request.scene_number)
+        script_generator.regenerate_scene(project_id, request.scene_number, request.new_description)
         
         # 返回更新后的项目信息
         db_project = project_manager.get_project(project_id)
@@ -395,7 +426,7 @@ async def regenerate_scene(project_id: int, request: RegenerateSceneRequest):
         logger.error(f"分镜重新生成失败: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="重新生成分镜时发生错误"
+            detail=f"分镜重新生成失败: {e}"
         )
 
 
@@ -419,8 +450,8 @@ async def produce_video(
     try:
         logger.info(f"提交生产任务: project_id={project_id}")
         
-        project_manager = get_project_manager()
-        task_orchestrator = get_task_orchestrator()
+        project_manager = ProjectManager(db_session)
+        task_orchestrator = TaskOrchestrator(db_session)
         
         # 检查项目是否存在
         db_project = project_manager.get_project(project_id)
@@ -443,7 +474,6 @@ async def produce_video(
         celery_task_id = task_orchestrator.create_production_task(project_id)
         
         # 更新项目状态
-        project_manager.update_project(project_id, status=ProjectStatus.IN_PRODUCTION)
         
         # 查询任务记录
         from src.database.models import Task as TaskModel
@@ -460,7 +490,7 @@ async def produce_video(
         logger.info(f"生产任务创建成功: task_id={task_record.id}, project_id={project_id}")
         
         return ProductionTaskResponse(
-            task_id=str(task_record.id),
+            task_id=task_record.celery_task_id,
             project_id=task_record.project_id,
             status=task_record.status.value,
             progress=task_record.progress,
@@ -504,8 +534,8 @@ async def regenerate_images(
     try:
         logger.info(f"重新生成图像: project_id={project_id}")
         
-        project_manager = get_project_manager()
-        task_orchestrator = get_task_orchestrator()
+        project_manager = ProjectManager(db_session)
+        task_orchestrator = TaskOrchestrator(db_session)
         
         # 检查项目是否存在
         db_project = project_manager.get_project(project_id)
@@ -524,25 +554,10 @@ async def regenerate_images(
                 detail="项目没有分镜，请先生成剧本"
             )
         
-        # 检查是否有角色（图像生成需要角色参考图）
-        if not db_project.characters:
-            logger.warning(f"项目没有角色: project_id={project_id}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="项目没有角色，无法生成图像"
-            )
-        
-        # 清除所有场景的图像路径（准备重新生成）
-        for scene in db_project.scenes:
-            scene.image_path = None
-        db_session.commit()
-        logger.info(f"已清除 {len(db_project.scenes)} 个场景的图像路径")
-        
         # 创建生产任务（只生成图像和视频）
         celery_task_id = task_orchestrator.create_production_task(project_id)
         
         # 更新项目状态
-        project_manager.update_project(project_id, status=ProjectStatus.IN_PRODUCTION)
         
         # 查询任务记录
         from src.database.models import Task as TaskModel
@@ -559,7 +574,7 @@ async def regenerate_images(
         logger.info(f"重新生成图像任务创建成功: task_id={task_record.id}, project_id={project_id}")
         
         return ProductionTaskResponse(
-            task_id=str(task_record.id),
+            task_id=task_record.celery_task_id,
             project_id=task_record.project_id,
             status=task_record.status.value,
             progress=task_record.progress,
@@ -578,3 +593,48 @@ async def regenerate_images(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="重新生成图像时发生错误"
         )
+
+
+@router.get("/{project_id}/production-task")
+def latest_production_task(project_id: int, db_session: Session = Depends(get_db_session)):
+    from src.database.models import Task
+    task = db_session.query(Task).filter(Task.project_id == project_id).order_by(Task.id.desc()).first()
+    if task is None:
+        return None
+    import json
+    from src.utils.storage import storage_manager
+    result = TaskOrchestrator(db_session).get_task_status(task.celery_task_id)
+    path = storage_manager.get_project_path(project_id) / "production_progress.json"
+    if path.is_file():
+        progress = json.loads(path.read_text(encoding="utf-8"))
+        if progress.get("celery_task_id") == task.celery_task_id:
+            result["live_step"] = progress
+    return result
+
+
+from src.api.schemas import SceneUpdate
+
+
+@router.put("/{project_id}/scenes/{scene_number}", response_model=ProjectResponse)
+def update_scene(project_id: int, scene_number: int, request: SceneUpdate, db_session: Session = Depends(get_db_session)):
+    import json
+    from src.database.models import Scene, Project
+    project = db_session.query(Project).filter(Project.id == project_id).first()
+    scene = db_session.query(Scene).filter(Scene.project_id == project_id, Scene.scene_number == scene_number).first()
+    if not scene or not request.visual_description.strip():
+        raise HTTPException(400, "分镜不存在或描述为空")
+    scene.visual_description = request.visual_description.strip()
+    scene.dialogue = request.dialogue
+    scene.character_name = request.character_name
+    scene.image_prompt = scene.image_path = scene.video_path = None
+    scene.audio_path = scene.subtitle_path = None
+    project.final_video_path = None
+    project.status = ProjectStatus.SCRIPT_GENERATED
+    if project.script:
+        script = json.loads(project.script)
+        for item in script.get("scenes", []):
+            if item.get("scene_number") == scene_number:
+                item.update(description=scene.visual_description, dialogue=scene.dialogue, speaker=scene.character_name)
+        project.script = json.dumps(script, ensure_ascii=False)
+    db_session.commit()
+    return project

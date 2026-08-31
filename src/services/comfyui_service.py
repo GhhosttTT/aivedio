@@ -5,7 +5,6 @@ ComfyUI 服务（ComfyUIService）
 实现重试逻辑和错误处理
 """
 
-import os
 import json
 import time
 import uuid
@@ -16,7 +15,7 @@ import httpx
 
 from src.utils.logger import logger
 from src.config import settings
-from src.services.workflow_manager import WorkflowManager, get_workflow_manager
+from src.services.workflow_manager import WorkflowManager
 from src.models.workflow_config import WorkflowType
 from src.services.parameter_optimizer import (
     get_parameter_optimizer,
@@ -32,6 +31,10 @@ from src.services.prompt_optimizer import (
 class ComfyUIError(Exception):
     """ComfyUI 服务错误"""
     pass
+
+
+class ComfyUIWaitTimeout(ComfyUIError):
+    """The server may still be generating; do not submit the same shot again."""
 
 
 class ComfyUIService:
@@ -53,7 +56,7 @@ class ComfyUIService:
             timeout: 请求超时时间（秒，默认 300）
             max_retries: 最大重试次数（默认 3）
         """
-        self.base_url = (base_url or os.getenv("COMFYUI_BASE_URL", "http://127.0.0.1:8188")).rstrip("/")
+        self.base_url = (base_url or settings.COMFYUI_BASE_URL).rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
         
@@ -62,7 +65,9 @@ class ComfyUIService:
         self.client = httpx.Client(timeout=timeout, trust_env=False)
         
         # 使用 WorkflowManager 管理工作流配置
-        self.workflow_manager = get_workflow_manager()
+        self.workflow_manager = WorkflowManager()
+        self.workflow_path = workflow_path
+        self.default_workflow_type = WorkflowType(settings.COMFYUI_DEFAULT_WORKFLOW_TYPE)
         
         # 初始化参数优化器
         self.parameter_optimizer = get_parameter_optimizer()
@@ -75,13 +80,15 @@ class ComfyUIService:
         
         # 加载默认工作流配置
         try:
-            default_workflow = WorkflowType(settings.COMFYUI_DEFAULT_WORKFLOW_TYPE)
-            self.workflow_manager.load_workflow(workflow_type=default_workflow)
-            self.current_workflow_type = default_workflow
+            self.workflow_manager.load_workflow(
+                workflow_path=workflow_path,
+                workflow_type=None if workflow_path else self.default_workflow_type,
+                allow_fallback=False,
+            )
+            self.current_workflow_type = None if workflow_path else self.default_workflow_type
             logger.info(f"ComfyUI 服务初始化完成: {self.base_url}")
         except Exception as e:
-            logger.warning(f"加载默认工作流失败: {e}，将在首次使用时加载")
-            logger.info(f"ComfyUI 服务初始化完成: {self.base_url} (未加载工作流)")
+            raise ComfyUIError(f"加载工作流配置失败: {e}") from e
     
     def load_workflow(self, workflow_type: Optional[WorkflowType] = None):
         """
@@ -164,8 +171,8 @@ class ComfyUIService:
         # 优化器相关参数
         scene_type: Optional[str] = None,  # 场景类型（portrait, landscape, action等）
         quality_mode: Optional[str] = None,  # 质量模式（fast, normal, high_quality, ultra）
-        enable_prompt_optimization: bool = True,  # 是否启用提示词优化
-        enable_parameter_optimization: bool = True,  # 是否启用参数优化
+        enable_prompt_optimization: bool = False,
+        enable_parameter_optimization: bool = False,
         enable_realism: bool = False,  # 是否启用真实感模式
         gpu_vram_gb: Optional[int] = None,  # GPU 显存大小（GB）
         optimization_mode: Optional[str] = None  # 提示词优化模式（quality, realism, artistic, balanced）
@@ -200,10 +207,35 @@ class ComfyUIService:
         """
         if not prompt or len(prompt.strip()) == 0:
             raise ValueError("提示词不能为空")
+        if width <= 0 or height <= 0 or width % 8 or height % 8:
+            raise ValueError("Image dimensions must be positive multiples of eight")
+
+        # Choose the graph before reading its defaults. Never swap model families implicitly.
+        if reference_image and use_ipadapter:
+            base = self.workflow_manager.load_workflow(
+                workflow_path=self.workflow_path,
+                workflow_type=None if self.workflow_path else self.default_workflow_type,
+                allow_fallback=False,
+            )
+            checkpoints = {n.inputs["ckpt_name"] for n in base.nodes.values() if n.class_type == "CheckpointLoaderSimple"}
+            reference_path = settings.COMFYUI_REFERENCE_WORKFLOW_PATH
+            if not reference_path:
+                raise ComfyUIError("Configure COMFYUI_REFERENCE_WORKFLOW_PATH for the selected model family")
+            reference = self.workflow_manager.load_workflow(workflow_path=reference_path, allow_fallback=False)
+            reference_checkpoints = {n.inputs["ckpt_name"] for n in reference.nodes.values() if n.class_type == "CheckpointLoaderSimple"}
+            if checkpoints != reference_checkpoints:
+                raise ComfyUIError("Reference and text workflows must use the same checkpoint")
+            self.current_workflow_type = WorkflowType.IPADAPTER
+        else:
+            self.workflow_manager.load_workflow(
+                workflow_path=self.workflow_path,
+                workflow_type=None if self.workflow_path else self.default_workflow_type,
+                allow_fallback=False,
+            )
+            self.current_workflow_type = None if self.workflow_path else self.default_workflow_type
         
         # 保存原始提示词
         original_prompt = prompt
-        original_negative_prompt = negative_prompt
         
         # ==================== 提示词优化 ====================
         if enable_prompt_optimization:
@@ -245,10 +277,13 @@ class ComfyUIService:
                 prompt = original_prompt
         
         # 使用默认负面提示词（如果仍然没有）
-        if not negative_prompt:
+        if negative_prompt is None:
             workflow_config = self.workflow_manager.get_current_workflow()
             if workflow_config:
-                negative_prompt = workflow_config.negative_prompt.default
+                negative_prompt = workflow_config.negative_prompt.default or next((
+                    str(node.inputs.get("text", "")) for name, node in workflow_config.nodes.items()
+                    if "negative" in name and node.class_type == "CLIPTextEncode"
+                ), "")
             else:
                 negative_prompt = ""
         
@@ -300,17 +335,7 @@ class ComfyUIService:
         if seed == -1:
             seed = int(time.time() * 1000) % (2**32)
         
-        # 根据是否有参考图像选择工作流类型
-        if use_ipadapter and reference_image:
-            target_workflow_type = WorkflowType.IPADAPTER
-        else:
-            target_workflow_type = WorkflowType.TXT2IMG
-        
-        # 切换到目标工作流（如果需要）
-        if self.current_workflow_type != target_workflow_type:
-            self.load_workflow(target_workflow_type)
-        
-        logger.info(f"开始生成图像: {width}x{height}, steps={steps}, cfg={cfg_scale}, workflow={target_workflow_type}")
+        logger.info(f"开始生成图像: {width}x{height}, steps={steps}, cfg={cfg_scale}, workflow={self.current_workflow_type}")
         logger.debug(f"提示词: {prompt[:100]}...")
         
         # 构建工作流
@@ -327,6 +352,11 @@ class ComfyUIService:
         )
         
         # 提交任务并等待完成（带重试）
+        self.preflight(workflow)
+        if output_path:
+            artifact = Path(output_path).with_suffix(".workflow.json")
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            artifact.write_text(json.dumps(workflow, ensure_ascii=False, indent=2), encoding="utf-8")
         for attempt in range(self.max_retries):
             try:
                 image_path = self._submit_and_wait(workflow, output_path)
@@ -334,26 +364,11 @@ class ComfyUIService:
                 return image_path
                 
             except Exception as e:
+                if isinstance(e, ComfyUIWaitTimeout):
+                    raise
                 error_str = str(e)
-                # 如果是人脸检测失败，自动切换到纯文生图模式
-                if "InsightFace: No face detected" in error_str and reference_image:
-                    logger.warning(f"参考图像中未检测到人脸，切换到纯文生图模式")
-                    # 重新加载纯文生图工作流
-                    self.load_workflow(WorkflowType.TXT2IMG)
-                    # 重新构建工作流（不使用 IP-Adapter）
-                    workflow = self._build_workflow(
-                        prompt=prompt,
-                        negative_prompt=negative_prompt,
-                        width=width,
-                        height=height,
-                        steps=steps,
-                        cfg_scale=cfg_scale,
-                        seed=seed,
-                        reference_image=None,  # 移除参考图像
-                        use_ipadapter=False  # 禁用 IP-Adapter
-                    )
-                    # 继续重试（不增加 attempt 计数）
-                    continue
+                if "No face detected" in error_str and reference_image:
+                    raise ComfyUIError("Reference face was not detected; select another reference image") from e
                 
                 if attempt < self.max_retries - 1:
                     wait_time = 2 ** attempt  # 指数退避
@@ -443,25 +458,21 @@ class ComfyUIService:
                     return node_id
             return None
         
-        clip_text_positive_id = find_node_id("CLIPTextEncode")
         empty_latent_id = find_node_id("EmptyLatentImage")
         ksampler_id = find_node_id("KSampler")
         save_image_id = find_node_id("SaveImage")
         load_image_id = find_node_id("LoadImage")
-        ipadapter_faceid_id = find_node_id("IPAdapterFaceID")
-        checkpoint_loader_id = find_node_id("CheckpointLoaderSimple")
-        lora_loader_id = find_node_id("LoraLoader")
+        ipadapter_faceid_id = find_node_id("IPAdapterFaceID") or find_node_id("IPAdapterAdvanced")
         
-        # 设置提示词（可能有两个 CLIPTextEncode 节点）
-        if clip_text_positive_id:
-            # 找到所有 CLIPTextEncode 节点
-            clip_nodes = [nid for nid, ndata in workflow.items() if ndata.get("class_type") == "CLIPTextEncode"]
-            if len(clip_nodes) >= 2:
-                # 按节点 ID 排序，确保第一个是正面，第二个是负面
-                clip_nodes.sort()
-                workflow[clip_nodes[0]]["inputs"]["text"] = prompt
-                workflow[clip_nodes[1]]["inputs"]["text"] = negative_prompt
-                logger.debug(f"设置提示词 - 正面节点: {clip_nodes[0]}, 负面节点: {clip_nodes[1]}")
+        # Follow conditioning edges; JSON order says nothing about positive/negative roles.
+        if not ksampler_id:
+            raise ComfyUIError("Workflow must contain a KSampler")
+        for role, value in (("positive", prompt), ("negative", negative_prompt)):
+            link = workflow[ksampler_id]["inputs"].get(role)
+            node = workflow.get(link[0]) if isinstance(link, list) else None
+            if not node or node.get("class_type") != "CLIPTextEncode":
+                raise ComfyUIError(f"Unsupported {role} conditioning graph; use a CLIPTextEncode node")
+            node["inputs"]["text"] = value
         
         # 设置图像尺寸
         if empty_latent_id:
@@ -481,18 +492,9 @@ class ComfyUIService:
             if ksampler_id:
                 workflow[ksampler_id]["inputs"]["model"] = [ipadapter_faceid_id, 0]
             
-            # 将参考图像路径转换为 ComfyUI 可识别的格式
-            import os
-            from pathlib import Path
-            ref_image_path = Path(reference_image)
-            if not ref_image_path.is_absolute():
-                # 转换为绝对路径
-                ref_image_path = Path.cwd() / ref_image_path
-            
-            # 设置参考图像路径（使用绝对路径）
-            if load_image_id:
-                workflow[load_image_id]["inputs"]["image"] = str(ref_image_path)
-                logger.debug(f"参考图像绝对路径: {ref_image_path}")
+            if not load_image_id:
+                raise ComfyUIError("Reference workflow has no LoadImage node")
+            workflow[load_image_id]["inputs"]["image"] = self._upload_reference_image(reference_image)
             
             # 设置 IP-Adapter 权重（从配置中获取或使用默认值）
             ipadapter_weight = workflow_config.parameters.default.get("ipadapter_weight", 0.8)
@@ -506,14 +508,8 @@ class ComfyUIService:
                 logger.info("将保持角色面部、服装、体型的整体一致性（FaceID + LoRA 增强）")
             else:
                 logger.info(f"IP-Adapter 已配置，权重: {ipadapter_weight}")
-        else:
-            logger.debug("未启用 IP-Adapter")
-            # 如果没有参考图像或禁用IP-Adapter，直接连接到checkpoint_loader或lora_loader
-            if ksampler_id:
-                # 优先使用 LoraLoader（如果存在），否则使用 CheckpointLoader
-                model_source_id = lora_loader_id if lora_loader_id else checkpoint_loader_id
-                if model_source_id:
-                    workflow[ksampler_id]["inputs"]["model"] = [model_source_id, 0]
+        elif use_ipadapter and reference_image:
+            raise ComfyUIError("Reference workflow has no IPAdapterFaceID or IPAdapterAdvanced node")
         
         # 设置输出文件名前缀
         if save_image_id:
@@ -522,6 +518,45 @@ class ComfyUIService:
         
         return workflow
     
+    def _upload_reference_image(self, reference_image: str) -> str:
+        path = Path(reference_image)
+        if not path.is_file():
+            raise ComfyUIError(f"Reference image does not exist: {path}")
+        with path.open("rb") as stream:
+            response = self.client.post(
+                f"{self.base_url}/upload/image",
+                files={"image": (path.name, stream, "application/octet-stream")},
+                data={"type": "input", "overwrite": "false"},
+            )
+        response.raise_for_status()
+        data = response.json()
+        if not data.get("name"):
+            raise ComfyUIError("ComfyUI upload did not return an image name")
+        return "/".join(part for part in (data.get("subfolder", ""), data["name"]) if part)
+
+    def preflight(self, workflow: Dict) -> None:
+        response = self.client.get(f"{self.base_url}/object_info", timeout=15)
+        response.raise_for_status()
+        info = response.json()
+        errors = []
+        for node in workflow.values():
+            name = node["class_type"]
+            if name not in info:
+                errors.append(f"missing node: {name}")
+                continue
+            required = info[name].get("input", {}).get("required", {})
+            for key in ("ckpt_name", "lora_name", "clip_name"):
+                value = node["inputs"].get(key)
+                spec = required.get(key)
+                if value and spec and isinstance(spec[0], list) and value not in spec[0]:
+                    errors.append(f"missing model: {key}={value}")
+        if errors:
+            raise ComfyUIError("ComfyUI preflight failed: " + "; ".join(errors))
+
+    def free_memory(self) -> None:
+        response = self.client.post(f"{self.base_url}/free", json={"unload_models": True, "free_memory": True})
+        response.raise_for_status()
+
     def _submit_and_wait(
         self,
         workflow: Dict,
@@ -552,6 +587,8 @@ class ComfyUIService:
             
             return image_path
             
+        except ComfyUIError:
+            raise
         except Exception as e:
             raise ComfyUIError(f"工作流执行失败: {e}") from e
     
@@ -582,7 +619,7 @@ class ComfyUIService:
             )
             
             if response.status_code != 200:
-                raise ComfyUIError(f"提交工作流失败: HTTP {response.status_code}")
+                raise ComfyUIError(f"提交工作流失败: HTTP {response.status_code}: {response.text[:2000]}")
             
             result = response.json()
             prompt_id = result.get("prompt_id")
@@ -620,7 +657,7 @@ class ComfyUIService:
         while True:
             # 检查超时
             if time.time() - start_time > self.timeout:
-                raise ComfyUIError(f"等待工作流完成超时（{self.timeout} 秒）")
+                raise ComfyUIWaitTimeout(f"ComfyUI job {prompt_id} observation timed out; inspect /history/{prompt_id} before retrying")
             
             try:
                 # 查询历史记录
@@ -640,6 +677,8 @@ class ComfyUIService:
                     # 检查状态
                     status = result.get("status", {})
                     
+                    if status.get("status_str") == "error":
+                        raise ComfyUIError(f"工作流执行失败: {status.get('messages', [])}")
                     if status.get("completed"):
                         logger.debug(f"工作流执行完成: prompt_id={prompt_id}")
                         return result
@@ -753,8 +792,12 @@ class ComfyUIService:
                 output_path = str(output_dir / filename)
             
             # 保存图像
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
             with open(output_path, 'wb') as f:
                 f.write(response.content)
+            from PIL import Image
+            with Image.open(output_path) as decoded:
+                decoded.verify()
             
             logger.debug(f"图像已保存: {output_path}")
             

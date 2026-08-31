@@ -9,15 +9,20 @@ import sys
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 
-# Mock llama_cpp 模块（如果未安装）
-if 'llama_cpp' not in sys.modules:
-    sys.modules['llama_cpp'] = MagicMock()
-
 from src.services.llm_service import LLMService, get_llm_service, cleanup_llm_service
+
+
+@pytest.fixture(autouse=True)
+def available_backend_for_mocked_models(monkeypatch):
+    monkeypatch.setattr("src.services.llm_service.LLAMA_CPP_AVAILABLE", True)
 
 
 class TestLLMService:
     """LLM 服务测试类"""
+
+    @pytest.fixture(autouse=True)
+    def available_mock_backend(self, monkeypatch):
+        monkeypatch.setattr("src.services.llm_service.LLAMA_CPP_AVAILABLE", True)
     
     @patch('src.services.llm_service.Llama')
     def test_init_success(self, mock_llama):
@@ -65,8 +70,8 @@ class TestLLMService:
         with patch('os.path.exists', return_value=True):
             # 模拟 Llama 实例和生成结果
             mock_model = MagicMock()
-            mock_model.return_value = {
-                "choices": [{"text": "生成的文本内容"}]
+            mock_model.create_chat_completion.return_value = {
+                "choices": [{"message": {"content": "生成的文本内容"}}]
             }
             mock_llama.return_value = mock_model
             
@@ -82,7 +87,7 @@ class TestLLMService:
             
             # 验证
             assert result == "生成的文本内容"
-            mock_model.assert_called()
+            assert mock_model.create_chat_completion.call_args.kwargs["messages"] == [{"role": "user", "content": "测试提示词"}]
     
     @patch('src.services.llm_service.Llama')
     def test_generate_empty_prompt(self, mock_llama):
@@ -204,8 +209,8 @@ class TestLLMService:
         """测试：使用停止词生成文本"""
         with patch('os.path.exists', return_value=True):
             mock_model = MagicMock()
-            mock_model.return_value = {
-                "choices": [{"text": "生成的文本"}]
+            mock_model.create_chat_completion.return_value = {
+                "choices": [{"message": {"content": "生成的文本"}}]
             }
             mock_llama.return_value = mock_model
             
@@ -217,7 +222,7 @@ class TestLLMService:
             )
             
             # 验证停止词被传递
-            call_args = mock_model.call_args
+            call_args = mock_model.create_chat_completion.call_args
             assert "stop" in call_args[1]
             assert call_args[1]["stop"] == ["停止词1", "停止词2"]
     
@@ -227,12 +232,12 @@ class TestLLMService:
         with patch('os.path.exists', return_value=True):
             # 模拟流式输出
             mock_stream = [
-                {"choices": [{"text": "第一"}]},
-                {"choices": [{"text": "部分"}]},
-                {"choices": [{"text": "文本"}]}
+                {"choices": [{"delta": {"content": "第一"}}]},
+                {"choices": [{"delta": {"content": "部分"}}]},
+                {"choices": [{"delta": {"content": "文本"}}]}
             ]
             mock_model = MagicMock()
-            mock_model.return_value = iter(mock_stream)
+            mock_model.create_chat_completion.return_value = iter(mock_stream)
             mock_llama.return_value = mock_model
             
             service = LLMService(model_path="test_model.gguf")

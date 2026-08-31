@@ -59,9 +59,9 @@ class TestSVDService:
         """Mock GPU 工具函数"""
         with patch('src.services.svd_service.is_gpu_available', return_value=False):
             with patch('src.services.svd_service.get_gpu_memory_info', return_value={
-                'total_gb': 24.0,
-                'used_gb': 10.0,
-                'free_gb': 14.0
+                'total': 24576.0,
+                'used': 10240.0,
+                'free': 14336.0
             }):
                 with patch('src.services.svd_service.clear_gpu_cache'):
                     yield
@@ -126,9 +126,9 @@ class TestSVDService:
         """测试：GPU 显存足够"""
         with patch('src.services.svd_service.is_gpu_available', return_value=True):
             with patch('src.services.svd_service.get_gpu_memory_info', return_value={
-                'total_gb': 24.0,
-                'used_gb': 10.0,
-                'free_gb': 14.0
+                'total': 24576.0,
+                'used': 10240.0,
+                'free': 14336.0
             }):
                 service = SVDService(model_path="test_model")
                 service.device = "cuda"
@@ -139,9 +139,9 @@ class TestSVDService:
         """测试：GPU 显存不足"""
         with patch('src.services.svd_service.is_gpu_available', return_value=True):
             with patch('src.services.svd_service.get_gpu_memory_info', return_value={
-                'total_gb': 24.0,
-                'used_gb': 20.0,
-                'free_gb': 4.0
+                'total': 24576.0,
+                'used': 20480.0,
+                'free': 4096.0
             }):
                 service = SVDService(model_path="test_model")
                 service.device = "cuda"

@@ -191,6 +191,10 @@ class LLMService:
             
             # 构建停止词列表
             stop_sequences = stop or []
+            available = self.n_ctx - len(self.model.tokenize(prompt.encode("utf-8"))) - 256
+            if available < 128:
+                raise ValueError("Prompt exceeds local context budget; reduce scene count or split the request")
+            max_tokens = min(max_tokens, available)
             
             if stream:
                 # 流式生成
@@ -206,19 +210,20 @@ class LLMService:
                 )
             else:
                 # 非流式生成
-                output = self.model(
-                    prompt,
+                output = self.model.create_chat_completion(
+                    messages=[{"role": "user", "content": prompt}],
                     max_tokens=max_tokens,
                     temperature=temperature,
                     top_p=top_p,
                     top_k=top_k,
                     repeat_penalty=repeat_penalty,
                     stop=stop_sequences,
-                    echo=False
                 )
                 
                 # 提取生成的文本
-                generated_text = output["choices"][0]["text"]
+                if output["choices"][0].get("finish_reason") == "length":
+                    raise RuntimeError("LLM output was truncated; reduce scene count or increase context")
+                generated_text = output["choices"][0]["message"]["content"]
                 
                 logger.info(f"文本生成完成，输出长度: {len(generated_text)} 字符")
                 logger.debug(f"生成的文本: {generated_text[:100]}...")
@@ -261,8 +266,8 @@ class LLMService:
         
         try:
             # 流式生成
-            stream = self.model(
-                prompt,
+            stream = self.model.create_chat_completion(
+                messages=[{"role": "user", "content": prompt}],
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
@@ -270,12 +275,14 @@ class LLMService:
                 repeat_penalty=repeat_penalty,
                 stop=stop,
                 stream=True,
-                echo=False
             )
             
             # 逐个处理生成的 token
             for output in stream:
-                token_text = output["choices"][0]["text"]
+                choice = output["choices"][0]
+                if choice.get("finish_reason") == "length":
+                    raise RuntimeError("LLM output was truncated; reduce scene count or increase context")
+                token_text = choice.get("delta", {}).get("content", "") or ""
                 generated_text += token_text
                 
                 # 调用回调函数
@@ -399,6 +406,7 @@ class LLMService:
                 logger.info("开始卸载 LLM 模型...")
                 
                 # 删除模型实例
+                self.model.close()
                 del self.model
                 self.model = None
                 self.is_loaded = False

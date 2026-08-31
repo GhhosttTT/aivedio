@@ -1,0 +1,45 @@
+.workbench { max-width: 1200px; margin: 0 auto; padding: 28px 24px 64px; color: #e7e7e7; letter-spacing: 0; }
+.workbench * { min-width: 0; box-sizing: border-box; }
+.workbench h1 { font-size: 26px; font-weight: 650; overflow-wrap: anywhere; }
+.workbench h2 { font-size: 19px; font-weight: 600; margin-bottom: 14px; }
+.workbench h3 { font-size: 16px; font-weight: 600; }
+.wb-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.wb-between { justify-content: space-between; }
+.wb-muted { color: #a2a6aa; font-size: 14px; }
+.wb-button, .wb-icon { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #494b4e; border-radius: 6px; background: #2c2e30; color: #f2f2f2; padding: 9px 14px; font-size: 14px; cursor: pointer; }
+.wb-button:hover, .wb-icon:hover { background: #393d3e; }
+.wb-button:disabled, .wb-icon:disabled { opacity: .45; cursor: not-allowed; }
+.wb-button.primary { background: #16765e; border-color: #259376; }
+.wb-button.danger { color: #ffa29d; }
+.wb-icon { width: 38px; height: 38px; padding: 8px; flex-shrink: 0; }
+.wb-tabs { display: flex; gap: 8px; overflow-x: auto; border-bottom: 1px solid #3b3d40; margin: 28px 0; }
+.wb-tabs button { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 2px solid transparent; color: #aeb4b7; }
+.wb-tabs button[aria-selected="true"] { color: #75d7b9; border-bottom-color: #75d7b9; }
+.wb-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 20px 0; }
+.workbench label { display: flex; flex-direction: column; gap: 7px; font-size: 14px; color: #c5c7c9; }
+.workbench input:not([type="checkbox"]), .workbench textarea, .workbench select { width: 100%; background: #17191a; border: 1px solid #45484a; border-radius: 5px; padding: 10px; color: #f0f0f0; }
+.workbench textarea { resize: vertical; min-height: 84px; }
+.workbench :focus-visible, .wb-nav :focus-visible { outline: 2px solid #78d7b9; outline-offset: 3px; }
+.wb-alert { padding: 12px 0; color: #ffc1b0; overflow-wrap: anywhere; }
+.wb-item { padding: 20px 0; border-bottom: 1px solid #36383b; }
+.wb-scene { display: grid; grid-template-columns: 42px minmax(0, 1fr) 210px; gap: 18px; }
+.wb-number { font-variant-numeric: tabular-nums; color: #8c999f; font-size: 24px; }
+.wb-item p { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.wb-thumbnails { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+.wb-thumbnails img { width: 150px; height: 150px; object-fit: contain; background: #121313; border-radius: 4px; }
+.wb-scene img { width: 100%; max-height: 200px; object-fit: contain; }
+.wb-score { display: inline-block; padding: 3px 8px; border-radius: 4px; background: #303538; font-size: 13px; }
+.wb-score.passed, .wb-score.completed { color: #8adfbd; background: #163e32; }
+.wb-score.failed, .wb-score.error, .wb-score.needs_review { color: #ffc19f; background: #4a2f23; }
+.workbench progress { width: 100%; height: 10px; accent-color: #60bc9e; }
+.wb-overlay { position: fixed; inset: 0; background: #000b; z-index: 100; display: grid; place-items: center; padding: 16px; }
+.wb-modal { width: min(560px, 100%); max-height: 90vh; overflow-y: auto; background: #222426; border: 1px solid #555; border-radius: 8px; padding: 24px; }
+.wb-modal label { margin-bottom: 16px; }
+.wb-nav { background: #202224; color: #dedede; border-bottom: 1px solid #3c3e40; padding: 14px max(20px, calc((100% - 1152px) / 2)); display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.wb-nav a { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+.wb-nav .brand { font-size: 18px; font-weight: 650; }
+.wb-nav a[aria-current="page"] { color: #7dddbb; }
+.wb-video { display: block; width: 100%; max-height: 70vh; background: #050505; margin: 20px 0; }
+.wb-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.wb-table th, .wb-table td { padding: 12px 8px; border-bottom: 1px solid #3c3e40; text-align: left; overflow-wrap: anywhere; }
+@media(max-width: 650px) { .workbench { padding: 20px 16px 40px; } .wb-fields { grid-template-columns: 1fr; } .wb-scene { grid-template-columns: 28px minmax(0, 1fr); } .wb-scene > :last-child { grid-column: 2; } .wb-nav { gap: 12px; } .wb-nav .username { display: none; } .wb-tabs button { padding: 10px 7px; gap: 5px; } }

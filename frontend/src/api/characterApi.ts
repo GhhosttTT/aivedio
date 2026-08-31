@@ -31,7 +31,7 @@ export const characterApi = {
    * 获取项目的所有角色
    */
   listCharacters: async (projectId: number) => {
-    return apiClient.get<Character[]>(`/projects/${projectId}/characters`);
+    return apiClient.get<never, Character[]>(`/projects/${projectId}/characters`);
   },
 
   /**
@@ -78,7 +78,7 @@ export const characterApi = {
    * 获取角色的所有参考图像
    */
   listReferences: async (projectId: number, characterId: number) => {
-    return apiClient.get<CharacterReference[]>(
+    return apiClient.get<never, CharacterReference[]>(
       `/projects/${projectId}/characters/${characterId}/references`
     );
   },

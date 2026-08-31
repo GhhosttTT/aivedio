@@ -4,7 +4,11 @@
 提供任务状态查询、取消和重试功能
 """
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from sqlalchemy.orm import Session
+from src.database.session import get_db_session
+from src.api.dependencies import require_task_access
+from src.services.task_orchestrator import TaskOrchestrator
 
 from src.api.schemas import TaskStatusResponse, MessageResponse
 from src.services.task_orchestrator import get_task_orchestrator
@@ -12,11 +16,11 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/api/tasks", tags=["任务管理"])
+router = APIRouter(prefix="/api/tasks", tags=["任务管理"], dependencies=[Depends(require_task_access)])
 
 
 @router.get("/{task_id}/status", response_model=TaskStatusResponse)
-async def get_task_status(task_id: str):
+async def get_task_status(task_id: str, db_session: Session = Depends(get_db_session)):
     """
     查询任务状态
     
@@ -32,7 +36,7 @@ async def get_task_status(task_id: str):
     try:
         logger.info(f"查询任务状态: task_id={task_id}")
         
-        task_orchestrator = get_task_orchestrator()
+        task_orchestrator = TaskOrchestrator(db_session)
         task_info = task_orchestrator.get_task_status(task_id)
         
         if task_info is None:
@@ -46,7 +50,7 @@ async def get_task_status(task_id: str):
             task_id=task_id,
             status=task_info["status"],
             progress=task_info.get("progress", 0.0),
-            current_step=task_info.get("current_step", ""),
+            current_step=str(task_info.get("current_step", 0)),
             result=task_info.get("result"),
             error=task_info.get("error")
         )
@@ -62,7 +66,7 @@ async def get_task_status(task_id: str):
 
 
 @router.post("/{task_id}/cancel", response_model=MessageResponse)
-async def cancel_task(task_id: str):
+async def cancel_task(task_id: str, db_session: Session = Depends(get_db_session)):
     """
     取消任务
     
@@ -78,7 +82,7 @@ async def cancel_task(task_id: str):
     try:
         logger.info(f"取消任务: task_id={task_id}")
         
-        task_orchestrator = get_task_orchestrator()
+        task_orchestrator = TaskOrchestrator(db_session)
         success = task_orchestrator.cancel_task(task_id)
         
         if not success:
@@ -105,7 +109,7 @@ async def cancel_task(task_id: str):
 
 
 @router.post("/{task_id}/retry", response_model=MessageResponse)
-async def retry_task(task_id: str):
+async def retry_task(task_id: str, db_session: Session = Depends(get_db_session)):
     """
     重试失败的任务
     
@@ -121,7 +125,7 @@ async def retry_task(task_id: str):
     try:
         logger.info(f"重试任务: task_id={task_id}")
         
-        task_orchestrator = get_task_orchestrator()
+        task_orchestrator = TaskOrchestrator(db_session)
         success = task_orchestrator.retry_failed_task(task_id)
         
         if not success:

@@ -1,0 +1,147 @@
+{
+  "workflow": {
+    "name": "SDXL FaceID reference keyframe",
+    "description": "SDXL reference workflow; requires matching FaceID Plus V2 SDXL models.",
+    "version": "1.0.0"
+  },
+  "nodes": {
+    "checkpoint_loader": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors"
+      }
+    },
+    "ipadapter_loader": {
+      "class_type": "IPAdapterUnifiedLoaderFaceID",
+      "inputs": {
+        "model": [
+          "checkpoint_loader",
+          0
+        ],
+        "preset": "FACEID PLUS V2",
+        "lora_strength": 0.6,
+        "provider": "CPU"
+      }
+    },
+    "load_reference_image": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": ""
+      }
+    },
+    "apply_ipadapter": {
+      "class_type": "IPAdapterFaceID",
+      "inputs": {
+        "model": [
+          "ipadapter_loader",
+          0
+        ],
+        "ipadapter": [
+          "ipadapter_loader",
+          1
+        ],
+        "image": [
+          "load_reference_image",
+          0
+        ],
+        "weight": 0.8,
+        "weight_faceidv2": 1,
+        "weight_type": "linear",
+        "combine_embeds": "concat",
+        "start_at": 0,
+        "end_at": 1,
+        "embeds_scaling": "V only"
+      }
+    },
+    "clip_text_encode_positive": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "",
+        "clip": [
+          "checkpoint_loader",
+          1
+        ]
+      }
+    },
+    "clip_text_encode_negative": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "text, watermark, duplicate people, extra limbs, malformed hands, blurry",
+        "clip": [
+          "checkpoint_loader",
+          1
+        ]
+      }
+    },
+    "empty_latent_image": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {
+        "width": 1344,
+        "height": 768,
+        "batch_size": 1
+      }
+    },
+    "ksampler": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": 0,
+        "steps": 28,
+        "cfg": 6,
+        "sampler_name": "dpmpp_2m_sde",
+        "scheduler": "karras",
+        "denoise": 1,
+        "model": [
+          "apply_ipadapter",
+          0
+        ],
+        "positive": [
+          "clip_text_encode_positive",
+          0
+        ],
+        "negative": [
+          "clip_text_encode_negative",
+          0
+        ],
+        "latent_image": [
+          "empty_latent_image",
+          0
+        ]
+      }
+    },
+    "vae_decode": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "ksampler",
+          0
+        ],
+        "vae": [
+          "checkpoint_loader",
+          2
+        ]
+      }
+    },
+    "save_image": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "filename_prefix": "short_drama_character",
+        "images": [
+          "vae_decode",
+          0
+        ]
+      }
+    }
+  },
+  "parameters": {
+    "default": {
+      "width": 1344,
+      "height": 768,
+      "steps": 28,
+      "cfg_scale": 6,
+      "ipadapter_weight": 0.75
+    }
+  },
+  "negative_prompt": {
+    "default": "text, watermark, duplicate people, extra limbs, malformed hands, blurry"
+  }
+}

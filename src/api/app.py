@@ -159,12 +159,8 @@ def configure_static_files(app: FastAPI):
     # 确保存储目录存在
     os.makedirs(storage_path, exist_ok=True)
     
-    # 挂载静态文件目录
-    app.mount(
-        "/storage",
-        StaticFiles(directory="storage", html=False),
-        name="storage"
-    )
+    from src.api.routes.media import router as media_router
+    app.include_router(media_router)
     
     logger.info(f"静态文件服务配置完成: path={storage_path}")
 

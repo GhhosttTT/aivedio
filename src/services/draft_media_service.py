@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw
 
 
 def draft_fallback_enabled() -> bool:
-    return os.getenv("ENABLE_DRAFT_MEDIA_FALLBACK", "true").lower() in {"1", "true", "yes", "on"}
+    return os.getenv("ENABLE_DRAFT_MEDIA_FALLBACK", "false").lower() in {"1", "true", "yes", "on"}
 
 
 class DraftMediaService:

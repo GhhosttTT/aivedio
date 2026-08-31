@@ -1,0 +1,8 @@
+[
+  {"id":"establishing", "prompt":"An empty office at night, a sealed red envelope on the desk, wide shot at eye level, one warm desk lamp, cinematic drama still", "seed":31001},
+  {"id":"discovery", "prompt":"A young woman with short black hair wearing a green jacket holds a sealed red envelope, office doorway, medium shot at eye level, warm desk lamp light, cinematic drama still", "seed":31002},
+  {"id":"prop", "prompt":"A sealed red envelope resting on a wooden desk beside a brass key, close-up at a slight overhead angle, warm desk lamp light, cinematic drama still", "seed":31003},
+  {"id":"reaction", "prompt":"A young woman with short black hair wearing a green jacket looks shocked, office doorway, close-up at eye level, warm desk lamp light, cinematic drama still", "seed":31004},
+  {"id":"reverse_shot", "prompt":"A middle-aged man with gray hair wearing a black coat stands in an office doorway, serious expression, medium shot at eye level, warm desk lamp light, cinematic drama still", "seed":31005},
+  {"id":"stylized", "prompt":"A young woman with short black hair wearing a green jacket holds a red envelope, office doorway, medium shot at eye level, soft lamp light, hand-drawn animation style", "seed":31006}
+]

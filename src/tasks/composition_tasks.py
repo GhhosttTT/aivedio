@@ -59,6 +59,8 @@ def compose_final_video_task(
         
         if not scenes:
             raise ValueError(f"项目没有分镜: {project_id}")
+        from src.tasks.review_tasks import require_generation_review
+        require_generation_review(project, scenes)
         
         # 获取视频合成服务
         video_composer = get_video_composer()

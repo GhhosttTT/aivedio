@@ -93,10 +93,13 @@ class LocalizationPipeline:
 
     def normalize_languages(self, target_languages: Optional[Iterable[str]]) -> List[str]:
         configured = settings.LOCALIZATION_TARGET_LANGUAGES.split(",")
-        languages = list(target_languages or configured)
+        languages = list(configured if target_languages is None else target_languages)
         cleaned = []
         for language in languages:
             code = language.strip().lower()
+            import re
+            if not re.fullmatch(r"[a-z]{2,3}(?:-[a-z0-9]{2,8})?", code):
+                raise ValueError("Invalid target language code")
             if code and code not in cleaned:
                 cleaned.append(code)
         if not cleaned:

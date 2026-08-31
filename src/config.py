@@ -13,7 +13,7 @@ from pydantic import ConfigDict
 class Settings(BaseSettings):
     """应用配置"""
     
-    model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
     
     # 数据库配置
     DATABASE_URL: str = "sqlite:///./short_drama.db"
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # Celery 配置
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
-    CELERY_WORKER_CONCURRENCY: int = 2
+    CELERY_WORKER_CONCURRENCY: int = 1
     
     # LLM 配置
     LLM_MODEL_PATH: str = "./models/qwen2.5-14b-instruct-q4_k_m.gguf"
@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     # ComfyUI 配置
     COMFYUI_BASE_URL: str = "http://127.0.0.1:8188"
     COMFYUI_WORKFLOW_PATH: str = "./configs/comfyui_workflow.json"
+    COMFYUI_REFERENCE_WORKFLOW_PATH: str = ""
+    GENERATION_WIDTH: int = 1344
+    GENERATION_HEIGHT: int = 768
+    GENERATION_STEPS: int = 28
+    GENERATION_CFG: float = 6.0
+    LOCAL_REVIEW_BASE_URL: str = "http://127.0.0.1:11434"
+    LOCAL_REVIEW_MODEL: str = "qwen3-vl:4b"
+    LOCAL_REVIEW_TIMEOUT: int = 300
     
     # SVD 配置
     SVD_MODEL_PATH: str = "./models/stable-video-diffusion-img2vid-xt"

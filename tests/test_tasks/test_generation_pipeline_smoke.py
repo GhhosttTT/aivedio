@@ -1,4 +1,6 @@
 from pathlib import Path
+import pytest
+from unittest.mock import Mock
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -17,7 +19,7 @@ class FailingImageProvider:
         raise RuntimeError("image provider unavailable")
 
 
-def test_generation_tasks_produce_final_video_with_draft_fallbacks(tmp_path, monkeypatch):
+def test_draft_tasks_cannot_publish_an_unreviewed_final_video(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("ENABLE_DRAFT_MEDIA_FALLBACK", "true")
     monkeypatch.setattr(image_tasks, "get_generation_provider", lambda _provider=None: FailingImageProvider())
@@ -41,6 +43,8 @@ def test_generation_tasks_produce_final_video_with_draft_fallbacks(tmp_path, mon
 
     for module in [image_tasks, video_tasks, audio_tasks, subtitle_tasks, composition_tasks]:
         monkeypatch.setattr(module, "get_db", get_test_db)
+    for task in [image_tasks.generate_image_task, video_tasks.generate_video_task, audio_tasks.generate_audio_task, subtitle_tasks.generate_subtitle_task, composition_tasks.compose_final_video_task]:
+        monkeypatch.setattr(task, "update_state", Mock())
 
     session = TestingSession()
     user = User(username="smoke", email="smoke@example.com", hashed_password="x")
@@ -65,17 +69,15 @@ def test_generation_tasks_produce_final_video_with_draft_fallbacks(tmp_path, mon
     scene_id, project_id, task_id = scene.id, project.id, task.id
     session.close()
 
-    steps = [
-        image_tasks.generate_image_task.apply(args=(scene_id, "hero in upper realm", project_id, task_id)),
-        video_tasks.generate_video_task.apply(args=(scene_id, project_id, task_id)),
-        audio_tasks.generate_audio_task.apply(args=(scene_id, "上界来人了，他是仙尊。", "hero", project_id, task_id)),
-        subtitle_tasks.generate_subtitle_task.apply(args=(scene_id, project_id, task_id)),
-        composition_tasks.compose_final_video_task.apply(args=(project_id, task_id)),
-    ]
-
-    for step in steps:
-        assert not step.failed(), step.result
-
-    final_path = Path(steps[-1].result["final_video_path"])
-    assert final_path.exists()
-    assert final_path.stat().st_size > 0
+    image_tasks.generate_image_task.run(scene_id, "hero in upper realm", project_id, task_id)
+    video_tasks.generate_video_task.run(scene_id, project_id, task_id)
+    audio_tasks.generate_audio_task.run(scene_id, "上界来人了，他是仙尊。", "hero", project_id, task_id)
+    subtitle_tasks.generate_subtitle_task.run(scene_id, project_id, task_id)
+    with pytest.raises(Exception, match="Missing production story review"):
+        composition_tasks.compose_final_video_task.run(project_id, task_id)
+    with TestingSession() as session:
+        project = session.get(Project, project_id)
+        assert project.status == ProjectStatus.FAILED
+        assert project.final_video_path is None
+        assert session.get(Task, task_id).status == TaskStatus.FAILED
+    engine.dispose()

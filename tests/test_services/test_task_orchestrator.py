@@ -108,6 +108,7 @@ class TestCreateProductionTask:
         mock_result = Mock()
         mock_result.id = "test-celery-task-id"
         mock_chain.return_value.apply_async.return_value = mock_result
+        mock_chain.return_value.freeze.return_value = mock_result
         
         # 创建生产任务
         celery_task_id = orchestrator.create_production_task(
@@ -149,8 +150,8 @@ class TestCalculateTotalSteps:
             generate_audios=True,
             generate_subtitles=True
         )
-        # 3 scenes * 4 steps + 1 compose = 13
-        assert total == 13
+        # Preparation, review, and composition each count as a step.
+        assert total == 15
 
 
 class TestGetTaskStatus:

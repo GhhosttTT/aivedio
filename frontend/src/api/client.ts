@@ -1,11 +1,15 @@
 import axios from 'axios';
+import { useAuthStore } from '../store/authStore';
+export const apiBase = (import.meta as any).env?.VITE_API_BASE_URL || `${window.location.protocol}//${window.location.hostname}:8000/api`;
+export const apiOrigin = new URL(apiBase, window.location.href).origin;
+export const errorText = (error: any) => { const detail = error?.response?.data?.detail; return typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((x: any) => x.msg).join('; ') : error?.message || '请求失败'; };
 import type { LocalizationJob, Project, SourceVideo } from '../types';
 
 /**
  * API 客户端配置
  */
 const apiClient = axios.create({
-    baseURL: (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api',
+    baseURL: apiBase,
     timeout: 30000,
     headers: {
         'Content-Type': 'application/json'
@@ -15,7 +19,7 @@ const apiClient = axios.create({
 // 请求拦截器 - 添加认证 Token
 apiClient.interceptors.request.use((config) => {
     const token = localStorage.getItem('auth_token');
-    if (token) {
+    if (token && !config.headers.Authorization) {
         config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -26,9 +30,9 @@ apiClient.interceptors.response.use(
     (response) => response.data,
     (error) => {
         // 处理 401 未授权或 403 禁止访问错误
-        if (error.response?.status === 401 || error.response?.status === 403) {
+        if (error.response?.status === 401) {
             console.warn('Token 失效或权限不足，清除认证状态');
-            localStorage.removeItem('auth_token');
+            useAuthStore.getState().logout();
             // 如果不在登录页，跳转到登录页
             if (!window.location.pathname.includes('/login')) {
                 window.location.href = '/login';
@@ -47,13 +51,9 @@ export const authApi = {
      * 用户登录
      */
     login: async (username: string, password: string): Promise<{ access_token: string; refresh_token: string; user: any }> => {
-        const response = await apiClient.post('/auth/login', { username, password });
-        // 响应拦截器已经返回了 response.data，所以 response 就是数据本身
-        return {
-            access_token: (response as any).access_token,
-            refresh_token: '',
-            user: { id: 1, username: username }
-        };
+        const response = await apiClient.post<any, {access_token: string; refresh_token: string}>('/auth/login', { username, password });
+        const user = await apiClient.get<any, {id: string; username: string}>('/auth/me', {headers: {Authorization: `Bearer ${response.access_token}`}});
+        return {...response, user};
     },
 
     /**
@@ -68,6 +68,10 @@ export const authApi = {
  * 项目 API
  */
 export const projectApi = {
+    latestTask: (id: number) => apiClient.get<any, ProductionTask | null>(`/projects/${id}/production-task`),
+    reviews: (id: number) => apiClient.get<any, {reports: Record<string, any>}>(`/projects/${id}/generation-review`),
+    updateScene: (id: number, scene: number, data: any) => apiClient.put(`/projects/${id}/scenes/${scene}`, data),
+    mediaUrl: async (id: number, path: string) => { const data = await apiClient.get<any, {url: string}>(`/projects/${id}/media-url`, {params: {path}}); return new URL(data.url, apiOrigin).href; },
     /**
      * 获取项目列表
      */
@@ -124,6 +128,9 @@ export const projectApi = {
     generateScript: async (id: number, data?: {
         theme?: string;
         outline?: string;
+        num_scenes?: number;
+        num_characters?: number;
+        style?: string;
     }): Promise<Project> => {
         return apiClient.post(`/projects/${id}/generate-script`, data || {}, {
             timeout: 900000  // 15分钟超时，等待LLM生成完成
@@ -139,7 +146,7 @@ export const projectApi = {
     ): Promise<Project> => {
         return apiClient.post(`/projects/${id}/regenerate-scene`, {
             scene_number: sceneNumber
-        });
+        }, {timeout: 900000});
     },
 
     /**
@@ -245,3 +252,6 @@ export const localizationApi = {
 };
 
 export default apiClient;
+
+
+export interface ProductionTask { task_id: number; celery_task_id: string; project_id: number; status: string; progress: number; current_step: number; total_steps: number; error_message?: string; live_step?: {stage: string; scene_id?: number}; }

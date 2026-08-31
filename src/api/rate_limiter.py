@@ -329,7 +329,7 @@ def get_redis_client():
             logger.info("未配置 Redis，使用本地内存进行速率限制")
             return None
         
-        client = redis.from_url(redis_url, decode_responses=True)
+        client = redis.from_url(redis_url, decode_responses=True, socket_connect_timeout=1, socket_timeout=1)
         # 测试连接
         client.ping()
         logger.info("Redis 连接成功，使用 Redis 进行速率限制")

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 import os
 from pathlib import Path
 
+from src.api.dependencies import require_project_access
 from src.api.schemas import (
     CharacterCreate,
     CharacterResponse,
@@ -23,7 +24,7 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/api/projects/{project_id}/characters", tags=["角色管理"])
+router = APIRouter(prefix="/api/projects/{project_id}/characters", tags=["角色管理"], dependencies=[Depends(require_project_access)])
 
 
 @router.post("", response_model=CharacterResponse, status_code=status.HTTP_201_CREATED)
@@ -199,10 +200,19 @@ async def upload_reference_image(
         # 创建临时目录保存上传文件
         temp_dir = Path("./storage/temp")
         temp_dir.mkdir(parents=True, exist_ok=True)
-        temp_path = temp_dir / f"{file.filename}"
+        from uuid import uuid4
+        from io import BytesIO
+        from PIL import Image
+        content = await file.read(10 * 1024 * 1024 + 1)
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(413, "参考图不能超过 10 MB")
+        try:
+            Image.open(BytesIO(content)).verify()
+        except Exception:
+            raise HTTPException(400, "参考图格式无效")
+        temp_path = temp_dir / f"{uuid4().hex}.png"
         
         with open(temp_path, "wb") as buffer:
-            content = await file.read()
             buffer.write(content)
         
         # 保存到角色参考目录

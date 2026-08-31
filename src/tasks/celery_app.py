@@ -1,6 +1,7 @@
 """Celery application configuration."""
 
 import os
+import inspect
 from pathlib import Path
 
 from celery import Celery
@@ -28,6 +29,7 @@ celery_app = Celery(
         "src.tasks.subtitle_tasks",
         "src.tasks.composition_tasks",
         "src.tasks.localization_tasks",
+        "src.tasks.review_tasks",
     ],
 )
 
@@ -50,9 +52,14 @@ celery_app.conf.update(
     task_soft_time_limit=3600,
     task_time_limit=3900,
     worker_prefetch_multiplier=1,
+    worker_concurrency=int(os.getenv("CELERY_WORKER_CONCURRENCY", "1")),
     worker_max_tasks_per_child=100,
     worker_disable_rate_limits=False,
     task_routes={
+        "prepare_generation": {"queue": "image"},
+        "generate_image": {"queue": "image"},
+        "generate_video": {"queue": "image"},
+        "review_generation": {"queue": "image"},
         "src.tasks.image_tasks.*": {"queue": "image"},
         "src.tasks.video_tasks.*": {"queue": "video"},
         "src.tasks.audio_tasks.*": {"queue": "audio"},
@@ -88,7 +95,53 @@ class BaseTask(celery_app.Task):
     retry_backoff_max = 600
     retry_jitter = True
 
+    def _production_record(self, args, kwargs, db):
+        if self.name not in {"prepare_generation", "generate_image", "generate_video", "generate_audio", "generate_subtitle", "review_generation", "compose_final_video"}:
+            return None
+        from src.database.models import Task as TaskModel
+        values = inspect.signature(self.run).bind(*args, **kwargs).arguments
+        record_id = values.get("task_id")
+        return db.query(TaskModel).filter(TaskModel.id == record_id).first() if record_id else None
+
+    def before_start(self, task_id, args, kwargs):
+        from celery.exceptions import Ignore
+        from src.database.session import get_db_session
+        from src.database.models import TaskStatus, ProjectStatus
+        db = next(get_db_session())
+        try:
+            record = self._production_record(args, kwargs, db)
+            if record and record.status == TaskStatus.PENDING:
+                record.status = TaskStatus.RUNNING
+                db.commit()
+            if record and record.status == TaskStatus.RUNNING:
+                from src.services.generation_review import write_report
+                from src.utils.storage import storage_manager
+                values = inspect.signature(self.run).bind(*args, **kwargs).arguments
+                write_report(storage_manager.get_project_path(record.project_id) / "production_progress.json", {
+                    "celery_task_id": record.celery_task_id, "stage": self.name,
+                    "scene_id": values.get("scene_id"), "state": "running",
+                })
+            if record and record.status in {TaskStatus.CANCELLED, TaskStatus.FAILED}:
+                if record.project.status == ProjectStatus.IN_PRODUCTION:
+                    record.project.status = ProjectStatus.FAILED
+                    db.commit()
+                raise Ignore()
+        finally:
+            db.close()
+
     def on_failure(self, exc, task_id, args, kwargs, einfo):
+        from src.database.session import get_db_session
+        from src.database.models import TaskStatus, ProjectStatus
+        db = next(get_db_session())
+        try:
+            record = self._production_record(args, kwargs, db)
+            if record and record.status != TaskStatus.CANCELLED:
+                record.status = TaskStatus.FAILED
+                record.error_message = f"{self.name}: {exc}"
+                record.project.status = ProjectStatus.FAILED
+                db.commit()
+        finally:
+            db.close()
         print(f"Task failed: {task_id}")
         print(f"Exception: {exc}")
         print(f"Details: {einfo}")
@@ -99,6 +152,20 @@ class BaseTask(celery_app.Task):
         print(f"Retries: {self.request.retries}")
 
     def on_success(self, retval, task_id, args, kwargs):
+        from src.database.session import get_db_session
+        from src.database.models import TaskStatus, ProjectStatus
+        db = next(get_db_session())
+        try:
+            record = self._production_record(args, kwargs, db)
+            if record and record.status == TaskStatus.CANCELLED:
+                record.project.status = ProjectStatus.FAILED
+                db.commit()
+            elif record and record.status == TaskStatus.RUNNING:
+                record.current_step = min(record.total_steps, record.current_step + 1)
+                record.progress = 100.0 * record.current_step / record.total_steps
+                db.commit()
+        finally:
+            db.close()
         print(f"Task succeeded: {task_id}")
 
 

@@ -19,8 +19,9 @@ class CharacterManager:
     3. 提供角色特征给图像生成流程
     """
     
-    def __init__(self, base_dir: str = "./storage/characters"):
-        self.base_dir = Path(base_dir)
+    def __init__(self, base_dir: Optional[str] = None):
+        from src.utils.storage import storage_manager
+        self.base_dir = Path(base_dir) if base_dir else storage_manager.base_path / "characters"
         self.base_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"CharacterManager 初始化: {self.base_dir}")
     

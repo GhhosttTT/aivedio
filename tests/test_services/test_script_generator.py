@@ -5,6 +5,7 @@
 """
 
 import pytest
+import json
 from unittest.mock import Mock, patch, MagicMock
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -43,6 +44,7 @@ class TestScriptGenerator:
     def mock_llm_service(self):
         """创建 Mock LLM 服务"""
         mock_service = MagicMock()
+        mock_service.generate.return_value = "young man, short black hair, dark jacket"
         return mock_service
     
     @pytest.fixture
@@ -97,7 +99,11 @@ class TestScriptGenerator:
 """
         
         mock_llm_service.generate_script_prompt.return_value = "test prompt"
-        mock_llm_service.generate.return_value = mock_script
+        review = {key: {"score": 4, "evidence": "The two scenes maintain continuity"} for key in (
+            "causal_logic", "character_motivation", "continuity", "filmability")}
+        review.update(reviewed_scenes=[1, 2], issues=[])
+        mock_llm_service.generate.side_effect = [mock_script, json.dumps(review),
+            "young man, short black hair, dark jacket", "young woman, long black hair, red jacket"]
         
         # 生成剧本
         result = script_generator.generate_script(
@@ -116,8 +122,8 @@ class TestScriptGenerator:
         assert result["scenes"][0]["description"] == "公园里，阳光明媚"
         
         # 验证 LLM 服务被调用
-        mock_llm_service.generate_script_prompt.assert_called_once()
-        mock_llm_service.generate.assert_called_once()
+        assert mock_llm_service.generate.call_count == 4
+        assert result["story_review"]["status"] == "passed"
     
     def test_generate_script_no_theme_or_outline(
         self,

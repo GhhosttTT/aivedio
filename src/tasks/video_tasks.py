@@ -35,6 +35,8 @@ def generate_video_task(
         self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "svd_generation"})
 
         try:
+            from src.services.comfyui_service import get_comfyui_service
+            get_comfyui_service().free_memory()
             svd_service = get_svd_service()
             result_path = svd_service.generate_video(
                 image_path=scene.image_path,

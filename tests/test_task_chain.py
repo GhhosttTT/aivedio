@@ -100,7 +100,7 @@ class TestTaskChain:
             generate_subtitles=True
         )
         # 3个分镜 * 4个步骤 + 1个合成步骤 = 13
-        assert total == 13
+        assert total == 15
         
         # 只生成图像
         total = orchestrator._calculate_total_steps(
@@ -111,7 +111,7 @@ class TestTaskChain:
             generate_subtitles=False
         )
         # 3个分镜 * 1个步骤 + 1个合成步骤 = 4
-        assert total == 4
+        assert total == 6
     
     @patch('src.services.task_orchestrator.chain')
     @patch('src.services.task_orchestrator.group')
@@ -141,10 +141,10 @@ class TestTaskChain:
         )
         
         # 验证 group 被调用了4次（图像、视频、音频、字幕）
-        assert mock_group.call_count == 4
+        assert mock_group.call_count == 2
         
         # 验证 chain 被调用了1次
-        assert mock_chain.call_count == 1
+        assert mock_chain.call_count == 3
     
     @patch('src.services.task_orchestrator.TaskOrchestrator.create_production_task')
     def test_create_production_task_integration(
