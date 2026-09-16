@@ -183,9 +183,79 @@ def render_images(cases, output: Path, base_url=None, reference=None):
     return report
 
 
+def _read_json(path: Path):
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def summarize_validation(output: Path):
+    preflight_report = _read_json(output / "preflight.json")
+    video_workflow_report = _read_json(output / "video_workflow_preflight.json")
+    render_report = _read_json(output / "render.json")
+    video_review_report = _read_json(output / "video_review.json")
+    manual_review = _read_json(output / "manual_review.json")
+    report = {
+        "status": "needs_action",
+        "generated_at": round(time.time()),
+        "inputs": {
+            "preflight": str(output / "preflight.json"),
+            "video_workflow_preflight": str(output / "video_workflow_preflight.json"),
+            "render": str(output / "render.json"),
+            "video_review": str(output / "video_review.json"),
+            "manual_review": str(output / "manual_review.json"),
+        },
+        "checks": {},
+        "action_items": [],
+    }
+    checks = report["checks"]
+    checks["environment_ready"] = bool(preflight_report and preflight_report.get("status") == "ready_for_live_test")
+    checks["video_workflow_ready"] = bool(
+        video_workflow_report
+        and video_workflow_report.get("status") in {"ready_for_live_test", "skipped"}
+    )
+    checks["images_rendered"] = bool(render_report and render_report.get("status") == "rendered_pending_human_review")
+    checks["video_review_passed"] = bool(video_review_report and video_review_report.get("status") == "passed")
+    manual_cases = manual_review.get("cases", []) if isinstance(manual_review, dict) else []
+    checks["manual_review_present"] = bool(manual_cases)
+    if manual_cases:
+        scores = [case.get("score", 0) for case in manual_cases]
+        checks["manual_average_score"] = round(sum(scores) / len(scores), 2)
+        checks["manual_min_score"] = min(scores)
+        failed_manual = [case for case in manual_cases if case.get("score", 0) < 4 or case.get("decision") == "reject"]
+        checks["manual_review_passed"] = not failed_manual
+        report["manual_failures"] = failed_manual
+    else:
+        checks["manual_average_score"] = None
+        checks["manual_min_score"] = None
+        checks["manual_review_passed"] = False
+
+    if not checks["environment_ready"]:
+        report["action_items"].append("Run preflight and fix ffmpeg/ffprobe/model/ComfyUI/llama.cpp readiness before judging quality.")
+    if not checks["video_workflow_ready"]:
+        report["action_items"].append("Run preflight-video-workflow and fix workflow placeholders, nodes, models, or output nodes.")
+    if not checks["images_rendered"]:
+        report["action_items"].append("Run render-images on the fixed validation cases and inspect generated keyframes.")
+    if not checks["video_review_passed"]:
+        report["action_items"].append("Run review-video on a generated clip; fix identity drift, flicker, temporal breaks, or VLM setup.")
+    if not checks["manual_review_present"]:
+        report["action_items"].append("Create manual_review.json with 0-5 human scores for each rendered case and clip.")
+    elif not checks["manual_review_passed"]:
+        report["action_items"].append("Improve prompts/workflow/model settings for manual cases below 4 before scaling up.")
+
+    if all(checks[key] for key in (
+        "environment_ready", "video_workflow_ready", "images_rendered",
+        "video_review_passed", "manual_review_passed",
+    )):
+        report["status"] = "ready_for_calibrated_generation"
+    elif checks["images_rendered"] or checks["video_review_passed"] or checks["manual_review_present"]:
+        report["status"] = "partial_needs_review"
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["preflight", "preflight-video-workflow", "render-images", "review-video"], nargs="?", default="preflight")
+    parser.add_argument("mode", choices=["preflight", "preflight-video-workflow", "render-images", "review-video", "summarize"], nargs="?", default="preflight")
     parser.add_argument("--base-url", help="ComfyUI address on the GPU machine")
     parser.add_argument("--cases", default="examples/local_generation_cases.json")
     parser.add_argument("--output", type=Path, default=Path("storage/validation"))
@@ -203,15 +273,21 @@ def main():
         write_report(args.output / "video_workflow_preflight.json", report)
     elif args.mode == "render-images":
         report = render_images(json.loads(Path(args.cases).read_text(encoding="utf-8")), args.output, args.base_url, args.reference)
-    else:
+    elif args.mode == "review-video":
         if not args.video or not args.description:
             parser.error("review-video needs --video and --description")
         report = GenerationReviewService().review_video(
             args.video, {"scene_number": 1, "description": args.description},
             args.output / "video_review.json", args.reference,
         )
+    else:
+        report = summarize_validation(args.output)
+        write_report(args.output / "validation_summary.json", report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0 if report["status"] in {"ready_for_live_test", "rendered_pending_human_review", "passed"} else 1
+    return 0 if report["status"] in {
+        "ready_for_live_test", "rendered_pending_human_review", "passed",
+        "ready_for_calibrated_generation",
+    } else 1
 
 
 if __name__ == "__main__":

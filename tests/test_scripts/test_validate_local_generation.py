@@ -3,6 +3,10 @@ import json
 from scripts import validate_local_generation as validator
 
 
+def write_json(path, payload):
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def test_video_workflow_preflight_skips_when_unconfigured(monkeypatch):
     monkeypatch.setattr(validator.settings, "COMFYUI_VIDEO_WORKFLOW_PATH", "")
 
@@ -79,3 +83,35 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
     assert report["status"] == "ready_for_live_test"
     assert report["placeholders"] == ["output_prefix", "prompt", "reference_image"]
     assert report["likely_output_nodes"][0]["class_type"] == "VHS_VideoCombine"
+
+
+def test_validation_summary_requires_manual_scores(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", {"status": "rendered_pending_human_review"})
+    write_json(tmp_path / "video_review.json", {"status": "passed"})
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["manual_review_present"] is False
+    assert any("manual_review.json" in item for item in report["action_items"])
+
+
+def test_validation_summary_accepts_calibrated_run(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", {"status": "rendered_pending_human_review"})
+    write_json(tmp_path / "video_review.json", {"status": "passed"})
+    write_json(tmp_path / "manual_review.json", {
+        "cases": [
+            {"id": "discovery", "score": 4.5, "decision": "accept"},
+            {"id": "reaction", "score": 4.0, "decision": "accept"},
+        ]
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "ready_for_calibrated_generation"
+    assert report["checks"]["manual_average_score"] == 4.25
+    assert report["action_items"] == []
