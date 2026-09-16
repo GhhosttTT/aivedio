@@ -50,6 +50,7 @@ class FrameReview(BaseModel):
     composition: Score
     visual_integrity: Score
     identity_consistency: Score
+    temporal_consistency: Score
     reviewed_frames: list[StrictInt]
     issues: list[Issue]
 
@@ -274,7 +275,11 @@ class GenerationReviewService:
                 images = ([reference] if reference else []) + [frame["path"] for frame in batch]
                 review = self.reviewer.evaluate(
                     RUBRIC + "Review actual images for story match, composition, visible anatomy/rendering "
-                    "defects, and identity consistency between sampled frames and reference when provided. "
+                    "defects, identity consistency between sampled frames and reference when provided, and "
+                    "temporal consistency across sampled frames. Temporal consistency must check whether the "
+                    "same characters keep stable faces, hair, wardrobe, body shape, and relative positions; "
+                    "whether motion progresses plausibly without flicker, warping, sudden missing or extra "
+                    "people, or unrelated camera jumps; and whether action continuity matches the scene. "
                     "Animation is valid; judge against requested style. Frame indices are in metadata. "
                     "A reference image, when present, is first and must not count as a reviewed video frame.",
                     {"scene": scene, "frames": batch, "has_reference": bool(reference)}, FrameReview, images,
