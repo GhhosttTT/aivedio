@@ -175,6 +175,42 @@ def _quality_parameters(index: int, refinement_pass: int, base_steps: int, base_
     return min(base_steps + step_boost, 48), round(max(4.5, min(base_cfg + cfg_shift, 8.0)), 2)
 
 
+def _append_terms(text: str | None, addition: str | None) -> str:
+    parts = [part.strip() for part in (text or "").split(",") if part.strip()]
+    existing = {part.lower() for part in parts}
+    for raw in (addition or "").split(","):
+        term = raw.strip()
+        if term and term.lower() not in existing:
+            parts.append(term)
+            existing.add(term.lower())
+    return ", ".join(parts)
+
+
+def _review_feedback(reports: list[dict]) -> str:
+    feedback = []
+    for report in sorted(reports, key=lambda item: item.get("average", 0))[:3]:
+        review = report.get("review") or {}
+        for issue in review.get("issues", [])[:3]:
+            reason = issue.get("reason") if isinstance(issue, dict) else None
+            if reason:
+                feedback.append(reason)
+        for key, value in review.items():
+            if isinstance(value, dict) and value.get("score", 5) <= 2:
+                feedback.append(value.get("evidence", key))
+        if report.get("status") == "technical_only" and report.get("metrics", {}).get("technical_score", 5) < 3:
+            feedback.append("improve exposure, sharpness, color separation and visual clarity")
+    compact = []
+    seen = set()
+    for item in feedback:
+        item = str(item).strip().replace("\n", " ")
+        if item and item.lower() not in seen:
+            compact.append(item[:140])
+            seen.add(item.lower())
+        if len(compact) >= 6:
+            break
+    return "; ".join(compact)
+
+
 def _generate_quality_candidates(provider, request: ImageGenerationRequest, scene_payload: dict, reference_image: str | None) -> tuple[str, dict]:
     candidate_count = max(1, min(settings.GENERATION_IMAGE_CANDIDATES, 8))
     refinement_passes = max(0, min(settings.GENERATION_IMAGE_REFINEMENT_PASSES, 3))
@@ -184,13 +220,19 @@ def _generate_quality_candidates(provider, request: ImageGenerationRequest, scen
 
     for pass_index in range(refinement_passes + 1):
         pass_reports = []
+        feedback = _review_feedback(reports) if pass_index else ""
+        prompt = _append_terms(request.prompt, settings.GENERATION_QUALITY_PROMPT_APPEND)
+        negative_prompt = _append_terms(request.negative_prompt, settings.GENERATION_QUALITY_NEGATIVE_APPEND)
+        if feedback:
+            prompt = f"{prompt}. Correct previous candidate problems: {feedback}."
+            negative_prompt = _append_terms(negative_prompt, feedback)
         for index in range(candidate_count):
             candidate_index = pass_index * candidate_count + index + 1
             output_path = candidate_output_path(request.output_path, candidate_index)
             steps, cfg = _quality_parameters(index, pass_index, request.steps, request.cfg_scale)
             candidate_request = ImageGenerationRequest(
-                prompt=request.prompt,
-                negative_prompt=request.negative_prompt,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
                 output_path=output_path,
                 width=request.width,
                 height=request.height,
@@ -208,7 +250,7 @@ def _generate_quality_candidates(provider, request: ImageGenerationRequest, scen
                 candidate_index,
                 result.output_path,
                 scene_payload,
-                request.prompt,
+                candidate_request.prompt,
                 reference_image,
             )
             report["provider"] = result.provider
@@ -218,6 +260,8 @@ def _generate_quality_candidates(provider, request: ImageGenerationRequest, scen
                 "cfg_scale": candidate_request.cfg_scale,
                 "width": candidate_request.width,
                 "height": candidate_request.height,
+                "refinement_pass": pass_index,
+                "feedback": feedback,
             }
             report["path"] = result.output_path
             pass_reports.append(report)

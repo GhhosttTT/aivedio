@@ -10,7 +10,7 @@ from src.database.models import Base, Character, Project, Scene, Task, TaskStatu
 from src.services.generation_review import fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName
 from src.services.shot_prompt_service import ShotPromptService
-from src.tasks.image_tasks import _generate_quality_candidates, _visual_character, _prepare_prompt
+from src.tasks.image_tasks import _append_terms, _generate_quality_candidates, _review_feedback, _visual_character, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 
 
@@ -154,3 +154,78 @@ def test_image_generation_uses_multiple_quality_candidates(tmp_path, monkeypatch
     assert len(provider.requests) == 3
     assert len({item.seed for item in provider.requests}) == 3
     assert report["kind"] == "image_candidate_selection"
+
+
+def test_quality_refinement_uses_previous_review_feedback(tmp_path, monkeypatch):
+    from PIL import Image
+    from src.services.generation_provider import ImageGenerationRequest, GenerationResult
+
+    class FakeProvider:
+        name = GenerationProviderName.LOCAL_COMFYUI
+
+        def __init__(self):
+            self.requests = []
+
+        def generate_image(self, request):
+            self.requests.append(request)
+            shade = 110 + len(self.requests) * 10
+            Image.new("RGB", (request.width, request.height), (shade, shade, shade)).save(request.output_path)
+            return GenerationResult("local_comfyui", request.output_path, "image", {})
+
+    review_calls = []
+
+    def fake_review(self, index, image_path, scene, prompt, reference_image=None):
+        review_calls.append((index, prompt))
+        score = 2.0 if index == 1 else 4.6
+        return {
+            "index": index,
+            "path": image_path,
+            "status": "needs_review" if index == 1 else "passed",
+            "average": score,
+            "review": {
+                "composition": {"score": 2, "evidence": "face is cropped and lighting is muddy"},
+                "issues": [{"severity": "major", "reason": "bad crop on the main actor", "scene_number": 1}],
+            },
+            "metrics": {"technical_score": score},
+        }
+
+    monkeypatch.setattr("src.tasks.image_tasks.ImageQualitySelector.review_candidate", fake_review)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_CANDIDATES", 1)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 1)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_QUALITY_PROMPT_APPEND", "balanced lighting")
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_QUALITY_NEGATIVE_APPEND", "bad crop")
+    request = ImageGenerationRequest(
+        prompt="short drama still",
+        negative_prompt="blurry",
+        output_path=str(tmp_path / "scene.png"),
+        width=512,
+        height=512,
+        steps=28,
+        cfg_scale=6.0,
+        seed=123,
+    )
+
+    _generate_quality_candidates(FakeProvider(), request, {"scene_number": 1}, None)
+
+    assert "balanced lighting" in review_calls[0][1]
+    assert "bad crop on the main actor" in review_calls[1][1]
+    assert "face is cropped" in review_calls[1][1]
+
+
+def test_review_feedback_deduplicates_low_score_evidence():
+    feedback = _review_feedback([
+        {"average": 2, "review": {
+            "issues": [{"reason": "bad crop", "scene_number": 1, "severity": "major"}],
+            "composition": {"score": 2, "evidence": "bad crop"},
+            "visual_integrity": {"score": 1, "evidence": "broken fingers"},
+        }}
+    ])
+
+    assert "bad crop" in feedback
+    assert "broken fingers" in feedback
+
+
+def test_append_terms_does_not_duplicate_terms():
+    assert _append_terms("blurry, bad crop", "bad crop, watermark") == "blurry, bad crop, watermark"

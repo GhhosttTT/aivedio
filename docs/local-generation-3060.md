@@ -91,6 +91,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
   -> 每张记录 seed、steps、cfg、尺寸
   -> 基础技术评分：曝光、边缘清晰度、色彩丰富度、尺寸合法性
   -> 若本地 VLM 可用，再评分：剧情匹配、构图、美观、画面完整性、身份一致性
+  -> 低分候选的问题证据写入下一轮提示词与负面提示词
   -> 分数最高且达到门槛的候选复制为正式 scene image
   -> 保存 .quality.json 和 .generation.json
 ```
@@ -99,6 +100,10 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 `GENERATION_IMAGE_REFINEMENT_PASSES` 是额外精修轮数。设为 1 表示最多生成两轮候选；第一轮已经有 VLM 高分图时会提前停止。
 `GENERATION_IMAGE_MIN_SCORE` 是晋级门槛。建议先用 4.0，人工校准后再提高。
 `GENERATION_REQUIRE_IMAGE_REVIEW=true` 时，本地 VLM 不可用会直接拦截图片，不会只靠技术指标放行。正式跑片建议打开；开发调试可以先保持 false。
+`GENERATION_QUALITY_PROMPT_APPEND` 会追加到每张候选图的正向提示词，用来稳定构图、人体和主动作可读性。
+`GENERATION_QUALITY_NEGATIVE_APPEND` 会追加到负向提示词，用来压制截断、脏光、畸形手脸、随机文字和水印。
+
+当第一轮低于门槛时，系统会提取低分项证据和 major/critical 问题，例如“脸被裁掉”“手指断裂”“灯光脏”，并写入下一轮候选图的修正提示词。这一层能把等待时间转化成可解释的迭代，而不是只盲目换 seed。
 
 这个机制提升的是命中率和可追溯性，仍依赖底层模型、checkpoint、LoRA、Control/IPAdapter 节点质量。低质模型生成 20 张也可能只能选出较差的一张；候选择优不能替代更强模型或人工定妆。
 
