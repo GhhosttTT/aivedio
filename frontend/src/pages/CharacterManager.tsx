@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { BadgeCheck, Languages, Plus, Trash2, Upload, X } from 'lucide-react';
+import { BadgeCheck, Image, Languages, Plus, Trash2, Upload, X } from 'lucide-react';
 import { characterApi, Character, CharacterIdentityPlan, CharacterReference } from '../api/characterApi';
 import { errorText } from '../api/client';
 import { ProjectImage } from '../components/ProjectMedia';
@@ -37,6 +37,7 @@ export default function CharacterManager({projectId, locked = false}: {projectId
                     const plan = await characterApi.planIdentity(projectId, c.id);
                     setPlans(current => ({...current, [c.id]: plan}));
                 })}><BadgeCheck size={16}/>生成身份方案</button>
+                <button className="wb-button" disabled={locked || busy} onClick={() => operate(() => characterApi.generateReference(projectId, c.id, 3))}><Image size={16}/>自动定妆</button>
                 <button className="wb-icon" aria-label={`删除角色 ${c.name}`} title="删除角色" disabled={locked || busy} onClick={() => { if (window.confirm(`删除角色“${c.name}”？`)) operate(() => characterApi.deleteCharacter(projectId, c.id)); }}><Trash2 size={16}/></button>
             </div></div>
             <p>{c.description}</p><p className="wb-muted">{c.appearance}</p>

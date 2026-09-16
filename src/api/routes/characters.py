@@ -18,6 +18,8 @@ from src.api.schemas import (
     CharacterIdentityScoreRequest,
     CharacterIdentityScoreResponse,
     CharacterResponse,
+    CharacterReferenceGenerateRequest,
+    CharacterReferenceGenerateResponse,
     CharacterReferenceResponse,
     MessageResponse
 )
@@ -25,6 +27,7 @@ from src.database.session import get_db_session
 from src.database.models import Character, Project
 from src.services.character_service import get_character_manager
 from src.services.character_identity_service import CharacterIdentityService, load_identity_spec
+from src.services.character_reference_auto import CharacterReferenceAutoGenerator
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -242,6 +245,57 @@ async def score_character_identity(
         raise HTTPException(status_code=409, detail="请先生成角色身份方案")
     result = CharacterIdentityService().score_observed_spec(expected, request.observed_spec)
     return CharacterIdentityScoreResponse(character_id=character_id, **result)
+
+
+@router.post("/{character_id}/generate-reference", response_model=CharacterReferenceGenerateResponse)
+async def generate_reference_image(
+    project_id: int,
+    character_id: int,
+    request: CharacterReferenceGenerateRequest,
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    为项目角色自动生成多张定妆候选图，择优后保存为该角色参考图。
+    """
+    try:
+        character = db_session.query(Character).filter(
+            Character.id == character_id,
+            Character.project_id == project_id
+        ).first()
+        if not character:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"角色不存在: {character_id}")
+        result = CharacterReferenceAutoGenerator().generate_multiple_references(
+            character_name=character.name,
+            role=character.description or "short-drama character",
+            personality=character.personality or "",
+            count=request.count,
+        )
+        if not result.get("success") or not result.get("reference_image_path"):
+            raise HTTPException(status_code=500, detail=result.get("message", "自动定妆失败"))
+        character_manager = get_character_manager()
+        saved = character_manager.save_character_reference(
+            character_id=character_id,
+            project_id=project_id,
+            image_path=result["reference_image_path"],
+            description="auto selected reference",
+        )
+        references = character_manager.get_character_references(character_id, project_id)
+        return CharacterReferenceGenerateResponse(
+            character_id=character_id,
+            reference=CharacterReferenceResponse(
+                id=len(references),
+                character_id=character_id,
+                image_path=saved,
+                description="auto selected reference",
+            ),
+            candidate_images=result.get("reference_images", []),
+            quality_report=result.get("quality_report", {}),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"自动生成角色参考图失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"自动生成角色参考图失败: {e}")
 
 
 @router.post("/{character_id}/reference", response_model=CharacterReferenceResponse)

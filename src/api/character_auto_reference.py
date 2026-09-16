@@ -26,6 +26,7 @@ class AutoGenerateResponse(BaseModel):
     character_data: Optional[Dict] = None
     reference_images: Optional[List[str]] = None
     reference_image_path: Optional[str] = None
+    quality_report: Optional[Dict] = None
     message: str
 
 
@@ -64,6 +65,8 @@ async def auto_generate_character_reference(request: AutoGenerateRequest):
                 success=result["success"],
                 character_data=result.get("character_data"),
                 reference_images=result.get("reference_images", []),
+                reference_image_path=result.get("reference_image_path"),
+                quality_report=result.get("quality_report"),
                 message=result["message"]
             )
         else:
@@ -78,6 +81,7 @@ async def auto_generate_character_reference(request: AutoGenerateRequest):
                 success=result["success"],
                 character_data=result.get("character_data"),
                 reference_image_path=result.get("reference_image_path"),
+                quality_report=result.get("quality_report"),
                 message=result["message"]
             )
             
@@ -115,6 +119,8 @@ async def batch_generate_character_reference(request: AutoGenerateRequest):
             success=result["success"],
             character_data=result.get("character_data"),
             reference_images=result.get("reference_images", []),
+            reference_image_path=result.get("reference_image_path"),
+            quality_report=result.get("quality_report"),
             message=result["message"]
         )
         

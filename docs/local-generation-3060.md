@@ -86,6 +86,11 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 当前关键帧生成已经改为候选择优：
 
 ```text
+角色定妆
+  -> 多张正面参考图候选
+  -> 技术评分 + llama.cpp VLM 评分
+  -> 最佳图保存为角色参考图，候选和 reference_quality.json 保留
+
 同一分镜提示词
   -> candidate_01 / candidate_02 / candidate_03 ...
   -> 每张记录 seed、steps、cfg、尺寸

@@ -140,6 +140,23 @@ class CharacterIdentityScoreResponse(BaseModel):
     limitation: str
 
 
+class CharacterReferenceGenerateRequest(BaseModel):
+    """
+    自动生成角色定妆参考图
+    """
+    count: int = Field(3, ge=1, le=8, description="候选参考图数量")
+
+
+class CharacterReferenceGenerateResponse(BaseModel):
+    """
+    自动定妆响应
+    """
+    character_id: int
+    reference: CharacterReferenceResponse
+    candidate_images: List[str] = []
+    quality_report: dict
+
+
 class SceneResponse(BaseModel):
     """
     分镜响应模型

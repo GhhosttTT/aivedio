@@ -34,6 +34,13 @@ export interface CharacterIdentityScore {
   limitation: string;
 }
 
+export interface CharacterReferenceGeneration {
+  character_id: number;
+  reference: CharacterReference;
+  candidate_images: string[];
+  quality_report: Record<string, any>;
+}
+
 export const characterApi = {
   /**
    * 创建角色
@@ -109,6 +116,13 @@ export const characterApi = {
     return apiClient.post<any, CharacterIdentityScore>(
       `/projects/${projectId}/characters/${characterId}/identity-score`,
       { observed_spec: observedSpec }
+    );
+  },
+
+  generateReference: async (projectId: number, characterId: number, count = 3) => {
+    return apiClient.post<any, CharacterReferenceGeneration>(
+      `/projects/${projectId}/characters/${characterId}/generate-reference`,
+      { count }
     );
   },
 };

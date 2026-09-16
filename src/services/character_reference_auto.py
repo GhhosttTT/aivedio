@@ -3,24 +3,24 @@
 自动生成高质量的正面角色头像，用于后续的角色一致性生成
 """
 import json
-import os
-import time
 from pathlib import Path
 from typing import Dict, Optional
 from loguru import logger
 
+from src.config import settings
 from src.services.character_reference_generator import CharacterReferenceGenerator
 from src.services.comfyui_service import ComfyUIService
+from src.services.image_quality_service import ImageQualitySelector
 from src.services.llm_service import get_llm_service
 
 
 class CharacterReferenceAutoGenerator:
     """角色参考图自动生成器"""
     
-    def __init__(self, comfyui_service: Optional[ComfyUIService] = None):
+    def __init__(self, comfyui_service: Optional[ComfyUIService] = None, generator: Optional[CharacterReferenceGenerator] = None):
         self.comfyui = comfyui_service or ComfyUIService()
-        self.llm_service = get_llm_service()
-        self.generator = CharacterReferenceGenerator(llm_service=self.llm_service)
+        self.llm_service = None if generator else get_llm_service()
+        self.generator = generator or CharacterReferenceGenerator(llm_service=self.llm_service)
         
     def generate_character_reference(
         self,
@@ -81,40 +81,22 @@ class CharacterReferenceAutoGenerator:
             # 确保是正面清晰人像
             positive_prompt += ", front view, looking at camera, clear face, portrait photography, studio lighting, sharp focus on face"
             
-            # 生成图像（使用纯文生图模式）
-            result_path = self.comfyui.generate_image(
+            result = self._generate_and_select_reference(
+                character_name=character_name,
+                character_data=character_data,
                 prompt=positive_prompt,
                 negative_prompt=negative_prompt,
-                width=1024,
-                height=1024,  # 正方形，适合头像
-                steps=20,
-                cfg_scale=7.0,
-                seed=-1,
-                reference_image=None,  # 不使用参考图
-                use_ipadapter=False  # 关闭 IP-Adapter
+                count=max(1, settings.GENERATION_IMAGE_CANDIDATES),
+                save_dir=save_dir,
             )
-            
-            logger.info(f"正面头像生成成功: {result_path}")
-            
-            # 步骤 4: 保存为角色参考图
-            logger.info(f"步骤 4/4: 保存角色参考图...")
-            
-            # 创建角色目录
-            character_dir = Path(save_dir) / character_name.replace(" ", "_")
-            character_dir.mkdir(parents=True, exist_ok=True)
-            
-            # 复制文件
-            from shutil import copy2
-            timestamp = int(time.time())
-            reference_path = character_dir / f"reference_{timestamp}.png"
-            copy2(result_path, reference_path)
-            
-            logger.info(f"角色参考图已保存: {reference_path}")
+            reference_path = result["reference_image_path"]
             
             return {
                 "success": True,
                 "character_data": character_data,
                 "reference_image_path": str(reference_path),
+                "candidate_images": result["candidate_images"],
+                "quality_report": result["quality_report"],
                 "reference_prompts": reference_prompts,
                 "message": f"角色 '{character_name}' 参考图生成成功"
             }
@@ -162,57 +144,26 @@ class CharacterReferenceAutoGenerator:
             # 生成提示词
             reference_prompts = self.generator.generate_reference_prompts(character_data)
             
-            # 创建角色目录
-            character_dir = Path(save_dir) / character_name.replace(" ", "_")
-            character_dir.mkdir(parents=True, exist_ok=True)
-            
-            generated_images = []
-            
-            # 生成多张图片（使用不同 seed）
-            for i in range(count):
-                logger.info(f"生成第 {i+1}/{count} 张参考图...")
-                
-                # 使用正面特写提示词
-                prompt_data = reference_prompts["front_closeup"]
-                positive_prompt = prompt_data["prompt"]
-                negative_prompt = prompt_data["negative"]
-                
-                # 确保正面清晰
-                positive_prompt += ", front view, looking at camera, clear face, portrait photography"
-                
-                # 使用不同 seed 生成变化
-                seed = int(time.time() * 1000 + i * 1000) % (2**32)
-                
-                result_path = self.comfyui.generate_image(
-                    prompt=positive_prompt,
-                    negative_prompt=negative_prompt,
-                    width=1024,
-                    height=1024,
-                    steps=20,
-                    cfg_scale=7.0,
-                    seed=seed,
-                    reference_image=None,
-                    use_ipadapter=False
-                )
-                
-                # 保存
-                timestamp = int(time.time())
-                reference_path = character_dir / f"reference_{i+1}_{timestamp}.png"
-                from shutil import copy2
-                copy2(result_path, reference_path)
-                
-                generated_images.append(str(reference_path))
-                logger.info(f"第 {i+1} 张参考图已保存: {reference_path}")
-                
-                # 等待一下避免太快
-                time.sleep(2)
+            prompt_data = reference_prompts["front_closeup"]
+            positive_prompt = prompt_data["prompt"] + ", front view, looking at camera, clear face, portrait photography"
+            negative_prompt = prompt_data["negative"]
+            selected = self._generate_and_select_reference(
+                character_name=character_name,
+                character_data=character_data,
+                prompt=positive_prompt,
+                negative_prompt=negative_prompt,
+                count=count,
+                save_dir=save_dir,
+            )
             
             return {
                 "success": True,
                 "character_data": character_data,
-                "reference_images": generated_images,
+                "reference_images": selected["candidate_images"],
+                "reference_image_path": selected["reference_image_path"],
+                "quality_report": selected["quality_report"],
                 "reference_prompts": reference_prompts,
-                "message": f"成功生成 {len(generated_images)} 张角色参考图"
+                "message": f"成功生成 {len(selected['candidate_images'])} 张候选参考图，并选择最佳定妆图"
             }
             
         except Exception as e:
@@ -223,6 +174,65 @@ class CharacterReferenceAutoGenerator:
                 "reference_images": [],
                 "message": f"生成失败: {str(e)}"
             }
+
+    def _generate_and_select_reference(
+        self,
+        character_name: str,
+        character_data: Dict,
+        prompt: str,
+        negative_prompt: str,
+        count: int,
+        save_dir: str,
+    ) -> Dict:
+        character_dir = Path(save_dir) / character_name.replace(" ", "_")
+        character_dir.mkdir(parents=True, exist_ok=True)
+        final_path = character_dir / "reference_selected.png"
+        selector = ImageQualitySelector()
+        candidates = []
+        count = max(1, min(count, 8))
+        import hashlib
+        for index in range(count):
+            output_path = character_dir / f"reference_candidate_{index + 1:02d}.png"
+            seed = int(hashlib.sha256(f"{character_name}:{index}:{json.dumps(character_data, ensure_ascii=False, sort_keys=True)}".encode()).hexdigest()[:8], 16)
+            result_path = self.comfyui.generate_image(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                width=1024,
+                height=1024,
+                steps=min(max(settings.GENERATION_STEPS, 28) + index * 4, 48),
+                cfg_scale=settings.GENERATION_CFG,
+                seed=seed,
+                output_path=str(output_path),
+                reference_image=None,
+                use_ipadapter=False,
+            )
+            report = selector.review_candidate(
+                index + 1,
+                result_path,
+                {
+                    "scene_number": 1,
+                    "visual_description": "front-facing character reference portrait",
+                    "character_name": character_name,
+                    "identity": character_data,
+                },
+                prompt,
+                None,
+            )
+            report["path"] = result_path
+            report["request"] = {"seed": seed, "steps": min(max(settings.GENERATION_STEPS, 28) + index * 4, 48), "cfg_scale": settings.GENERATION_CFG}
+            candidates.append(report)
+        selection = selector.select_best(
+            candidates,
+            final_path,
+            character_dir / "reference_quality.json",
+            min_average=settings.GENERATION_IMAGE_MIN_SCORE,
+            require_vlm=settings.GENERATION_REQUIRE_IMAGE_REVIEW,
+        )
+        return {
+            "reference_image_path": str(final_path),
+            "candidate_images": [candidate["path"] for candidate in candidates],
+            "quality_report": selection,
+        }
 
 
 # 测试
