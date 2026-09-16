@@ -11,6 +11,7 @@ from src.services.generation_provider import (
     JimengApiProvider,
     KlingApiProvider,
     LocalComfyUIProvider,
+    VideoGenerationRequest,
     get_generation_provider,
 )
 
@@ -20,6 +21,10 @@ class FakeComfyUIService:
         self.last_kwargs = None
 
     def generate_image(self, **kwargs):
+        self.last_kwargs = kwargs
+        return kwargs["output_path"]
+
+    def generate_video(self, **kwargs):
         self.last_kwargs = kwargs
         return kwargs["output_path"]
 
@@ -66,6 +71,33 @@ def test_api_provider_requires_configuration(provider_cls, prefix, monkeypatch):
         provider.generate_image(
             ImageGenerationRequest(prompt="test", output_path="out.png")
         )
+
+
+def test_local_comfyui_provider_delegates_video_generation():
+    service = FakeComfyUIService()
+    provider = LocalComfyUIProvider(comfyui_service=service)
+
+    result = provider.generate_video(
+        VideoGenerationRequest(
+            prompt="woman turns toward camera",
+            negative_prompt="flicker",
+            reference_image="scene.png",
+            output_path="storage/project_1/videos/scene_1.mp4",
+            duration_seconds=2.0,
+            width=1344,
+            height=768,
+            fps=8,
+            seed=42,
+        )
+    )
+
+    assert result.provider == GenerationProviderName.LOCAL_COMFYUI.value
+    assert result.asset_type == "video"
+    assert result.output_path == "storage/project_1/videos/scene_1.mp4"
+    assert service.last_kwargs["prompt"] == "woman turns toward camera"
+    assert service.last_kwargs["reference_image"] == "scene.png"
+    assert service.last_kwargs["negative_prompt"] == "flicker"
+    assert service.last_kwargs["fps"] == 8
 
 
 def test_get_generation_provider_from_argument(monkeypatch):

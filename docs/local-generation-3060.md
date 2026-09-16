@@ -53,6 +53,7 @@
 GENERATION_PROVIDER=local_comfyui
 COMFYUI_DEFAULT_WORKFLOW_TYPE=juggernaut
 COMFYUI_REFERENCE_WORKFLOW_PATH=./configs/comfyui_workflow_ipadapter_sdxl.json
+COMFYUI_VIDEO_WORKFLOW_PATH=
 GENERATION_WIDTH=1344
 GENERATION_HEIGHT=768
 GENERATION_STEPS=28
@@ -122,6 +123,8 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 这个机制提升的是命中率和可追溯性，仍依赖底层模型、checkpoint、LoRA、Control/IPAdapter 节点质量。低质模型生成 20 张也可能只能选出较差的一张；候选择优不能替代更强模型或人工定妆。
 
 视频阶段同样支持候选择优。`GENERATION_VIDEO_CANDIDATES` 会让同一关键帧串行生成多个视频候选，并轻微扰动 SVD 的运动强度和噪声增强参数；每个候选都会保存独立的 `.review.json` 抽帧审核报告，最终视频旁边保存 `.quality.json` 候选排序。若第一轮候选都低于门槛，`GENERATION_VIDEO_REFINEMENT_PASSES` 会追加稳定性优先的精修轮，自动降低运动强度和噪声，优先压制身份漂移、闪烁和动作断裂。正式跑片建议打开 `GENERATION_REQUIRE_VIDEO_REVIEW=true`，避免 llama.cpp 视觉模型离线时把未审核视频当成高质量结果。
+
+若配置 `COMFYUI_VIDEO_WORKFLOW_PATH`，视频阶段会改用本地 ComfyUI 图生视频 API workflow，适合接入 Wan、AnimateDiff、VideoHelperSuite 或其他本地视频节点。工作流 JSON 可使用 `{prompt}`、`{negative_prompt}`、`{reference_image}`、`{width}`、`{height}`、`{duration_seconds}`、`{fps}`、`{seed}`、`{output_prefix}` 占位符；执行时系统会上传当前关键帧并替换这些值。留空时继续使用内置 SVD 服务。
 
 ## 5. 审核与抽帧评分
 

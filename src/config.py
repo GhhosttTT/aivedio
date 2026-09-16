@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     COMFYUI_BASE_URL: str = "http://127.0.0.1:8188"
     COMFYUI_WORKFLOW_PATH: str = "./configs/comfyui_workflow.json"
     COMFYUI_REFERENCE_WORKFLOW_PATH: str = ""
+    COMFYUI_VIDEO_WORKFLOW_PATH: str = ""
     GENERATION_WIDTH: int = 1344
     GENERATION_HEIGHT: int = 768
     GENERATION_STEPS: int = 28

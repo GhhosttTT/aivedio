@@ -8,11 +8,11 @@ from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Character, Project, Scene, Task, TaskStatus, User
 from src.services.generation_review import fingerprint, write_report, ReviewError
-from src.services.generation_provider import GenerationProviderName
+from src.services.generation_provider import GenerationProviderName, GenerationResult
 from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _composition_constraint, _generate_quality_candidates, _review_feedback, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
-from src.tasks.video_tasks import _generate_quality_video_candidates
+from src.tasks.video_tasks import _ComfyVideoGenerator, _generate_quality_video_candidates
 
 
 @pytest.fixture
@@ -300,6 +300,37 @@ def test_video_refinement_pass_reduces_motion_after_low_score(project_data, tmp_
     assert fake_svd.requests[1]["noise_aug_strength"] < fake_svd.requests[0]["noise_aug_strength"]
     assert report["candidates"][0]["pass"] == 1
     assert report["status"] == "passed"
+
+
+def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp_path):
+    _, _, scene, _, _ = project_data
+    scene.image_prompt = "cinematic woman holding a red letter"
+
+    class FakeProvider:
+        def __init__(self):
+            self.request = None
+
+        def generate_video(self, request):
+            self.request = request
+            Path(request.output_path).write_bytes(b"comfy-video")
+            return GenerationResult("local_comfyui", request.output_path, "video", {})
+
+    provider = FakeProvider()
+    output = tmp_path / "scene.mp4"
+    result = _ComfyVideoGenerator(scene, provider).generate_video(
+        image_path=str(tmp_path / "source.png"),
+        output_path=str(output),
+        num_frames=16,
+        fps=8,
+        motion_bucket_id=120,
+        noise_aug_strength=0.02,
+    )
+
+    assert result == str(output)
+    assert provider.request.prompt == "cinematic woman holding a red letter"
+    assert provider.request.reference_image.endswith("source.png")
+    assert provider.request.duration_seconds == 2.0
+    assert provider.request.fps == 8
 
 
 def test_quality_refinement_uses_previous_review_feedback(tmp_path, monkeypatch):

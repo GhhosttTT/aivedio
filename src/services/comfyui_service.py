@@ -5,10 +5,11 @@ ComfyUI 服务（ComfyUIService）
 实现重试逻辑和错误处理
 """
 
+import copy
 import json
 import time
 import uuid
-from typing import Optional, Dict, List
+from typing import Any, Optional, Dict, List
 from pathlib import Path
 
 import httpx
@@ -591,6 +592,72 @@ class ComfyUIService:
             raise
         except Exception as e:
             raise ComfyUIError(f"工作流执行失败: {e}") from e
+
+    def generate_video(
+        self,
+        prompt: str,
+        reference_image: str,
+        output_path: str,
+        negative_prompt: str = "",
+        width: int = 1024,
+        height: int = 576,
+        duration_seconds: float = 5.0,
+        fps: int = 8,
+        seed: int = -1,
+        workflow_path: Optional[str] = None,
+    ) -> str:
+        """Run a user-supplied ComfyUI image-to-video API workflow."""
+        path = workflow_path or settings.COMFYUI_VIDEO_WORKFLOW_PATH
+        if not path:
+            raise ComfyUIError("未配置 COMFYUI_VIDEO_WORKFLOW_PATH，无法使用 ComfyUI 视频工作流")
+        if not reference_image:
+            raise ComfyUIError("ComfyUI 视频生成需要 reference_image")
+        workflow_file = Path(path)
+        if not workflow_file.is_absolute():
+            workflow_file = Path.cwd() / workflow_file
+        if not workflow_file.is_file():
+            raise ComfyUIError(f"ComfyUI 视频工作流不存在: {workflow_file}")
+        workflow = json.loads(workflow_file.read_text(encoding="utf-8"))
+        uploaded_reference = self._upload_reference_image(reference_image)
+        replacements = {
+            "prompt": prompt,
+            "positive_prompt": prompt,
+            "negative_prompt": negative_prompt or "",
+            "reference_image": uploaded_reference,
+            "image": uploaded_reference,
+            "width": width,
+            "height": height,
+            "duration_seconds": duration_seconds,
+            "fps": fps,
+            "seed": seed,
+            "output_prefix": Path(output_path).stem,
+        }
+        workflow = self._replace_workflow_placeholders(workflow, replacements)
+        self.preflight(workflow)
+        artifact = Path(output_path).with_suffix(".workflow.json")
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text(json.dumps(workflow, ensure_ascii=False, indent=2), encoding="utf-8")
+        prompt_id = self._submit_workflow(workflow)
+        result = self._wait_for_completion(prompt_id)
+        return self._get_generated_media(result, output_path, media_keys=("videos", "gifs", "images"))
+
+    def _replace_workflow_placeholders(self, value: Any, replacements: Dict[str, Any]) -> Any:
+        if isinstance(value, dict):
+            replaced = {}
+            for key, item in value.items():
+                if key in replacements and not isinstance(item, (dict, list)):
+                    replaced[key] = replacements[key]
+                else:
+                    replaced[key] = self._replace_workflow_placeholders(item, replacements)
+            return replaced
+        if isinstance(value, list):
+            return [self._replace_workflow_placeholders(item, replacements) for item in value]
+        if isinstance(value, str):
+            result = value
+            for key, replacement in replacements.items():
+                result = result.replace("{" + key + "}", str(replacement))
+            return result
+        return copy.deepcopy(value)
     
     def _submit_workflow(self, workflow: Dict) -> str:
         """
@@ -746,6 +813,36 @@ class ComfyUIService:
             raise
         except Exception as e:
             raise ComfyUIError(f"获取生成的图像失败: {e}") from e
+
+    def _get_generated_media(
+        self,
+        result: Dict,
+        output_path: Optional[str] = None,
+        media_keys: tuple[str, ...] = ("videos", "gifs", "images"),
+    ) -> str:
+        try:
+            outputs = result.get("outputs", {})
+            for _node_id, node_output in outputs.items():
+                for key in media_keys:
+                    items = node_output.get(key)
+                    if items:
+                        media_info = items[0]
+                        filename = media_info.get("filename")
+                        subfolder = media_info.get("subfolder", "")
+                        media_type = media_info.get("type", "output")
+                        if not filename:
+                            raise ComfyUIError("未找到生成的媒体文件名")
+                        return self._download_media(
+                            filename=filename,
+                            subfolder=subfolder,
+                            media_type=media_type,
+                            output_path=output_path,
+                        )
+            raise ComfyUIError("未找到生成的视频或媒体输出")
+        except ComfyUIError:
+            raise
+        except Exception as e:
+            raise ComfyUIError(f"获取生成的视频失败: {e}") from e
     
     def _download_image(
         self,
@@ -805,6 +902,33 @@ class ComfyUIService:
             
         except Exception as e:
             raise ComfyUIError(f"下载图像失败: {e}") from e
+
+    def _download_media(
+        self,
+        filename: str,
+        subfolder: str = "",
+        media_type: str = "output",
+        output_path: Optional[str] = None,
+    ) -> str:
+        try:
+            response = self.client.get(
+                f"{self.base_url}/view",
+                params={"filename": filename, "subfolder": subfolder, "type": media_type or "output"},
+            )
+            if response.status_code != 200:
+                raise ComfyUIError(f"下载媒体失败: HTTP {response.status_code}")
+            if not output_path:
+                output_dir = Path("./storage/temp")
+                output_dir.mkdir(parents=True, exist_ok=True)
+                output_path = str(output_dir / filename)
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_path).write_bytes(response.content)
+            if Path(output_path).stat().st_size == 0:
+                raise ComfyUIError("下载的媒体文件为空")
+            logger.debug(f"媒体已保存: {output_path}")
+            return output_path
+        except Exception as e:
+            raise ComfyUIError(f"下载媒体失败: {e}") from e
     
     def generate_batch(
         self,

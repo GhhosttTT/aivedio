@@ -7,6 +7,7 @@ from src.config import settings
 from src.database.database import get_db
 from src.database.models import Scene
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
+from src.services.generation_provider import VideoGenerationRequest, get_generation_provider
 from src.services.generation_review import GenerationReviewService, ReviewError, write_report
 from src.services.svd_service import get_svd_service
 from src.tasks.celery_app import celery_app
@@ -14,6 +15,36 @@ from src.utils.logger import get_logger
 from src.utils.storage import get_scene_video_path
 
 logger = get_logger(__name__)
+
+
+class _ComfyVideoGenerator:
+    def __init__(self, scene: Scene, provider=None):
+        self.scene = scene
+        self.provider = provider or get_generation_provider("local_comfyui")
+
+    def generate_video(
+        self,
+        image_path: str,
+        output_path: str,
+        num_frames: int,
+        fps: int,
+        motion_bucket_id: int,
+        noise_aug_strength: float,
+    ) -> str:
+        duration = max(1.0, num_frames / max(fps, 1))
+        seed = abs(hash((self.scene.id, output_path, motion_bucket_id, round(noise_aug_strength, 4)))) % (2 ** 31)
+        result = self.provider.generate_video(VideoGenerationRequest(
+            prompt=self.scene.image_prompt or self.scene.visual_description,
+            negative_prompt=settings.GENERATION_QUALITY_NEGATIVE_APPEND,
+            reference_image=image_path,
+            output_path=output_path,
+            duration_seconds=duration,
+            width=settings.GENERATION_WIDTH,
+            height=settings.GENERATION_HEIGHT,
+            fps=fps,
+            seed=seed,
+        ))
+        return result.output_path
 
 
 def _candidate_video_path(final_path: str | Path, index: int) -> str:
@@ -203,9 +234,13 @@ def generate_video_task(
         try:
             from src.services.comfyui_service import get_comfyui_service
             get_comfyui_service().free_memory()
-            svd_service = get_svd_service()
+            video_generator = (
+                _ComfyVideoGenerator(scene)
+                if settings.COMFYUI_VIDEO_WORKFLOW_PATH
+                else get_svd_service()
+            )
             result_path, quality_report = _generate_quality_video_candidates(
-                svd_service,
+                video_generator,
                 scene,
                 project_id,
                 video_path,

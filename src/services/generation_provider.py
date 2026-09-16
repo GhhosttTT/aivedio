@@ -50,9 +50,13 @@ class ImageGenerationRequest:
 class VideoGenerationRequest:
     prompt: str
     output_path: str
+    negative_prompt: Optional[str] = None
     reference_image: Optional[str] = None
     duration_seconds: float = 5.0
     aspect_ratio: str = "16:9"
+    width: int = 1024
+    height: int = 576
+    fps: int = 8
     seed: int = -1
 
 
@@ -115,7 +119,29 @@ class LocalComfyUIProvider:
         )
 
     def generate_video(self, request: VideoGenerationRequest) -> GenerationResult:
-        raise GenerationProviderError("本地 ComfyUI provider 暂未实现视频生成，请继续使用现有 SVD 任务")
+        output_path = self.comfyui_service.generate_video(
+            prompt=request.prompt,
+            negative_prompt=request.negative_prompt or "",
+            reference_image=request.reference_image,
+            output_path=request.output_path,
+            width=request.width,
+            height=request.height,
+            duration_seconds=request.duration_seconds,
+            fps=request.fps,
+            seed=request.seed,
+        )
+        return GenerationResult(
+            provider=self.name.value,
+            output_path=output_path,
+            asset_type="video",
+            metadata={
+                "duration_seconds": request.duration_seconds,
+                "aspect_ratio": request.aspect_ratio,
+                "width": request.width,
+                "height": request.height,
+                "fps": request.fps,
+            },
+        )
 
 
 class ApiVideoProvider:
