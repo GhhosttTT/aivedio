@@ -77,7 +77,7 @@ def test_frame_coverage_and_video_hash(tmp_path, monkeypatch):
     frames = [{"index": i, "timestamp": i, "path": str(tmp_path / f"{i}.jpg")} for i in range(3)]
     monkeypatch.setattr(GenerationReviewService, "sample_frames", lambda *args: frames)
     data = {key: {"score": 4, "evidence": "visible subject matches the keyframe"} for key in (
-        "story_match", "composition", "visual_integrity", "identity_consistency", "temporal_consistency")}
+        "story_match", "composition", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
     reviewer = Mock()
     reviewer.evaluate.return_value = FrameReview(**data, reviewed_frames=[0, 1, 2], issues=[])
     service = GenerationReviewService(reviewer)
@@ -95,7 +95,7 @@ def test_temporal_inconsistency_blocks_video_review(tmp_path, monkeypatch):
     frames = [{"index": i, "timestamp": i, "path": str(tmp_path / f"{i}.jpg")} for i in range(3)]
     monkeypatch.setattr(GenerationReviewService, "sample_frames", lambda *args: frames)
     data = {key: {"score": 4, "evidence": "visible subject matches the keyframe"} for key in (
-        "story_match", "composition", "visual_integrity", "identity_consistency", "temporal_consistency")}
+        "story_match", "composition", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
     data["temporal_consistency"] = {
         "score": 2,
         "evidence": "the lead character face and wardrobe drift between sampled frames",
@@ -107,6 +107,29 @@ def test_temporal_inconsistency_blocks_video_review(tmp_path, monkeypatch):
     )
     assert result["status"] == "needs_review"
     assert result["batches"][0]["review"]["temporal_consistency"]["score"] == 2
+
+
+def test_facial_identity_blocks_video_review(tmp_path, monkeypatch):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"test video bytes")
+    frames = [{"index": i, "timestamp": i, "path": str(tmp_path / f"{i}.jpg")} for i in range(3)]
+    monkeypatch.setattr(GenerationReviewService, "sample_frames", lambda *args: frames)
+    data = {key: {"score": 4, "evidence": "visible subject matches the keyframe"} for key in (
+        "story_match", "composition", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
+    data["facial_identity"] = {
+        "score": 2,
+        "evidence": "the nose, mouth, and hairstyle drift from the Alice identity anchor",
+    }
+    reviewer = Mock()
+    reviewer.evaluate.return_value = FrameReview(**data, reviewed_frames=[0, 1, 2], issues=[])
+    result = GenerationReviewService(reviewer).review_video(
+        str(video),
+        {"scene_number": 1, "visible_characters": [{"name": "Alice", "appearance": "woman, short black hair"}]},
+        tmp_path / "frames.json",
+    )
+
+    assert result["status"] == "needs_review"
+    assert result["batches"][0]["review"]["facial_identity"]["score"] == 2
 
 
 def test_llama_cpp_reviewer_sends_openai_compatible_images(tmp_path, monkeypatch):

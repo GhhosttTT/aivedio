@@ -12,7 +12,7 @@ from src.services.generation_provider import GenerationProviderName, GenerationR
 from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _complexity_report, _composition_constraint, _generate_quality_candidates, _project_complexity_report, _review_feedback, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
-from src.tasks.video_tasks import _ComfyVideoGenerator, _generate_quality_video_candidates
+from src.tasks.video_tasks import _ComfyVideoGenerator, _generate_quality_video_candidates, _scene_review_payload
 
 
 @pytest.fixture
@@ -79,6 +79,20 @@ def test_visible_character_payload_carries_identity_anchors(project_data):
     payload = _visible_character_payload(scene, project.id, db)
 
     assert payload == [
+        {"name": "Alice", "appearance": "woman, short black hair, green jacket"},
+        {"name": "Bob", "appearance": "man, square jaw, navy coat"},
+    ]
+
+
+def test_video_review_payload_carries_visible_character_anchors(project_data):
+    db, project, scene, _, _ = project_data
+    db.add(Character(project_id=project.id, name="Bob", appearance="man, square jaw, navy coat"))
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice", "Bob"]}]})
+    db.commit()
+
+    payload = _scene_review_payload(scene, project.id, db)
+
+    assert payload["visible_characters"] == [
         {"name": "Alice", "appearance": "woman, short black hair, green jacket"},
         {"name": "Bob", "appearance": "man, square jaw, navy coat"},
     ]

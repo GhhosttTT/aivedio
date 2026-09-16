@@ -234,7 +234,7 @@ def _review_low_dimensions(video_review_report: dict | None) -> list[str]:
 def _calibration_recommendations(manual_cases: list[dict], video_review_report: dict | None) -> list[dict]:
     recommendations = []
     low_dimensions = _review_low_dimensions(video_review_report)
-    if "identity_consistency" in low_dimensions or any(
+    if "identity_consistency" in low_dimensions or "facial_identity" in low_dimensions or any(
         token in _issue_text(case) for case in manual_cases for token in ("identity", "face", "character", "same person", "身份", "脸", "不像")
     ):
         recommendations.append({

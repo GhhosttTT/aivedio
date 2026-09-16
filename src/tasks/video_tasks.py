@@ -67,13 +67,18 @@ def _refined_video_base_params(motion: int, noise: float) -> tuple[int, float]:
     return max(1, int(motion * 0.72)), max(0.0, round(noise * 0.6, 4))
 
 
-def _scene_review_payload(scene: Scene) -> dict:
+def _scene_review_payload(scene: Scene, project_id: int | None = None, db=None) -> dict:
+    visible_characters = []
+    if project_id is not None and db is not None:
+        from src.tasks.image_tasks import _visible_character_payload
+        visible_characters = _visible_character_payload(scene, project_id, db)
     return {
         "scene_number": scene.scene_number,
         "description": scene.visual_description,
         "dialogue": scene.dialogue,
         "image_prompt": scene.image_prompt,
         "expected_image": scene.image_path,
+        "visible_characters": visible_characters,
     }
 
 
@@ -162,7 +167,7 @@ def _generate_quality_video_candidates(
             review = reviewer.review_video(
                 generated_path,
                 {
-                    **_scene_review_payload(scene),
+                    **_scene_review_payload(scene, project_id, db),
                     "candidate_index": index,
                     "refinement_pass": generated_candidate["pass"],
                     "motion_bucket_id": generated_candidate["motion_bucket_id"],

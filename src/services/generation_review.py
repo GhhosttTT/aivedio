@@ -49,6 +49,7 @@ class FrameReview(BaseModel):
     story_match: Score
     composition: Score
     visual_integrity: Score
+    facial_identity: Score
     identity_consistency: Score
     temporal_consistency: Score
     reviewed_frames: list[StrictInt]
@@ -275,9 +276,11 @@ class GenerationReviewService:
                 images = ([reference] if reference else []) + [frame["path"] for frame in batch]
                 review = self.reviewer.evaluate(
                     RUBRIC + "Review actual images for story match, composition, visible anatomy/rendering "
-                    "defects, identity consistency between sampled frames and reference when provided, and "
-                    "temporal consistency across sampled frames. Temporal consistency must check whether the "
-                    "same characters keep stable faces, hair, wardrobe, body shape, and relative positions; "
+                    "defects, facial identity, identity consistency between sampled frames and reference when provided, "
+                    "and temporal consistency across sampled frames. Facial identity must compare visible face shape, "
+                    "eyes, nose, mouth, hair, apparent age, and distinctive facial traits against each expected "
+                    "character identity anchor across every sampled frame; penalize same-face characters and face drift. "
+                    "Temporal consistency must check whether the same characters keep stable faces, hair, wardrobe, body shape, and relative positions; "
                     "whether motion progresses plausibly without flicker, warping, sudden missing or extra "
                     "people, or unrelated camera jumps; and whether action continuity matches the scene. "
                     "Animation is valid; judge against requested style. Frame indices are in metadata. "
