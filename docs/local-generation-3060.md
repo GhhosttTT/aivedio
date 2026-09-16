@@ -146,6 +146,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 - `story_attempt_0.json`、`story_attempt_1.json`：情节审核与修订轨迹。
 - `story.json`：最新生成阶段审核。
 - `production_story.json`：当前数据库分镜的生产前审核。
+- `shot_complexity.json`：生产前镜头复杂度诊断，列出需要拆分或警告的分镜。
 - `scene_<ID>.json`：采样时间、图片路径、文件哈希、分项评分和问题。
 - `generation.json`：整个项目的画面审核结果。
 

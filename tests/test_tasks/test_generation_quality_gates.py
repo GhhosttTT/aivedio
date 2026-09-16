@@ -10,7 +10,7 @@ from src.database.models import Base, Character, Project, Scene, Task, TaskStatu
 from src.services.generation_review import fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName, GenerationResult
 from src.services.shot_prompt_service import ShotPromptService
-from src.tasks.image_tasks import _append_terms, _complexity_report, _composition_constraint, _generate_quality_candidates, _review_feedback, _visual_character, _visual_characters, _prepare_prompt
+from src.tasks.image_tasks import _append_terms, _complexity_report, _composition_constraint, _generate_quality_candidates, _project_complexity_report, _review_feedback, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.tasks.video_tasks import _ComfyVideoGenerator, _generate_quality_video_candidates
 
@@ -107,6 +107,19 @@ def test_complex_shot_can_be_blocked_before_generation(project_data, monkeypatch
         _prepare_prompt(scene, project.id, scene.visual_description, db, ShotPromptService(Mock()))
 
 
+def test_project_complexity_report_marks_split_scenes(project_data):
+    db, project, scene, _, _ = project_data
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice", "Bob", "Cara"]}]})
+    scene.visual_description = "Alice enters and then sits while Bob and Cara fight as the camera pans around them"
+    db.commit()
+
+    report = _project_complexity_report([scene], project.id, db)
+
+    assert report["status"] == "needs_split"
+    assert report["summary"]["needs_split"] == 1
+    assert report["scenes"][0]["scene_number"] == 1
+
+
 def test_prompt_is_cached_but_identity_edit_invalidates_it(project_data):
     db, project, scene, character, _ = project_data
     llm = Mock()
@@ -142,6 +155,44 @@ def test_review_becomes_invalid_after_media_or_story_changes(project_data):
     scene.dialogue = "A different plot"
     with pytest.raises(ReviewError, match="Story changed"):
         require_generation_review(project, [scene])
+
+
+def test_prepare_generation_writes_project_complexity_report(project_data, monkeypatch):
+    db, project, scene, _, Session = project_data
+    import src.tasks.image_tasks as tasks
+    from src.utils.storage import storage_manager
+    write_report(
+        storage_manager.get_project_path(project.id) / "reviews" / "production_story.json",
+        {"status": "passed", "input_hash": fingerprint(current_story(project, [scene]))},
+    )
+    monkeypatch.setattr(tasks, "get_db", lambda: iter([Session()]))
+    monkeypatch.setattr(tasks.prepare_generation_task, "update_state", Mock())
+
+    result = tasks.prepare_generation_task.run(project.id, 1, compile_images=False)
+
+    report = json.loads((storage_manager.get_project_path(project.id) / "reviews" / "shot_complexity.json").read_text())
+    assert result["complexity"]["status"] == "passed"
+    assert report["scenes"][0]["scene_number"] == scene.scene_number
+    db.expire_all()
+
+
+def test_prepare_generation_blocks_complex_project_when_required(project_data, monkeypatch):
+    db, project, scene, _, Session = project_data
+    import src.tasks.image_tasks as tasks
+    from src.utils.storage import storage_manager
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice", "Bob", "Cara"]}]})
+    scene.visual_description = "Alice enters and then sits while Bob and Cara fight as the camera pans around them"
+    db.commit()
+    write_report(
+        storage_manager.get_project_path(project.id) / "reviews" / "production_story.json",
+        {"status": "passed", "input_hash": fingerprint(current_story(project, [scene]))},
+    )
+    monkeypatch.setattr(tasks, "get_db", lambda: iter([Session()]))
+    monkeypatch.setattr(tasks.prepare_generation_task, "update_state", Mock())
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_BLOCK_COMPLEX_SHOTS", True)
+
+    with pytest.raises(ValueError, match="need splitting"):
+        tasks.prepare_generation_task.run(project.id, 1, compile_images=False)
 
 
 def test_image_failure_is_not_replaced_by_draft_by_default(project_data, monkeypatch):

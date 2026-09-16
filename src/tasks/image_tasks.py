@@ -109,6 +109,33 @@ def _complexity_report(scene: Scene, project_id: int, db) -> dict:
     ).to_dict()
 
 
+def _project_complexity_report(scenes: list[Scene], project_id: int, db) -> dict:
+    items = []
+    for scene in scenes:
+        report = _complexity_report(scene, project_id, db)
+        items.append({
+            "scene_id": scene.id,
+            "scene_number": scene.scene_number,
+            "status": report["status"],
+            "score": report["score"],
+            "visible_characters": report["visible_characters"],
+            "reasons": report["reasons"],
+            "recommendations": report["recommendations"],
+        })
+    needs_split = [item for item in items if item["status"] == "needs_split"]
+    warn = [item for item in items if item["status"] == "warn"]
+    return {
+        "kind": "shot_complexity",
+        "status": "needs_split" if needs_split else ("warn" if warn else "passed"),
+        "summary": {
+            "total": len(items),
+            "needs_split": len(needs_split),
+            "warn": len(warn),
+        },
+        "scenes": items,
+    }
+
+
 def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=None):
     compiler = compiler or ShotPromptService()
     characters = _visual_characters(scene, project_id, db)
@@ -147,6 +174,12 @@ def prepare_generation_task(self, project_id: int, task_id: int, compile_images:
         project = db.query(Project).filter(Project.id == project_id).first()
         story = current_story(project, scenes)
         review_path = storage_manager.get_project_path(project_id) / "reviews" / "production_story.json"
+        complexity = _project_complexity_report(scenes, project_id, db)
+        write_report(storage_manager.get_project_path(project_id) / "reviews" / "shot_complexity.json", complexity)
+        if settings.GENERATION_BLOCK_COMPLEX_SHOTS and complexity["status"] == "needs_split":
+            raise ValueError("Project contains shots that need splitting: " + str([
+                item["scene_number"] for item in complexity["scenes"] if item["status"] == "needs_split"
+            ]))
         reviewed = json.loads(review_path.read_text(encoding="utf-8")) if review_path.is_file() else {}
         if reviewed.get("input_hash") != fingerprint(story) or reviewed.get("status") != "passed":
             from src.services.llm_service import get_llm_service
@@ -156,7 +189,7 @@ def prepare_generation_task(self, project_id: int, task_id: int, compile_images:
         if compile_images:
             for scene in scenes:
                 _prepare_prompt(scene, project_id, scene.image_prompt or scene.visual_description, db, compiler)
-        return {"prepared": len(scenes)}
+        return {"prepared": len(scenes), "complexity": complexity}
     finally:
         from src.services.llm_service import cleanup_llm_service
         cleanup_llm_service()
