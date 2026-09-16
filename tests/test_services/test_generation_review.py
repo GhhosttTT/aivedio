@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from src.services.generation_review import (
-    FrameReview, StoryReview, GenerationReviewService, LocalReviewer,
+    FrameReview, StoryReview, GenerationReviewService, LlamaCppReviewer,
     ReviewError, decision, require_passed,
 )
 
@@ -89,19 +89,24 @@ def test_frame_coverage_and_video_hash(tmp_path, monkeypatch):
     assert result["status"] == "error"
 
 
-def test_ollama_receives_real_images_and_unloads_model(tmp_path, monkeypatch):
+def test_llama_cpp_reviewer_sends_openai_compatible_images(tmp_path, monkeypatch):
     frame = tmp_path / "frame.jpg"
     Image.new("RGB", (1024, 1024), "red").save(frame)
     client = Mock()
     client.__enter__ = Mock(return_value=client)
     client.__exit__ = Mock(return_value=False)
-    client.post.return_value.json.return_value = {"done": True, "message": {"content": story_review().model_dump_json()}}
+    client.post.return_value.json.return_value = {
+        "choices": [{"finish_reason": "stop", "message": {"content": story_review().model_dump_json()}}]
+    }
     monkeypatch.setattr("src.services.generation_review.httpx.Client", Mock(return_value=client))
-    LocalReviewer().evaluate("review", script(), StoryReview, [frame])
+    monkeypatch.setattr("src.services.generation_review.settings.LOCAL_REVIEW_BASE_URL", "http://127.0.0.1:8080/v1")
+    monkeypatch.setattr("src.services.generation_review.settings.LOCAL_REVIEW_MODEL", "local-vlm")
+    LlamaCppReviewer().evaluate("review", script(), StoryReview, [frame])
+    assert client.post.call_args.args[0] == "http://127.0.0.1:8080/v1/chat/completions"
     body = client.post.call_args.kwargs["json"]
-    assert body["keep_alive"] == 0
     assert body["stream"] is False
-    data = body["messages"][1]["images"]
-    with Image.open(io.BytesIO(base64.b64decode(data[0]))) as decoded:
+    assert body["response_format"]["type"] == "json_schema"
+    image_url = body["messages"][1]["content"][1]["image_url"]["url"]
+    assert image_url.startswith("data:image/jpeg;base64,")
+    with Image.open(io.BytesIO(base64.b64decode(image_url.split(",", 1)[1]))) as decoded:
         assert decoded.size == (768, 768)
-    assert body["format"]["type"] == "object"

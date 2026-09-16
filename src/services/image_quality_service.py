@@ -16,7 +16,7 @@ from PIL import Image, ImageFilter, ImageStat
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from src.config import settings
-from src.services.generation_review import Issue, LocalReviewer, ReviewError, Score, decision, file_hash, write_report
+from src.services.generation_review import Issue, ReviewError, Score, decision, file_hash, get_local_reviewer, write_report
 
 
 class ImageReview(BaseModel):
@@ -45,7 +45,7 @@ def _clamp_score(value: float) -> float:
 
 class ImageQualitySelector:
     def __init__(self, reviewer=None):
-        self.reviewer = reviewer or LocalReviewer()
+        self.reviewer = reviewer or get_local_reviewer()
 
     @staticmethod
     def technical_metrics(path: str | Path) -> dict[str, Any]:

@@ -59,8 +59,9 @@ GENERATION_REQUIRE_IMAGE_REVIEW=false
 ENABLE_DRAFT_MEDIA_FALLBACK=false
 CELERY_WORKER_CONCURRENCY=1
 LLM_N_CTX=8192
-LOCAL_REVIEW_BASE_URL=http://127.0.0.1:11434
-LOCAL_REVIEW_MODEL=qwen3-vl:4b
+LOCAL_REVIEW_BACKEND=llama_cpp
+LOCAL_REVIEW_BASE_URL=http://127.0.0.1:8080/v1
+LOCAL_REVIEW_MODEL=local-vlm
 LOCAL_REVIEW_TIMEOUT=300
 ```
 
@@ -105,7 +106,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 
 情节审核：检查全部分镜编号，必须每个编号恰好出现一次。独立 critic 请求可使用同一本地文本模型，属于第二次审稿，不等同于独立模型的交叉验证。
 
-关键帧审核：每个候选图保存独立评分。基础技术评分可以离线运行，本地 VLM 评分需要 `LOCAL_REVIEW_BASE_URL` 和 `LOCAL_REVIEW_MODEL` 可用。
+关键帧审核：每个候选图保存独立评分。基础技术评分可以离线运行，本地 VLM 评分需要 `llama-server` 的 OpenAI 兼容接口可用。
 评分报告位于正式图片同目录，后缀为 `.quality.json`。候选图保留为 `.candidate_01.png` 等，便于人工回看和调参。
 
 画面评分：每镜头至少 3 帧，长镜头约每秒一帧；采样覆盖时长的 5% 至 95%。超过 59 秒的片段要求拆分，避免静默截断审核范围。
@@ -130,7 +131,14 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 
 ## 6. 可直接运行的验证
 
-先安装并启动 ComfyUI、本地文本模型、Ollama 视觉模型，确保 FFmpeg 与 ffprobe 可执行。
+先安装并启动 ComfyUI、本地文本模型、llama.cpp 视觉模型，确保 FFmpeg 与 ffprobe 可执行。
+视觉审核服务使用 llama.cpp 的 OpenAI 兼容 `/v1/chat/completions` 接口。示例：
+
+```powershell
+llama-server -m .\models\vlm\model.gguf --mmproj .\models\vlm\mmproj.gguf --host 127.0.0.1 --port 8080 -c 8192 -ngl 99
+```
+
+也可以使用支持 `-hf` 自动加载多模态投影的 GGUF 仓库。关键是模型必须支持图像输入；普通文本 GGUF 不能做画面审核。
 安装模型和节点后执行以下命令；预检失败会返回非零退出码并保存具体原因。
 
 ```powershell
@@ -159,6 +167,5 @@ python -m scripts.validate_local_generation review-video --video "path/to/scene.
 
 - [ComfyUI 本地接口](https://docs.comfy.org/development/comfyui-server/comms_routes)：参考图上传、节点信息、队列及模型卸载。
 - [llama-cpp-python 对话调用](https://llama-cpp-python.readthedocs.io/en/latest/#chat-completion)：使用 GGUF 的对话模板。
-- [Ollama 本地结构化输出](https://docs.ollama.com/capabilities/structured-outputs)：按 JSON Schema 返回结果。
-- [Ollama chat 参数](https://docs.ollama.com/api/chat)：图片输入与 `keep_alive=0` 的卸载行为。
-- [Qwen3-VL 4B 模型页](https://ollama.com/library/qwen3-vl:4b)：本轮选作待实测的本地视觉审核模型。
+- [llama.cpp 多模态文档](https://raw.githubusercontent.com/ggml-org/llama.cpp/master/docs/multimodal.md)：`llama-server` 支持图片输入和 OpenAI-compatible `/chat/completions`。
+- [llama-cpp-python OpenAI 兼容服务](https://llama-cpp-python.readthedocs.io/en/latest/)：可作为本地 OpenAI API 替代，并提供 Vision API 支持。

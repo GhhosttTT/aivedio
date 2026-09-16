@@ -44,8 +44,9 @@ class Settings(BaseSettings):
     GENERATION_IMAGE_REFINEMENT_PASSES: int = 1
     GENERATION_IMAGE_MIN_SCORE: float = 4.0
     GENERATION_REQUIRE_IMAGE_REVIEW: bool = False
-    LOCAL_REVIEW_BASE_URL: str = "http://127.0.0.1:11434"
-    LOCAL_REVIEW_MODEL: str = "qwen3-vl:4b"
+    LOCAL_REVIEW_BACKEND: str = "llama_cpp"
+    LOCAL_REVIEW_BASE_URL: str = "http://127.0.0.1:8080/v1"
+    LOCAL_REVIEW_MODEL: str = "local-vlm"
     LOCAL_REVIEW_TIMEOUT: int = 300
     
     # SVD 配置
