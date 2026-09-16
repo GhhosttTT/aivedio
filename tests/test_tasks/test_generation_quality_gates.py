@@ -261,6 +261,47 @@ def test_required_video_review_blocks_low_scoring_candidates(project_data, tmp_p
     assert output.with_suffix(".quality.json").is_file()
 
 
+def test_video_refinement_pass_reduces_motion_after_low_score(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    Path(scene.image_path).write_bytes(b"image")
+    db.commit()
+
+    class FakeSVD:
+        def __init__(self):
+            self.requests = []
+
+        def generate_video(self, **kwargs):
+            self.requests.append(kwargs)
+            Path(kwargs["output_path"]).write_bytes(f"video-{len(self.requests)}".encode())
+            return kwargs["output_path"]
+
+    class FakeReviewService:
+        def review_video(self, _video, payload, _report_path, _reference=None):
+            if payload["refinement_pass"] == 0:
+                return {"status": "needs_review", "average": 2.5}
+            return {"status": "passed", "average": 4.5}
+
+    fake_svd = FakeSVD()
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_CANDIDATES", 1)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 1)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    final_path, report = _generate_quality_video_candidates(
+        fake_svd, scene, project.id, str(tmp_path / "scene.mp4"), db,
+        num_frames=16, fps=8, motion_bucket_id=150, noise_aug_strength=0.05,
+    )
+
+    assert Path(final_path).read_bytes() == b"video-2"
+    assert len(fake_svd.requests) == 2
+    assert fake_svd.requests[1]["motion_bucket_id"] < fake_svd.requests[0]["motion_bucket_id"]
+    assert fake_svd.requests[1]["noise_aug_strength"] < fake_svd.requests[0]["noise_aug_strength"]
+    assert report["candidates"][0]["pass"] == 1
+    assert report["status"] == "passed"
+
+
 def test_quality_refinement_uses_previous_review_feedback(tmp_path, monkeypatch):
     from PIL import Image
     from src.services.generation_provider import ImageGenerationRequest, GenerationResult

@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     SVD_NUM_FRAMES: int = 16
     SVD_FPS: int = 8
     GENERATION_VIDEO_CANDIDATES: int = 2
+    GENERATION_VIDEO_REFINEMENT_PASSES: int = 1
     GENERATION_VIDEO_MIN_SCORE: float = 4.0
     GENERATION_REQUIRE_VIDEO_REVIEW: bool = False
     

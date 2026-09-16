@@ -30,6 +30,10 @@ def _video_variant_params(base_motion: int, base_noise: float, index: int) -> tu
     return motion, noise
 
 
+def _refined_video_base_params(motion: int, noise: float) -> tuple[int, float]:
+    return max(1, int(motion * 0.72)), max(0.0, round(noise * 0.6, 4))
+
+
 def _scene_review_payload(scene: Scene) -> dict:
     return {
         "scene_number": scene.scene_number,
@@ -85,59 +89,78 @@ def _generate_quality_video_candidates(
     noise_aug_strength: float,
 ) -> tuple[str, dict]:
     candidate_count = max(1, min(settings.GENERATION_VIDEO_CANDIDATES, 6))
+    refinement_passes = max(0, min(settings.GENERATION_VIDEO_REFINEMENT_PASSES, 3))
     reviewer = GenerationReviewService()
     reference = _reference_for_scene(scene, project_id, db)
     candidates = []
-    generated = []
     from src.services.svd_service import cleanup_svd_service
-    try:
-        for index in range(1, candidate_count + 1):
-            candidate_path = _candidate_video_path(output_path, index)
-            motion, noise = _video_variant_params(motion_bucket_id, noise_aug_strength, index)
-            generated_path = svd_service.generate_video(
-                image_path=scene.image_path,
-                output_path=candidate_path,
-                num_frames=num_frames,
-                fps=fps,
-                motion_bucket_id=motion,
-                noise_aug_strength=noise,
-            )
-            generated.append({
-                "index": index,
-                "path": generated_path,
-                "motion_bucket_id": motion,
-                "noise_aug_strength": noise,
-            })
-    finally:
-        cleanup_svd_service()
+    current_motion = motion_bucket_id
+    current_noise = noise_aug_strength
+    for pass_index in range(refinement_passes + 1):
+        generated = []
+        try:
+            for offset in range(1, candidate_count + 1):
+                index = pass_index * candidate_count + offset
+                candidate_path = _candidate_video_path(output_path, index)
+                motion, noise = _video_variant_params(current_motion, current_noise, offset)
+                generated_path = svd_service.generate_video(
+                    image_path=scene.image_path,
+                    output_path=candidate_path,
+                    num_frames=num_frames,
+                    fps=fps,
+                    motion_bucket_id=motion,
+                    noise_aug_strength=noise,
+                )
+                generated.append({
+                    "index": index,
+                    "pass": pass_index,
+                    "path": generated_path,
+                    "motion_bucket_id": motion,
+                    "noise_aug_strength": noise,
+                })
+        finally:
+            cleanup_svd_service()
 
-    for generated_candidate in generated:
-        index = generated_candidate["index"]
-        generated_path = generated_candidate["path"]
-        review_path = Path(generated_path).with_suffix(".review.json")
-        review = reviewer.review_video(
-            generated_path,
-            {
-                **_scene_review_payload(scene),
-                "candidate_index": index,
+        pass_candidates = []
+        for generated_candidate in generated:
+            index = generated_candidate["index"]
+            generated_path = generated_candidate["path"]
+            review_path = Path(generated_path).with_suffix(".review.json")
+            review = reviewer.review_video(
+                generated_path,
+                {
+                    **_scene_review_payload(scene),
+                    "candidate_index": index,
+                    "refinement_pass": generated_candidate["pass"],
+                    "motion_bucket_id": generated_candidate["motion_bucket_id"],
+                    "noise_aug_strength": generated_candidate["noise_aug_strength"],
+                },
+                review_path,
+                reference,
+            )
+            candidate = {
+                "index": index,
+                "pass": generated_candidate["pass"],
+                "path": generated_path,
+                "status": review.get("status"),
+                "average": review.get("average", 0),
+                "review_path": str(review_path),
                 "motion_bucket_id": generated_candidate["motion_bucket_id"],
                 "noise_aug_strength": generated_candidate["noise_aug_strength"],
-            },
-            review_path,
-            reference,
-        )
-        candidate = {
-            "index": index,
-            "path": generated_path,
-            "status": review.get("status"),
-            "average": review.get("average", 0),
-            "review_path": str(review_path),
-            "motion_bucket_id": generated_candidate["motion_bucket_id"],
-            "noise_aug_strength": generated_candidate["noise_aug_strength"],
-        }
-        if review.get("error"):
-            candidate["error"] = review["error"]
-        candidates.append(candidate)
+            }
+            if review.get("error"):
+                candidate["error"] = review["error"]
+            candidates.append(candidate)
+            pass_candidates.append(candidate)
+        if any(
+            candidate.get("status") == "passed"
+            and candidate.get("average", 0) >= settings.GENERATION_VIDEO_MIN_SCORE
+            for candidate in candidates
+        ):
+            break
+        if all(candidate.get("status") == "error" for candidate in pass_candidates):
+            break
+        current_motion, current_noise = _refined_video_base_params(current_motion, current_noise)
     if all(candidate.get("status") == "error" for candidate in candidates):
         if settings.GENERATION_REQUIRE_VIDEO_REVIEW:
             raise ReviewError("All video candidate reviews failed")
