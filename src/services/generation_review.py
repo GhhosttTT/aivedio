@@ -98,7 +98,7 @@ def _encoded_images(images) -> list[str]:
 
 
 class LocalReviewer:
-    """Ollama is a local inference endpoint; no cloud API key is required."""
+    """Legacy Ollama reviewer. Prefer LlamaCppReviewer for current local VLM review."""
 
     def evaluate(self, instruction: str, payload: dict, schema, images=()):
         if "cloud" in settings.LOCAL_REVIEW_MODEL.lower():
@@ -121,7 +121,7 @@ class LocalReviewer:
 
 
 class LlamaCppReviewer:
-    """llama.cpp OpenAI-compatible local review endpoint."""
+    """llama.cpp OpenAI-compatible local review endpoint; no cloud API key is required."""
 
     def evaluate(self, instruction: str, payload: dict, schema, images=()):
         if "cloud" in settings.LOCAL_REVIEW_MODEL.lower():

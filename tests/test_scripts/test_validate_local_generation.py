@@ -7,6 +7,44 @@ def write_json(path, payload):
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def test_review_models_endpoint_uses_llama_cpp_openai_contract(monkeypatch):
+    monkeypatch.setattr(validator.settings, "LOCAL_REVIEW_BASE_URL", "http://127.0.0.1:8080")
+
+    assert validator._review_models_endpoint() == "http://127.0.0.1:8080/v1/models"
+
+
+def test_installed_review_models_reads_openai_models(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": [{"id": "qwen2.5-vl"}, {"name": "fallback-vlm"}]}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def get(self, url):
+            calls.append({"url": url})
+            return FakeResponse()
+
+    monkeypatch.setattr(validator.settings, "LOCAL_REVIEW_BASE_URL", "http://127.0.0.1:8080/v1")
+    monkeypatch.setattr(validator.httpx, "Client", FakeClient)
+
+    assert validator._installed_review_models() == ["qwen2.5-vl", "fallback-vlm"]
+    assert calls[0]["trust_env"] is False
+    assert calls[1]["url"] == "http://127.0.0.1:8080/v1/models"
+
+
 def test_video_workflow_preflight_skips_when_unconfigured(monkeypatch):
     monkeypatch.setattr(validator.settings, "COMFYUI_VIDEO_WORKFLOW_PATH", "")
 

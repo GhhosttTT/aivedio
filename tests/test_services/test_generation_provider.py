@@ -88,6 +88,8 @@ def test_local_comfyui_provider_delegates_video_generation():
             height=768,
             fps=8,
             seed=42,
+            motion_bucket_id=96,
+            noise_aug_strength=0.012,
         )
     )
 
@@ -98,6 +100,10 @@ def test_local_comfyui_provider_delegates_video_generation():
     assert service.last_kwargs["reference_image"] == "scene.png"
     assert service.last_kwargs["negative_prompt"] == "flicker"
     assert service.last_kwargs["fps"] == 8
+    assert service.last_kwargs["motion_bucket_id"] == 96
+    assert service.last_kwargs["noise_aug_strength"] == 0.012
+    assert result.metadata["motion_bucket_id"] == 96
+    assert result.metadata["noise_aug_strength"] == 0.012
 
 
 def test_get_generation_provider_from_argument(monkeypatch):

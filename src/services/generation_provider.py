@@ -58,6 +58,8 @@ class VideoGenerationRequest:
     height: int = 576
     fps: int = 8
     seed: int = -1
+    motion_bucket_id: int = 127
+    noise_aug_strength: float = 0.02
 
 
 @dataclass
@@ -129,6 +131,8 @@ class LocalComfyUIProvider:
             duration_seconds=request.duration_seconds,
             fps=request.fps,
             seed=request.seed,
+            motion_bucket_id=request.motion_bucket_id,
+            noise_aug_strength=request.noise_aug_strength,
         )
         return GenerationResult(
             provider=self.name.value,
@@ -140,6 +144,8 @@ class LocalComfyUIProvider:
                 "width": request.width,
                 "height": request.height,
                 "fps": request.fps,
+                "motion_bucket_id": request.motion_bucket_id,
+                "noise_aug_strength": request.noise_aug_strength,
             },
         )
 

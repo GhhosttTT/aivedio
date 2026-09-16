@@ -605,6 +605,8 @@ class ComfyUIService:
         fps: int = 8,
         seed: int = -1,
         workflow_path: Optional[str] = None,
+        motion_bucket_id: int = 127,
+        noise_aug_strength: float = 0.02,
     ) -> str:
         """Run a user-supplied ComfyUI image-to-video API workflow."""
         path = workflow_path or settings.COMFYUI_VIDEO_WORKFLOW_PATH
@@ -631,6 +633,8 @@ class ComfyUIService:
             "fps": fps,
             "seed": seed,
             "output_prefix": Path(output_path).stem,
+            "motion_bucket_id": motion_bucket_id,
+            "noise_aug_strength": noise_aug_strength,
         }
         workflow = self._replace_workflow_placeholders(workflow, replacements)
         self.preflight(workflow)

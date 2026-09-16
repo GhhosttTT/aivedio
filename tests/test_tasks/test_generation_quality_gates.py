@@ -407,6 +407,8 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
     assert provider.request.reference_image.endswith("source.png")
     assert provider.request.duration_seconds == 2.0
     assert provider.request.fps == 8
+    assert provider.request.motion_bucket_id == 120
+    assert provider.request.noise_aug_strength == 0.02
 
 
 def test_quality_refinement_uses_previous_review_feedback(tmp_path, monkeypatch):

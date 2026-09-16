@@ -153,6 +153,31 @@ class TestComfyUIService:
             assert (latent["width"], latent["height"]) == (512, 512)
             assert (sampler["steps"], sampler["cfg"], sampler["seed"]) == (15, 6.0, 12345)
 
+    def test_video_workflow_replaces_motion_quality_placeholders(self, mock_workflow_config, mock_http_client):
+        """测试：视频工作流可接收 motion/noise 调参占位符"""
+        with patch('src.services.comfyui_service.httpx.Client', return_value=mock_http_client):
+            service = ComfyUIService(workflow_path=mock_workflow_config)
+
+            workflow = {
+                "1": {
+                    "class_type": "VideoSampler",
+                    "inputs": {
+                        "motion_bucket_id": "{motion_bucket_id}",
+                        "noise_aug_strength": "{noise_aug_strength}",
+                        "seed": "{seed}",
+                    },
+                }
+            }
+            replaced = service._replace_workflow_placeholders(workflow, {
+                "motion_bucket_id": 96,
+                "noise_aug_strength": 0.012,
+                "seed": 42,
+            })
+
+            assert replaced["1"]["inputs"]["motion_bucket_id"] == 96
+            assert replaced["1"]["inputs"]["noise_aug_strength"] == 0.012
+            assert replaced["1"]["inputs"]["seed"] == 42
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

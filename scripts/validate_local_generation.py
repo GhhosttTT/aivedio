@@ -19,6 +19,7 @@ from src.services.shot_prompt_service import ShotPromptService
 VIDEO_WORKFLOW_PLACEHOLDERS = {
     "prompt", "positive_prompt", "negative_prompt", "reference_image", "image",
     "width", "height", "duration_seconds", "fps", "seed", "output_prefix",
+    "motion_bucket_id", "noise_aug_strength",
 }
 
 
@@ -46,6 +47,28 @@ def _likely_video_outputs(workflow):
         if any(keyword in lowered for keyword in output_keywords):
             matches.append({"node_id": node_id, "class_type": class_type})
     return matches
+
+
+def _review_models_endpoint() -> str:
+    endpoint = settings.LOCAL_REVIEW_BASE_URL.rstrip("/")
+    if not endpoint.endswith("/v1"):
+        endpoint += "/v1"
+    return endpoint + "/models"
+
+
+def _installed_review_models() -> list[str]:
+    with httpx.Client(timeout=15, trust_env=False) as client:
+        response = client.get(_review_models_endpoint())
+        response.raise_for_status()
+        payload = response.json()
+    models = payload.get("data", [])
+    names = []
+    for item in models:
+        if isinstance(item, dict):
+            name = item.get("id") or item.get("name")
+            if name:
+                names.append(str(name))
+    return names
 
 
 def preflight(base_url=None):
@@ -79,12 +102,10 @@ def preflight(base_url=None):
         checks["comfyui"] = False
         report["comfyui_error"] = str(exc)
     try:
-        with httpx.Client(timeout=15, trust_env=False) as client:
-            response = client.get(settings.LOCAL_REVIEW_BASE_URL.rstrip("/") + "/api/tags")
-            response.raise_for_status()
-            names = [m["name"] for m in response.json()["models"]]
-            checks["review_model"] = settings.LOCAL_REVIEW_MODEL in names
-            report["installed_review_models"] = names
+        names = _installed_review_models()
+        checks["review_model"] = settings.LOCAL_REVIEW_MODEL in names
+        report["review_models_endpoint"] = _review_models_endpoint()
+        report["installed_review_models"] = names
     except Exception as exc:
         checks["review_model"] = False
         report["review_error"] = str(exc)
@@ -137,6 +158,8 @@ def preflight_video_workflow(base_url=None, workflow_path=None):
                 "fps": settings.SVD_FPS,
                 "seed": 31001,
                 "output_prefix": "validation_video",
+                "motion_bucket_id": 127,
+                "noise_aug_strength": 0.02,
             })
             service.preflight(resolved)
             checks["comfyui_preflight"] = True

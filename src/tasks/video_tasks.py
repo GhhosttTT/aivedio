@@ -43,6 +43,8 @@ class _ComfyVideoGenerator:
             height=settings.GENERATION_HEIGHT,
             fps=fps,
             seed=seed,
+            motion_bucket_id=motion_bucket_id,
+            noise_aug_strength=noise_aug_strength,
         ))
         return result.output_path
 
