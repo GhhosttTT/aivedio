@@ -22,7 +22,7 @@ from src.utils.storage import get_scene_image_path
 logger = get_logger(__name__)
 
 
-def _visual_character(scene: Scene, project_id: int, db) -> Optional[Character]:
+def _visible_character_names(scene: Scene, project_id: int, db) -> list[str]:
     # Speaker and visible actor may differ, especially in narration and reaction shots.
     project = db.query(Project).filter(Project.id == project_id).first()
     plan = json.loads(project.script) if project and project.script else {}
@@ -30,23 +30,58 @@ def _visual_character(scene: Scene, project_id: int, db) -> Optional[Character]:
     visible = item.get("characters")
     if visible is None:
         visible = [scene.character_name] if scene.character_name and scene.character_name in scene.visual_description else []
-    if len(visible) != 1:
+    if isinstance(visible, str):
+        visible = [visible]
+    return [name for name in visible if isinstance(name, str) and name.strip()]
+
+
+def _visual_characters(scene: Scene, project_id: int, db) -> list[Character]:
+    names = _visible_character_names(scene, project_id, db)
+    if not names:
+        return []
+    characters = db.query(Character).filter(
+        Character.project_id == project_id,
+        Character.name.in_(names),
+    ).all()
+    by_name = {character.name: character for character in characters}
+    return [by_name[name] for name in names if name in by_name]
+
+
+def _visual_character(scene: Scene, project_id: int, db) -> Optional[Character]:
+    characters = _visual_characters(scene, project_id, db)
+    if len(characters) != 1:
         return None
-    return db.query(Character).filter(Character.project_id == project_id, Character.name == visible[0]).first()
+    return characters[0]
+
+
+def _appearance_anchor(characters: list[Character], db, compiler) -> str | None:
+    if not characters:
+        return None
+    anchors = []
+    for character in characters:
+        appearance = character.appearance
+        if appearance and (re.search(r"[\u3400-\u9fff]", appearance) or len(appearance.split()) > 25):
+            from src.services.script_generator import ScriptGenerator
+            if compiler.llm_service is None:
+                from src.services.llm_service import get_llm_service
+                compiler.llm_service = get_llm_service()
+            appearance = ScriptGenerator(db, compiler.llm_service)._generate_character_appearance(character.name, appearance)
+            character.appearance = appearance
+            db.commit()
+        if appearance:
+            anchors.append(f"{character.name} identity: {appearance}")
+    if not anchors:
+        return None
+    if len(anchors) == 1:
+        return anchors[0].split(" identity: ", 1)[1]
+    return "Keep every visible character distinct. " + " | ".join(anchors)
 
 
 def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=None):
     compiler = compiler or ShotPromptService()
-    character = _visual_character(scene, project_id, db)
-    appearance = character.appearance if character else None
-    if appearance and (re.search(r"[\u3400-\u9fff]", appearance) or len(appearance.split()) > 25):
-        from src.services.script_generator import ScriptGenerator
-        if compiler.llm_service is None:
-            from src.services.llm_service import get_llm_service
-            compiler.llm_service = get_llm_service()
-        appearance = ScriptGenerator(db, compiler.llm_service)._generate_character_appearance(character.name, appearance)
-        character.appearance = appearance
-        db.commit()
+    characters = _visual_characters(scene, project_id, db)
+    appearance = _appearance_anchor(characters, db, compiler)
+    character = characters[0] if len(characters) == 1 else None
     artifact = Path(get_scene_image_path(project_id, scene.id)).with_suffix(".prompt.json")
     source_hash = compiler.source_hash(prompt, appearance)
     if artifact.is_file():

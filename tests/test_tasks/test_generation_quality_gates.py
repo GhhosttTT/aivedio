@@ -10,7 +10,7 @@ from src.database.models import Base, Character, Project, Scene, Task, TaskStatu
 from src.services.generation_review import fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName
 from src.services.shot_prompt_service import ShotPromptService
-from src.tasks.image_tasks import _append_terms, _generate_quality_candidates, _review_feedback, _visual_character, _prepare_prompt
+from src.tasks.image_tasks import _append_terms, _generate_quality_candidates, _review_feedback, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 
 
@@ -45,6 +45,27 @@ def test_visible_actor_is_distinct_from_speaker(project_data):
     project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": []}]})
     db.commit()
     assert _visual_character(scene, project.id, db) is None
+
+
+def test_multiple_visible_characters_are_preserved_in_prompt(project_data):
+    db, project, scene, character, _ = project_data
+    bob = Character(project_id=project.id, name="Bob", appearance="man, square jaw, navy coat")
+    db.add(bob)
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice", "Bob"]}]})
+    db.commit()
+    llm = Mock()
+    llm.generate.return_value = json.dumps({"subject": "the two characters", "action": "facing each other",
+        "setting": "office doorway", "framing": "medium two shot", "lighting": "window light", "style": "cinematic",
+        "needs_split": False, "reason": ""})
+    compiler = ShotPromptService(llm)
+
+    compiled, reference_character = _prepare_prompt(scene, project.id, "Alice and Bob face each other", db, compiler)
+
+    assert [c.name for c in _visual_characters(scene, project.id, db)] == ["Alice", "Bob"]
+    assert reference_character is None
+    assert "Alice identity: woman, short black hair, green jacket" in compiled.prompt
+    assert "Bob identity: man, square jaw, navy coat" in compiled.prompt
+    assert "Keep every visible character distinct" in compiled.prompt
 
 
 def test_prompt_is_cached_but_identity_edit_invalidates_it(project_data):
