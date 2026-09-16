@@ -32,6 +32,11 @@
 .wb-score.passed, .wb-score.completed { color: #8adfbd; background: #163e32; }
 .wb-score.failed, .wb-score.error, .wb-score.needs_review { color: #ffc19f; background: #4a2f23; }
 .wb-panel { margin: 14px 0; padding: 14px; border: 1px solid #3b4142; border-radius: 7px; background: #1b1d1e; }
+.wb-review-summary.ready { border-color: #2f6957; }
+.wb-review-summary.blocked { border-color: #72513e; }
+.wb-review-summary.ready svg { color: #8adfbd; }
+.wb-review-summary.blocked svg { color: #ffc19f; }
+.wb-summary-actions { margin-top: 14px; }
 .wb-badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 4px; background: #243335; color: #8adfbd; font-size: 12px; }
 .wb-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
 .wb-grid.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }

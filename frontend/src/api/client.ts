@@ -69,7 +69,7 @@ export const authApi = {
  */
 export const projectApi = {
     latestTask: (id: number) => apiClient.get<any, ProductionTask | null>(`/projects/${id}/production-task`),
-    reviews: (id: number) => apiClient.get<any, {reports: Record<string, any>}>(`/projects/${id}/generation-review`),
+    reviews: (id: number) => apiClient.get<any, GenerationReviewResponse>(`/projects/${id}/generation-review`),
     updateScene: (id: number, scene: number, data: any) => apiClient.put(`/projects/${id}/scenes/${scene}`, data),
     mediaUrl: async (id: number, path: string) => { const data = await apiClient.get<any, {url: string}>(`/projects/${id}/media-url`, {params: {path}}); return new URL(data.url, apiOrigin).href; },
     /**
@@ -255,3 +255,21 @@ export default apiClient;
 
 
 export interface ProductionTask { task_id: number; celery_task_id: string; project_id: number; status: string; progress: number; current_step: number; total_steps: number; error_message?: string; live_step?: {stage: string; scene_id?: number}; }
+
+export interface GenerationReviewSummary {
+    status: 'ready' | 'blocked' | string;
+    reports: Record<string, string | undefined>;
+    stale_reports: string[];
+    shot_complexity: {
+        status?: string;
+        needs_split: number;
+        warn: number;
+    };
+    action_items: string[];
+}
+
+export interface GenerationReviewResponse {
+    project_id: number;
+    reports: Record<string, any>;
+    summary?: GenerationReviewSummary;
+}
