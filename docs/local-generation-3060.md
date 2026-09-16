@@ -59,15 +59,15 @@ GENERATION_WIDTH=1344
 GENERATION_HEIGHT=768
 GENERATION_STEPS=28
 GENERATION_CFG=6.0
-GENERATION_IMAGE_CANDIDATES=3
-GENERATION_IMAGE_REFINEMENT_PASSES=1
+GENERATION_IMAGE_CANDIDATES=5
+GENERATION_IMAGE_REFINEMENT_PASSES=2
 GENERATION_IMAGE_MIN_SCORE=4.0
-GENERATION_REQUIRE_IMAGE_REVIEW=false
-GENERATION_BLOCK_COMPLEX_SHOTS=false
-GENERATION_VIDEO_CANDIDATES=2
-GENERATION_VIDEO_REFINEMENT_PASSES=1
+GENERATION_REQUIRE_IMAGE_REVIEW=true
+GENERATION_BLOCK_COMPLEX_SHOTS=true
+GENERATION_VIDEO_CANDIDATES=4
+GENERATION_VIDEO_REFINEMENT_PASSES=2
 GENERATION_VIDEO_MIN_SCORE=4.0
-GENERATION_REQUIRE_VIDEO_REVIEW=false
+GENERATION_REQUIRE_VIDEO_REVIEW=true
 ENABLE_DRAFT_MEDIA_FALLBACK=false
 CELERY_WORKER_CONCURRENCY=1
 LLM_N_CTX=8192
@@ -77,7 +77,7 @@ LOCAL_REVIEW_MODEL=local-vlm
 LOCAL_REVIEW_TIMEOUT=300
 ```
 
-这是待实测的起步参数，不是 12GB 显存占用保证。当前 SVD 后端仍以横屏输入为主；竖屏视频和复杂运动需要单独验收。
+这是质量优先的起步参数，会明显增加每个镜头耗时，不是 12GB 显存占用保证。显存或排队时间扛不住时，优先把候选数降到 3，再降分辨率。当前 SVD 后端仍以横屏输入为主；竖屏视频和复杂运动需要单独验收。
 文本模型可沿用已可运行的 GGUF。显存紧张时先降低文本模型 GPU 层数或使用较小量化模型，避免与图像模型同时驻留。
 `llama-cpp-python` 已从过旧的固定版本调整为 `>=0.3.16,<0.4`，目标机器需安装与驱动匹配的 CUDA 构建，不能只确认 Python 包安装成功。
 
@@ -113,8 +113,8 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
   -> 保存 .quality.json 和 .generation.json
 ```
 
-`GENERATION_IMAGE_CANDIDATES` 是每轮候选数量。3060 12GB 建议从 3 开始；如果你愿意等，可调到 5 或 6。超过 8 目前会被代码限制，避免单镜头排队过久。
-`GENERATION_IMAGE_REFINEMENT_PASSES` 是额外精修轮数。设为 1 表示最多生成两轮候选；第一轮已经有 VLM 高分图时会提前停止。
+`GENERATION_IMAGE_CANDIDATES` 是每轮候选数量。质量优先建议从 5 开始；3060 12GB 扛不住时降到 3。超过 8 目前会被代码限制，避免单镜头排队过久。
+`GENERATION_IMAGE_REFINEMENT_PASSES` 是额外精修轮数。设为 2 表示最多生成三轮候选；第一轮已经有 VLM 高分图时会提前停止。
 `GENERATION_IMAGE_MIN_SCORE` 是晋级门槛。建议先用 4.0，人工校准后再提高。
 `GENERATION_REQUIRE_IMAGE_REVIEW=true` 时，本地 VLM 不可用会直接拦截图片，不会只靠技术指标放行。正式跑片建议打开；开发调试可以先保持 false。
 `GENERATION_QUALITY_PROMPT_APPEND` 会追加到每张候选图的正向提示词，用来稳定构图、人体和主动作可读性。
@@ -124,9 +124,9 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 
 这个机制提升的是命中率和可追溯性，仍依赖底层模型、checkpoint、LoRA、Control/IPAdapter 节点质量。低质模型生成 20 张也可能只能选出较差的一张；候选择优不能替代更强模型或人工定妆。
 
-视频阶段同样支持候选择优。`GENERATION_VIDEO_CANDIDATES` 会让同一关键帧串行生成多个视频候选，并轻微扰动 SVD 的运动强度和噪声增强参数；每个候选都会保存独立的 `.review.json` 抽帧审核报告，最终视频旁边保存 `.quality.json` 候选排序。若第一轮候选都低于门槛，`GENERATION_VIDEO_REFINEMENT_PASSES` 会追加稳定性优先的精修轮，自动降低运动强度和噪声，优先压制身份漂移、闪烁和动作断裂。正式跑片建议打开 `GENERATION_REQUIRE_VIDEO_REVIEW=true`，避免 llama.cpp 视觉模型离线时把未审核视频当成高质量结果。
+视频阶段同样支持候选择优。`GENERATION_VIDEO_CANDIDATES` 会让同一关键帧串行生成多个视频候选，并轻微扰动运动强度和噪声增强参数；每个候选都会保存独立的 `.review.json` 抽帧审核报告，最终视频旁边保存 `.quality.json` 候选排序。若第一轮候选都低于门槛，`GENERATION_VIDEO_REFINEMENT_PASSES` 会追加稳定性优先的精修轮，自动降低运动强度和噪声，优先压制身份漂移、闪烁和动作断裂。正式跑片建议打开 `GENERATION_REQUIRE_VIDEO_REVIEW=true`，避免 llama.cpp 视觉模型离线时把未审核视频当成高质量结果。
 
-若配置 `COMFYUI_VIDEO_WORKFLOW_PATH`，视频阶段会改用本地 ComfyUI 图生视频 API workflow，适合接入 Wan、AnimateDiff、VideoHelperSuite 或其他本地视频节点。工作流 JSON 可使用 `{prompt}`、`{negative_prompt}`、`{reference_image}`、`{width}`、`{height}`、`{duration_seconds}`、`{fps}`、`{seed}`、`{output_prefix}` 占位符；执行时系统会上传当前关键帧并替换这些值。留空时继续使用内置 SVD 服务。
+若配置 `COMFYUI_VIDEO_WORKFLOW_PATH`，视频阶段会改用本地 ComfyUI 图生视频 API workflow，适合接入 Wan、AnimateDiff、VideoHelperSuite 或其他本地视频节点。工作流 JSON 可使用 `{prompt}`、`{negative_prompt}`、`{reference_image}`、`{width}`、`{height}`、`{duration_seconds}`、`{fps}`、`{seed}`、`{output_prefix}`、`{motion_bucket_id}`、`{noise_aug_strength}` 占位符；执行时系统会上传当前关键帧并替换这些值。低分精修轮会把 motion/noise 下调，因此工作流应把这两个占位符接到对应的视频采样节点。留空时继续使用内置 SVD 服务。
 
 ## 5. 审核与抽帧评分
 
