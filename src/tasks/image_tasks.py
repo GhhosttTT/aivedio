@@ -77,19 +77,44 @@ def _appearance_anchor(characters: list[Character], db, compiler) -> str | None:
     return "Keep every visible character distinct. " + " | ".join(anchors)
 
 
+def _composition_constraint(scene: Scene, project_id: int, db) -> str:
+    names = _visible_character_names(scene, project_id, db)
+    if not names:
+        return "Composition constraint: clean establishing shot, clear subject area, no random people."
+    if len(names) == 1:
+        return (
+            f"Composition constraint: {names[0]} is the only visible person, clear silhouette, "
+            "face unobstructed, hands visible when relevant, no extra people."
+        )
+    if len(names) == 2:
+        return (
+            f"Composition constraint: two-shot layout, {names[0]} on frame left and {names[1]} on frame right, "
+            "separate faces, separate wardrobes, no merged bodies, both faces readable."
+        )
+    positions = ["frame left", "center", "frame right", "background left", "background right"]
+    layout = ", ".join(f"{name} at {positions[index % len(positions)]}" for index, name in enumerate(names[:5]))
+    return (
+        f"Composition constraint: group layout with {layout}; keep each person separated, "
+        "no duplicated faces, no merged limbs, no random extra people."
+    )
+
+
 def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=None):
     compiler = compiler or ShotPromptService()
     characters = _visual_characters(scene, project_id, db)
     appearance = _appearance_anchor(characters, db, compiler)
     character = characters[0] if len(characters) == 1 else None
+    composition = _composition_constraint(scene, project_id, db)
+    appearance_with_layout = f"{appearance}. {composition}" if appearance else composition
+    prompt_with_layout = f"{prompt}\n{composition}"
     artifact = Path(get_scene_image_path(project_id, scene.id)).with_suffix(".prompt.json")
-    source_hash = compiler.source_hash(prompt, appearance)
+    source_hash = compiler.source_hash(prompt_with_layout, appearance_with_layout)
     if artifact.is_file():
         cached = json.loads(artifact.read_text(encoding="utf-8"))
         if cached.get("source_hash") == source_hash and cached.get("version") == 1:
             compiler.validate_prompt(cached["prompt"])
             return CompiledShot(**cached), character
-    compiled = compiler.compile(prompt, appearance)
+    compiled = compiler.compile(prompt_with_layout, appearance_with_layout)
     write_report(artifact, compiled.to_dict())
     return compiled, character
 
@@ -359,6 +384,7 @@ def generate_image_task(
             scene_payload = {
                 "scene_number": scene.scene_number,
                 "visual_description": scene.visual_description,
+                "composition_constraint": _composition_constraint(scene, project_id, db),
                 "dialogue": scene.dialogue,
                 "character_name": scene.character_name,
             }

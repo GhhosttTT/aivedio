@@ -10,7 +10,7 @@ from src.database.models import Base, Character, Project, Scene, Task, TaskStatu
 from src.services.generation_review import fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName
 from src.services.shot_prompt_service import ShotPromptService
-from src.tasks.image_tasks import _append_terms, _generate_quality_candidates, _review_feedback, _visual_character, _visual_characters, _prepare_prompt
+from src.tasks.image_tasks import _append_terms, _composition_constraint, _generate_quality_candidates, _review_feedback, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 
 
@@ -66,6 +66,19 @@ def test_multiple_visible_characters_are_preserved_in_prompt(project_data):
     assert "Alice identity: woman, short black hair, green jacket" in compiled.prompt
     assert "Bob identity: man, square jaw, navy coat" in compiled.prompt
     assert "Keep every visible character distinct" in compiled.prompt
+    assert "Alice on frame left and Bob on frame right" in compiled.prompt
+
+
+def test_composition_constraint_tracks_visible_actor_count(project_data):
+    db, project, scene, _, _ = project_data
+    assert "Alice is the only visible person" in _composition_constraint(scene, project.id, db)
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice", "Bob", "Cara"]}]})
+    db.commit()
+    hint = _composition_constraint(scene, project.id, db)
+    assert "group layout" in hint
+    assert "Alice at frame left" in hint
+    assert "Bob at center" in hint
+    assert "Cara at frame right" in hint
 
 
 def test_prompt_is_cached_but_identity_edit_invalidates_it(project_data):
