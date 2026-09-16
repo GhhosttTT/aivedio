@@ -115,3 +115,34 @@ def test_validation_summary_accepts_calibrated_run(tmp_path):
     assert report["status"] == "ready_for_calibrated_generation"
     assert report["checks"]["manual_average_score"] == 4.25
     assert report["action_items"] == []
+
+
+def test_validation_summary_recommends_targeted_calibration(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", {"status": "rendered_pending_human_review"})
+    write_json(tmp_path / "video_review.json", {
+        "status": "needs_review",
+        "batches": [{
+            "review": {
+                "identity_consistency": {"score": 2, "evidence": "face changes"},
+                "temporal_consistency": {"score": 2, "evidence": "flicker"},
+                "composition": {"score": 3, "evidence": "bad crop"},
+            }
+        }],
+    })
+    write_json(tmp_path / "manual_review.json", {
+        "cases": [
+            {"id": "discovery", "score": 2.5, "decision": "reject", "issue_tags": ["identity drift", "crop"]},
+            {"id": "reaction", "score": 3.5, "decision": "accept", "note": "flicker on face"},
+        ]
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    areas = [item["area"] for item in report["calibration_recommendations"]]
+    assert report["status"] == "partial_needs_review"
+    assert "identity" in areas
+    assert "video_motion" in areas
+    assert "composition" in areas
+    assert "shot_design" in areas

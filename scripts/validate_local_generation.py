@@ -189,6 +189,76 @@ def _read_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _issue_text(case: dict) -> str:
+    tags = case.get("issue_tags") or case.get("issues") or []
+    if isinstance(tags, str):
+        tags = [tags]
+    return " ".join(str(item).lower() for item in tags + [case.get("note", ""), case.get("reason", "")])
+
+
+def _review_low_dimensions(video_review_report: dict | None) -> list[str]:
+    low = []
+    if not isinstance(video_review_report, dict):
+        return low
+    for batch in video_review_report.get("batches", []):
+        review = batch.get("review", {})
+        for key, value in review.items():
+            if isinstance(value, dict) and value.get("score", 5) < 4:
+                low.append(key)
+    return sorted(set(low))
+
+
+def _calibration_recommendations(manual_cases: list[dict], video_review_report: dict | None) -> list[dict]:
+    recommendations = []
+    low_dimensions = _review_low_dimensions(video_review_report)
+    if "identity_consistency" in low_dimensions or any(
+        token in _issue_text(case) for case in manual_cases for token in ("identity", "face", "character", "same person", "身份", "脸", "不像")
+    ):
+        recommendations.append({
+            "area": "identity",
+            "priority": "high",
+            "change": "Regenerate or manually select stronger character references; enable stricter reference workflow/IPAdapter weight; reject candidates with face or wardrobe drift.",
+        })
+    if "temporal_consistency" in low_dimensions or any(
+        token in _issue_text(case) for case in manual_cases for token in ("flicker", "drift", "motion", "warp", "temporal", "闪烁", "漂移", "变形", "动作断")
+    ):
+        recommendations.append({
+            "area": "video_motion",
+            "priority": "high",
+            "change": "Lower motion strength/noise, increase GENERATION_VIDEO_REFINEMENT_PASSES, and prefer the configured ComfyUI video workflow over SVD for this shot type.",
+        })
+    if "composition" in low_dimensions or any(
+        token in _issue_text(case) for case in manual_cases for token in ("composition", "crop", "framing", "构图", "裁切", "遮挡")
+    ):
+        recommendations.append({
+            "area": "composition",
+            "priority": "medium",
+            "change": "Tighten scene framing text, split crowded shots, and add pose/depth/control guidance in the ComfyUI workflow before raising candidate count.",
+        })
+    if "visual_integrity" in low_dimensions or any(
+        token in _issue_text(case) for case in manual_cases for token in ("hand", "anatomy", "artifact", "broken", "手", "肢体", "瑕疵")
+    ):
+        recommendations.append({
+            "area": "visual_integrity",
+            "priority": "medium",
+            "change": "Raise image candidates/refinement passes, strengthen negative prompts for hands/anatomy/artifacts, and keep the best image before video generation.",
+        })
+    if any(case.get("score", 5) < 3 for case in manual_cases):
+        recommendations.append({
+            "area": "shot_design",
+            "priority": "high",
+            "change": "Rewrite sub-3 manual-score scenes as simpler shots: one subject, one action, one camera move, and one lighting setup.",
+        })
+    seen = set()
+    unique = []
+    for item in recommendations:
+        key = item["area"]
+        if key not in seen:
+            unique.append(item)
+            seen.add(key)
+    return unique
+
+
 def summarize_validation(output: Path):
     preflight_report = _read_json(output / "preflight.json")
     video_workflow_report = _read_json(output / "video_workflow_preflight.json")
@@ -207,6 +277,7 @@ def summarize_validation(output: Path):
         },
         "checks": {},
         "action_items": [],
+        "calibration_recommendations": [],
     }
     checks = report["checks"]
     checks["environment_ready"] = bool(preflight_report and preflight_report.get("status") == "ready_for_live_test")
@@ -242,6 +313,7 @@ def summarize_validation(output: Path):
         report["action_items"].append("Create manual_review.json with 0-5 human scores for each rendered case and clip.")
     elif not checks["manual_review_passed"]:
         report["action_items"].append("Improve prompts/workflow/model settings for manual cases below 4 before scaling up.")
+    report["calibration_recommendations"] = _calibration_recommendations(manual_cases, video_review_report)
 
     if all(checks[key] for key in (
         "environment_ready", "video_workflow_ready", "images_rendered",

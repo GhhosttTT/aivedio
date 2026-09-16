@@ -178,6 +178,7 @@ python -m scripts.validate_local_generation summarize
 固定用例为 `examples/local_generation_cases.json`；可用 `--cases` 指向自己的镜头集。
 输出默认保存于 `storage/validation`。`preflight-video-workflow` 会检查视频 workflow 文件、占位符、可能的视频输出节点和 ComfyUI 节点/模型可用性；通过后仍需要真实跑片确认运动质量。`render-images` 没有占位回退，成功也只标记为待人工检查，不能等同于质量达标。
 人工复核可写入 `storage/validation/manual_review.json`，格式为 `{"cases":[{"id":"discovery","score":4.5,"decision":"accept","note":"身份稳定"}]}`。`summarize` 会汇总预检、渲染、视频抽帧审核和人工评分，生成 `validation_summary.json`，只有环境、workflow、关键帧、视频审核和人工评分都通过时才标记为可校准生成。
+`validation_summary.json` 还会生成 `calibration_recommendations`：身份漂移会建议重做角色参考或加严参考权重，闪烁/动作断裂会建议降低运动强度和增加视频精修轮，构图/裁切会建议拆镜头或加 Control/Depth/Pose 约束。
 命令行单独执行视觉审核前，应先结束其他 GPU 作业并卸载其模型。
 
 ## 7. 下一步验收顺序
