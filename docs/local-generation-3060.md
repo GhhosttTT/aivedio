@@ -168,13 +168,14 @@ llama-server -m .\models\vlm\model.gguf --mmproj .\models\vlm\mmproj.gguf --host
 
 ```powershell
 python -m scripts.validate_local_generation preflight
+python -m scripts.validate_local_generation preflight-video-workflow --video-workflow ".\configs\comfyui_video_workflow.json"
 python -m scripts.validate_local_generation render-images
 python -m scripts.validate_local_generation review-video --video "path/to/scene.mp4" --description "女孩在办公室门口拿着红色信封"
 ```
 
 可通过 `--base-url http://GPU主机地址:8188` 连接同一局域网的 ComfyUI。
 固定用例为 `examples/local_generation_cases.json`；可用 `--cases` 指向自己的镜头集。
-输出默认保存于 `storage/validation`。`render-images` 没有占位回退，成功也只标记为待人工检查，不能等同于质量达标。
+输出默认保存于 `storage/validation`。`preflight-video-workflow` 会检查视频 workflow 文件、占位符、可能的视频输出节点和 ComfyUI 节点/模型可用性；通过后仍需要真实跑片确认运动质量。`render-images` 没有占位回退，成功也只标记为待人工检查，不能等同于质量达标。
 命令行单独执行视觉审核前，应先结束其他 GPU 作业并卸载其模型。
 
 ## 7. 下一步验收顺序

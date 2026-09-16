@@ -16,6 +16,38 @@ from src.services.generation_review import GenerationReviewService, write_report
 from src.services.shot_prompt_service import ShotPromptService
 
 
+VIDEO_WORKFLOW_PLACEHOLDERS = {
+    "prompt", "positive_prompt", "negative_prompt", "reference_image", "image",
+    "width", "height", "duration_seconds", "fps", "seed", "output_prefix",
+}
+
+
+def _scan_placeholders(value):
+    found = set()
+    if isinstance(value, dict):
+        for item in value.values():
+            found.update(_scan_placeholders(item))
+    elif isinstance(value, list):
+        for item in value:
+            found.update(_scan_placeholders(item))
+    elif isinstance(value, str):
+        for name in VIDEO_WORKFLOW_PLACEHOLDERS:
+            if "{" + name + "}" in value:
+                found.add(name)
+    return found
+
+
+def _likely_video_outputs(workflow):
+    output_keywords = ("video", "vhs", "webm", "gif", "animated")
+    matches = []
+    for node_id, node in workflow.items():
+        class_type = str(node.get("class_type", ""))
+        lowered = class_type.lower()
+        if any(keyword in lowered for keyword in output_keywords):
+            matches.append({"node_id": node_id, "class_type": class_type})
+    return matches
+
+
 def preflight(base_url=None):
     report = {"python": platform.python_version(), "checks": {}, "status": "blocked"}
     checks = report["checks"]
@@ -61,6 +93,67 @@ def preflight(base_url=None):
     return report
 
 
+def preflight_video_workflow(base_url=None, workflow_path=None):
+    path = workflow_path or settings.COMFYUI_VIDEO_WORKFLOW_PATH
+    report = {"status": "blocked", "workflow_path": path, "checks": {}}
+    checks = report["checks"]
+    if not path:
+        checks["configured"] = False
+        report["status"] = "skipped"
+        report["message"] = "COMFYUI_VIDEO_WORKFLOW_PATH is empty; video generation will use SVD"
+        return report
+    checks["configured"] = True
+    workflow_file = Path(path)
+    if not workflow_file.is_absolute():
+        workflow_file = Path.cwd() / workflow_file
+    checks["workflow_file"] = workflow_file.is_file()
+    report["resolved_workflow_path"] = str(workflow_file)
+    if not workflow_file.is_file():
+        report["error"] = f"workflow file does not exist: {workflow_file}"
+        return report
+    try:
+        workflow = json.loads(workflow_file.read_text(encoding="utf-8"))
+        if not isinstance(workflow, dict):
+            raise ValueError("workflow JSON root must be an object")
+        placeholders = sorted(_scan_placeholders(workflow))
+        outputs = _likely_video_outputs(workflow)
+        report["placeholders"] = placeholders
+        report["recognized_placeholders"] = sorted(VIDEO_WORKFLOW_PLACEHOLDERS)
+        report["likely_output_nodes"] = outputs
+        checks["has_reference_placeholder"] = bool({"reference_image", "image"} & set(placeholders))
+        checks["has_prompt_placeholder"] = bool({"prompt", "positive_prompt"} & set(placeholders))
+        checks["has_likely_video_output"] = bool(outputs)
+        service = ComfyUIService(base_url=base_url, timeout=15)
+        try:
+            resolved = service._replace_workflow_placeholders(workflow, {
+                "prompt": "validation cinematic short-drama shot",
+                "positive_prompt": "validation cinematic short-drama shot",
+                "negative_prompt": "flicker, warped face, bad motion",
+                "reference_image": "validation_reference.png",
+                "image": "validation_reference.png",
+                "width": settings.GENERATION_WIDTH,
+                "height": settings.GENERATION_HEIGHT,
+                "duration_seconds": 2.0,
+                "fps": settings.SVD_FPS,
+                "seed": 31001,
+                "output_prefix": "validation_video",
+            })
+            service.preflight(resolved)
+            checks["comfyui_preflight"] = True
+            stats = service.client.get(service.base_url + "/system_stats")
+            stats.raise_for_status()
+            report["comfyui_devices"] = stats.json().get("devices", [])
+        finally:
+            service.client.close()
+    except Exception as exc:
+        checks["comfyui_preflight"] = False
+        report["error"] = str(exc)
+        return report
+    required = ("workflow_file", "has_reference_placeholder", "has_prompt_placeholder", "has_likely_video_output", "comfyui_preflight")
+    report["status"] = "ready_for_live_test" if all(checks.get(key) for key in required) else "blocked"
+    return report
+
+
 def render_images(cases, output: Path, base_url=None, reference=None):
     report = {"status": "error", "quality_accepted": False, "cases": []}
     service = ComfyUIService(base_url=base_url, timeout=900)
@@ -92,11 +185,12 @@ def render_images(cases, output: Path, base_url=None, reference=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["preflight", "render-images", "review-video"], nargs="?", default="preflight")
+    parser.add_argument("mode", choices=["preflight", "preflight-video-workflow", "render-images", "review-video"], nargs="?", default="preflight")
     parser.add_argument("--base-url", help="ComfyUI address on the GPU machine")
     parser.add_argument("--cases", default="examples/local_generation_cases.json")
     parser.add_argument("--output", type=Path, default=Path("storage/validation"))
     parser.add_argument("--video")
+    parser.add_argument("--video-workflow", help="ComfyUI image-to-video API workflow JSON")
     parser.add_argument("--reference", help="An explicitly selected character reference image")
     parser.add_argument("--description", help="Expected scene content for frame review")
     args = parser.parse_args()
@@ -104,6 +198,9 @@ def main():
     if args.mode == "preflight":
         report = preflight(args.base_url)
         write_report(args.output / "preflight.json", report)
+    elif args.mode == "preflight-video-workflow":
+        report = preflight_video_workflow(args.base_url, args.video_workflow)
+        write_report(args.output / "video_workflow_preflight.json", report)
     elif args.mode == "render-images":
         report = render_images(json.loads(Path(args.cases).read_text(encoding="utf-8")), args.output, args.base_url, args.reference)
     else:
