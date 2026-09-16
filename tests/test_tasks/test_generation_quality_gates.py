@@ -10,7 +10,7 @@ from src.database.models import Base, Character, Project, Scene, Task, TaskStatu
 from src.services.generation_review import fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName, GenerationResult
 from src.services.shot_prompt_service import ShotPromptService
-from src.tasks.image_tasks import _append_terms, _complexity_report, _composition_constraint, _generate_quality_candidates, _project_complexity_report, _review_feedback, _visual_character, _visual_characters, _prepare_prompt
+from src.tasks.image_tasks import _append_terms, _complexity_report, _composition_constraint, _generate_quality_candidates, _project_complexity_report, _review_feedback, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.tasks.video_tasks import _ComfyVideoGenerator, _generate_quality_video_candidates
 
@@ -68,6 +68,20 @@ def test_multiple_visible_characters_are_preserved_in_prompt(project_data):
     assert "Bob identity: man, square jaw, navy coat" in compiled.prompt
     assert "Keep every visible character distinct" in compiled.prompt
     assert "Alice on frame left and Bob on frame right" in compiled.prompt
+
+
+def test_visible_character_payload_carries_identity_anchors(project_data):
+    db, project, scene, _, _ = project_data
+    db.add(Character(project_id=project.id, name="Bob", appearance="man, square jaw, navy coat"))
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice", "Bob"]}]})
+    db.commit()
+
+    payload = _visible_character_payload(scene, project.id, db)
+
+    assert payload == [
+        {"name": "Alice", "appearance": "woman, short black hair, green jacket"},
+        {"name": "Bob", "appearance": "man, square jaw, navy coat"},
+    ]
 
 
 def test_composition_constraint_tracks_visible_actor_count(project_data):

@@ -55,6 +55,16 @@ def _visual_character(scene: Scene, project_id: int, db) -> Optional[Character]:
     return characters[0]
 
 
+def _visible_character_payload(scene: Scene, project_id: int, db) -> list[dict[str, str]]:
+    payload = []
+    for character in _visual_characters(scene, project_id, db):
+        payload.append({
+            "name": character.name,
+            "appearance": character.appearance or "",
+        })
+    return payload
+
+
 def _appearance_anchor(characters: list[Character], db, compiler) -> str | None:
     if not characters:
         return None
@@ -448,6 +458,7 @@ def generate_image_task(
                 "complexity": _complexity_report(scene, project_id, db),
                 "dialogue": scene.dialogue,
                 "character_name": scene.character_name,
+                "visible_characters": _visible_character_payload(scene, project_id, db),
             }
             final_image_path, quality_report = _generate_quality_candidates(provider, request, scene_payload, reference_image)
             provider_name = getattr(getattr(provider, "name", None), "value", str(getattr(provider, "name", "unknown")))

@@ -42,3 +42,39 @@ def test_select_best_rejects_when_vlm_is_required_but_missing(tmp_path):
         selector.select_best([
             {"index": 1, "path": str(image), "average": 5.0, "status": "technical_only"},
         ], tmp_path / "final.png", tmp_path / "quality.json", require_vlm=True)
+
+
+def test_review_candidate_records_facial_identity_score(tmp_path):
+    image = tmp_path / "candidate.png"
+    make_image(image, (120, 120, 120))
+
+    class FakeReviewer:
+        def evaluate(self, _instruction, payload, schema, images=()):
+            assert payload["scene"]["visible_characters"][0]["appearance"] == "woman, short black hair, green jacket"
+            assert len(images) == 1
+            return schema.model_validate({
+                "prompt_alignment": {"score": 4, "evidence": "matches the office doorway scene"},
+                "composition": {"score": 4, "evidence": "single readable subject"},
+                "aesthetic_quality": {"score": 4, "evidence": "clean lighting"},
+                "visual_integrity": {"score": 4, "evidence": "no obvious anatomy defects"},
+                "facial_identity": {"score": 5, "evidence": "short black hair and facial traits match Alice"},
+                "identity_consistency": {"score": 4, "evidence": "wardrobe and body shape match"},
+                "reviewed_images": [1],
+                "issues": [],
+            })
+
+    report = ImageQualitySelector(reviewer=FakeReviewer()).review_candidate(
+        1,
+        image,
+        {
+            "scene_number": 1,
+            "visual_description": "Alice stands in the office doorway",
+            "visible_characters": [
+                {"name": "Alice", "appearance": "woman, short black hair, green jacket"},
+            ],
+        },
+        "Alice in an office doorway",
+    )
+
+    assert report["status"] == "passed"
+    assert report["review"]["facial_identity"]["score"] == 5
