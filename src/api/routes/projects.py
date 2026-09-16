@@ -61,7 +61,45 @@ async def get_generation_review(
                     report["status"] = "stale"
             except (OSError, TypeError, ValueError):
                 report["status"] = "stale"
-    return {"project_id": project_id, "reports": reports}
+    summary = _generation_review_summary(reports)
+    return {"project_id": project_id, "reports": reports, "summary": summary}
+
+
+def _generation_review_summary(reports: dict) -> dict:
+    action_items = []
+    statuses = {name: report.get("status") for name, report in reports.items() if isinstance(report, dict)}
+    stale = sorted(name for name, status_value in statuses.items() if status_value == "stale")
+    if stale:
+        action_items.append("Story or media changed; rerun the stale reviews before composing.")
+
+    complexity = reports.get("shot_complexity", {}) if isinstance(reports.get("shot_complexity"), dict) else {}
+    complexity_summary = complexity.get("summary", {}) if isinstance(complexity.get("summary"), dict) else {}
+    needs_split = int(complexity_summary.get("needs_split") or 0)
+    warn = int(complexity_summary.get("warn") or 0)
+    if needs_split:
+        action_items.append("Split or simplify scenes marked needs_split in shot_complexity.json before GPU generation.")
+    elif warn:
+        action_items.append("Review warning scenes in shot_complexity.json; keep one action and static camera.")
+
+    production_story = statuses.get("production_story")
+    generation = statuses.get("generation")
+    if production_story != "passed":
+        action_items.append("Run production story review before generating final assets.")
+    if generation != "passed":
+        action_items.append("Run sampled-frame generation review before final composition.")
+
+    blocking = bool(stale or needs_split or production_story != "passed" or generation != "passed")
+    return {
+        "status": "blocked" if blocking else "ready",
+        "reports": statuses,
+        "stale_reports": stale,
+        "shot_complexity": {
+            "status": complexity.get("status"),
+            "needs_split": needs_split,
+            "warn": warn,
+        },
+        "action_items": action_items,
+    }
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)

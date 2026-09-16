@@ -150,7 +150,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 - `scene_<ID>.json`：采样时间、图片路径、文件哈希、分项评分和问题。
 - `generation.json`：整个项目的画面审核结果。
 
-`GET /api/projects/<ID>/generation-review` 可读取本人项目的报告。当前前端还没有独立的评分工作台。
+`GET /api/projects/<ID>/generation-review` 可读取本人项目的报告，并返回 `summary`，直接标出 stale 报告、复杂镜头数量和下一步动作。当前前端还没有独立的评分工作台。
 合成前会重新核对剧情与媒体哈希，改动后的素材需要重新审核。
 现有数据库状态没有新增 `needs_review` 枚举：审核未通过的任务状态为失败，原因及报告中明确记录需要复核。
 
