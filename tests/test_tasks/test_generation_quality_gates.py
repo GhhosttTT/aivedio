@@ -10,7 +10,7 @@ from src.database.models import Base, Character, Project, Scene, Task, TaskStatu
 from src.services.generation_review import fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName, GenerationResult
 from src.services.shot_prompt_service import ShotPromptService
-from src.tasks.image_tasks import _append_terms, _composition_constraint, _generate_quality_candidates, _review_feedback, _visual_character, _visual_characters, _prepare_prompt
+from src.tasks.image_tasks import _append_terms, _complexity_report, _composition_constraint, _generate_quality_candidates, _review_feedback, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.tasks.video_tasks import _ComfyVideoGenerator, _generate_quality_video_candidates
 
@@ -80,6 +80,31 @@ def test_composition_constraint_tracks_visible_actor_count(project_data):
     assert "Alice at frame left" in hint
     assert "Bob at center" in hint
     assert "Cara at frame right" in hint
+
+
+def test_complexity_constraint_is_added_to_prompt(project_data):
+    db, project, scene, _, _ = project_data
+    llm = Mock()
+    llm.generate.return_value = json.dumps({"subject": "the character", "action": "holding a red letter",
+        "setting": "office doorway", "framing": "medium shot", "lighting": "window light", "style": "cinematic",
+        "needs_split": False, "reason": ""})
+    compiled, _ = _prepare_prompt(scene, project.id, scene.visual_description, db, ShotPromptService(llm))
+
+    assert "one frozen instant" in compiled.prompt
+    assert _complexity_report(scene, project.id, db)["status"] == "ok"
+
+
+def test_complex_shot_can_be_blocked_before_generation(project_data, monkeypatch):
+    db, project, scene, _, _ = project_data
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice", "Bob", "Cara"]}]})
+    db.add(Character(project_id=project.id, name="Bob", appearance="man, navy coat"))
+    db.add(Character(project_id=project.id, name="Cara", appearance="woman, red dress"))
+    scene.visual_description = "Alice enters and then sits while Bob and Cara fight as the camera pans around them"
+    db.commit()
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_BLOCK_COMPLEX_SHOTS", True)
+
+    with pytest.raises(ValueError, match="too complex"):
+        _prepare_prompt(scene, project.id, scene.visual_description, db, ShotPromptService(Mock()))
 
 
 def test_prompt_is_cached_but_identity_edit_invalidates_it(project_data):

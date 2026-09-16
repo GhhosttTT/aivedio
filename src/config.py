@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     GENERATION_IMAGE_REFINEMENT_PASSES: int = 1
     GENERATION_IMAGE_MIN_SCORE: float = 4.0
     GENERATION_REQUIRE_IMAGE_REVIEW: bool = False
+    GENERATION_BLOCK_COMPLEX_SHOTS: bool = False
     GENERATION_QUALITY_PROMPT_APPEND: str = "clean cinematic composition, coherent anatomy, readable main action, balanced lighting, polished short-drama keyframe"
     GENERATION_QUALITY_NEGATIVE_APPEND: str = "amateur snapshot, dull composition, muddy lighting, deformed face, deformed hands, broken fingers, extra people, random text, logo, watermark, bad crop, messy background"
     LOCAL_REVIEW_BACKEND: str = "llama_cpp"

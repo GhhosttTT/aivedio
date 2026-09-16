@@ -42,6 +42,7 @@
 多人同框时，系统会把剧本中该镜头的所有可见角色身份锚点一起写入提示词，并要求保持角色彼此区分。
 单人镜头仍优先使用该角色参考图；多人镜头暂时不把单个 FaceID 参考图强行套到整张图，避免一张脸污染所有人。
 构图约束由代码强制拼接进最终提示词：单人镜头限制“唯一可见人物、脸无遮挡”，双人镜头固定“角色 A 在画面左侧、角色 B 在画面右侧”，多人镜头按左、中、右等位置分配。
+镜头复杂度诊断会记录人物数、连续动作、运镜、动作数量和描述长度；默认追加“单帧冻结、单主动作、静态机位”的约束并写入生成报告。若设置 `GENERATION_BLOCK_COMPLEX_SHOTS=true`，需要拆分的镜头会在生成前阻断。
 复杂多人互动后续仍需要 OpenPose、Depth、区域提示或专用视频模型来稳定姿态和空间关系。
 
 ## 3. 3060 起步配置
@@ -62,6 +63,7 @@ GENERATION_IMAGE_CANDIDATES=3
 GENERATION_IMAGE_REFINEMENT_PASSES=1
 GENERATION_IMAGE_MIN_SCORE=4.0
 GENERATION_REQUIRE_IMAGE_REVIEW=false
+GENERATION_BLOCK_COMPLEX_SHOTS=false
 GENERATION_VIDEO_CANDIDATES=2
 GENERATION_VIDEO_REFINEMENT_PASSES=1
 GENERATION_VIDEO_MIN_SCORE=4.0

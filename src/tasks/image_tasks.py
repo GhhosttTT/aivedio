@@ -15,6 +15,7 @@ from src.services.generation_review import write_report
 from src.services.image_quality_service import ImageQualitySelector, candidate_output_path
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, get_generation_provider
+from src.services.shot_complexity_service import ShotComplexityService
 from src.tasks.celery_app import celery_app
 from src.utils.logger import get_logger
 from src.utils.storage import get_scene_image_path
@@ -99,14 +100,27 @@ def _composition_constraint(scene: Scene, project_id: int, db) -> str:
     )
 
 
+def _complexity_report(scene: Scene, project_id: int, db) -> dict:
+    names = _visible_character_names(scene, project_id, db)
+    return ShotComplexityService().diagnose(
+        scene.visual_description or "",
+        names,
+        scene.dialogue or "",
+    ).to_dict()
+
+
 def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=None):
     compiler = compiler or ShotPromptService()
     characters = _visual_characters(scene, project_id, db)
     appearance = _appearance_anchor(characters, db, compiler)
     character = characters[0] if len(characters) == 1 else None
     composition = _composition_constraint(scene, project_id, db)
-    appearance_with_layout = f"{appearance}. {composition}" if appearance else composition
-    prompt_with_layout = f"{prompt}\n{composition}"
+    complexity = _complexity_report(scene, project_id, db)
+    if settings.GENERATION_BLOCK_COMPLEX_SHOTS and complexity["status"] == "needs_split":
+        raise ValueError("Shot is too complex for one stable generation: " + "; ".join(complexity["reasons"]))
+    layout_parts = [composition, complexity["prompt_constraint"]]
+    appearance_with_layout = f"{appearance}. {' '.join(layout_parts)}" if appearance else " ".join(layout_parts)
+    prompt_with_layout = f"{prompt}\n" + "\n".join(layout_parts)
     artifact = Path(get_scene_image_path(project_id, scene.id)).with_suffix(".prompt.json")
     source_hash = compiler.source_hash(prompt_with_layout, appearance_with_layout)
     if artifact.is_file():
@@ -398,6 +412,7 @@ def generate_image_task(
                 "scene_number": scene.scene_number,
                 "visual_description": scene.visual_description,
                 "composition_constraint": _composition_constraint(scene, project_id, db),
+                "complexity": _complexity_report(scene, project_id, db),
                 "dialogue": scene.dialogue,
                 "character_name": scene.character_name,
             }
@@ -429,6 +444,7 @@ def generate_image_task(
         write_report(Path(image_path).with_suffix(".generation.json"), {
             "provider": result.provider, "request": asdict(request),
             "status": "draft" if result.provider == "draft_fallback" else "generated",
+            "complexity": _complexity_report(scene, project_id, db),
             "quality": getattr(result, "metadata", {}).get("quality") if hasattr(result, "metadata") else None,
         })
         scene.image_path = result.output_path
