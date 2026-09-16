@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     SVD_MODEL_PATH: str = "./models/stable-video-diffusion-img2vid-xt"
     SVD_NUM_FRAMES: int = 16
     SVD_FPS: int = 8
+    GENERATION_VIDEO_CANDIDATES: int = 2
+    GENERATION_VIDEO_MIN_SCORE: float = 4.0
+    GENERATION_REQUIRE_VIDEO_REVIEW: bool = False
     
     # TTS 配置
     TTS_API_KEY: str = ""

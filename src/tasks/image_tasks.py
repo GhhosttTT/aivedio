@@ -359,7 +359,20 @@ def generate_image_task(
             raise ValueError(f"分镜不存在: {scene_id}")
 
         try:
-            compiled, character = _prepare_prompt(scene, project_id, prompt, db)
+            try:
+                compiled, character = _prepare_prompt(scene, project_id, prompt, db)
+            except Exception as exc:
+                if not draft_fallback_enabled():
+                    raise
+                logger.warning("提示词编译失败，使用草稿提示词: scene_id={}, error={}", scene_id, exc)
+                fallback_prompt = _append_terms(prompt, _composition_constraint(scene, project_id, db))
+                compiled = CompiledShot(
+                    fallback_prompt,
+                    ShotPromptService.NEGATIVE_PROMPT,
+                    hashlib.sha256(fallback_prompt.encode()).hexdigest(),
+                    len(fallback_prompt.split()),
+                )
+                character = _visual_character(scene, project_id, db)
         finally:
             from src.services.llm_service import cleanup_llm_service
             cleanup_llm_service()

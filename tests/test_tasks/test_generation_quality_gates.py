@@ -12,6 +12,7 @@ from src.services.generation_provider import GenerationProviderName
 from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _composition_constraint, _generate_quality_candidates, _review_feedback, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
+from src.tasks.video_tasks import _generate_quality_video_candidates
 
 
 @pytest.fixture
@@ -188,6 +189,76 @@ def test_image_generation_uses_multiple_quality_candidates(tmp_path, monkeypatch
     assert len(provider.requests) == 3
     assert len({item.seed for item in provider.requests}) == 3
     assert report["kind"] == "image_candidate_selection"
+
+
+def test_video_generation_selects_best_reviewed_candidate(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    Path(scene.image_path).write_bytes(b"image")
+    db.commit()
+
+    class FakeSVD:
+        def __init__(self):
+            self.requests = []
+
+        def generate_video(self, **kwargs):
+            self.requests.append(kwargs)
+            Path(kwargs["output_path"]).write_bytes(f"video-{len(self.requests)}".encode())
+            return kwargs["output_path"]
+
+    class FakeReviewService:
+        def review_video(self, _video, payload, _report_path, _reference=None):
+            if payload["candidate_index"] == 1:
+                return {"status": "needs_review", "average": 2.8}
+            return {"status": "passed", "average": 4.7}
+
+    fake_svd = FakeSVD()
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_CANDIDATES", 2)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    final_path, report = _generate_quality_video_candidates(
+        fake_svd, scene, project.id, str(tmp_path / "scene.mp4"), db,
+        num_frames=16, fps=8, motion_bucket_id=127, noise_aug_strength=0.02,
+    )
+
+    assert Path(final_path).read_bytes() == b"video-2"
+    assert report["status"] == "passed"
+    assert report["selected_average"] == 4.7
+    assert [candidate["index"] for candidate in report["candidates"]] == [2, 1]
+    assert fake_svd.requests[0]["motion_bucket_id"] != fake_svd.requests[1]["motion_bucket_id"]
+
+
+def test_required_video_review_blocks_low_scoring_candidates(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    Path(scene.image_path).write_bytes(b"image")
+    db.commit()
+
+    class FakeSVD:
+        def generate_video(self, **kwargs):
+            Path(kwargs["output_path"]).write_bytes(b"bad-video")
+            return kwargs["output_path"]
+
+    class FakeReviewService:
+        def review_video(self, *_args, **_kwargs):
+            return {"status": "needs_review", "average": 2.0}
+
+    output = tmp_path / "scene.mp4"
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_CANDIDATES", 1)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    with pytest.raises(ReviewError, match="Video candidates failed quality gate"):
+        _generate_quality_video_candidates(
+            FakeSVD(), scene, project.id, str(output), db,
+            num_frames=16, fps=8, motion_bucket_id=127, noise_aug_strength=0.02,
+        )
+
+    assert not output.exists()
+    assert output.with_suffix(".quality.json").is_file()
 
 
 def test_quality_refinement_uses_previous_review_feedback(tmp_path, monkeypatch):
