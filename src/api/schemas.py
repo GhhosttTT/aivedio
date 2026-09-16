@@ -104,6 +104,42 @@ class CharacterReferenceResponse(BaseModel):
     description: Optional[str] = None
 
 
+class CharacterIdentityPlanRequest(BaseModel):
+    """
+    角色身份方案请求
+    """
+    target_languages: List[str] = Field(default_factory=lambda: ["zh", "en", "ja", "ko", "es", "pt", "ar", "id", "th", "vi"])
+    update_character: bool = Field(True, description="是否写回角色外貌设定")
+
+
+class CharacterIdentityPlanResponse(BaseModel):
+    """
+    角色身份方案响应
+    """
+    character_id: int
+    identity_spec: dict
+    prompt_pack: dict
+    distinctiveness: dict
+
+
+class CharacterIdentityScoreRequest(BaseModel):
+    """
+    结构化五官评分请求
+    """
+    observed_spec: dict = Field(..., description="从模型输出或人工标注得到的五官结构")
+
+
+class CharacterIdentityScoreResponse(BaseModel):
+    """
+    结构化五官评分响应
+    """
+    character_id: int
+    status: str
+    average: float
+    scores: dict
+    limitation: str
+
+
 class SceneResponse(BaseModel):
     """
     分镜响应模型

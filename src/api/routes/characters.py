@@ -13,6 +13,10 @@ from pathlib import Path
 from src.api.dependencies import require_project_access
 from src.api.schemas import (
     CharacterCreate,
+    CharacterIdentityPlanRequest,
+    CharacterIdentityPlanResponse,
+    CharacterIdentityScoreRequest,
+    CharacterIdentityScoreResponse,
     CharacterResponse,
     CharacterReferenceResponse,
     MessageResponse
@@ -20,6 +24,7 @@ from src.api.schemas import (
 from src.database.session import get_db_session
 from src.database.models import Character, Project
 from src.services.character_service import get_character_manager
+from src.services.character_identity_service import CharacterIdentityService, load_identity_spec
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -155,6 +160,88 @@ async def get_character(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="获取角色详情时发生错误"
         )
+
+
+@router.post("/{character_id}/identity-plan", response_model=CharacterIdentityPlanResponse)
+async def plan_character_identity(
+    project_id: int,
+    character_id: int,
+    request: CharacterIdentityPlanRequest,
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    生成 Seedance 类工作流需要的角色身份锚点、跨语言提示词和差异度报告。
+    """
+    try:
+        character = db_session.query(Character).filter(
+            Character.id == character_id,
+            Character.project_id == project_id
+        ).first()
+        if not character:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"角色不存在: {character_id}")
+
+        service = CharacterIdentityService()
+        all_characters = db_session.query(Character).filter(Character.project_id == project_id).all()
+        existing_specs = [
+            spec for item in all_characters
+            if item.id != character_id
+            for spec in [load_identity_spec(item.visual_description)]
+            if spec
+        ]
+        current_spec = load_identity_spec(character.visual_description)
+        spec = current_spec or service.build_identity_spec(
+            name=character.name,
+            role=character.description or "",
+            personality=character.personality or "",
+            project_id=project_id,
+            existing_specs=existing_specs,
+        )
+        spec["identity_anchor"] = service.identity_anchor(spec)
+        prompt_pack = service.prompt_pack(spec, request.target_languages)
+        distinctiveness = service.distinctiveness_report(existing_specs + [spec])
+
+        if request.update_character:
+            import json
+            character.visual_description = json.dumps(spec, ensure_ascii=False)
+            character.appearance = spec["identity_anchor"][:500]
+            db_session.commit()
+            db_session.refresh(character)
+
+        return CharacterIdentityPlanResponse(
+            character_id=character_id,
+            identity_spec=spec,
+            prompt_pack=prompt_pack,
+            distinctiveness=distinctiveness,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        db_session.rollback()
+        logger.error(f"生成角色身份方案失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"生成角色身份方案失败: {e}")
+
+
+@router.post("/{character_id}/identity-score", response_model=CharacterIdentityScoreResponse)
+async def score_character_identity(
+    project_id: int,
+    character_id: int,
+    request: CharacterIdentityScoreRequest,
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    对生成结果的结构化五官标注进行评分。图片级评分后续接本地 VLM。
+    """
+    character = db_session.query(Character).filter(
+        Character.id == character_id,
+        Character.project_id == project_id
+    ).first()
+    if not character:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"角色不存在: {character_id}")
+    expected = load_identity_spec(character.visual_description)
+    if not expected:
+        raise HTTPException(status_code=409, detail="请先生成角色身份方案")
+    result = CharacterIdentityService().score_observed_spec(expected, request.observed_spec)
+    return CharacterIdentityScoreResponse(character_id=character_id, **result)
 
 
 @router.post("/{character_id}/reference", response_model=CharacterReferenceResponse)

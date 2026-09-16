@@ -19,6 +19,21 @@ export interface CharacterReference {
   description?: string;
 }
 
+export interface CharacterIdentityPlan {
+  character_id: number;
+  identity_spec: Record<string, any>;
+  prompt_pack: Record<string, any>;
+  distinctiveness: Record<string, any>;
+}
+
+export interface CharacterIdentityScore {
+  character_id: number;
+  status: string;
+  average: number;
+  scores: Record<string, {score: number; evidence: string}>;
+  limitation: string;
+}
+
 export const characterApi = {
   /**
    * 创建角色
@@ -80,6 +95,20 @@ export const characterApi = {
   listReferences: async (projectId: number, characterId: number) => {
     return apiClient.get<never, CharacterReference[]>(
       `/projects/${projectId}/characters/${characterId}/references`
+    );
+  },
+
+  planIdentity: async (projectId: number, characterId: number, targetLanguages?: string[]) => {
+    return apiClient.post<any, CharacterIdentityPlan>(
+      `/projects/${projectId}/characters/${characterId}/identity-plan`,
+      { target_languages: targetLanguages, update_character: true }
+    );
+  },
+
+  scoreIdentity: async (projectId: number, characterId: number, observedSpec: Record<string, any>) => {
+    return apiClient.post<any, CharacterIdentityScore>(
+      `/projects/${projectId}/characters/${characterId}/identity-score`,
+      { observed_spec: observedSpec }
     );
   },
 };
