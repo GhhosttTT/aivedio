@@ -28,7 +28,7 @@
   -> 审核通过后保存剧本和稳定英文角色特征
   -> 生产前复核当前分镜（手动修改会使旧审核失效）
   -> 批量编译短提示词，保存缓存，再卸载本地语言模型
-  -> 串行生成关键帧，保存实际提示词、种子、工作流
+  -> 每个分镜串行生成多张关键帧候选，技术评分 + 本地 VLM 评分，择优晋级
   -> 卸载 ComfyUI 模型，串行图生视频
   -> 卸载 SVD，使用本地视觉语言模型抽帧评分
   -> 所有镜头通过后才允许合成
@@ -52,6 +52,10 @@ GENERATION_WIDTH=1344
 GENERATION_HEIGHT=768
 GENERATION_STEPS=28
 GENERATION_CFG=6.0
+GENERATION_IMAGE_CANDIDATES=3
+GENERATION_IMAGE_REFINEMENT_PASSES=1
+GENERATION_IMAGE_MIN_SCORE=4.0
+GENERATION_REQUIRE_IMAGE_REVIEW=false
 ENABLE_DRAFT_MEDIA_FALLBACK=false
 CELERY_WORKER_CONCURRENCY=1
 LLM_N_CTX=8192
@@ -76,9 +80,33 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 可使用匹配模型的 `IPAdapterAdvanced` 工作流；当前图适配器支持简单 `KSampler + CLIPTextEncode` 图，不承诺任意 ComfyUI 导出图均可直接接入。
 更改 checkpoint 时，文生图和参考图模板必须一起修改。
 
-## 4. 审核与抽帧评分
+## 4. 用时间换图像质量
+
+当前关键帧生成已经改为候选择优：
+
+```text
+同一分镜提示词
+  -> candidate_01 / candidate_02 / candidate_03 ...
+  -> 每张记录 seed、steps、cfg、尺寸
+  -> 基础技术评分：曝光、边缘清晰度、色彩丰富度、尺寸合法性
+  -> 若本地 VLM 可用，再评分：剧情匹配、构图、美观、画面完整性、身份一致性
+  -> 分数最高且达到门槛的候选复制为正式 scene image
+  -> 保存 .quality.json 和 .generation.json
+```
+
+`GENERATION_IMAGE_CANDIDATES` 是每轮候选数量。3060 12GB 建议从 3 开始；如果你愿意等，可调到 5 或 6。超过 8 目前会被代码限制，避免单镜头排队过久。
+`GENERATION_IMAGE_REFINEMENT_PASSES` 是额外精修轮数。设为 1 表示最多生成两轮候选；第一轮已经有 VLM 高分图时会提前停止。
+`GENERATION_IMAGE_MIN_SCORE` 是晋级门槛。建议先用 4.0，人工校准后再提高。
+`GENERATION_REQUIRE_IMAGE_REVIEW=true` 时，本地 VLM 不可用会直接拦截图片，不会只靠技术指标放行。正式跑片建议打开；开发调试可以先保持 false。
+
+这个机制提升的是命中率和可追溯性，仍依赖底层模型、checkpoint、LoRA、Control/IPAdapter 节点质量。低质模型生成 20 张也可能只能选出较差的一张；候选择优不能替代更强模型或人工定妆。
+
+## 5. 审核与抽帧评分
 
 情节审核：检查全部分镜编号，必须每个编号恰好出现一次。独立 critic 请求可使用同一本地文本模型，属于第二次审稿，不等同于独立模型的交叉验证。
+
+关键帧审核：每个候选图保存独立评分。基础技术评分可以离线运行，本地 VLM 评分需要 `LOCAL_REVIEW_BASE_URL` 和 `LOCAL_REVIEW_MODEL` 可用。
+评分报告位于正式图片同目录，后缀为 `.quality.json`。候选图保留为 `.candidate_01.png` 等，便于人工回看和调参。
 
 画面评分：每镜头至少 3 帧，长镜头约每秒一帧；采样覆盖时长的 5% 至 95%。超过 59 秒的片段要求拆分，避免静默截断审核范围。
 每批最多 3 个采样帧，可另附 1 张参考图。按剧情匹配、构图、可见瑕疵、身份一致性分别给 0 至 5 分，并写明证据。
@@ -100,7 +128,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 这些分数属于视觉语言模型判断，尚未与人工标注校准。抽帧可能漏掉瞬时变形、闪烁和帧间运动异常；不能据此宣称电影级质量或全面时序审核完成。
 当前评分对象是分镜视频，合成后的字幕、音画同步和总片节奏还需成片验收。
 
-## 5. 可直接运行的验证
+## 6. 可直接运行的验证
 
 先安装并启动 ComfyUI、本地文本模型、Ollama 视觉模型，确保 FFmpeg 与 ffprobe 可执行。
 安装模型和节点后执行以下命令；预检失败会返回非零退出码并保存具体原因。
@@ -116,18 +144,18 @@ python -m scripts.validate_local_generation review-video --video "path/to/scene.
 输出默认保存于 `storage/validation`。`render-images` 没有占位回退，成功也只标记为待人工检查，不能等同于质量达标。
 命令行单独执行视觉审核前，应先结束其他 GPU 作业并卸载其模型。
 
-## 6. 下一步验收顺序
+## 7. 下一步验收顺序
 
 1. 在真实 3060 上运行预检，记录驱动、模型完整名称、节点版本、显存峰值和每镜头耗时。
 2. 固定 checkpoint、分辨率、种子，对比旧提示词与新提示词。至少覆盖空镜、单人中景、反应特写、道具特写、正反打和目标动画风格。
 3. 人工选择角色定妆图，连续测试同一角色至少 6 镜头，检查脸、发型、服装、道具和位置连续性。
-4. 收集至少 30 个好坏样本，人工评分后校准 VLM 门槛，统计误放行和误拦截。先做到可解释、可复核，再考虑自动重试选片。
+4. 收集至少 30 个好坏样本，人工评分后校准关键帧 VLM 门槛，统计误放行和误拦截。先做到可解释、可复核，再提高候选数和精修轮数。
 5. 跑一条真实配音的 20 至 30 秒短剧，检查每个镜头时长与对白匹配、字幕不抢画面、画风统一、抽帧证据完整。
 6. 再扩展复杂互动、局部重绘、姿态/构图控制、竖屏图生视频和更长剧情。明确区分步骤问题、模型上限和显存约束。
 
 满足上述实图和成片验收前，项目仍处于待 GPU 联调阶段。
 
-## 7. 实现依据
+## 8. 实现依据
 
 - [ComfyUI 本地接口](https://docs.comfy.org/development/comfyui-server/comms_routes)：参考图上传、节点信息、队列及模型卸载。
 - [llama-cpp-python 对话调用](https://llama-cpp-python.readthedocs.io/en/latest/#chat-completion)：使用 GGUF 的对话模板。

@@ -12,6 +12,7 @@ from src.database.models import Character, Project, Scene, Task as TaskModel
 from src.config import settings
 from src.services.shot_prompt_service import ShotPromptService, CompiledShot
 from src.services.generation_review import write_report
+from src.services.image_quality_service import ImageQualitySelector, candidate_output_path
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, get_generation_provider
 from src.tasks.celery_app import celery_app
@@ -163,6 +164,76 @@ def _broadcast_progress(project_id: int, task_id: int, scene: Scene, progress: f
         logger.warning("WebSocket 推送失败: {}", exc)
 
 
+def _candidate_seed(base_seed: int, index: int, refinement_pass: int = 0) -> int:
+    material = f"{base_seed}:{index}:{refinement_pass}".encode()
+    return int(hashlib.sha256(material).hexdigest()[:8], 16)
+
+
+def _quality_parameters(index: int, refinement_pass: int, base_steps: int, base_cfg: float) -> tuple[int, float]:
+    step_boost = min(index, 2) * 4 + refinement_pass * 6
+    cfg_shift = (index % 3 - 1) * 0.35
+    return min(base_steps + step_boost, 48), round(max(4.5, min(base_cfg + cfg_shift, 8.0)), 2)
+
+
+def _generate_quality_candidates(provider, request: ImageGenerationRequest, scene_payload: dict, reference_image: str | None) -> tuple[str, dict]:
+    candidate_count = max(1, min(settings.GENERATION_IMAGE_CANDIDATES, 8))
+    refinement_passes = max(0, min(settings.GENERATION_IMAGE_REFINEMENT_PASSES, 3))
+    selector = ImageQualitySelector()
+    reports = []
+    best_report = None
+
+    for pass_index in range(refinement_passes + 1):
+        pass_reports = []
+        for index in range(candidate_count):
+            candidate_index = pass_index * candidate_count + index + 1
+            output_path = candidate_output_path(request.output_path, candidate_index)
+            steps, cfg = _quality_parameters(index, pass_index, request.steps, request.cfg_scale)
+            candidate_request = ImageGenerationRequest(
+                prompt=request.prompt,
+                negative_prompt=request.negative_prompt,
+                output_path=output_path,
+                width=request.width,
+                height=request.height,
+                steps=steps,
+                cfg_scale=cfg,
+                seed=_candidate_seed(request.seed, index, pass_index),
+                reference_image=request.reference_image,
+                use_ipadapter=request.use_ipadapter,
+                scene_type=request.scene_type,
+                quality_mode="ultra",
+                optimization_mode=request.optimization_mode,
+            )
+            result = provider.generate_image(candidate_request)
+            report = selector.review_candidate(
+                candidate_index,
+                result.output_path,
+                scene_payload,
+                request.prompt,
+                reference_image,
+            )
+            report["provider"] = result.provider
+            report["request"] = {
+                "seed": candidate_request.seed,
+                "steps": candidate_request.steps,
+                "cfg_scale": candidate_request.cfg_scale,
+                "width": candidate_request.width,
+                "height": candidate_request.height,
+            }
+            report["path"] = result.output_path
+            pass_reports.append(report)
+            reports.append(report)
+        best_report = max(pass_reports if best_report is None else reports, key=lambda item: item.get("average", 0))
+        if best_report.get("average", 0) >= settings.GENERATION_IMAGE_MIN_SCORE and best_report.get("status") != "technical_only":
+            break
+
+    selection = selector.select_best(
+        reports,
+        request.output_path,
+        Path(request.output_path).with_suffix(".quality.json"),
+    )
+    return request.output_path, selection
+
+
 @celery_app.task(bind=True, name="generate_image")
 def generate_image_task(
     self,
@@ -206,7 +277,19 @@ def generate_image_task(
 
         self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "generation_provider"})
         try:
-            result = provider.generate_image(request)
+            scene_payload = {
+                "scene_number": scene.scene_number,
+                "visual_description": scene.visual_description,
+                "dialogue": scene.dialogue,
+                "character_name": scene.character_name,
+            }
+            final_image_path, quality_report = _generate_quality_candidates(provider, request, scene_payload, reference_image)
+            provider_name = getattr(getattr(provider, "name", None), "value", str(getattr(provider, "name", "unknown")))
+            result = type(
+                "SelectedImageResult",
+                (),
+                {"output_path": final_image_path, "provider": provider_name, "metadata": {"quality": quality_report}},
+            )()
         except Exception as exc:
             if not draft_fallback_enabled():
                 raise
@@ -228,6 +311,7 @@ def generate_image_task(
         write_report(Path(image_path).with_suffix(".generation.json"), {
             "provider": result.provider, "request": asdict(request),
             "status": "draft" if result.provider == "draft_fallback" else "generated",
+            "quality": getattr(result, "metadata", {}).get("quality") if hasattr(result, "metadata") else None,
         })
         scene.image_path = result.output_path
         db.commit()

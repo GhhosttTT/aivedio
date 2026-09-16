@@ -8,8 +8,9 @@ from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Character, Project, Scene, Task, TaskStatus, User
 from src.services.generation_review import fingerprint, write_report, ReviewError
+from src.services.generation_provider import GenerationProviderName
 from src.services.shot_prompt_service import ShotPromptService
-from src.tasks.image_tasks import _visual_character, _prepare_prompt
+from src.tasks.image_tasks import _generate_quality_candidates, _visual_character, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 
 
@@ -107,3 +108,49 @@ def test_composition_cannot_bypass_missing_review(project_data):
     _, project, scene, _, _ = project_data
     with pytest.raises(ReviewError, match="Missing production story"):
         require_generation_review(project, [scene])
+
+
+def test_image_generation_uses_multiple_quality_candidates(tmp_path, monkeypatch):
+    from PIL import Image
+    from src.services.generation_provider import ImageGenerationRequest, GenerationResult
+
+    class FakeProvider:
+        name = GenerationProviderName.LOCAL_COMFYUI
+
+        def __init__(self):
+            self.requests = []
+
+        def generate_image(self, request):
+            self.requests.append(request)
+            shade = 90 + len(self.requests) * 20
+            Image.new("RGB", (request.width, request.height), (shade, shade, shade)).save(request.output_path)
+            return GenerationResult("local_comfyui", request.output_path, "image", {})
+
+    provider = FakeProvider()
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_CANDIDATES", 3)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 0)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_MIN_SCORE", 0.0)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+    request = ImageGenerationRequest(
+        prompt="cinematic short drama still",
+        negative_prompt="blurry",
+        output_path=str(tmp_path / "scene.png"),
+        width=512,
+        height=512,
+        steps=28,
+        cfg_scale=6.0,
+        seed=123,
+    )
+
+    final_path, report = _generate_quality_candidates(
+        provider,
+        request,
+        {"scene_number": 1, "visual_description": "A woman opens a letter"},
+        reference_image=None,
+    )
+
+    assert final_path == request.output_path
+    assert Path(final_path).is_file()
+    assert len(provider.requests) == 3
+    assert len({item.seed for item in provider.requests}) == 3
+    assert report["kind"] == "image_candidate_selection"
