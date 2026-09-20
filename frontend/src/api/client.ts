@@ -193,6 +193,20 @@ export const projectApi = {
     }> => {
         return apiClient.post(`/projects/${id}/regenerate-images`);
     },
+
+    repairScene: async (id: number, data: {scene_number: number; action: string}): Promise<{
+        task_id: string;
+        project_id: number;
+        status: string;
+        progress: number;
+        current_step: string;
+        total_steps: number;
+        created_at: string;
+        updated_at: string;
+        error_message?: string;
+    }> => {
+        return apiClient.post(`/projects/${id}/repair-scene`, data);
+    },
 };
 
 /**

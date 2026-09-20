@@ -145,6 +145,36 @@ def test_short_drama_scene_count_block_returns_actionable_400(setup, monkeypatch
     assert "current project has 1" in response.json()["detail"]
 
 
+def test_repair_scene_keyframe_creates_targeted_task(setup, monkeypatch):
+    client, db, _ = setup
+    chain = Mock()
+    chain.freeze.return_value.id = "repair-task-id"
+    monkeypatch.setattr("src.services.task_orchestrator.generate_image_task.si", Mock(return_value=chain))
+
+    response = client.post(
+        "/api/projects/1/repair-scene",
+        json={"scene_number": 1, "action": "refine_prompt_composition"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["task_id"] == "repair-task-id"
+    scene = db.query(Scene).filter(Scene.project_id == 1, Scene.scene_number == 1).one()
+    assert scene.image_path is None and scene.video_path is None
+    chain.apply_async.assert_called_once()
+
+
+def test_repair_scene_rejects_non_executable_action(setup):
+    client, db, _ = setup
+
+    response = client.post(
+        "/api/projects/1/repair-scene",
+        json={"scene_number": 1, "action": "split_scene"},
+    )
+
+    assert response.status_code == 400
+    assert "拆" in response.json()["detail"]
+
+
 def test_production_readiness_reports_scene_and_review_gaps(setup, monkeypatch):
     client, db, _ = setup
     monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)

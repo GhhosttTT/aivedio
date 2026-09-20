@@ -132,6 +132,82 @@ class TaskOrchestrator:
             raise
         return result.id
 
+    def create_scene_repair_task(
+        self,
+        project_id: int,
+        scene_number: int,
+        action: str,
+    ) -> str:
+        project = self.db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise ValueError(f"项目不存在: {project_id}")
+        if project.status == ProjectStatus.IN_PRODUCTION:
+            raise ValueError("项目正在制作，请等待当前任务结束")
+        scene = self.db.query(Scene).filter(
+            Scene.project_id == project_id,
+            Scene.scene_number == scene_number,
+        ).first()
+        if not scene:
+            raise ValueError(f"分镜不存在: {scene_number}")
+
+        image_actions = {"regenerate_keyframe_with_prop_constraints", "refine_prompt_composition"}
+        video_actions = {"lower_motion_and_regenerate_video"}
+        blocked_actions = {
+            "regenerate_character_identity": "请先在角色参考页重新生成身份方案和参考图，再重做关键帧。",
+            "split_scene": "请先把该分镜拆成更简单的原子镜头，再重新生成。",
+            "start_local_reviewer": "请先启动 llama.cpp 视觉审核服务，再重跑审核或生成。",
+            "manual_review": "该问题需要人工复核后再选择具体返工动作。",
+        }
+        if action in blocked_actions:
+            raise ValueError(blocked_actions[action])
+        if action not in image_actions | video_actions:
+            raise ValueError(f"不支持的返工动作: {action}")
+        if action in video_actions and not scene.image_path:
+            raise ValueError("视频返工需要先有已通过的关键帧，请先重做关键帧。")
+
+        task_model = TaskModel(
+            project_id=project_id,
+            celery_task_id=str(uuid4()),
+            status=TaskStatus.PENDING,
+            progress=0.0,
+            total_steps=1,
+            current_step=0,
+        )
+        self.db.add(task_model)
+        self.db.flush()
+
+        project.final_video_path = None
+        if action in image_actions:
+            scene.image_path = None
+            scene.video_path = None
+            task = generate_image_task.si(
+                scene.id,
+                scene.image_prompt or scene.visual_description,
+                project_id,
+                task_model.id,
+                repair_action=action,
+            )
+        else:
+            scene.video_path = None
+            task = generate_video_task.si(
+                scene.id,
+                project_id,
+                task_model.id,
+                repair_action=action,
+            )
+
+        result = task.freeze()
+        task_model.celery_task_id = result.id
+        self.db.commit()
+        try:
+            task.apply_async()
+        except Exception as exc:
+            task_model.status = TaskStatus.FAILED
+            task_model.error_message = f"返工任务投递失败: {exc}"
+            self.db.commit()
+            raise
+        return result.id
+
     def _calculate_total_steps(
         self,
         scene_count: int,

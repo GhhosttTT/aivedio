@@ -57,6 +57,14 @@ function labelRepairAction(action?: string) {
     return repairActionLabels[action || ''] || action || '未知动作';
 }
 
+function executableRepair(action?: string, sceneNumber?: number) {
+    return Boolean(sceneNumber && action && [
+        'regenerate_keyframe_with_prop_constraints',
+        'refine_prompt_composition',
+        'lower_motion_and_regenerate_video',
+    ].includes(action));
+}
+
 function reportTitle(key: string) {
     if (key.startsWith('scene_')) return `分镜 ${key.replace('scene_', '')} 抽帧审核`;
     return names[key] || key;
@@ -128,7 +136,15 @@ function SeedDanceComparison({projectId, report}: {projectId: number; report: an
     </div>;
 }
 
-function ReviewSummary({summary}: {summary?: GenerationReviewSummary}) {
+function ReviewSummary({
+    summary,
+    busy,
+    onRepair,
+}: {
+    summary?: GenerationReviewSummary;
+    busy: boolean;
+    onRepair: (sceneNumber: number, action: string) => void;
+}) {
     if (!summary) return null;
     const reportEntries = Object.entries(summary.reports || {}).filter(([key]) => !key.startsWith('story_attempt'));
     const isReady = summary.status === 'ready';
@@ -157,10 +173,11 @@ function ReviewSummary({summary}: {summary?: GenerationReviewSummary}) {
                     <strong>{count}</strong>
                 </div>)}
             </div>
-            {summary.repair_queue.items?.slice(0, 6).map((item, index) => <p key={`${item.source_report}-${item.action}-${index}`} className={`wb-issue ${item.priority === 'high' ? 'blocker' : 'warning'}`}>
+            {summary.repair_queue.items?.slice(0, 6).map((item, index) => <div key={`${item.source_report}-${item.action}-${index}`} className={`wb-issue ${item.priority === 'high' ? 'blocker' : 'warning'}`}>
                 <span>{item.priority === 'high' ? '高' : '中'}</span>
-                {item.scene_number ? `分镜 ${item.scene_number} · ` : ''}{labelRepairAction(item.action)}：{item.recommendation || item.reason}
-            </p>)}
+                <p>{item.scene_number ? `分镜 ${item.scene_number} · ` : ''}{labelRepairAction(item.action)}：{item.recommendation || item.reason}</p>
+                {executableRepair(item.action, item.scene_number) && <button className="wb-button" disabled={busy} onClick={() => onRepair(Number(item.scene_number), String(item.action))}>执行</button>}
+            </div>)}
         </div> : null}
         {reportEntries.length > 0 && <div className="wb-grid compact" aria-label="报告状态">
             {reportEntries.map(([key, statusValue]) => <div className="wb-kv" key={key}>
@@ -205,6 +222,20 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
         }
     };
 
+    const runRepair = async (sceneNumber: number, action: string) => {
+        setBusy(true);
+        setError('');
+        try {
+            await projectApi.repairScene(projectId, {scene_number: sceneNumber, action});
+            setError(`已提交分镜 ${sceneNumber} 的返工任务`);
+            await load();
+        } catch (e) {
+            setError(errorText(e));
+        } finally {
+            setBusy(false);
+        }
+    };
+
     useEffect(() => { load(); }, [projectId, updatedAt]);
 
     return <section aria-label="质量审核">
@@ -213,7 +244,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <button className="wb-icon" aria-label="刷新审核" title="刷新审核" onClick={load}><RefreshCw size={17}/></button>
         </div>
         {error && <p className="wb-alert" role="alert">{error}</p>}
-        <ReviewSummary summary={summary}/>
+        <ReviewSummary summary={summary} busy={busy} onRepair={runRepair}/>
         <section className="wb-panel" aria-label="Seed Dance 基线对比">
             <div className="wb-row wb-between">
                 <div>

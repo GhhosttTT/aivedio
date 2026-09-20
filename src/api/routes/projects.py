@@ -18,6 +18,7 @@ from src.api.schemas import (
     ProjectListResponse,
     GenerateScriptRequest,
     RegenerateSceneRequest,
+    RepairSceneRequest,
     MessageResponse,
     ProductionTaskResponse
 )
@@ -48,6 +49,10 @@ def _production_error_status(message: str) -> int:
         or "Short-drama production requires" in message
         or "项目不存在" in message
         or "项目没有分镜" in message
+        or "分镜不存在" in message
+        or "不支持的返工动作" in message
+        or "返工需要" in message
+        or "请先" in message
         or "短剧" in message
         or "not ready" in message
     ):
@@ -822,6 +827,53 @@ async def regenerate_images(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="重新生成图像时发生错误"
+        )
+
+
+@router.post("/{project_id}/repair-scene", response_model=ProductionTaskResponse)
+async def repair_scene_generation(
+    project_id: int,
+    request: RepairSceneRequest,
+    db_session: Session = Depends(get_db_session),
+):
+    try:
+        task_orchestrator = TaskOrchestrator(db_session)
+        celery_task_id = task_orchestrator.create_scene_repair_task(
+            project_id,
+            request.scene_number,
+            request.action,
+        )
+        from src.database.models import Task as TaskModel
+        task_record = db_session.query(TaskModel).filter(
+            TaskModel.celery_task_id == celery_task_id
+        ).first()
+        if not task_record:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="返工任务记录创建失败",
+            )
+        return ProductionTaskResponse(
+            task_id=task_record.celery_task_id,
+            project_id=task_record.project_id,
+            status=task_record.status.value,
+            progress=task_record.progress,
+            current_step=str(task_record.current_step),
+            total_steps=task_record.total_steps,
+            created_at=task_record.created_at,
+            updated_at=task_record.updated_at,
+            error_message=task_record.error_message,
+        )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        detail = str(e)
+        logger.warning(f"返工任务被阻断: {detail}")
+        raise HTTPException(status_code=_production_error_status(detail), detail=detail)
+    except Exception as e:
+        logger.error(f"创建返工任务失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="创建返工任务时发生错误",
         )
 
 

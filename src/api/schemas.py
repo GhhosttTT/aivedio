@@ -264,6 +264,11 @@ class SceneUpdate(BaseModel):
     character_name: Optional[str] = Field(None, max_length=100)
 
 
+class RepairSceneRequest(BaseModel):
+    scene_number: int = Field(..., ge=1, description="需要返工的分镜编号")
+    action: str = Field(..., min_length=1, max_length=100, description="返工队列中的动作")
+
+
 # ==================== 任务相关模型 ====================
 
 class ProductionTaskResponse(BaseModel):
