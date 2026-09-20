@@ -306,6 +306,10 @@ class ComfyUIService:
                     except ValueError:
                         logger.warning(f"无效的质量模式: {quality_mode}，使用默认值")
                 
+                custom_params = {"cfg_scale": cfg_scale}
+                if quality_mode_enum not in {QualityMode.HIGH_QUALITY, QualityMode.ULTRA}:
+                    custom_params["steps"] = steps
+
                 # 优化参数
                 optimized_params = self.parameter_optimizer.optimize(
                     scene_type=scene_type_enum,
@@ -314,14 +318,16 @@ class ComfyUIService:
                     gpu_vram_gb=gpu_vram_gb,
                     base_width=width,
                     base_height=height,
-                    custom_params={
-                        "steps": steps,
-                        "cfg_scale": cfg_scale
-                    }
+                    custom_params=custom_params
                 )
                 
-                # 应用优化后的参数
-                steps = optimized_params.steps
+                # 应用优化后的参数。高质量模式允许优化器把采样步数抬高，
+                # 但保留任务层返修已经提高过的更强参数。
+                optimized_steps = optimized_params.steps
+                if quality_mode_enum in {QualityMode.HIGH_QUALITY, QualityMode.ULTRA}:
+                    steps = max(steps, optimized_steps)
+                else:
+                    steps = optimized_steps
                 cfg_scale = optimized_params.cfg_scale
                 width = optimized_params.width
                 height = optimized_params.height

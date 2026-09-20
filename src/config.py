@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     GENERATION_BLOCK_COMPLEX_SHOTS: bool = False
     GENERATION_QUALITY_PROMPT_APPEND: str = "clean cinematic composition, coherent anatomy, readable main action, balanced lighting, polished short-drama keyframe"
     GENERATION_QUALITY_NEGATIVE_APPEND: str = "amateur snapshot, dull composition, muddy lighting, deformed face, deformed hands, broken fingers, extra people, random text, logo, watermark, bad crop, messy background"
+    GENERATION_ENABLE_PROMPT_OPTIMIZATION: bool = True
+    GENERATION_ENABLE_PARAMETER_OPTIMIZATION: bool = True
 
     # IP-Adapter FaceID配置
     FACEID_WEIGHT: float = 0.85

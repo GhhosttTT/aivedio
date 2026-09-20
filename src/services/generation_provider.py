@@ -17,6 +17,7 @@ from typing import Dict, Optional, Protocol
 
 import httpx
 
+from src.config import settings
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -102,6 +103,15 @@ class LocalComfyUIProvider:
         return self._comfyui_service
 
     def generate_image(self, request: ImageGenerationRequest) -> GenerationResult:
+        high_quality_request = str(request.quality_mode or "").lower() in {"high_quality", "ultra"}
+        enable_prompt_optimization = bool(
+            settings.GENERATION_ENABLE_PROMPT_OPTIMIZATION
+            and (high_quality_request or request.optimization_mode)
+        )
+        enable_parameter_optimization = bool(
+            settings.GENERATION_ENABLE_PARAMETER_OPTIMIZATION
+            and high_quality_request
+        )
         output_path = self.comfyui_service.generate_image(
             prompt=request.prompt,
             negative_prompt=request.negative_prompt,
@@ -117,8 +127,8 @@ class LocalComfyUIProvider:
             quality_mode=request.quality_mode,
             optimization_mode=request.optimization_mode,
             enable_realism=False,
-            enable_prompt_optimization=False,
-            enable_parameter_optimization=False,
+            enable_prompt_optimization=enable_prompt_optimization,
+            enable_parameter_optimization=enable_parameter_optimization,
         )
         return GenerationResult(
             provider=self.name.value,

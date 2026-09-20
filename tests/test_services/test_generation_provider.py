@@ -55,6 +55,27 @@ def test_local_comfyui_provider_delegates_image_generation():
     assert service.last_kwargs["enable_parameter_optimization"] is False
 
 
+def test_local_comfyui_provider_enables_optimizers_for_ultra_quality(monkeypatch):
+    service = FakeComfyUIService()
+    provider = LocalComfyUIProvider(comfyui_service=service)
+    monkeypatch.setattr("src.services.generation_provider.settings.GENERATION_ENABLE_PROMPT_OPTIMIZATION", True)
+    monkeypatch.setattr("src.services.generation_provider.settings.GENERATION_ENABLE_PARAMETER_OPTIMIZATION", True)
+
+    provider.generate_image(
+        ImageGenerationRequest(
+            prompt="raw photo, short drama shot",
+            output_path="storage/project_1/images/scene_1.png",
+            quality_mode="ultra",
+            optimization_mode="quality",
+        )
+    )
+
+    assert service.last_kwargs["quality_mode"] == "ultra"
+    assert service.last_kwargs["optimization_mode"] == "quality"
+    assert service.last_kwargs["enable_prompt_optimization"] is True
+    assert service.last_kwargs["enable_parameter_optimization"] is True
+
+
 @pytest.mark.parametrize(
     "provider_cls,prefix",
     [

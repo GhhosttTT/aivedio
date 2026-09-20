@@ -21,6 +21,7 @@ class TestOptimizerIntegration:
         with patch('src.services.comfyui_service.httpx.Client'):
             service = ComfyUIService()
             # 模拟 _submit_and_wait 方法
+            service.preflight = Mock()
             service._submit_and_wait = Mock(return_value="/path/to/image.png")
             return service
     
@@ -52,6 +53,23 @@ class TestOptimizerIntegration:
         
         assert result == "/path/to/image.png"
         assert mock_comfyui_service._submit_and_wait.called
+
+    def test_ultra_parameter_optimization_raises_sampler_steps(self, mock_comfyui_service):
+        """测试 ultra 模式会真正提高采样步数"""
+        mock_comfyui_service.generate_image(
+            prompt="cinematic short drama keyframe",
+            steps=28,
+            enable_prompt_optimization=False,
+            enable_parameter_optimization=True,
+            quality_mode="ultra",
+        )
+
+        workflow = mock_comfyui_service._submit_and_wait.call_args.args[0]
+        sampler = next(
+            node for node in workflow.values()
+            if node.get("class_type") == "KSampler"
+        )
+        assert sampler["inputs"]["steps"] >= 45
     
     def test_generate_image_with_both_optimizations(self, mock_comfyui_service):
         """测试同时启用两个优化器"""
@@ -218,6 +236,7 @@ class TestOptimizerIntegration:
         result = mock_comfyui_service.generate_image(
             prompt="a beautiful woman",
             reference_image="/path/to/reference.png",
+            use_ipadapter=False,
             scene_type="portrait",
             quality_mode="high_quality"
         )
@@ -249,6 +268,7 @@ class TestOptimizerIntegrationWithRealOptimizers:
         with patch('src.services.comfyui_service.httpx.Client'):
             service = ComfyUIService()
             # 模拟 _submit_and_wait 方法
+            service.preflight = Mock()
             service._submit_and_wait = Mock(return_value="/path/to/image.png")
             return service
     
