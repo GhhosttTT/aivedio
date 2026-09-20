@@ -173,6 +173,22 @@ class CharacterAssetPackResponse(BaseModel):
     asset_pack: dict
 
 
+class SpatialAssetFreezeRequest(BaseModel):
+    """
+    冻结项目空间连续性资产包
+    """
+    notes: Optional[str] = Field(None, max_length=500, description="空间/机位审核备注")
+
+
+class SpatialAssetPackResponse(BaseModel):
+    """
+    项目空间连续性资产包响应
+    """
+    project_id: int
+    status: str
+    asset_pack: dict
+
+
 class SceneResponse(BaseModel):
     """
     分镜响应模型

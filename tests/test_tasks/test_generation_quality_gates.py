@@ -119,6 +119,11 @@ def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_dat
     assert "Spatial continuity contract" in plan.director_prompt
     assert plan.spatial_plan["shot_scale"] in {"medium shot", "medium two-shot", "wide establishing shot", "close-up"}
     assert plan.spatial_plan["character_positions"]["Alice"] == "center foreground"
+    assert set(plan.spatial_plan["control_references"]) == {
+        "pose_reference_prompt",
+        "depth_reference_prompt",
+        "camera_reference_prompt",
+    }
     assert "End frame:" in plan.end_frame_prompt
     assert "identity drift" in plan.negative_prompt
 

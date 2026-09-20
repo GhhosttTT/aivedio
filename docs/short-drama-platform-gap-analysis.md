@@ -126,6 +126,9 @@ Already implemented or partially implemented:
 - Shot prompt compiler and complexity checks for overloaded scenes.
 - Director-led video shot plans with duration, motion, prompt, negative prompt,
   end-frame prompt, and candidate reports.
+- Project-level spatial asset packs can freeze shot scale, camera angle, camera
+  axis, character positions, prop focus, and pose/depth/camera control prompts
+  before rendering.
 - Multiple image and video candidates with quality review hooks.
 - Production video engine preflight and draft fallback separation.
 - ASR, local translation, subtitle rendering, localization quality checks, and
@@ -265,6 +268,10 @@ Priority 4: Add spatial planning.
 - Store room layout, camera angle, shot scale, character position, prop
   position, and pose/depth/control references.
 - Use this data in image and video prompts.
+- Current implementation can freeze the project spatial plan with
+  `POST /api/projects/{project_id}/freeze-spatial-plan`. Production readiness
+  blocks final generation when the pack is missing or stale after script,
+  dialogue, visible-character, or spatial-plan changes.
 
 Priority 5: Add repair queue.
 

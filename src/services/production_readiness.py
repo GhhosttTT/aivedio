@@ -14,6 +14,7 @@ from src.services.character_service import get_character_manager
 from src.services.character_identity_service import CharacterIdentityService, FACIAL_FIELDS, load_identity_spec
 from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.shot_complexity_service import ShotComplexityService
+from src.services.spatial_control_assets import SpatialControlAssetService
 from src.services.story_room_quality import StoryRoomQualityService
 from src.services.video_director_service import get_video_director_service
 from src.services.video_engine_preflight import preflight_production_video_engine
@@ -66,7 +67,7 @@ class ProductionReadinessService:
             "visual_format": self._visual_format_check(warnings),
             "characters": self._character_check(project, scenes, characters, blockers, warnings),
             "shot_complexity": self._shot_complexity_check(project, scenes, blockers, warnings),
-            "spatial_continuity": self._spatial_continuity_check(project, scenes, warnings),
+            "spatial_continuity": self._spatial_continuity_check(project, scenes, characters, blockers, warnings),
             "reviewer": self._reviewer_check(warnings),
             "sample_validation": self._sample_validation_check(warnings),
         }
@@ -413,6 +414,8 @@ class ProductionReadinessService:
         self,
         project: Project,
         scenes: list[Scene],
+        characters: list[Character],
+        blockers: list[ReadinessIssue],
         warnings: list[ReadinessIssue],
     ) -> dict:
         script_scenes = self._script_scene_map(project)
@@ -446,10 +449,27 @@ class ProductionReadinessService:
                 f"Review spatial continuity plans for scenes: {scene_numbers}.",
                 severity="warning",
             ))
+        asset_pack = SpatialControlAssetService().validate_project_pack(project, scenes, characters)
+        if asset_pack.get("status") == "missing":
+            blockers.append(ReadinessIssue(
+                "missing_spatial_asset_pack",
+                "Freeze the project spatial plan before final production.",
+            ))
+        elif asset_pack.get("status") != "valid":
+            blockers.append(ReadinessIssue(
+                "stale_spatial_asset_pack",
+                "Re-freeze the project spatial plan before final production: "
+                + ", ".join(asset_pack.get("stale") or [asset_pack.get("status", "unknown")]),
+            ))
         return {
             "status": "weak" if weak else "planned",
             "summary": {"total": len(reports), "weak": len(weak)},
             "scenes": reports,
+            "asset_pack": {
+                "status": asset_pack.get("status"),
+                "stale": asset_pack.get("stale", []),
+                "scene_stale": asset_pack.get("scene_stale", []),
+            },
         }
 
     def _video_engine_check(self, blockers: list[ReadinessIssue]) -> dict:

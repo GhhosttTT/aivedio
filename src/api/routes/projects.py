@@ -20,15 +20,18 @@ from src.api.schemas import (
     RegenerateSceneRequest,
     RepairSceneRequest,
     MessageResponse,
-    ProductionTaskResponse
+    ProductionTaskResponse,
+    SpatialAssetFreezeRequest,
+    SpatialAssetPackResponse,
 )
 from src.api.dependencies import get_current_user, require_project_access
 from src.services.project_manager import ProjectManager, get_project_manager
 from src.services.script_generator import ScriptGenerator, get_script_generator
 from src.services.task_orchestrator import TaskOrchestrator, get_task_orchestrator
 from src.services.production_readiness import ProductionReadinessService
+from src.services.spatial_control_assets import SpatialControlAssetService
 from src.database.session import get_db_session
-from src.database.models import ProjectStatus
+from src.database.models import Character, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
 from src.utils.logger import get_logger
 
@@ -197,6 +200,40 @@ async def get_production_readiness(
     return ProductionReadinessService(db_session).build_report(
         project_id,
         include_engine_preflight=include_engine_preflight,
+    )
+
+
+@router.post("/{project_id}/freeze-spatial-plan", response_model=SpatialAssetPackResponse)
+async def freeze_spatial_plan(
+    project_id: int,
+    request: SpatialAssetFreezeRequest,
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    from src.database.models import Project
+
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    scenes = (
+        db_session.query(Scene)
+        .filter(Scene.project_id == project_id)
+        .order_by(Scene.scene_number)
+        .all()
+    )
+    if not scenes:
+        raise HTTPException(status_code=409, detail="请先生成分镜再冻结空间计划")
+    characters = db_session.query(Character).filter(Character.project_id == project_id).all()
+    asset_pack = SpatialControlAssetService().freeze_project_pack(
+        project=project,
+        scenes=scenes,
+        characters=characters,
+        notes=request.notes or "",
+    )
+    return SpatialAssetPackResponse(
+        project_id=project_id,
+        status=asset_pack["status"],
+        asset_pack=asset_pack,
     )
 
 

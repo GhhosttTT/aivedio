@@ -226,6 +226,19 @@ class VideoDirectorService:
             + (f"; prop focus: {prop_focus}" if prop_focus else "")
             + f"; {axis}."
         )
+        control_references = {
+            "pose_reference_prompt": (
+                f"Pose control for {shot_scale}: "
+                + ", ".join(f"{name} {position}" for name, position in positions.items())
+                + "; one readable short-drama action beat; stable limbs and eye lines."
+            ),
+            "depth_reference_prompt": (
+                f"Depth control: {shot_scale}, foreground subject separation, stable room geometry"
+                + (f", prop {prop_focus} remains visible" if prop_focus else "")
+                + "."
+            ),
+            "camera_reference_prompt": f"Camera control: {camera_angle}; {axis}",
+        }
         return {
             "shot_scale": shot_scale,
             "camera_angle": camera_angle,
@@ -233,6 +246,7 @@ class VideoDirectorService:
             "character_positions": positions,
             "prop_focus": prop_focus,
             "continuity_prompt": continuity,
+            "control_references": control_references,
         }
 
     def _prop_focus(self, prompt: str) -> str:
