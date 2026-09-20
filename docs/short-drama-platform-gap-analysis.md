@@ -130,8 +130,8 @@ Already implemented or partially implemented:
   source-video localization modules.
 - Seed Dance baseline comparison script and production validation summary.
 - Production readiness reports surface script, rhythm, visual format,
-  character, shot complexity, spatial continuity, reviewer, video-engine, and
-  sample-validation status.
+  story-room quality, character, shot complexity, spatial continuity, reviewer,
+  video-engine, and sample-validation status.
 
 ## Major Gaps
 
@@ -227,6 +227,10 @@ Priority 1: Stop bad projects before generation.
   enabled and draft fallback is disabled.
 - This keeps quick draft mode available while preventing underplanned scripts
   from being treated as final short-drama production.
+- Current implementation also reports `story_room` quality in production
+  readiness. It checks topic/market brief, early hook, dialogue or reaction
+  drive, escalation cadence, reversal, ending hook, emotional progression, and
+  overloaded non-atomic shots before expensive rendering starts.
 
 Priority 2: Add a production readiness report endpoint.
 

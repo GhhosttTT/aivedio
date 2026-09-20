@@ -226,7 +226,12 @@ def test_production_readiness_reports_weak_story_rhythm(setup):
     rhythm = payload["checks"]["story_rhythm"]
     assert rhythm["status"] in {"warn", "weak"}
     assert {"hook", "escalation", "reversal", "ending_hook"}.issubset(set(rhythm["missing"]))
+    story_room = payload["checks"]["story_room"]
+    assert story_room["status"] == "weak"
+    assert "market_brief" in story_room["missing"]
+    assert story_room["rewrite_actions"]
     assert any(item["code"] == "weak_story_rhythm" for item in payload["warnings"])
+    assert any(item["code"] == "weak_story_room_quality" for item in payload["warnings"])
 
 
 def test_production_readiness_requires_real_sample_validation_summary(setup):

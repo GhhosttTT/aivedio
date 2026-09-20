@@ -14,6 +14,7 @@ from src.services.character_service import get_character_manager
 from src.services.character_identity_service import CharacterIdentityService, FACIAL_FIELDS, load_identity_spec
 from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.shot_complexity_service import ShotComplexityService
+from src.services.story_room_quality import StoryRoomQualityService
 from src.services.video_director_service import get_video_director_service
 from src.services.video_engine_preflight import preflight_production_video_engine
 from src.utils.storage import storage_manager
@@ -61,6 +62,7 @@ class ProductionReadinessService:
         checks = {
             "script": self._script_check(project, scenes, blockers),
             "story_rhythm": self._story_rhythm_check(project, scenes, warnings),
+            "story_room": self._story_room_check(project, scenes, warnings),
             "visual_format": self._visual_format_check(warnings),
             "characters": self._character_check(project, scenes, characters, blockers, warnings),
             "shot_complexity": self._shot_complexity_check(project, scenes, blockers, warnings),
@@ -226,6 +228,21 @@ class ProductionReadinessService:
                 "ending_hook": ending_hook_score,
             },
         }
+
+    def _story_room_check(
+        self,
+        project: Project,
+        scenes: list[Scene],
+        warnings: list[ReadinessIssue],
+    ) -> dict:
+        report = StoryRoomQualityService().evaluate(project, scenes, self._script_scene_map(project)).to_dict()
+        if report["status"] != "passed":
+            warnings.append(ReadinessIssue(
+                "weak_story_room_quality",
+                "Improve story-room quality before final production: " + ", ".join(report["missing"]),
+                severity="warning",
+            ))
+        return report
 
     def _character_check(
         self,
