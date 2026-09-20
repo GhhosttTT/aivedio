@@ -10,8 +10,10 @@ from loguru import logger
 from src.config import settings
 from src.services.character_reference_generator import CharacterReferenceGenerator
 from src.services.comfyui_service import ComfyUIService
+from src.services.generation_review import ReviewError, write_report
 from src.services.image_quality_service import ImageQualitySelector
 from src.services.llm_service import get_llm_service
+from src.services.turnaround_quality import attach_turnaround_quality_gate
 
 
 class CharacterReferenceAutoGenerator:
@@ -220,6 +222,7 @@ class CharacterReferenceAutoGenerator:
                     candidate_prefix=f"turnaround_{view}_candidate",
                     report_name=f"turnaround_{view}_quality.json",
                     review_payload=_turnaround_review_payload(character_name, character_data, view),
+                    turnaround_view=view,
                 )
                 selected_views[view] = selected["reference_image_path"]
                 quality_reports[view] = selected["quality_report"]
@@ -256,6 +259,7 @@ class CharacterReferenceAutoGenerator:
         candidate_prefix: str = "reference_candidate",
         report_name: str = "reference_quality.json",
         review_payload: Optional[Dict] = None,
+        turnaround_view: Optional[str] = None,
     ) -> Dict:
         character_dir = Path(save_dir) / character_name.replace(" ", "_")
         character_dir.mkdir(parents=True, exist_ok=True)
@@ -288,16 +292,40 @@ class CharacterReferenceAutoGenerator:
                 prompt,
                 None,
             )
+            if turnaround_view:
+                attach_turnaround_quality_gate(
+                    report,
+                    turnaround_view,
+                    character_data,
+                    settings.GENERATION_TURNAROUND_FEATURE_MIN_SCORE,
+                )
             report["path"] = result_path
             report["request"] = {"seed": seed, "steps": min(max(settings.GENERATION_STEPS, 28) + index * 4, 48), "cfg_scale": settings.GENERATION_CFG}
             candidates.append(report)
+        report_path = character_dir / report_name
         selection = selector.select_best(
             candidates,
             final_path,
-            character_dir / report_name,
+            report_path,
             min_average=settings.GENERATION_IMAGE_MIN_SCORE,
             require_vlm=settings.GENERATION_REQUIRE_IMAGE_REVIEW,
         )
+        if turnaround_view:
+            selected = next(
+                (candidate for candidate in selection.get("candidates", []) if candidate.get("index") == selection.get("best_index")),
+                {},
+            )
+            selection["turnaround_view"] = turnaround_view
+            selection["turnaround_gate"] = selected.get("turnaround_gate", {})
+            write_report(report_path, selection)
+            if (
+                settings.GENERATION_REQUIRE_IMAGE_REVIEW
+                and selection["turnaround_gate"].get("status") != "passed"
+            ):
+                raise ReviewError(
+                    f"Turnaround {turnaround_view} feature gate failed: "
+                    + ", ".join(selection["turnaround_gate"].get("missing") or selection["turnaround_gate"].get("low", {}).keys())
+                )
         return {
             "reference_image_path": str(final_path),
             "candidate_images": [candidate["path"] for candidate in candidates],

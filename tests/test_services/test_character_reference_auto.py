@@ -6,6 +6,7 @@ from src.services.character_reference_auto import (
     CharacterReferenceAutoGenerator,
     _reference_review_payload,
 )
+from src.services.turnaround_quality import TURNAROUND_FEATURES
 
 
 class FakeComfyUI:
@@ -128,3 +129,5 @@ def test_turnaround_album_generation_selects_each_required_view(tmp_path, monkey
     assert any("90 degree side view" in prompt for prompt in prompts)
     assert any("strict rear turnaround view" in prompt for prompt in prompts)
     assert Path(tmp_path / "林安" / "turnaround_front_quality.json").is_file()
+    assert result["quality_reports"]["front"]["turnaround_gate"]["status"] == "needs_review"
+    assert set(result["quality_reports"]["side"]["turnaround_gate"]["scores"]) == set(TURNAROUND_FEATURES["side"])

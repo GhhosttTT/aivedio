@@ -188,3 +188,43 @@ def test_review_candidate_records_facial_identity_score(tmp_path):
     assert report["status"] == "passed"
     assert report["review"]["facial_identity"]["score"] == 5
     assert report["platform_score"] >= 4.0
+
+
+def test_review_candidate_accepts_turnaround_feature_scores(tmp_path):
+    image = tmp_path / "candidate.png"
+    make_image(image, (120, 120, 120))
+
+    class FakeReviewer:
+        def evaluate(self, _instruction, payload, schema, images=()):
+            assert payload["scene"]["turnaround_view"] == "side"
+            return schema.model_validate({
+                "prompt_alignment": {"score": 4, "evidence": "side profile prompt"},
+                "composition": {"score": 4, "evidence": "full body side view"},
+                "aesthetic_quality": {"score": 4, "evidence": "clean lighting"},
+                "visual_integrity": {"score": 4, "evidence": "no obvious anatomy defects"},
+                "facial_identity": {"score": 4, "evidence": "face profile matches"},
+                "identity_consistency": {"score": 4, "evidence": "wardrobe and body shape match"},
+                "turnaround_feature_scores": {
+                    "view_angle": {"score": 5, "evidence": "strict 90 degree side profile"},
+                    "nose_silhouette": {"score": 4, "evidence": "nose bridge readable"},
+                },
+                "reviewed_images": [1],
+                "issues": [],
+            })
+
+    report = ImageQualitySelector(reviewer=FakeReviewer()).review_candidate(
+        1,
+        image,
+        {
+            "scene_number": 1,
+            "visual_description": "side character turnaround reference",
+            "turnaround_view": "side",
+            "visible_characters": [
+                {"name": "Alice", "appearance": "woman, short black hair, green jacket"},
+            ],
+        },
+        "strict side profile",
+    )
+
+    assert report["status"] == "passed"
+    assert report["review"]["turnaround_feature_scores"]["view_angle"]["score"] == 5

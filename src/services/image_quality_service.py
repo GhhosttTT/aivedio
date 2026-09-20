@@ -28,6 +28,7 @@ class ImageReview(BaseModel):
     visual_integrity: Score
     facial_identity: Score
     identity_consistency: Score
+    turnaround_feature_scores: dict[str, Score] | None = None
     reviewed_images: list[StrictInt]
     issues: list[Issue] = Field(default_factory=list)
 
@@ -41,6 +42,9 @@ filter look.
 For facial_identity, compare visible face shape, eyes, nose, mouth, hair, apparent age, and distinctive facial traits
 against every expected character identity anchor. Penalize same-face characters and faces that drift from the anchor.
 For identity_consistency, also judge wardrobe, body shape, role separation, and whether all expected characters remain distinct.
+When scene.turnaround_view is present, also return turnaround_feature_scores. Score each required front/side/back feature
+from scene.reference_requirements and scene.identity independently: view angle, facial features, hairstyle silhouette,
+body proportion, wardrobe silhouette, and whether the image accidentally uses the wrong angle.
 Reject images with deformed faces or hands, muddy lighting, bad crop, tiny unreadable faces, unreadable scene action,
 extra people, wrong wardrobe, changed face, artificial plastic skin, same-face characters, random text, logo,
 watermark, or broken anatomy.

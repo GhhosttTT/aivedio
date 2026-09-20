@@ -70,3 +70,25 @@ def test_workflow_profile_tracks_postprocess_command(tmp_path, monkeypatch):
 
     assert report["status"] == "blocked"
     assert "quality_gate_image_postprocess_command_hash" in report["stale"]
+
+
+def test_workflow_profile_tracks_turnaround_feature_gate(tmp_path, monkeypatch):
+    image = tmp_path / "image_workflow.json"
+    video = tmp_path / "video_workflow.json"
+    profile = tmp_path / "profile.json"
+    image.write_text("{}", encoding="utf-8")
+    video.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", "")
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_TURNAROUND_FEATURE_MIN_SCORE", 4.0)
+
+    service = ProductionWorkflowProfileService()
+    manifest = service.freeze_profile(profile_path=str(profile))
+    assert manifest["quality_gates"]["turnaround_feature_min_score"] == 4.0
+
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_TURNAROUND_FEATURE_MIN_SCORE", 4.5)
+    report = service.validate_profile(profile_path=str(profile))
+
+    assert report["status"] == "blocked"
+    assert "quality_gate_turnaround_feature_min_score" in report["stale"]
