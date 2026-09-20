@@ -17,6 +17,8 @@ export function ProductionReadinessPanel({
     const label = blocked ? '生产被阻断' : warning ? '可草稿生成，正式成片需复查' : report ? '生产就绪' : '检查中';
     const issues = [...(report?.blockers || []), ...(report?.warnings || [])].slice(0, 5);
     const script = report?.checks.script;
+    const storyRhythm = report?.checks.story_rhythm;
+    const visualFormat = report?.checks.visual_format;
     const characters = report?.checks.characters;
     const complexity = report?.checks.shot_complexity;
     const spatial = report?.checks.spatial_continuity;
@@ -37,6 +39,8 @@ export function ProductionReadinessPanel({
             </div>
             <div className="wb-grid compact">
                 <Metric label="分镜" value={script ? `${script.scene_count}/${script.minimum_production_scenes}` : '未检查'}/>
+                <Metric label="剧情节奏" value={storyRhythm ? `${storyRhythm.score}/5 ${storyRhythm.status}` : '未检查'}/>
+                <Metric label="成片画幅" value={visualFormat ? `${visualFormat.width}x${visualFormat.height}` : '未检查'}/>
                 <Metric label="角色身份" value={characters ? `${characters.characters.filter(item => item.has_identity_spec && !item.missing_identity_fields.length).length}/${characters.visible_character_names.length}` : '未检查'}/>
                 <Metric label="角色参考" value={characters ? `${characters.visible_character_names.length - characters.missing_references.length}/${characters.visible_character_names.length}` : '未检查'}/>
                 <Metric label="复杂镜头" value={complexity ? `${complexity.summary.needs_split} 阻断 / ${complexity.summary.warn} 警告` : '未检查'}/>

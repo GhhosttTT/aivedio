@@ -4,7 +4,7 @@ import pytest
 from PIL import Image
 
 from src.services.generation_review import ReviewError
-from src.services.image_quality_service import ImageQualitySelector, candidate_output_path
+from src.services.image_quality_service import IMAGE_REVIEW_RUBRIC, ImageQualitySelector, candidate_output_path
 
 
 def make_image(path: Path, color: tuple[int, int, int]) -> None:
@@ -14,6 +14,12 @@ def make_image(path: Path, color: tuple[int, int, int]) -> None:
 
 def test_candidate_output_path_keeps_final_extension():
     assert candidate_output_path("scene.png", 3) == "scene.candidate_03.png"
+
+
+def test_image_review_rubric_checks_mobile_short_drama_aesthetics():
+    assert "mobile short-drama platform" in IMAGE_REVIEW_RUBRIC
+    assert "readable face on a phone screen" in IMAGE_REVIEW_RUBRIC
+    assert "same-face characters" in IMAGE_REVIEW_RUBRIC
 
 
 def test_select_best_promotes_best_candidate(tmp_path):

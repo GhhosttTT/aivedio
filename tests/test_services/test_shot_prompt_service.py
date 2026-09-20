@@ -20,6 +20,9 @@ def test_concise_prompt_is_not_rewritten():
     prompt = "An empty railway platform, wide shot, overcast daylight, watercolor illustration"
     result = ShotPromptService(llm).compile(prompt)
     assert result.prompt.startswith(prompt)
+    assert "mobile short-drama composition" in result.prompt
+    assert "readable face" in result.prompt
+    assert "over-smoothed plastic skin" in result.negative_prompt
     llm.generate.assert_not_called()
     assert "cartoon" not in result.negative_prompt
 
@@ -31,6 +34,8 @@ def test_identity_is_prepended_verbatim_and_style_preserved():
     result = ShotPromptService(llm).compile("女孩在办公室门口拿着信", anchor)
     assert result.prompt.startswith(anchor)
     assert "anime" in result.prompt
+    assert "commercial lighting" in result.prompt
+    assert "same-face characters" in result.negative_prompt
     assert result.word_count <= 75
     llm.generate.assert_called_once()
 
@@ -76,4 +81,11 @@ def test_cached_prompt_allows_configured_quality_suffix(monkeypatch):
     monkeypatch.setattr(settings, "POSITIVE_PROMPT_SUFFIX", "natural symmetrical eyes, matching iris size, aligned pupils, consistent gaze direction")
     base = " ".join(f"word{i}" for i in range(75))
     prompt = f"{base}, {settings.POSITIVE_PROMPT_SUFFIX}"
+    assert ShotPromptService.validate_cached_prompt(prompt) == prompt
+
+
+def test_cached_prompt_allows_production_style_contract():
+    base = " ".join(f"word{i}" for i in range(75))
+    prompt = f"{base}, {ShotPromptService.PRODUCTION_STYLE_PROMPT}"
+
     assert ShotPromptService.validate_cached_prompt(prompt) == prompt

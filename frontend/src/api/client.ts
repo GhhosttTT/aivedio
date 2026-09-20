@@ -347,6 +347,20 @@ export interface ProductionReadinessReport {
             draft_fallback_enabled: boolean;
             has_script_json: boolean;
         };
+        story_rhythm?: {
+            status: string;
+            score: number;
+            missing: string[];
+            signals?: Record<string, any>;
+        };
+        visual_format?: {
+            status: string;
+            width: number;
+            height: number;
+            aspect_ratio: string;
+            target: string;
+            recommended?: {width: number; height: number};
+        };
         characters?: {
             total_characters: number;
             visible_character_names: string[];
