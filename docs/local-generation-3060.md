@@ -75,6 +75,7 @@ GENERATION_VIDEO_CANDIDATES=4
 GENERATION_VIDEO_REFINEMENT_PASSES=2
 GENERATION_VIDEO_MIN_SCORE=4.0
 GENERATION_VIDEO_PLATFORM_MIN_SCORE=4.1
+GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE=4.0
 GENERATION_REQUIRE_VIDEO_REVIEW=true
 ENABLE_DRAFT_MEDIA_FALLBACK=false
 CELERY_WORKER_CONCURRENCY=1
@@ -140,6 +141,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 
 视频候选选择除了平均分，还会单独检查身份和时间稳定性。`GENERATION_VIDEO_IDENTITY_MIN_SCORE=4.0` 要求 `facial_identity` 和 `identity_consistency` 都达到 4 分；`GENERATION_VIDEO_TEMPORAL_MIN_SCORE=4.0` 要求 `temporal_consistency` 达到 4 分。若一个候选平均分更高但脸漂或同脸，它会排在身份稳定候选之后；若正式审核开启且所有候选身份/时间门槛都失败，任务会进入失败并写入返修队列。
 视频还会计算 `GENERATION_VIDEO_PLATFORM_MIN_SCORE`，把剧情匹配、构图、商业美观、画面完整性、脸部身份、整体身份和时间连续性合成短剧平台分。这个分数用于拦截“技术上可用但不像红果/短剧平台成片”的候选，例如塑料皮肤、廉价滤镜、脏光、随机文字/水印、修复痕迹或手机屏幕上表情不可读。
+`GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE` 是视频平台美学子项门槛。VLM 返回 `video_aesthetic_scores` 时，系统会检查肤质稳定、灯光一致、色彩一致、手机可读性、动作顺滑、背景稳定和无闪烁修复痕迹；低分子项会拉低视频候选平台分。
 
 若配置 `COMFYUI_VIDEO_WORKFLOW_PATH`，视频阶段会改用本地 ComfyUI 图生视频 API workflow，适合接入 Wan、AnimateDiff、VideoHelperSuite 或其他本地视频节点。工作流 JSON 可使用 `{prompt}`、`{negative_prompt}`、`{reference_image}`、`{width}`、`{height}`、`{duration_seconds}`、`{fps}`、`{seed}`、`{output_prefix}`、`{motion_bucket_id}`、`{noise_aug_strength}` 占位符；执行时系统会上传当前关键帧并替换这些值。低分精修轮会把 motion/noise 下调，因此工作流应把这两个占位符接到对应的视频采样节点。留空时继续使用内置 SVD 服务。
 
@@ -155,13 +157,14 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 角色定妆包冻结前，项目内可见角色的 `distinctiveness_report` 必须通过；如果两个角色五官和服装过像，系统会拒绝冻结，要求重做其中一个角色身份方案。
 角色定妆后还应冻结项目空间计划：调用 `POST /api/projects/{project_id}/freeze-spatial-plan`，把每个分镜的景别、机位、轴线、人物站位、道具焦点和 pose/depth/camera 控制提示写入 `spatial_asset_pack.json`。如果分镜、对白、可见角色或空间计划变化，生产就绪检查会要求重新冻结，避免前后镜头站位和机位漂移。
 本机 ComfyUI 工作流也需要冻结：配置 `COMFYUI_WORKFLOW_PATH`、`COMFYUI_VIDEO_WORKFLOW_PATH` 后调用 `POST /api/projects/workflow-profile/freeze`。生产 profile 会记录 image/video workflow 路径、文件 hash、能力声明和质量阈值。后续如果 workflow 文件被替换，或缺少 identity、spatial control、pose/depth、first-last-frame video、motion control、face repair、upscale、candidate review 等能力，生产就绪检查会阻断最终生成。
-生产 profile 也会冻结平台观感门槛、平台美学子项门槛、三视图五官门槛和图片后处理命令 hash。调整 `GENERATION_IMAGE_PLATFORM_MIN_SCORE`、`GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE`、`GENERATION_TURNAROUND_FEATURE_MIN_SCORE`、`GENERATION_VIDEO_PLATFORM_MIN_SCORE`、`GENERATION_IMAGE_POSTPROCESS_COMMAND` 或 `GENERATION_REQUIRE_IMAGE_POSTPROCESS` 后，需要重新冻结 workflow profile。
+生产 profile 也会冻结平台观感门槛、平台美学子项门槛、三视图五官门槛和图片后处理命令 hash。调整 `GENERATION_IMAGE_PLATFORM_MIN_SCORE`、`GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE`、`GENERATION_TURNAROUND_FEATURE_MIN_SCORE`、`GENERATION_VIDEO_PLATFORM_MIN_SCORE`、`GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE`、`GENERATION_IMAGE_POSTPROCESS_COMMAND` 或 `GENERATION_REQUIRE_IMAGE_POSTPROCESS` 后，需要重新冻结 workflow profile。
 评分报告位于正式图片同目录，后缀为 `.quality.json`。候选图保留为 `.candidate_01.png` 等，便于人工回看和调参。
 
 画面评分：每镜头至少 3 帧，长镜头约每秒一帧；采样覆盖时长的 5% 至 95%。超过 59 秒的片段要求拆分，避免静默截断审核范围。
 每批最多 3 个采样帧，可另附 1 张参考图。按剧情匹配、构图、可见瑕疵、脸部身份、整体身份一致性、时间连续性分别给 0 至 5 分，并写明证据。
 视频 `facial_identity` 会在抽帧之间比较脸型、五官、发型和角色外貌锚点，专门暴露脸在运动中变人、同脸化或五官漂移的问题。
 时间连续性会检查同一人物的脸、发型、服装、体型和相对站位是否稳定，动作推进是否合理，是否出现闪烁、变形、突然多出或消失的人，以及无关镜头跳变。
+若 VLM 返回 `video_aesthetic_scores`，系统会单独记录肤质稳定、光色稳定、手机可读性、动作顺滑、背景稳定和修复痕迹这些成片观感维度，避免单帧看起来尚可但连续视频廉价或闪烁的候选晋级。
 基础 VLM 决策门槛为平均分至少 4、各项至少 3、无 major/critical 问题。生产候选选择在此基础上加严：图片候选的 `facial_identity` 和 `identity_consistency` 默认必须达到 4 分；视频候选的 `facial_identity`、`identity_consistency` 和 `temporal_consistency` 默认必须达到 4 分。任一批失败，整个镜头不能通过。
 文件损坏、模型离线、JSON 无效、漏审或重复帧号会记录 `error`，不会生成默认高分。
 

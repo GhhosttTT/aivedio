@@ -54,8 +54,19 @@ class FrameReview(BaseModel):
     facial_identity: Score
     identity_consistency: Score
     temporal_consistency: Score
+    video_aesthetic_scores: dict[str, Score] | None = None
     reviewed_frames: list[StrictInt]
     issues: list[Issue]
+
+VIDEO_AESTHETIC_FEATURES = (
+    "skin_texture_stability",
+    "lighting_consistency",
+    "color_grade_consistency",
+    "phone_readability",
+    "motion_smoothness",
+    "background_stability",
+    "artifact_absence",
+)
 
 
 def fingerprint(data) -> str:
@@ -120,6 +131,62 @@ def platform_video_score(review: dict) -> float | None:
         "identity_consistency": 0.14,
         "temporal_consistency": 0.10,
     })
+
+
+def _clamp_score(value: float) -> float:
+    return round(max(0.0, min(5.0, value)), 2)
+
+
+def video_aesthetic_gate(review: dict) -> dict | None:
+    supplied = review.get("video_aesthetic_scores") if isinstance(review, dict) else None
+    if not isinstance(supplied, dict):
+        return None
+    scores = {}
+    missing = []
+    min_score = settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE
+    for feature in VIDEO_AESTHETIC_FEATURES:
+        item = supplied.get(feature)
+        score = item.get("score") if isinstance(item, dict) else None
+        evidence = item.get("evidence") if isinstance(item, dict) else ""
+        if isinstance(score, (int, float)):
+            scores[feature] = {
+                "score": _clamp_score(float(score)),
+                "evidence": str(evidence or "feature reviewed"),
+            }
+        else:
+            missing.append(feature)
+            scores[feature] = {
+                "score": 0.0,
+                "evidence": "video aesthetic feature was not reviewed by the local VLM",
+            }
+    average = _clamp_score(sum(item["score"] for item in scores.values()) / len(scores))
+    low = {
+        feature: item
+        for feature, item in scores.items()
+        if item["score"] < min_score
+    }
+    return {
+        "status": "passed" if not missing and not low else "needs_review",
+        "min_score": min_score,
+        "average": average,
+        "scores": scores,
+        "missing": missing,
+        "low": low,
+    }
+
+
+def attach_video_aesthetic_gate(batch: dict) -> None:
+    review = batch.get("review") if isinstance(batch.get("review"), dict) else {}
+    gate = video_aesthetic_gate(review)
+    if not gate:
+        return
+    batch["video_aesthetic_gate"] = gate
+    batch["video_aesthetic_score"] = gate["average"] if gate["status"] == "passed" else 0.0
+    current_platform = batch.get("platform_score")
+    if isinstance(current_platform, (int, float)):
+        batch["platform_score"] = min(float(current_platform), batch["video_aesthetic_score"])
+    else:
+        batch["platform_score"] = batch["video_aesthetic_score"]
 
 
 def _encoded_images(images) -> list[str]:
@@ -340,6 +407,7 @@ class GenerationReviewService:
                 score = platform_video_score(dumped)
                 if score is not None:
                     batch["platform_score"] = score
+                attach_video_aesthetic_gate(batch)
                 batches.append(batch)
             report["batches"] = batches
             report["status"] = "passed" if all(b["status"] == "passed" for b in batches) else "needs_review"

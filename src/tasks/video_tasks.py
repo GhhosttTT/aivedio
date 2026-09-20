@@ -9,7 +9,7 @@ from src.database.database import get_db
 from src.database.models import Scene
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, VideoGenerationRequest, get_generation_provider
-from src.services.generation_review import GenerationReviewService, ReviewError, platform_video_score, write_report
+from src.services.generation_review import GenerationReviewService, ReviewError, attach_video_aesthetic_gate, platform_video_score, write_report
 from src.services.repair_queue import attach_repair_queue
 from src.services.svd_service import get_svd_service
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
@@ -209,6 +209,7 @@ def _video_gate_scores(review_report: dict) -> dict[str, float]:
 def _video_platform_score(review_report: dict) -> float | None:
     scores = []
     for batch in review_report.get("batches") or []:
+        attach_video_aesthetic_gate(batch)
         if isinstance(batch.get("platform_score"), (int, float)):
             scores.append(float(batch["platform_score"]))
             continue
@@ -219,6 +220,25 @@ def _video_platform_score(review_report: dict) -> float | None:
     if not scores:
         return None
     return round(min(scores), 2)
+
+
+def _video_aesthetic_gate_summary(review_report: dict) -> dict | None:
+    gates = [
+        batch.get("video_aesthetic_gate")
+        for batch in review_report.get("batches") or []
+        if isinstance(batch.get("video_aesthetic_gate"), dict)
+    ]
+    if not gates:
+        return None
+    failed = [gate for gate in gates if gate.get("status") != "passed"]
+    selected = failed[0] if failed else min(gates, key=lambda item: item.get("average", 5))
+    return {
+        "status": "needs_review" if failed else "passed",
+        "min_score": selected.get("min_score"),
+        "average": selected.get("average"),
+        "low": selected.get("low", {}),
+        "missing": selected.get("missing", []),
+    }
 
 
 def _video_gate_passes(candidate: dict) -> tuple[bool, dict[str, float]]:
@@ -380,6 +400,9 @@ def _generate_quality_video_candidates(
             platform_score = _video_platform_score(review)
             if platform_score is not None:
                 candidate["platform_score"] = platform_score
+            aesthetic_gate = _video_aesthetic_gate_summary(review)
+            if aesthetic_gate:
+                candidate["video_aesthetic_gate"] = aesthetic_gate
             if repair_action:
                 candidate["repair_action"] = repair_action
             if shot_plan_payload:

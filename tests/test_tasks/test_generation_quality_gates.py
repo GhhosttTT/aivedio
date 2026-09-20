@@ -663,6 +663,67 @@ def test_required_video_review_blocks_low_platform_score(project_data, tmp_path,
     assert report["repair_queue"][0]["action"] == "refine_prompt_composition"
 
 
+def test_video_selection_uses_aesthetic_breakdown(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    Path(scene.image_path).write_bytes(b"image")
+    db.commit()
+
+    class FakeSVD:
+        def generate_video(self, **kwargs):
+            Path(kwargs["output_path"]).write_bytes(f"video-{kwargs['output_path']}".encode())
+            return kwargs["output_path"]
+
+    low_breakdown = {
+        "skin_texture_stability": {"score": 4, "evidence": "skin stable"},
+        "lighting_consistency": {"score": 1, "evidence": "light jumps"},
+        "color_grade_consistency": {"score": 4, "evidence": "color stable"},
+        "phone_readability": {"score": 4, "evidence": "face readable"},
+        "motion_smoothness": {"score": 2, "evidence": "stutter"},
+        "background_stability": {"score": 4, "evidence": "background stable"},
+        "artifact_absence": {"score": 2, "evidence": "repair scar flickers"},
+    }
+    high_breakdown = {
+        feature: {"score": 4, "evidence": "passes"}
+        for feature in low_breakdown
+    }
+
+    class FakeReviewService:
+        def review_video(self, _video, payload, _report_path, _reference=None):
+            review = {
+                "story_match": {"score": 5, "evidence": "scene matches"},
+                "composition": {"score": 5, "evidence": "strong framing"},
+                "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+                "visual_integrity": {"score": 5, "evidence": "clean render"},
+                "facial_identity": {"score": 5, "evidence": "face matches"},
+                "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                "temporal_consistency": {"score": 5, "evidence": "motion stable"},
+                "video_aesthetic_scores": low_breakdown if payload["candidate_index"] == 1 else high_breakdown,
+            }
+            return {"status": "passed", "average": 4.8 if payload["candidate_index"] == 1 else 4.2, "batches": [{"review": review}]}
+
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_CANDIDATES", 2)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    _, report = _generate_quality_video_candidates(
+        FakeSVD(), scene, project.id, str(tmp_path / "scene.mp4"), db,
+        num_frames=16, fps=8, motion_bucket_id=127, noise_aug_strength=0.02,
+    )
+
+    assert report["status"] == "passed"
+    assert report["candidates"][0]["index"] == 2
+    assert report["candidates"][1]["video_aesthetic_gate"]["status"] == "needs_review"
+    assert set(report["candidates"][1]["video_aesthetic_gate"]["low"]) == {
+        "lighting_consistency",
+        "motion_smoothness",
+        "artifact_absence",
+    }
+
+
 def test_required_video_review_blocks_low_scoring_candidates(project_data, tmp_path, monkeypatch):
     db, project, scene, _, _ = project_data
     scene.image_path = str(tmp_path / "source.png")
