@@ -39,6 +39,62 @@ def test_select_best_promotes_best_candidate(tmp_path):
     assert final.read_bytes() == second.read_bytes()
 
 
+def test_select_best_prefers_identity_safe_candidate_over_higher_average(tmp_path):
+    first = tmp_path / "first.png"
+    second = tmp_path / "second.png"
+    final = tmp_path / "final.png"
+    make_image(first, (80, 80, 80))
+    make_image(second, (120, 120, 120))
+
+    selector = ImageQualitySelector(reviewer=object())
+    report = selector.select_best([
+        {
+            "index": 1,
+            "path": str(first),
+            "average": 4.8,
+            "status": "passed",
+            "review": {
+                "facial_identity": {"score": 2, "evidence": "face drift"},
+                "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+            },
+        },
+        {
+            "index": 2,
+            "path": str(second),
+            "average": 4.2,
+            "status": "passed",
+            "review": {
+                "facial_identity": {"score": 4, "evidence": "face matches"},
+                "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
+            },
+        },
+    ], final, tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0)
+
+    assert report["best_index"] == 2
+    assert report["best_identity_scores"] == {"facial_identity": 4.0, "identity_consistency": 4.0}
+    assert final.read_bytes() == second.read_bytes()
+
+
+def test_select_best_rejects_when_identity_scores_are_low(tmp_path):
+    image = tmp_path / "candidate.png"
+    make_image(image, (120, 120, 120))
+    selector = ImageQualitySelector(reviewer=object())
+
+    with pytest.raises(ReviewError, match="identity score"):
+        selector.select_best([
+            {
+                "index": 1,
+                "path": str(image),
+                "average": 4.8,
+                "status": "passed",
+                "review": {
+                    "facial_identity": {"score": 3, "evidence": "face drift"},
+                    "identity_consistency": {"score": 3, "evidence": "same-face issue"},
+                },
+            },
+        ], tmp_path / "final.png", tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0)
+
+
 def test_select_best_rejects_when_vlm_is_required_but_missing(tmp_path):
     image = tmp_path / "candidate.png"
     make_image(image, (120, 120, 120))

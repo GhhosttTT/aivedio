@@ -52,6 +52,24 @@ def _clamp_score(value: float) -> float:
     return round(max(0.0, min(5.0, value)), 2)
 
 
+def _review_score(candidate: dict[str, Any], key: str) -> float | None:
+    value = (candidate.get("review") or {}).get(key)
+    if isinstance(value, dict) and isinstance(value.get("score"), (int, float)):
+        return float(value["score"])
+    return None
+
+
+def _identity_gate(candidate: dict[str, Any], min_score: float) -> tuple[bool, dict[str, float]]:
+    scores = {
+        key: score
+        for key in ("facial_identity", "identity_consistency")
+        if (score := _review_score(candidate, key)) is not None
+    }
+    if not scores:
+        return True, {}
+    return all(score >= min_score for score in scores.values()), scores
+
+
 class ImageQualitySelector:
     def __init__(self, reviewer=None):
         self.reviewer = reviewer or get_local_reviewer()
@@ -129,25 +147,44 @@ class ImageQualitySelector:
         report_path: str | Path,
         min_average: float | None = None,
         require_vlm: bool | None = None,
+        min_identity_score: float | None = None,
     ) -> dict[str, Any]:
         if not candidates:
             raise ReviewError("No image candidates were generated")
         min_average = settings.GENERATION_IMAGE_MIN_SCORE if min_average is None else min_average
         require_vlm = settings.GENERATION_REQUIRE_IMAGE_REVIEW if require_vlm is None else require_vlm
-        ranked = sorted(candidates, key=lambda item: item.get("average", 0), reverse=True)
+        min_identity_score = (
+            settings.GENERATION_IMAGE_IDENTITY_MIN_SCORE
+            if min_identity_score is None
+            else min_identity_score
+        )
+        ranked = sorted(
+            candidates,
+            key=lambda item: (
+                1 if _identity_gate(item, min_identity_score)[0] else 0,
+                item.get("average", 0),
+            ),
+            reverse=True,
+        )
         best = ranked[0]
+        identity_ok, identity_scores = _identity_gate(best, min_identity_score)
         report = {
             "kind": "image_candidate_selection",
             "status": "passed",
             "best_index": best["index"],
             "best_average": best.get("average", 0),
             "min_average": min_average,
+            "min_identity_score": min_identity_score,
+            "best_identity_scores": identity_scores,
             "require_vlm": require_vlm,
             "candidates": ranked,
         }
         if require_vlm and best.get("status") == "technical_only":
             report["status"] = "needs_review"
             report["error"] = "No local VLM image review was available"
+        elif not identity_ok:
+            report["status"] = "needs_review"
+            report["error"] = f"Best image identity score is below {min_identity_score}: {identity_scores}"
         elif best.get("average", 0) < min_average:
             report["status"] = "needs_review"
             report["error"] = f"Best image score {best.get('average', 0)} is below {min_average}"
