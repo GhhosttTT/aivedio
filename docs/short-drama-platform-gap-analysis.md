@@ -129,6 +129,9 @@ Already implemented or partially implemented:
 - Project-level spatial asset packs can freeze shot scale, camera angle, camera
   axis, character positions, prop focus, and pose/depth/camera control prompts
   before rendering.
+- Approved ComfyUI production workflow profiles freeze image/video workflow
+  paths, file hashes, required capabilities, and quality thresholds before
+  final generation.
 - Multiple image and video candidates with quality review hooks.
 - Production video engine preflight and draft fallback separation.
 - ASR, local translation, subtitle rendering, localization quality checks, and
@@ -171,6 +174,11 @@ Already implemented or partially implemented:
    - Needed: pinned workflow profiles for high-quality portrait image,
      first-last-frame video, face consistency, hand repair, upscale, and
      flicker reduction.
+   - Current implementation can freeze a local production workflow profile with
+     `POST /api/projects/workflow-profile/freeze`. Production readiness blocks
+     final generation if the profile is missing, if required capabilities such
+     as identity, spatial control, face repair, upscale, or candidate review are
+     disabled, or if workflow file hashes change after approval.
 
 6. Review is evidence-bearing but not yet full repair automation
    - The reviewer can score outputs, but rejected clips need a more complete

@@ -189,7 +189,33 @@ def test_production_readiness_reports_scene_and_review_gaps(setup, monkeypatch):
     assert any(item["code"] == "too_few_atomic_scenes" for item in payload["blockers"])
     assert any(item["code"] == "image_review_not_required" for item in payload["warnings"])
     assert any(item["code"] == "non_mobile_short_drama_format" for item in payload["warnings"])
+    assert any(item["code"] == "workflow_profile_not_ready" for item in payload["blockers"])
     assert "video_engine" not in payload["checks"]
+
+
+def test_workflow_profile_freeze_clears_readiness_workflow_profile_blocker(setup, monkeypatch):
+    client, _, path = setup
+    image = path / "image_workflow.json"
+    video = path / "video_workflow.json"
+    profile = path / "production_workflow_profile.json"
+    image.write_text('{"1":{"class_type":"KSampler"}}', encoding="utf-8")
+    video.write_text('{"1":{"class_type":"VHS_VideoCombine"}}', encoding="utf-8")
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", "")
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_PRODUCTION_PROFILE_PATH", str(profile))
+
+    before = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
+    assert before["checks"]["workflow_profile"]["status"] == "missing"
+    assert any(item["code"] == "workflow_profile_not_ready" for item in before["blockers"])
+
+    frozen = client.post("/api/projects/workflow-profile/freeze", json={"notes": "approved"})
+    assert frozen.status_code == 200, frozen.text
+    assert frozen.json()["status"] == "approved"
+
+    after = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
+    assert after["checks"]["workflow_profile"]["status"] == "valid"
+    assert not any(item["code"] == "workflow_profile_not_ready" for item in after["blockers"])
 
 
 def test_production_readiness_accepts_vertical_mobile_format(setup, monkeypatch):

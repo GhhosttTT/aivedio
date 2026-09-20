@@ -23,6 +23,8 @@ from src.api.schemas import (
     ProductionTaskResponse,
     SpatialAssetFreezeRequest,
     SpatialAssetPackResponse,
+    WorkflowProfileFreezeRequest,
+    WorkflowProfileResponse,
 )
 from src.api.dependencies import get_current_user, require_project_access
 from src.services.project_manager import ProjectManager, get_project_manager
@@ -30,6 +32,7 @@ from src.services.script_generator import ScriptGenerator, get_script_generator
 from src.services.task_orchestrator import TaskOrchestrator, get_task_orchestrator
 from src.services.production_readiness import ProductionReadinessService
 from src.services.spatial_control_assets import SpatialControlAssetService
+from src.services.production_workflow_profile import ProductionWorkflowProfileService
 from src.database.session import get_db_session
 from src.database.models import Character, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
@@ -42,6 +45,21 @@ router = APIRouter(prefix="/api/projects", tags=["项目管理"], dependencies=[
 class SeedDanceBaselineRequest(BaseModel):
     baseline_path: str
     candidate_path: Optional[str] = None
+
+
+@router.post("/workflow-profile/freeze", response_model=WorkflowProfileResponse)
+async def freeze_workflow_profile(
+    request: WorkflowProfileFreezeRequest,
+    current_user=Depends(get_current_user),
+):
+    try:
+        profile = ProductionWorkflowProfileService().freeze_profile(
+            capabilities=request.capabilities,
+            notes=request.notes or "",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return WorkflowProfileResponse(status=profile["status"], profile=profile)
 
 
 def _production_error_status(message: str) -> int:

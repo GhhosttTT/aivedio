@@ -189,6 +189,22 @@ class SpatialAssetPackResponse(BaseModel):
     asset_pack: dict
 
 
+class WorkflowProfileFreezeRequest(BaseModel):
+    """
+    冻结本机 ComfyUI 生产 workflow profile
+    """
+    capabilities: dict = Field(default_factory=dict, description="生产能力声明，缺省按全部必需能力开启")
+    notes: Optional[str] = Field(None, max_length=500, description="workflow 审核备注")
+
+
+class WorkflowProfileResponse(BaseModel):
+    """
+    ComfyUI 生产 workflow profile 响应
+    """
+    status: str
+    profile: dict
+
+
 class SceneResponse(BaseModel):
     """
     分镜响应模型

@@ -15,6 +15,7 @@ from src.services.character_identity_service import CharacterIdentityService, FA
 from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.shot_complexity_service import ShotComplexityService
 from src.services.spatial_control_assets import SpatialControlAssetService
+from src.services.production_workflow_profile import ProductionWorkflowProfileService
 from src.services.story_room_quality import StoryRoomQualityService
 from src.services.video_director_service import get_video_director_service
 from src.services.video_engine_preflight import preflight_production_video_engine
@@ -68,6 +69,7 @@ class ProductionReadinessService:
             "characters": self._character_check(project, scenes, characters, blockers, warnings),
             "shot_complexity": self._shot_complexity_check(project, scenes, blockers, warnings),
             "spatial_continuity": self._spatial_continuity_check(project, scenes, characters, blockers, warnings),
+            "workflow_profile": self._workflow_profile_check(blockers),
             "reviewer": self._reviewer_check(warnings),
             "sample_validation": self._sample_validation_check(warnings),
         }
@@ -477,6 +479,23 @@ class ProductionReadinessService:
         if report.get("status") != "ready_for_production_video_test":
             detail = "; ".join(report.get("action_items") or ["Configure a production video engine."])
             blockers.append(ReadinessIssue("video_engine_not_ready", detail))
+        return report
+
+    def _workflow_profile_check(self, blockers: list[ReadinessIssue]) -> dict:
+        report = ProductionWorkflowProfileService().validate_profile()
+        if report.get("status") != "valid":
+            details = []
+            if report.get("missing"):
+                details.append("missing=" + ",".join(report["missing"]))
+            if report.get("stale"):
+                details.append("stale=" + ",".join(report["stale"]))
+            if report.get("missing_capabilities"):
+                details.append("capabilities=" + ",".join(report["missing_capabilities"]))
+            blockers.append(ReadinessIssue(
+                "workflow_profile_not_ready",
+                "Approve a stable ComfyUI production workflow profile before final generation"
+                + (": " + "; ".join(details) if details else "."),
+            ))
         return report
 
     def _reviewer_check(self, warnings: list[ReadinessIssue]) -> dict:

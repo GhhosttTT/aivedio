@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     COMFYUI_WORKFLOW_PATH: str = "./configs/comfyui_workflow.json"
     COMFYUI_REFERENCE_WORKFLOW_PATH: str = ""
     COMFYUI_VIDEO_WORKFLOW_PATH: str = ""
+    COMFYUI_PRODUCTION_PROFILE_PATH: str = "./configs/production_workflow_profile.json"
     COMFYUI_TIMEOUT: int = 900
     GENERATION_WIDTH: int = 1344
     GENERATION_HEIGHT: int = 768
