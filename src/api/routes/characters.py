@@ -19,6 +19,8 @@ from src.api.schemas import (
     CharacterIdentityScoreResponse,
     CharacterAssetFreezeRequest,
     CharacterAssetPackResponse,
+    CharacterTurnaroundAlbumFreezeRequest,
+    CharacterTurnaroundAlbumResponse,
     CharacterResponse,
     CharacterReferenceGenerateRequest,
     CharacterReferenceGenerateResponse,
@@ -30,6 +32,7 @@ from src.database.models import Character, Project
 from src.services.character_service import get_character_manager
 from src.services.character_identity_service import CharacterIdentityService, load_identity_spec
 from src.services.character_reference_auto import CharacterReferenceAutoGenerator
+from src.services.character_turnaround_album import CharacterTurnaroundAlbumService
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -349,6 +352,43 @@ async def freeze_character_asset_pack(
     except Exception as e:
         logger.error(f"冻结角色定妆包失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"冻结角色定妆包失败: {e}")
+
+
+@router.post("/{character_id}/freeze-turnaround-album", response_model=CharacterTurnaroundAlbumResponse)
+async def freeze_character_turnaround_album(
+    project_id: int,
+    character_id: int,
+    request: CharacterTurnaroundAlbumFreezeRequest,
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    冻结角色正面、侧面、背面三视图，作为短剧生成的立体定妆依据。
+    """
+    try:
+        character = db_session.query(Character).filter(
+            Character.id == character_id,
+            Character.project_id == project_id
+        ).first()
+        if not character:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"角色不存在: {character_id}")
+        try:
+            album = CharacterTurnaroundAlbumService().freeze_album(
+                character=character,
+                view_paths=request.views,
+                notes=request.notes or "",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        return CharacterTurnaroundAlbumResponse(
+            character_id=character_id,
+            status=album["status"],
+            album=album,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"冻结角色三视图失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"冻结角色三视图失败: {e}")
 
 
 @router.post("/{character_id}/reference", response_model=CharacterReferenceResponse)

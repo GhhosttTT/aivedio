@@ -121,6 +121,8 @@ Already implemented or partially implemented:
 - Script generation with a 16-scene production target.
 - Character services, reference generation, identity scoring, and visual anchor
   payloads.
+- Character turnaround albums can freeze front, side, and back references so
+  body shape, hairstyle silhouette, and wardrobe remain stable across angles.
 - Character asset-pack freezing stores the approved identity bible and reference
   image hashes so production readiness can detect stale character assets.
 - Shot prompt compiler and complexity checks for overloaded scenes.
@@ -160,6 +162,11 @@ Already implemented or partially implemented:
      character bible before production.
    - Needed: face/body/outfit/voice/personality assets, per-character negative
      prompts, approved reference sets, and per-shot visible-character mapping.
+   - Current implementation can freeze a front/side/back turnaround album with
+     `POST /api/projects/{project_id}/characters/{character_id}/freeze-turnaround-album`.
+     Production readiness blocks final generation when a visible character does
+     not have a valid three-view album or when one of the view images or the
+     identity bible changes after approval.
 
 4. Spatial continuity is weak
    - The current planner does not maintain a reusable stage map, character

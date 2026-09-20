@@ -173,6 +173,23 @@ class CharacterAssetPackResponse(BaseModel):
     asset_pack: dict
 
 
+class CharacterTurnaroundAlbumFreezeRequest(BaseModel):
+    """
+    冻结角色三视图/立体画册
+    """
+    views: dict = Field(..., description="front/side/back 三个视图对应的图片路径")
+    notes: Optional[str] = Field(None, max_length=500, description="三视图审核备注")
+
+
+class CharacterTurnaroundAlbumResponse(BaseModel):
+    """
+    角色三视图/立体画册响应
+    """
+    character_id: int
+    status: str
+    album: dict
+
+
 class SpatialAssetFreezeRequest(BaseModel):
     """
     冻结项目空间连续性资产包

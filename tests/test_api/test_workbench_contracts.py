@@ -407,6 +407,48 @@ def test_character_asset_pack_freeze_clears_readiness_asset_pack_blocker(setup):
     assert not any(item["code"] == "missing_character_asset_pack" for item in after["blockers"])
 
 
+def test_character_turnaround_album_freeze_clears_readiness_blocker(setup):
+    client, db, path = setup
+    from src.services.character_identity_service import CharacterIdentityService
+
+    project = db.query(Project).filter(Project.id == 1).one()
+    scene = db.query(Scene).filter(Scene.project_id == 1).one()
+    scene.character_name = "Alice"
+    scene.visual_description = "Alice stands by the table and opens the sealed letter."
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice"]}]})
+    spec = CharacterIdentityService().build_identity_spec("Alice", "lead", project_id=1)
+    character = Character(
+        project_id=1,
+        name="Alice",
+        appearance=spec["identity_anchor"],
+        visual_description=json.dumps(spec),
+    )
+    db.add(character)
+    db.commit()
+    db.refresh(character)
+    views = {}
+    for view, color in {"front": "red", "side": "green", "back": "blue"}.items():
+        image_path = path / f"{view}.png"
+        Image.new("RGB", (64, 64), color).save(image_path)
+        views[view] = str(image_path)
+
+    before = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
+    assert any(item["name"] == "Alice" for item in before["checks"]["characters"]["missing_turnaround_albums"])
+    assert any(item["code"] == "missing_character_turnaround_album" for item in before["blockers"])
+
+    frozen = client.post(
+        f"/api/projects/1/characters/{character.id}/freeze-turnaround-album",
+        json={"views": views, "notes": "approved three-view"},
+    )
+    assert frozen.status_code == 200, frozen.text
+    assert frozen.json()["status"] == "frozen"
+    assert frozen.json()["album"]["views"]["front"]["path"] == views["front"]
+
+    after = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
+    assert after["checks"]["characters"]["missing_turnaround_albums"] == []
+    assert not any(item["code"] == "missing_character_turnaround_album" for item in after["blockers"])
+
+
 def test_production_readiness_reports_spatial_continuity_plan(setup):
     client, db, _ = setup
     from src.services.character_identity_service import CharacterIdentityService

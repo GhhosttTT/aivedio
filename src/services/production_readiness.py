@@ -12,6 +12,7 @@ from src.config import settings
 from src.database.models import Character, Project, Scene
 from src.services.character_service import get_character_manager
 from src.services.character_identity_service import CharacterIdentityService, FACIAL_FIELDS, load_identity_spec
+from src.services.character_turnaround_album import CharacterTurnaroundAlbumService
 from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.shot_complexity_service import ShotComplexityService
 from src.services.spatial_control_assets import SpatialControlAssetService
@@ -280,6 +281,9 @@ class ProductionReadinessService:
         missing_appearance = []
         missing_asset_packs = []
         stale_asset_packs = []
+        missing_turnaround_albums = []
+        stale_turnaround_albums = []
+        album_service = CharacterTurnaroundAlbumService()
         for name in required_names:
             character = by_name.get(name)
             if not character:
@@ -300,6 +304,16 @@ class ProductionReadinessService:
                 missing_asset_packs.append(name)
             elif asset_pack.get("status") != "valid":
                 stale_asset_packs.append({"name": name, "status": asset_pack.get("status"), "stale": asset_pack.get("stale", [])})
+            turnaround_album = album_service.validate_album(character)
+            if turnaround_album.get("status") == "missing":
+                missing_turnaround_albums.append({"name": name, "missing": turnaround_album.get("missing", [])})
+            elif turnaround_album.get("status") != "valid":
+                stale_turnaround_albums.append({
+                    "name": name,
+                    "status": turnaround_album.get("status"),
+                    "missing": turnaround_album.get("missing", []),
+                    "stale": turnaround_album.get("stale", []),
+                })
             if not (character.appearance or "").strip():
                 missing_appearance.append(name)
             character_payload.append({
@@ -310,6 +324,7 @@ class ProductionReadinessService:
                 "missing_identity_fields": missing_fields,
                 "reference_count": len(references),
                 "asset_pack_status": asset_pack.get("status"),
+                "turnaround_album_status": turnaround_album.get("status"),
             })
         if missing_identity_specs:
             blockers.append(ReadinessIssue(
@@ -344,6 +359,21 @@ class ProductionReadinessService:
                 "stale_character_asset_pack",
                 "Re-freeze changed character asset packs before production: " + details,
             ))
+        if missing_turnaround_albums:
+            blockers.append(ReadinessIssue(
+                "missing_character_turnaround_album",
+                "Freeze front/side/back turnaround albums before production: "
+                + ", ".join(item["name"] for item in missing_turnaround_albums),
+            ))
+        if stale_turnaround_albums:
+            details = "; ".join(
+                f"{item['name']} missing={','.join(item['missing']) or '-'} stale={','.join(item['stale']) or '-'}"
+                for item in stale_turnaround_albums
+            )
+            blockers.append(ReadinessIssue(
+                "stale_character_turnaround_album",
+                "Re-freeze changed character turnaround albums before production: " + details,
+            ))
         if missing_appearance:
             warnings.append(ReadinessIssue(
                 "missing_character_appearance",
@@ -365,6 +395,8 @@ class ProductionReadinessService:
             "missing_references": missing_references,
             "missing_asset_packs": missing_asset_packs,
             "stale_asset_packs": stale_asset_packs,
+            "missing_turnaround_albums": missing_turnaround_albums,
+            "stale_turnaround_albums": stale_turnaround_albums,
             "missing_appearance": missing_appearance,
             "distinctiveness": distinctiveness,
             "characters": character_payload,
