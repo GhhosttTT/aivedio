@@ -333,6 +333,13 @@ def _generate_quality_video_candidates(
     refinement_passes = max(0, min(settings.GENERATION_VIDEO_REFINEMENT_PASSES, 3))
     reviewer = GenerationReviewService()
     reference = _reference_for_scene(scene, project_id, db)
+    scene_payload = _scene_review_payload(scene, project_id, db)
+    candidate_scene = {
+        "scene_number": scene.scene_number,
+        "description": scene.visual_description,
+        "dialogue": scene.dialogue,
+        "repair_action": repair_action,
+    }
     shot_plan_payload = shot_plan.as_dict() if shot_plan else None
     candidates = []
     from src.services.svd_service import cleanup_svd_service
@@ -359,6 +366,16 @@ def _generate_quality_video_candidates(
                     "path": generated_path,
                     "motion_bucket_id": motion,
                     "noise_aug_strength": noise,
+                    "scene": candidate_scene,
+                    "request": {
+                        "image_path": scene.image_path,
+                        "num_frames": num_frames,
+                        "fps": fps,
+                        "motion_bucket_id": motion,
+                        "noise_aug_strength": noise,
+                        "reference_image": reference,
+                        "repair_action": repair_action,
+                    },
                     "shot_plan": shot_plan_payload,
                     "repair_action": repair_action,
                 })
@@ -373,7 +390,7 @@ def _generate_quality_video_candidates(
             review = reviewer.review_video(
                 generated_path,
                 {
-                    **_scene_review_payload(scene, project_id, db),
+                    **scene_payload,
                     "shot_plan": shot_plan_payload,
                     "candidate_index": index,
                     "refinement_pass": generated_candidate["pass"],
@@ -393,6 +410,8 @@ def _generate_quality_video_candidates(
                 "review_path": str(review_path),
                 "motion_bucket_id": generated_candidate["motion_bucket_id"],
                 "noise_aug_strength": generated_candidate["noise_aug_strength"],
+                "scene": generated_candidate["scene"],
+                "request": generated_candidate["request"],
             }
             gate_scores = _video_gate_scores(review)
             if gate_scores:

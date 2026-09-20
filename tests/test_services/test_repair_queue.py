@@ -114,6 +114,29 @@ def test_repair_queue_reads_scene_number_from_candidate_scene_payload():
     assert queue[0]["scene_number"] == 7
 
 
+def test_video_repair_queue_reads_scene_number_from_candidate_scene_payload():
+    report = {
+        "status": "needs_review",
+        "candidates": [
+            {
+                "index": 2,
+                "scene": {"scene_number": 8},
+                "video_aesthetic_gate": {
+                    "status": "needs_review",
+                    "low": {
+                        "motion_smoothness": {"score": 2, "evidence": "motion stutter"},
+                    },
+                },
+            }
+        ],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "lower_motion_and_regenerate_video"
+    assert queue[0]["scene_number"] == 8
+
+
 def test_repair_queue_handles_review_unavailable():
     report = {"status": "review_unavailable", "error": "No local VLM review unavailable", "candidates": []}
 

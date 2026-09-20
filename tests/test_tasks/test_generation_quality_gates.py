@@ -634,6 +634,11 @@ def test_video_generation_selects_best_reviewed_candidate(project_data, tmp_path
     assert report["status"] == "passed"
     assert report["selected_average"] == 4.7
     assert report["candidates"][0]["shot_plan"]["shot_role"] == "prop_interaction"
+    assert report["candidates"][0]["scene"]["scene_number"] == scene.scene_number
+    assert report["candidates"][0]["request"]["num_frames"] == 29
+    assert report["candidates"][0]["request"]["fps"] == 8
+    assert report["candidates"][0]["request"]["motion_bucket_id"] == report["candidates"][0]["motion_bucket_id"]
+    assert report["candidates"][0]["request"]["noise_aug_strength"] == report["candidates"][0]["noise_aug_strength"]
     assert [candidate["index"] for candidate in report["candidates"]] == [2, 1]
     assert fake_svd.requests[0]["motion_bucket_id"] != fake_svd.requests[1]["motion_bucket_id"]
 
@@ -892,6 +897,7 @@ def test_required_video_review_blocks_low_scoring_candidates(project_data, tmp_p
     report = json.loads(output.with_suffix(".quality.json").read_text(encoding="utf-8"))
     assert report["repair_queue"]
     assert report["repair_queue"][0]["action"] in {"manual_review", "lower_motion_and_regenerate_video"}
+    assert report["repair_queue"][0]["scene_number"] == scene.scene_number
 
 
 def test_video_refinement_pass_reduces_motion_after_low_score(project_data, tmp_path, monkeypatch):

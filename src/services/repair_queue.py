@@ -98,6 +98,7 @@ def build_repair_queue(report: dict[str, Any], media_type: str) -> list[dict[str
             "stage": media_type,
             "action": "manual_review",
             "reason": "Quality report needs review but did not expose a specific repair reason.",
+            "scene_number": _first_scene_number(report),
         })
     return _dedupe(actions)
 
@@ -198,6 +199,15 @@ def _scene_number(candidate: dict[str, Any]) -> int | None:
             return issue["scene_number"]
     scene = candidate.get("scene") if isinstance(candidate.get("scene"), dict) else {}
     return scene.get("scene_number") if isinstance(scene.get("scene_number"), int) else None
+
+
+def _first_scene_number(report: dict[str, Any]) -> int | None:
+    for candidate in report.get("candidates", []) or []:
+        if isinstance(candidate, dict):
+            scene_number = _scene_number(candidate)
+            if isinstance(scene_number, int):
+                return scene_number
+    return None
 
 
 def _dedupe(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
