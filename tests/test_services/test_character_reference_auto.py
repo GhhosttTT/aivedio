@@ -2,7 +2,10 @@ from pathlib import Path
 
 from PIL import Image
 
-from src.services.character_reference_auto import CharacterReferenceAutoGenerator
+from src.services.character_reference_auto import (
+    CharacterReferenceAutoGenerator,
+    _reference_review_payload,
+)
 
 
 class FakeComfyUI:
@@ -73,3 +76,19 @@ def test_character_reference_generation_selects_best_candidate(tmp_path, monkeyp
     assert result["quality_report"]["kind"] == "image_candidate_selection"
     assert Path(tmp_path / "林安" / "reference_quality.json").is_file()
     assert len(generator.comfyui.calls) == 3
+    assert "consistent facial identity reference" in generator.comfyui.calls[0]["prompt"]
+    assert "natural skin texture" in generator.comfyui.calls[0]["prompt"]
+
+
+def test_reference_review_payload_carries_identity_anchor():
+    character_data = FakeDescriptionGenerator().generate_character_description("林安")
+
+    payload = _reference_review_payload("林安", character_data)
+
+    assert payload["visible_characters"][0]["name"] == "林安"
+    appearance = payload["visible_characters"][0]["appearance"]
+    assert "oval face" in appearance
+    assert "almond brown eyes" in appearance
+    assert "small mole under left eye" in appearance
+    assert "green jacket" in appearance
+    assert "mobile short-drama commercial portrait quality" in payload["reference_requirements"]

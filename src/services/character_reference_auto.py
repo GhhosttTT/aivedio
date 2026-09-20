@@ -79,7 +79,10 @@ class CharacterReferenceAutoGenerator:
             negative_prompt = front_prompt["negative"]
             
             # 确保是正面清晰人像
-            positive_prompt += ", front view, looking at camera, clear face, portrait photography, studio lighting, sharp focus on face"
+            positive_prompt += (
+                ", front view, looking at camera, clear face, consistent facial identity reference, "
+                "portrait photography, commercial lighting, natural skin texture, sharp focus on face"
+            )
             
             result = self._generate_and_select_reference(
                 character_name=character_name,
@@ -145,7 +148,11 @@ class CharacterReferenceAutoGenerator:
             reference_prompts = self.generator.generate_reference_prompts(character_data)
             
             prompt_data = reference_prompts["front_closeup"]
-            positive_prompt = prompt_data["prompt"] + ", front view, looking at camera, clear face, portrait photography"
+            positive_prompt = (
+                prompt_data["prompt"]
+                + ", front view, looking at camera, clear face, consistent facial identity reference, "
+                "portrait photography, commercial lighting, natural skin texture"
+            )
             negative_prompt = prompt_data["negative"]
             selected = self._generate_and_select_reference(
                 character_name=character_name,
@@ -209,12 +216,7 @@ class CharacterReferenceAutoGenerator:
             report = selector.review_candidate(
                 index + 1,
                 result_path,
-                {
-                    "scene_number": 1,
-                    "visual_description": "front-facing character reference portrait",
-                    "character_name": character_name,
-                    "identity": character_data,
-                },
+                _reference_review_payload(character_name, character_data),
                 prompt,
                 None,
             )
@@ -233,6 +235,38 @@ class CharacterReferenceAutoGenerator:
             "candidate_images": [candidate["path"] for candidate in candidates],
             "quality_report": selection,
         }
+
+
+def _reference_identity_anchor(character_name: str, character_data: Dict) -> str:
+    fields = [
+        character_data.get("face_shape"),
+        character_data.get("eyes"),
+        character_data.get("nose"),
+        character_data.get("mouth"),
+        character_data.get("hair"),
+        character_data.get("skin_tone"),
+        character_data.get("distinctive_features"),
+        character_data.get("outfit_details"),
+    ]
+    details = ", ".join(str(field).strip() for field in fields if str(field or "").strip())
+    return f"{character_name}: {details}" if details else character_name
+
+
+def _reference_review_payload(character_name: str, character_data: Dict) -> Dict:
+    anchor = _reference_identity_anchor(character_name, character_data)
+    return {
+        "scene_number": 1,
+        "visual_description": "front-facing character reference portrait",
+        "character_name": character_name,
+        "identity": character_data,
+        "visible_characters": [{"name": character_name, "appearance": anchor}],
+        "reference_requirements": [
+            "front-facing readable face",
+            "distinctive facial traits visible",
+            "stable hairstyle and wardrobe anchor",
+            "mobile short-drama commercial portrait quality",
+        ],
+    }
 
 
 # 测试
