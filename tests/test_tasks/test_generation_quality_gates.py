@@ -420,6 +420,9 @@ def test_required_video_review_blocks_low_scoring_candidates(project_data, tmp_p
 
     assert not output.exists()
     assert output.with_suffix(".quality.json").is_file()
+    report = json.loads(output.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert report["repair_queue"]
+    assert report["repair_queue"][0]["action"] in {"manual_review", "lower_motion_and_regenerate_video"}
 
 
 def test_video_refinement_pass_reduces_motion_after_low_score(project_data, tmp_path, monkeypatch):

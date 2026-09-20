@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from src.config import settings
 from src.services.generation_review import Issue, ReviewError, Score, decision, file_hash, get_local_reviewer, write_report
+from src.services.repair_queue import attach_repair_queue
 
 
 class ImageReview(BaseModel):
@@ -146,6 +147,8 @@ class ImageQualitySelector:
         elif best.get("average", 0) < min_average:
             report["status"] = "needs_review"
             report["error"] = f"Best image score {best.get('average', 0)} is below {min_average}"
+        if report["status"] != "passed":
+            attach_repair_queue(report, "image")
         final = Path(final_path)
         final.parent.mkdir(parents=True, exist_ok=True)
         if Path(best["path"]).resolve() != final.resolve():

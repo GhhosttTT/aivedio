@@ -9,6 +9,7 @@ from src.database.models import Scene
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, VideoGenerationRequest, get_generation_provider
 from src.services.generation_review import GenerationReviewService, ReviewError, write_report
+from src.services.repair_queue import attach_repair_queue
 from src.services.svd_service import get_svd_service
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
 from src.tasks.celery_app import celery_app
@@ -173,6 +174,7 @@ def _select_best_video_candidate(candidates: list[dict], final_path: str, report
         "candidates": ranked,
     }
     if report["status"] != "passed" and settings.GENERATION_REQUIRE_VIDEO_REVIEW:
+        attach_repair_queue(report, "video")
         write_report(report_path, report)
         raise ReviewError(
             f"Video candidates failed quality gate: average={best.get('average', 0)}, "
@@ -181,6 +183,8 @@ def _select_best_video_candidate(candidates: list[dict], final_path: str, report
     Path(final_path).parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(best["path"], final_path)
     report["promoted_path"] = final_path
+    if report["status"] != "passed":
+        attach_repair_queue(report, "video")
     write_report(report_path, report)
     return final_path, report
 
@@ -287,6 +291,7 @@ def _generate_quality_video_candidates(
             "promoted_path": output_path,
             "candidates": candidates,
         }
+        attach_repair_queue(report, "video")
         write_report(Path(output_path).with_suffix(".quality.json"), report)
         return output_path, report
     return _select_best_video_candidate(candidates, output_path, Path(output_path).with_suffix(".quality.json"))

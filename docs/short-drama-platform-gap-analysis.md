@@ -172,6 +172,10 @@ Priority 5: Add repair queue.
 
 - Convert review failures into targeted repair tasks.
 - Keep evidence for every accepted and rejected candidate.
+- Current implementation writes `repair_queue` into failed or review-unavailable
+  image/video `.quality.json` reports. The queue maps evidence such as identity
+  drift, bad crop, prop issues, temporal flicker, camera jumps, complex shots,
+  and missing local VLM review into targeted repair actions.
 
 ## Sources Used For Benchmarking
 
