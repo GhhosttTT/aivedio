@@ -39,6 +39,19 @@ class SeedDanceBaselineRequest(BaseModel):
     candidate_path: Optional[str] = None
 
 
+def _production_error_status(message: str) -> int:
+    if "正在制作" in message or "IN_PRODUCTION" in message:
+        return status.HTTP_409_CONFLICT
+    if (
+        "Production video engine is not ready" in message
+        or "项目不存在" in message
+        or "项目没有分镜" in message
+        or "not ready" in message
+    ):
+        return status.HTTP_400_BAD_REQUEST
+    return status.HTTP_500_INTERNAL_SERVER_ERROR
+
+
 @router.post("/{project_id}/seed-dance-baseline")
 async def compare_seed_dance_baseline(
     project_id: int,
@@ -648,6 +661,13 @@ async def produce_video(
 
     except HTTPException:
         raise
+    except ValueError as e:
+        detail = str(e)
+        logger.warning(f"提交生产任务被阻断: {detail}")
+        raise HTTPException(
+            status_code=_production_error_status(detail),
+            detail=detail,
+        )
     except Exception as e:
         logger.error(f"提交生产任务失败: {e}", exc_info=True)
         raise HTTPException(
@@ -732,6 +752,13 @@ async def regenerate_images(
 
     except HTTPException:
         raise
+    except ValueError as e:
+        detail = str(e)
+        logger.warning(f"重新生成图像被阻断: {detail}")
+        raise HTTPException(
+            status_code=_production_error_status(detail),
+            detail=detail,
+        )
     except Exception as e:
         logger.error(f"重新生成图像失败: {e}", exc_info=True)
         raise HTTPException(

@@ -115,6 +115,21 @@ def test_broker_failure_sets_failed(setup, monkeypatch):
     assert client.get("/api/projects/1").json()["status"] == "failed"
 
 
+def test_production_engine_block_returns_actionable_400(setup, monkeypatch):
+    client, db, _ = setup
+    monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)
+    monkeypatch.setattr(
+        "src.services.task_orchestrator.preflight_production_video_engine",
+        lambda: {"status": "production_not_ready", "action_items": ["configure ComfyUI video workflow"]},
+    )
+
+    response = client.post("/api/projects/1/produce")
+
+    assert response.status_code == 400
+    assert "Production video engine is not ready" in response.json()["detail"]
+    assert "configure ComfyUI video workflow" in response.json()["detail"]
+
+
 def test_reference_upload_and_signed_media_access(setup):
     client, db, path = setup
     c = client.post("/api/projects/1/characters", json={"name": "Actor"}).json()
