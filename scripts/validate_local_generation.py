@@ -89,8 +89,30 @@ def preflight(base_url=None):
     return report
 
 
-def render_images(cases, output: Path, base_url=None, reference=None):
-    report = {"status": "error", "quality_accepted": False, "cases": []}
+def render_images(
+    cases,
+    output: Path,
+    base_url=None,
+    reference=None,
+    quality_mode: str = "ultra",
+    optimization_mode: str = "quality",
+):
+    report = {
+        "status": "error",
+        "quality_accepted": False,
+        "render_profile": {
+            "quality_mode": quality_mode,
+            "optimization_mode": optimization_mode,
+            "width": settings.GENERATION_WIDTH,
+            "height": settings.GENERATION_HEIGHT,
+            "base_steps": settings.GENERATION_STEPS,
+            "base_cfg": settings.GENERATION_CFG,
+            "uses_reference": bool(reference),
+            "prompt_optimization": True,
+            "parameter_optimization": quality_mode in {"high_quality", "ultra"},
+        },
+        "cases": [],
+    }
     service = ComfyUIService(base_url=base_url, timeout=900)
     try:
         for case in cases:
@@ -105,9 +127,30 @@ def render_images(cases, output: Path, base_url=None, reference=None):
                 use_ipadapter=bool(reference), width=settings.GENERATION_WIDTH,
                 height=settings.GENERATION_HEIGHT, steps=settings.GENERATION_STEPS,
                 cfg_scale=settings.GENERATION_CFG,
+                quality_mode=quality_mode,
+                optimization_mode=optimization_mode,
+                enable_prompt_optimization=True,
+                enable_parameter_optimization=quality_mode in {"high_quality", "ultra"},
             )
-            report["cases"].append({"id": case["id"], "image": image, "seed": case["seed"],
-                                    "prompt": compiled.prompt, "elapsed_seconds": round(time.monotonic() - started, 2)})
+            report["cases"].append({
+                "id": case["id"],
+                "image": image,
+                "seed": case["seed"],
+                "prompt": compiled.prompt,
+                "elapsed_seconds": round(time.monotonic() - started, 2),
+                "request": {
+                    "width": settings.GENERATION_WIDTH,
+                    "height": settings.GENERATION_HEIGHT,
+                    "steps": settings.GENERATION_STEPS,
+                    "cfg_scale": settings.GENERATION_CFG,
+                    "quality_mode": quality_mode,
+                    "optimization_mode": optimization_mode,
+                    "reference_image": reference,
+                    "use_ipadapter": bool(reference),
+                    "enable_prompt_optimization": True,
+                    "enable_parameter_optimization": quality_mode in {"high_quality", "ultra"},
+                },
+            })
             write_report(output / "render.json", report)
         report["status"] = "rendered_pending_human_review"
     except Exception as exc:
@@ -550,6 +593,8 @@ def main():
     parser.add_argument("--video-workflow", help="ComfyUI image-to-video API workflow JSON")
     parser.add_argument("--reference", help="An explicitly selected character reference image")
     parser.add_argument("--description", help="Expected scene content for frame review")
+    parser.add_argument("--quality-mode", default="ultra", choices=["fast", "normal", "high_quality", "ultra"], help="Image quality mode for render-images")
+    parser.add_argument("--optimization-mode", default="quality", choices=["quality", "realism", "artistic", "balanced"], help="Prompt optimization mode for render-images")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     if args.mode == "preflight":
@@ -562,7 +607,14 @@ def main():
         report = preflight_production_video_engine(args.base_url, args.video_workflow)
         write_report(args.output / "production_video_engine_preflight.json", report)
     elif args.mode == "render-images":
-        report = render_images(json.loads(Path(args.cases).read_text(encoding="utf-8")), args.output, args.base_url, args.reference)
+        report = render_images(
+            json.loads(Path(args.cases).read_text(encoding="utf-8")),
+            args.output,
+            args.base_url,
+            args.reference,
+            quality_mode=args.quality_mode,
+            optimization_mode=args.optimization_mode,
+        )
     elif args.mode == "review-video":
         if not args.video or not args.description:
             parser.error("review-video needs --video and --description")

@@ -172,6 +172,40 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
     assert report["likely_output_nodes"][0]["class_type"] == "VHS_VideoCombine"
 
 
+def test_render_images_uses_production_quality_profile(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeClient:
+        def close(self):
+            return None
+
+    class FakeComfyUIService:
+        def __init__(self, *args, **kwargs):
+            self.client = FakeClient()
+
+        def generate_image(self, **kwargs):
+            calls.append(kwargs)
+            path = tmp_path / "rendered.png"
+            path.write_bytes(b"image")
+            return str(path)
+
+    monkeypatch.setattr(validator, "ComfyUIService", FakeComfyUIService)
+
+    report = validator.render_images(
+        [{"id": "case_1", "prompt": "woman reads a letter in a cinematic office", "seed": 123}],
+        tmp_path,
+    )
+
+    assert report["status"] == "rendered_pending_human_review"
+    assert calls[0]["quality_mode"] == "ultra"
+    assert calls[0]["optimization_mode"] == "quality"
+    assert calls[0]["enable_prompt_optimization"] is True
+    assert calls[0]["enable_parameter_optimization"] is True
+    assert report["render_profile"]["quality_mode"] == "ultra"
+    assert report["cases"][0]["request"]["quality_mode"] == "ultra"
+    assert report["cases"][0]["request"]["enable_parameter_optimization"] is True
+
+
 def test_validation_summary_requires_manual_scores(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
