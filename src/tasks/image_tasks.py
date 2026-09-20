@@ -386,7 +386,32 @@ def _candidate_seed(base_seed: int, index: int, refinement_pass: int = 0) -> int
     return int(hashlib.sha256(material).hexdigest()[:8], 16)
 
 
-def _quality_parameters(index: int, refinement_pass: int, base_steps: int, base_cfg: float) -> tuple[int, float]:
+IMAGE_REPAIR_PARAMETER_PROFILES = {
+    "refine_prompt_composition": {
+        "steps_boost": 8,
+        "cfg_delta": -0.3,
+        "reason": "composition_aesthetic_repair",
+    },
+    "regenerate_keyframe_with_prop_constraints": {
+        "steps_boost": 6,
+        "cfg_delta": 0.2,
+        "reason": "prop_hand_repair",
+    },
+}
+
+
+def _repair_parameter_profile(repair_action: str | None) -> dict:
+    profile = IMAGE_REPAIR_PARAMETER_PROFILES.get(repair_action or "")
+    return dict(profile) if profile else {}
+
+
+def _quality_parameters(
+    index: int,
+    refinement_pass: int,
+    base_steps: int,
+    base_cfg: float,
+    repair_action: str | None = None,
+) -> tuple[int, float]:
     """
     鏍规嵁閰嶇疆鍐冲畾鏄惁鍙樺寲鍙傛暟
 
@@ -395,14 +420,22 @@ def _quality_parameters(index: int, refinement_pass: int, base_steps: int, base_
     step_variation = settings.GENERATION_STEP_VARIATION
     cfg_variation = settings.GENERATION_CFG_VARIATION
 
+    repair_profile = _repair_parameter_profile(repair_action)
+
     if step_variation == 0 and cfg_variation == 0:
         # 鍥哄畾鍙傛暟妯″紡锛氭墍鏈夊€欓€夊浘浣跨敤鐩稿悓鐨剆teps鍜宑fg
-        return base_steps, base_cfg
+        steps = base_steps
+        cfg = base_cfg
+    else:
+        # 鍔ㄦ€佸弬鏁版ā寮忥細鍘熸湁閫昏緫
+        step_boost = min(index, 2) * step_variation + refinement_pass * (step_variation * 1.5)
+        cfg_shift = (index % 3 - 1) * cfg_variation
+        steps = base_steps + int(step_boost)
+        cfg = base_cfg + cfg_shift
 
-    # 鍔ㄦ€佸弬鏁版ā寮忥細鍘熸湁閫昏緫
-    step_boost = min(index, 2) * step_variation + refinement_pass * (step_variation * 1.5)
-    cfg_shift = (index % 3 - 1) * cfg_variation
-    return min(base_steps + int(step_boost), 48), round(max(4.5, min(base_cfg + cfg_shift, 8.0)), 2)
+    steps += int(repair_profile.get("steps_boost", 0))
+    cfg += float(repair_profile.get("cfg_delta", 0.0))
+    return min(steps, 56), round(max(4.5, min(cfg, 8.0)), 2)
 
 
 def _append_terms(text: str | None, addition: str | None) -> str:
@@ -487,7 +520,13 @@ def _review_feedback(reports: list[dict]) -> str:
     return "; ".join(compact)
 
 
-def _generate_quality_candidates(provider, request: ImageGenerationRequest, scene_payload: dict, reference_image: str | None) -> tuple[str, dict]:
+def _generate_quality_candidates(
+    provider,
+    request: ImageGenerationRequest,
+    scene_payload: dict,
+    reference_image: str | None,
+    repair_action: str | None = None,
+) -> tuple[str, dict]:
     candidate_count = max(1, min(settings.GENERATION_IMAGE_CANDIDATES, 8))
     refinement_passes = max(0, min(settings.GENERATION_IMAGE_REFINEMENT_PASSES, 3))
     selector = ImageQualitySelector()
@@ -505,7 +544,8 @@ def _generate_quality_candidates(provider, request: ImageGenerationRequest, scen
         for index in range(candidate_count):
             candidate_index = pass_index * candidate_count + index + 1
             output_path = candidate_output_path(request.output_path, candidate_index)
-            steps, cfg = _quality_parameters(index, pass_index, request.steps, request.cfg_scale)
+            repair_profile = _repair_parameter_profile(repair_action)
+            steps, cfg = _quality_parameters(index, pass_index, request.steps, request.cfg_scale, repair_action)
             candidate_request = ImageGenerationRequest(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
@@ -538,6 +578,8 @@ def _generate_quality_candidates(provider, request: ImageGenerationRequest, scen
                 "height": candidate_request.height,
                 "refinement_pass": pass_index,
                 "feedback": feedback,
+                "repair_action": repair_action,
+                "repair_parameter_profile": repair_profile,
             }
             report["path"] = result.output_path
             pass_reports.append(report)
@@ -635,7 +677,13 @@ def generate_image_task(
                 "visible_characters": _visible_character_payload(scene, project_id, db),
                 "repair_action": repair_action,
             }
-            final_image_path, quality_report = _generate_quality_candidates(provider, request, scene_payload, reference_image)
+            final_image_path, quality_report = _generate_quality_candidates(
+                provider,
+                request,
+                scene_payload,
+                reference_image,
+                repair_action=repair_action,
+            )
             provider_name = getattr(getattr(provider, "name", None), "value", str(getattr(provider, "name", "unknown")))
             result = type(
                 "SelectedImageResult",

@@ -10,7 +10,7 @@ from src.database.models import Base, Character, Project, Scene, Task, TaskStatu
 from src.services.generation_review import fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName, GenerationResult
 from src.services.shot_prompt_service import ShotPromptService
-from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _complexity_report, _composition_constraint, _generate_quality_candidates, _project_complexity_report, _review_feedback, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
+from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _complexity_report, _composition_constraint, _generate_quality_candidates, _project_complexity_report, _quality_parameters, _repair_parameter_profile, _review_feedback, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
 from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _scene_review_payload
@@ -446,6 +446,81 @@ def test_image_generation_uses_multiple_quality_candidates(tmp_path, monkeypatch
     assert len({item.seed for item in provider.requests}) == 3
     assert report["kind"] == "image_candidate_selection"
     assert report["postprocess"]["status"] == "skipped"
+
+
+def test_image_repair_action_boosts_quality_parameters(monkeypatch):
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_STEP_VARIATION", 0)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_CFG_VARIATION", 0)
+
+    steps, cfg = _quality_parameters(
+        0,
+        0,
+        28,
+        6.0,
+        repair_action="refine_prompt_composition",
+    )
+
+    assert steps == 36
+    assert cfg == 5.7
+    assert _repair_parameter_profile("refine_prompt_composition")["reason"] == "composition_aesthetic_repair"
+
+
+def test_image_repair_action_is_recorded_in_candidate_request(tmp_path, monkeypatch):
+    from PIL import Image
+    from src.services.generation_provider import ImageGenerationRequest
+
+    class FakeProvider:
+        name = GenerationProviderName.LOCAL_COMFYUI
+
+        def __init__(self):
+            self.requests = []
+
+        def generate_image(self, request):
+            self.requests.append(request)
+            Image.new("RGB", (request.width, request.height), (130, 130, 130)).save(request.output_path)
+            return GenerationResult("local_comfyui", request.output_path, "image", {})
+
+    def fake_review(self, index, image_path, scene, prompt, reference_image=None):
+        return {
+            "index": index,
+            "path": image_path,
+            "status": "passed",
+            "average": 4.8,
+            "review": {"composition": {"score": 5, "evidence": "clean framing"}},
+            "metrics": {"technical_score": 4.8},
+        }
+
+    monkeypatch.setattr("src.tasks.image_tasks.ImageQualitySelector.review_candidate", fake_review)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_CANDIDATES", 1)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 0)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_STEP_VARIATION", 0)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_CFG_VARIATION", 0)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+    request = ImageGenerationRequest(
+        prompt="cinematic short drama still",
+        negative_prompt="blurry",
+        output_path=str(tmp_path / "scene.png"),
+        width=512,
+        height=512,
+        steps=28,
+        cfg_scale=6.0,
+        seed=123,
+    )
+    provider = FakeProvider()
+
+    _, report = _generate_quality_candidates(
+        provider,
+        request,
+        {"scene_number": 1, "visual_description": "A woman opens a letter"},
+        reference_image=None,
+        repair_action="refine_prompt_composition",
+    )
+
+    assert provider.requests[0].steps == 36
+    assert provider.requests[0].cfg_scale == 5.7
+    candidate_request = report["candidates"][0]["request"]
+    assert candidate_request["repair_action"] == "refine_prompt_composition"
+    assert candidate_request["repair_parameter_profile"]["reason"] == "composition_aesthetic_repair"
 
 
 def test_video_generation_selects_best_reviewed_candidate(project_data, tmp_path, monkeypatch):
