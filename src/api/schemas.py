@@ -157,6 +157,22 @@ class CharacterReferenceGenerateResponse(BaseModel):
     quality_report: dict
 
 
+class CharacterAssetFreezeRequest(BaseModel):
+    """
+    冻结角色定妆资产包
+    """
+    notes: Optional[str] = Field(None, max_length=500, description="人工定妆备注")
+
+
+class CharacterAssetPackResponse(BaseModel):
+    """
+    角色定妆资产包响应
+    """
+    character_id: int
+    status: str
+    asset_pack: dict
+
+
 class SceneResponse(BaseModel):
     """
     分镜响应模型

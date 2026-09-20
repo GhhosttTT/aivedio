@@ -340,6 +340,47 @@ def test_production_readiness_accepts_complete_identity_bible_but_requires_refer
     assert any(item["code"] == "missing_character_references" for item in payload["blockers"])
 
 
+def test_character_asset_pack_freeze_clears_readiness_asset_pack_blocker(setup):
+    client, db, path = setup
+    from src.services.character_identity_service import CharacterIdentityService
+
+    project = db.query(Project).filter(Project.id == 1).one()
+    scene = db.query(Scene).filter(Scene.project_id == 1).one()
+    scene.character_name = "Alice"
+    scene.visual_description = "Alice stands by the table and opens the sealed letter."
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice"]}]})
+    spec = CharacterIdentityService().build_identity_spec("Alice", "lead", project_id=1)
+    character = Character(
+        project_id=1,
+        name="Alice",
+        appearance=spec["identity_anchor"],
+        visual_description=json.dumps(spec),
+    )
+    db.add(character)
+    db.commit()
+    db.refresh(character)
+
+    image = io.BytesIO()
+    Image.new("RGB", (64, 64), "purple").save(image, format="PNG")
+    upload = client.post(
+        f"/api/projects/1/characters/{character.id}/reference",
+        files={"file": ("alice.png", image.getvalue(), "image/png")},
+    )
+    assert upload.status_code == 200, upload.text
+
+    before = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
+    assert "Alice" in before["checks"]["characters"]["missing_asset_packs"]
+    assert any(item["code"] == "missing_character_asset_pack" for item in before["blockers"])
+
+    frozen = client.post(f"/api/projects/1/characters/{character.id}/freeze-asset-pack", json={"notes": "approved"})
+    assert frozen.status_code == 200, frozen.text
+    assert frozen.json()["status"] == "frozen"
+
+    after = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
+    assert after["checks"]["characters"]["missing_asset_packs"] == []
+    assert not any(item["code"] == "missing_character_asset_pack" for item in after["blockers"])
+
+
 def test_production_readiness_reports_spatial_continuity_plan(setup):
     client, db, _ = setup
     from src.services.character_identity_service import CharacterIdentityService

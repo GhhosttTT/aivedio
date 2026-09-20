@@ -275,6 +275,8 @@ class ProductionReadinessService:
         incomplete_identity_specs = []
         missing_references = []
         missing_appearance = []
+        missing_asset_packs = []
+        stale_asset_packs = []
         for name in required_names:
             character = by_name.get(name)
             if not character:
@@ -290,6 +292,11 @@ class ProductionReadinessService:
             references = manager.get_character_references(character.id, project.id)
             if not references:
                 missing_references.append(name)
+            asset_pack = manager.validate_character_asset_pack(character.id, project.id, identity_spec or {})
+            if asset_pack.get("status") == "missing":
+                missing_asset_packs.append(name)
+            elif asset_pack.get("status") != "valid":
+                stale_asset_packs.append({"name": name, "status": asset_pack.get("status"), "stale": asset_pack.get("stale", [])})
             if not (character.appearance or "").strip():
                 missing_appearance.append(name)
             character_payload.append({
@@ -299,6 +306,7 @@ class ProductionReadinessService:
                 "has_identity_spec": bool(identity_spec),
                 "missing_identity_fields": missing_fields,
                 "reference_count": len(references),
+                "asset_pack_status": asset_pack.get("status"),
             })
         if missing_identity_specs:
             blockers.append(ReadinessIssue(
@@ -319,6 +327,20 @@ class ProductionReadinessService:
                 "missing_character_references",
                 "Approve at least one reference image for visible characters: " + ", ".join(missing_references),
             ))
+        if missing_asset_packs:
+            blockers.append(ReadinessIssue(
+                "missing_character_asset_pack",
+                "Freeze character asset packs before production: " + ", ".join(missing_asset_packs),
+            ))
+        if stale_asset_packs:
+            details = "; ".join(
+                f"{item['name']} status={item['status']} stale={','.join(item['stale']) or 'unknown'}"
+                for item in stale_asset_packs
+            )
+            blockers.append(ReadinessIssue(
+                "stale_character_asset_pack",
+                "Re-freeze changed character asset packs before production: " + details,
+            ))
         if missing_appearance:
             warnings.append(ReadinessIssue(
                 "missing_character_appearance",
@@ -338,6 +360,8 @@ class ProductionReadinessService:
             "missing_identity_specs": missing_identity_specs,
             "incomplete_identity_specs": incomplete_identity_specs,
             "missing_references": missing_references,
+            "missing_asset_packs": missing_asset_packs,
+            "stale_asset_packs": stale_asset_packs,
             "missing_appearance": missing_appearance,
             "distinctiveness": distinctiveness,
             "characters": character_payload,

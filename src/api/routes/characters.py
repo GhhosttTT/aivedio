@@ -17,6 +17,8 @@ from src.api.schemas import (
     CharacterIdentityPlanResponse,
     CharacterIdentityScoreRequest,
     CharacterIdentityScoreResponse,
+    CharacterAssetFreezeRequest,
+    CharacterAssetPackResponse,
     CharacterResponse,
     CharacterReferenceGenerateRequest,
     CharacterReferenceGenerateResponse,
@@ -296,6 +298,57 @@ async def generate_reference_image(
     except Exception as e:
         logger.error(f"自动生成角色参考图失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"自动生成角色参考图失败: {e}")
+
+
+@router.post("/{character_id}/freeze-asset-pack", response_model=CharacterAssetPackResponse)
+async def freeze_character_asset_pack(
+    project_id: int,
+    character_id: int,
+    request: CharacterAssetFreezeRequest,
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    冻结角色身份档案和参考图，作为后续短剧生成的定妆资产包。
+    """
+    try:
+        character = db_session.query(Character).filter(
+            Character.id == character_id,
+            Character.project_id == project_id
+        ).first()
+        if not character:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"角色不存在: {character_id}")
+        identity_spec = load_identity_spec(character.visual_description)
+        if not identity_spec:
+            raise HTTPException(status_code=409, detail="请先生成角色身份方案")
+        all_specs = [
+            spec for item in db_session.query(Character).filter(Character.project_id == project_id).all()
+            for spec in [load_identity_spec(item.visual_description)]
+            if spec
+        ]
+        distinctiveness = CharacterIdentityService().distinctiveness_report(all_specs)
+        if distinctiveness.get("status") == "needs_revision":
+            raise HTTPException(status_code=409, detail="角色身份差异度不足，不能冻结定妆包")
+        character_manager = get_character_manager()
+        try:
+            asset_pack = character_manager.freeze_character_asset_pack(
+                character_id=character_id,
+                project_id=project_id,
+                identity_spec=identity_spec,
+                distinctiveness=distinctiveness,
+                notes=request.notes or "",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        return CharacterAssetPackResponse(
+            character_id=character_id,
+            status=asset_pack["status"],
+            asset_pack=asset_pack,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"冻结角色定妆包失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"冻结角色定妆包失败: {e}")
 
 
 @router.post("/{character_id}/reference", response_model=CharacterReferenceResponse)

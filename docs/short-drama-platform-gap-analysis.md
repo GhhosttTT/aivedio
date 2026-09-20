@@ -121,6 +121,8 @@ Already implemented or partially implemented:
 - Script generation with a 16-scene production target.
 - Character services, reference generation, identity scoring, and visual anchor
   payloads.
+- Character asset-pack freezing stores the approved identity bible and reference
+  image hashes so production readiness can detect stale character assets.
 - Shot prompt compiler and complexity checks for overloaded scenes.
 - Director-led video shot plans with duration, motion, prompt, negative prompt,
   end-frame prompt, and candidate reports.
@@ -252,6 +254,11 @@ Priority 3: Add character bible enforcement.
 - Each visible character must have approved reference images and distinct face,
   body, outfit, and negative identity anchors.
 - Multi-character scenes must pass distinctness checks before production.
+- Current implementation can freeze a character asset pack with
+  `POST /api/projects/{project_id}/characters/{character_id}/freeze-asset-pack`.
+  The pack records the identity-spec hash and reference-image hashes. If either
+  changes, production readiness blocks final generation until the pack is
+  re-frozen.
 
 Priority 4: Add spatial planning.
 
