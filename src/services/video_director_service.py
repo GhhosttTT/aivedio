@@ -319,6 +319,17 @@ class VideoDirectorService:
             f"{item.get('name', 'character')}: {item.get('appearance', '')}"
             for item in visible_characters
         )
+        turnaround_items = []
+        for item in visible_characters:
+            reference = item.get("turnaround_reference")
+            if not isinstance(reference, dict):
+                continue
+            view = reference.get("view")
+            control_prompt = reference.get("control_prompt")
+            if view and control_prompt:
+                turnaround_items.append(
+                    f"{item.get('name', 'character')} {view} reference locked: {control_prompt}"
+                )
         specs = [
             item.get("identity_spec") for item in visible_characters
             if isinstance(item.get("identity_spec"), dict)
@@ -327,7 +338,8 @@ class VideoDirectorService:
         if len(specs) >= 2:
             from src.services.character_identity_service import CharacterIdentityService
             contrast = CharacterIdentityService().identity_contrast_prompt(specs)
-        return f"{prefix}: {anchors}." + (f" {contrast}" if contrast else "")
+        turnaround = " Turnaround reference contract: " + "; ".join(turnaround_items) + "." if turnaround_items else ""
+        return f"{prefix}: {anchors}." + turnaround + (f" {contrast}" if contrast else "")
 
     @staticmethod
     def _probe_duration(path: Path) -> float:

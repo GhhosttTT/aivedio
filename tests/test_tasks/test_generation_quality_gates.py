@@ -170,6 +170,28 @@ def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_dat
     assert "identity drift" in plan.negative_prompt
 
 
+def test_video_director_prompt_uses_turnaround_reference_contract(project_data):
+    _, project, scene, _, _ = project_data
+
+    plan = get_video_director_service().plan_scene(
+        scene,
+        project.id,
+        [{
+            "name": "Alice",
+            "appearance": "woman, short black hair, green jacket",
+            "turnaround_reference": {
+                "view": "side",
+                "path": "side.png",
+                "control_prompt": "strict side profile view, nose silhouette, stable wardrobe",
+            },
+        }],
+    )
+
+    assert "Turnaround reference contract" in plan.director_prompt
+    assert "Alice side reference locked" in plan.director_prompt
+    assert "strict side profile view" in plan.director_prompt
+
+
 def test_video_director_prompt_includes_identity_contrast(project_data):
     _, project, scene, _, _ = project_data
     from src.services.character_identity_service import CharacterIdentityService
