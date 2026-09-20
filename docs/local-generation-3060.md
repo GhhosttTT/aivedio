@@ -64,6 +64,7 @@ GENERATION_IMAGE_CANDIDATES=5
 GENERATION_IMAGE_REFINEMENT_PASSES=2
 GENERATION_IMAGE_MIN_SCORE=4.0
 GENERATION_IMAGE_PLATFORM_MIN_SCORE=4.1
+GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE=4.0
 GENERATION_TURNAROUND_FEATURE_MIN_SCORE=4.0
 GENERATION_REQUIRE_IMAGE_REVIEW=true
 GENERATION_IMAGE_POSTPROCESS_COMMAND=
@@ -124,6 +125,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 `GENERATION_IMAGE_REFINEMENT_PASSES` 是额外精修轮数。设为 2 表示最多生成三轮候选；第一轮已经有 VLM 高分图时会提前停止。
 `GENERATION_IMAGE_MIN_SCORE` 是晋级门槛。建议先用 4.0，人工校准后再提高。
 `GENERATION_IMAGE_PLATFORM_MIN_SCORE` 是图片短剧平台观感门槛，会对商业美观、构图、画面完整性、脸部身份和整体身份加权；平均分够但塑料感、廉价滤镜、脏光或平台观感差的候选不会晋级。
+`GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE` 是平台美学子项门槛。VLM 返回 `platform_aesthetic_scores` 时，系统会分别检查肤质、灯光、色彩、手机可读性、背景分离、制作质感和修复痕迹；任一关键项低分会拉低候选平台分，避免“总分看起来够但画面廉价”的图被选中。
 `GENERATION_TURNAROUND_FEATURE_MIN_SCORE` 是角色三视图立体画册的五官/轮廓门槛。正面会检查脸型、眼睛、鼻子、嘴、发型、独特标记、体型和正面服装；侧面会检查 90 度侧脸、鼻梁剪影、发型轮廓、体型和侧面服装；背面会检查背面角度、发型后轮廓、服装背影和不能露正脸。
 `GENERATION_IMAGE_POSTPROCESS_COMMAND` 是入选关键帧后的本地精修命令，可接 FaceDetailer、CodeFormer/GFPGAN、高清化、超分或 ComfyUI 二段工作流。命令支持 `{input}`、`{output}`、`{prompt}`、`{negative_prompt}`、`{reference}` 占位符。开启 `GENERATION_REQUIRE_IMAGE_POSTPROCESS=true` 后，精修命令未配置、失败、未产出图像或输出与输入完全一致都会阻断该镜头，避免“生产 profile 写了 face_repair/upscale，但实际没有跑精修”。
 `GENERATION_REQUIRE_IMAGE_REVIEW=true` 时，本地 VLM 不可用会直接拦截图片，不会只靠技术指标放行。正式跑片建议打开；开发调试可以先保持 false。
@@ -146,14 +148,14 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 情节审核：检查全部分镜编号，必须每个编号恰好出现一次。独立 critic 请求可使用同一本地文本模型，属于第二次审稿，不等同于独立模型的交叉验证。
 
 关键帧审核：每个候选图保存独立评分。基础技术评分可以离线运行，本地 VLM 评分需要 `llama-server` 的 OpenAI 兼容接口可用。
-图片 VLM 评分包含剧情匹配、构图、美观、画面完整性、脸部身份、整体身份一致性。`facial_identity` 会单独比较脸型、眼睛、鼻子、嘴、发型、年龄感和角色独特特征；多人镜头会把每个可见角色的 name/appearance 作为结构化证据送入审核，避免只凭提示词里一段长文本判断。
+图片 VLM 评分包含剧情匹配、构图、美观、画面完整性、脸部身份、整体身份一致性。`facial_identity` 会单独比较脸型、眼睛、鼻子、嘴、发型、年龄感和角色独特特征；多人镜头会把每个可见角色的 name/appearance 作为结构化证据送入审核，避免只凭提示词里一段长文本判断。若 VLM 返回 `platform_aesthetic_scores`，系统还会单独记录肤质、灯光、色彩、手机可读性、背景分离、制作质感、修复痕迹这些短剧平台观感维度。
 整部片子的视觉风格也需要冻结：调用 `POST /api/projects/{project_id}/freeze-visual-style`，保存项目级风格画册，包括统一色彩、光线、肤质、商业短剧质感、场景装饰一致性和负向风格漂移约束。后续关键帧和视频导演提示词都会引用这份资产包；若主题、分镜视觉描述、地点或时间段变化，生产就绪检查会要求重新冻结。
 角色定妆应先做三视图立体画册：可调用 `POST /api/projects/{project_id}/characters/{character_id}/generate-turnaround-album` 为正面、侧面、背面分别生成多张候选并择优；也可手工准备三张参考图后调用 `POST /api/projects/{project_id}/characters/{character_id}/freeze-turnaround-album`。系统会保存每个视图的路径、hash 和控制提示，用来锁定脸部、发型轮廓、身体比例、服装正侧背细节。生成三视图时，本地 VLM 若返回 `turnaround_feature_scores`，系统会按视角和五官/轮廓维度写入 `turnaround_gate`；正式环境开启 `GENERATION_REQUIRE_IMAGE_REVIEW=true` 后，未通过这些维度会阻断三视图生成。任一视图或身份档案变化后，生产就绪检查会要求重新冻结。
 生产前应先冻结角色定妆包：先生成或上传角色参考图，再生成身份方案，最后调用 `POST /api/projects/{project_id}/characters/{character_id}/freeze-asset-pack`。冻结包会保存身份档案 hash、参考图路径和参考图 hash。后续只要修改身份方案或替换参考图，生产就绪检查会要求重新冻结，避免未审批的新脸进入成片生成。
 角色定妆包冻结前，项目内可见角色的 `distinctiveness_report` 必须通过；如果两个角色五官和服装过像，系统会拒绝冻结，要求重做其中一个角色身份方案。
 角色定妆后还应冻结项目空间计划：调用 `POST /api/projects/{project_id}/freeze-spatial-plan`，把每个分镜的景别、机位、轴线、人物站位、道具焦点和 pose/depth/camera 控制提示写入 `spatial_asset_pack.json`。如果分镜、对白、可见角色或空间计划变化，生产就绪检查会要求重新冻结，避免前后镜头站位和机位漂移。
 本机 ComfyUI 工作流也需要冻结：配置 `COMFYUI_WORKFLOW_PATH`、`COMFYUI_VIDEO_WORKFLOW_PATH` 后调用 `POST /api/projects/workflow-profile/freeze`。生产 profile 会记录 image/video workflow 路径、文件 hash、能力声明和质量阈值。后续如果 workflow 文件被替换，或缺少 identity、spatial control、pose/depth、first-last-frame video、motion control、face repair、upscale、candidate review 等能力，生产就绪检查会阻断最终生成。
-生产 profile 也会冻结平台观感门槛、三视图五官门槛和图片后处理命令 hash。调整 `GENERATION_IMAGE_PLATFORM_MIN_SCORE`、`GENERATION_TURNAROUND_FEATURE_MIN_SCORE`、`GENERATION_VIDEO_PLATFORM_MIN_SCORE`、`GENERATION_IMAGE_POSTPROCESS_COMMAND` 或 `GENERATION_REQUIRE_IMAGE_POSTPROCESS` 后，需要重新冻结 workflow profile。
+生产 profile 也会冻结平台观感门槛、平台美学子项门槛、三视图五官门槛和图片后处理命令 hash。调整 `GENERATION_IMAGE_PLATFORM_MIN_SCORE`、`GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE`、`GENERATION_TURNAROUND_FEATURE_MIN_SCORE`、`GENERATION_VIDEO_PLATFORM_MIN_SCORE`、`GENERATION_IMAGE_POSTPROCESS_COMMAND` 或 `GENERATION_REQUIRE_IMAGE_POSTPROCESS` 后，需要重新冻结 workflow profile。
 评分报告位于正式图片同目录，后缀为 `.quality.json`。候选图保留为 `.candidate_01.png` 等，便于人工回看和调参。
 
 画面评分：每镜头至少 3 帧，长镜头约每秒一帧；采样覆盖时长的 5% 至 95%。超过 59 秒的片段要求拆分，避免静默截断审核范围。

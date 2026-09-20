@@ -4,7 +4,13 @@ import pytest
 from PIL import Image
 
 from src.services.generation_review import ReviewError
-from src.services.image_quality_service import IMAGE_REVIEW_RUBRIC, ImageQualitySelector, candidate_output_path
+from src.services.image_quality_service import (
+    IMAGE_REVIEW_RUBRIC,
+    PLATFORM_AESTHETIC_FEATURES,
+    ImageQualitySelector,
+    candidate_output_path,
+    platform_aesthetic_gate,
+)
 
 
 def make_image(path: Path, color: tuple[int, int, int]) -> None:
@@ -20,6 +26,30 @@ def test_image_review_rubric_checks_mobile_short_drama_aesthetics():
     assert "mobile short-drama platform" in IMAGE_REVIEW_RUBRIC
     assert "readable face on a phone screen" in IMAGE_REVIEW_RUBRIC
     assert "same-face characters" in IMAGE_REVIEW_RUBRIC
+    assert "platform_aesthetic_scores" in IMAGE_REVIEW_RUBRIC
+
+
+def test_platform_aesthetic_gate_quantifies_short_drama_surface_quality(monkeypatch):
+    monkeypatch.setattr("src.services.image_quality_service.settings.GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
+    candidate = {
+        "platform_score": 4.8,
+        "review": {
+            "platform_aesthetic_scores": {
+                "skin_texture": {"score": 2, "evidence": "plastic skin"},
+                "lighting_quality": {"score": 2, "evidence": "muddy lighting"},
+                "color_grade": {"score": 4, "evidence": "usable color"},
+                "phone_readability": {"score": 5, "evidence": "face readable"},
+                "background_separation": {"score": 4, "evidence": "clean separation"},
+                "production_polish": {"score": 3, "evidence": "looks cheap"},
+                "repair_artifacts_absent": {"score": 5, "evidence": "no repair scar"},
+            }
+        },
+    }
+
+    gate = platform_aesthetic_gate(candidate)
+
+    assert gate["status"] == "needs_review"
+    assert set(gate["low"]) == {"skin_texture", "lighting_quality", "production_polish"}
 
 
 def test_select_best_promotes_best_candidate(tmp_path):
@@ -128,6 +158,61 @@ def test_select_best_rejects_low_platform_score(tmp_path, monkeypatch):
     assert "refine_prompt_composition" in report
 
 
+def test_select_best_uses_platform_aesthetic_breakdown(tmp_path, monkeypatch):
+    first = tmp_path / "first.png"
+    second = tmp_path / "second.png"
+    final = tmp_path / "final.png"
+    make_image(first, (90, 90, 90))
+    make_image(second, (130, 130, 130))
+    monkeypatch.setattr("src.services.image_quality_service.settings.GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.services.image_quality_service.settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE", 4.0)
+
+    low_breakdown = {
+        feature: {"score": 4, "evidence": "ok"}
+        for feature in PLATFORM_AESTHETIC_FEATURES
+    }
+    low_breakdown["skin_texture"] = {"score": 1, "evidence": "plastic skin"}
+    high_breakdown = {
+        feature: {"score": 4, "evidence": "passes"}
+        for feature in PLATFORM_AESTHETIC_FEATURES
+    }
+    selector = ImageQualitySelector(reviewer=object())
+    report = selector.select_best([
+        {
+            "index": 1,
+            "path": str(first),
+            "average": 4.8,
+            "status": "passed",
+            "review": {
+                "composition": {"score": 5, "evidence": "strong framing"},
+                "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+                "visual_integrity": {"score": 5, "evidence": "clean render"},
+                "facial_identity": {"score": 5, "evidence": "face matches"},
+                "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                "platform_aesthetic_scores": low_breakdown,
+            },
+        },
+        {
+            "index": 2,
+            "path": str(second),
+            "average": 4.2,
+            "status": "passed",
+            "review": {
+                "composition": {"score": 4, "evidence": "usable framing"},
+                "aesthetic_quality": {"score": 4, "evidence": "commercial lighting"},
+                "visual_integrity": {"score": 4, "evidence": "clean render"},
+                "facial_identity": {"score": 4, "evidence": "face matches"},
+                "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
+                "platform_aesthetic_scores": high_breakdown,
+            },
+        },
+    ], final, tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0)
+
+    assert report["best_index"] == 2
+    assert report["candidates"][1]["platform_aesthetic_gate"]["status"] == "needs_review"
+    assert final.read_bytes() == second.read_bytes()
+
+
 def test_select_best_rejects_when_vlm_is_required_but_missing(tmp_path):
     image = tmp_path / "candidate.png"
     make_image(image, (120, 120, 120))
@@ -228,3 +313,36 @@ def test_review_candidate_accepts_turnaround_feature_scores(tmp_path):
 
     assert report["status"] == "passed"
     assert report["review"]["turnaround_feature_scores"]["view_angle"]["score"] == 5
+
+
+def test_review_candidate_accepts_platform_aesthetic_scores(tmp_path):
+    image = tmp_path / "candidate.png"
+    make_image(image, (120, 120, 120))
+
+    class FakeReviewer:
+        def evaluate(self, _instruction, _payload, schema, images=()):
+            return schema.model_validate({
+                "prompt_alignment": {"score": 4, "evidence": "matches"},
+                "composition": {"score": 4, "evidence": "single readable subject"},
+                "aesthetic_quality": {"score": 4, "evidence": "commercial look"},
+                "visual_integrity": {"score": 4, "evidence": "clean render"},
+                "facial_identity": {"score": 4, "evidence": "face matches"},
+                "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
+                "platform_aesthetic_scores": {
+                    feature: {"score": 4, "evidence": "passes"}
+                    for feature in PLATFORM_AESTHETIC_FEATURES
+                },
+                "reviewed_images": [1],
+                "issues": [],
+            })
+
+    report = ImageQualitySelector(reviewer=FakeReviewer()).review_candidate(
+        1,
+        image,
+        {"scene_number": 1, "visual_description": "Alice stands in the office doorway"},
+        "Alice in an office doorway",
+    )
+
+    assert report["status"] == "passed"
+    assert report["platform_aesthetic_gate"]["status"] == "passed"
+    assert report["review"]["platform_aesthetic_scores"]["skin_texture"]["score"] == 4

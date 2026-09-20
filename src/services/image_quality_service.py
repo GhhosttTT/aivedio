@@ -28,9 +28,20 @@ class ImageReview(BaseModel):
     visual_integrity: Score
     facial_identity: Score
     identity_consistency: Score
+    platform_aesthetic_scores: dict[str, Score] | None = None
     turnaround_feature_scores: dict[str, Score] | None = None
     reviewed_images: list[StrictInt]
     issues: list[Issue] = Field(default_factory=list)
+
+PLATFORM_AESTHETIC_FEATURES = (
+    "skin_texture",
+    "lighting_quality",
+    "color_grade",
+    "phone_readability",
+    "background_separation",
+    "production_polish",
+    "repair_artifacts_absent",
+)
 
 
 IMAGE_REVIEW_RUBRIC = """You are a strict production still-image reviewer for short-drama generation.
@@ -39,6 +50,10 @@ Score 0-5 for prompt alignment, composition, aesthetic quality, visual integrity
 For aesthetic_quality, judge whether the image looks publishable for a mobile short-drama platform: clear subject,
 readable face on a phone screen, commercial lighting, natural skin texture, clean background separation, and no cheap
 filter look.
+Also return platform_aesthetic_scores with these keys: skin_texture, lighting_quality, color_grade,
+phone_readability, background_separation, production_polish, repair_artifacts_absent. Score each 0-5 with concrete
+visual evidence. Penalize plastic skin, muddy light, over-saturated filters, tiny unreadable faces, messy background,
+low production value, visible face repair scars, and upscale artifacts.
 For facial_identity, compare visible face shape, eyes, nose, mouth, hair, apparent age, and distinctive facial traits
 against every expected character identity anchor. Penalize same-face characters and faces that drift from the anchor.
 For identity_consistency, also judge wardrobe, body shape, role separation, and whether all expected characters remain distinct.
@@ -85,6 +100,58 @@ def platform_image_score(candidate: dict[str, Any]) -> float | None:
         "facial_identity": 0.20,
         "identity_consistency": 0.18,
     })
+
+
+def platform_aesthetic_gate(candidate: dict[str, Any]) -> dict[str, Any] | None:
+    review = candidate.get("review") if isinstance(candidate.get("review"), dict) else {}
+    supplied = review.get("platform_aesthetic_scores")
+    if not isinstance(supplied, dict):
+        return None
+    scores = {}
+    missing = []
+    min_score = settings.GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE
+    for feature in PLATFORM_AESTHETIC_FEATURES:
+        item = supplied.get(feature)
+        score = item.get("score") if isinstance(item, dict) else None
+        evidence = item.get("evidence") if isinstance(item, dict) else ""
+        if isinstance(score, (int, float)):
+            scores[feature] = {
+                "score": _clamp_score(float(score)),
+                "evidence": str(evidence or "feature reviewed"),
+            }
+        else:
+            missing.append(feature)
+            scores[feature] = {
+                "score": 0.0,
+                "evidence": "platform aesthetic feature was not reviewed by the local VLM",
+            }
+    average = _clamp_score(sum(item["score"] for item in scores.values()) / len(scores))
+    low = {
+        feature: item
+        for feature, item in scores.items()
+        if item["score"] < min_score
+    }
+    return {
+        "status": "passed" if not missing and not low else "needs_review",
+        "min_score": min_score,
+        "average": average,
+        "scores": scores,
+        "missing": missing,
+        "low": low,
+    }
+
+
+def attach_platform_aesthetic_gate(candidate: dict[str, Any]) -> None:
+    gate = platform_aesthetic_gate(candidate)
+    if not gate:
+        return
+    candidate["platform_aesthetic_gate"] = gate
+    candidate["platform_aesthetic_score"] = gate["average"] if gate["status"] == "passed" else 0.0
+    current_platform = candidate.get("platform_score")
+    if isinstance(current_platform, (int, float)):
+        candidate["platform_score"] = min(float(current_platform), candidate["platform_aesthetic_score"])
+    else:
+        candidate["platform_score"] = candidate["platform_aesthetic_score"]
 
 
 def _identity_gate(candidate: dict[str, Any], min_score: float) -> tuple[bool, dict[str, float]]:
@@ -161,6 +228,7 @@ class ImageQualitySelector:
             platform_score = platform_image_score(report)
             if platform_score is not None:
                 report["platform_score"] = platform_score
+            attach_platform_aesthetic_gate(report)
         except Exception as exc:
             fallback = report["metrics"]["technical_score"]
             report.update({
@@ -195,6 +263,7 @@ class ImageQualitySelector:
                 platform_score = platform_image_score(candidate)
                 if platform_score is not None:
                     candidate["platform_score"] = platform_score
+            attach_platform_aesthetic_gate(candidate)
         ranked = sorted(
             candidates,
             key=lambda item: (
