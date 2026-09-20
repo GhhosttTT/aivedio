@@ -276,6 +276,20 @@ export interface GenerationReviewSummary {
         needs_split: number;
         warn: number;
     };
+    repair_queue?: {
+        total: number;
+        actions: Record<string, number>;
+        items: Array<{
+            priority?: string;
+            stage?: string;
+            action?: string;
+            reason?: string;
+            recommendation?: string;
+            source_report?: string;
+            scene_number?: number;
+            candidate_index?: number;
+        }>;
+    };
     action_items: string[];
 }
 

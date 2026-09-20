@@ -65,7 +65,6 @@ async def compare_seed_dance_baseline(
     from src.database.models import Project
     from src.services.generation_review import write_report
     from src.utils.storage import storage_manager
-    from scripts.compare_video_baseline import compare
 
     project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project:
@@ -79,6 +78,7 @@ async def compare_seed_dance_baseline(
         raise HTTPException(status_code=400, detail="Seed Dance baseline video does not exist")
 
     review_root = storage_manager.get_project_path(project_id) / "reviews"
+    from scripts.compare_video_baseline import compare
     report = compare(candidate, baseline, artifact_dir=review_root)
     report["candidate_video_path"] = str(candidate)
     report["baseline_video_path"] = str(baseline)
@@ -109,6 +109,8 @@ async def upload_seed_dance_baseline(
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in {".mp4", ".mov", ".mkv", ".webm"}:
         raise HTTPException(status_code=400, detail="Baseline must be a video file")
+
+    from scripts.compare_video_baseline import compare
 
     review_root = storage_manager.get_project_path(project_id) / "reviews"
     baseline_dir = review_root / "baselines"
@@ -152,6 +154,13 @@ async def get_generation_review(
         path.stem: json.loads(path.read_text(encoding="utf-8"))
         for path in sorted(root.glob("*.json"))
     }
+    project_root = storage_manager.get_project_path(project_id)
+    for path in sorted(project_root.rglob("*.quality.json")):
+        try:
+            key = "quality_" + "_".join(path.relative_to(project_root).with_suffix("").parts)
+            reports[key] = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError):
+            logger.warning("Cannot read quality report: {}", path)
     from src.tasks.review_tasks import current_story, generation_signature
     from src.services.generation_review import fingerprint
     for name in ("production_story", "generation"):
@@ -212,6 +221,10 @@ def _generation_review_summary(reports: dict) -> dict:
     if baseline != "passed":
         action_items.append("Run Seed Dance baseline comparison before claiming replacement quality.")
 
+    repair_queue = _repair_queue_summary(reports)
+    if repair_queue["total"]:
+        action_items.append(f"Repair queue has {repair_queue['total']} targeted actions from failed generation reports.")
+
     blocking = bool(stale or needs_split or production_story != "passed" or generation != "passed" or baseline != "passed")
     return {
         "status": "blocked" if blocking else "ready",
@@ -222,7 +235,31 @@ def _generation_review_summary(reports: dict) -> dict:
             "needs_split": needs_split,
             "warn": warn,
         },
+        "repair_queue": repair_queue,
         "action_items": action_items,
+    }
+
+
+def _repair_queue_summary(reports: dict) -> dict:
+    items = []
+    actions = {}
+    for name, report in reports.items():
+        if not isinstance(report, dict):
+            continue
+        for item in report.get("repair_queue") or []:
+            if not isinstance(item, dict):
+                continue
+            copied = dict(item)
+            copied["source_report"] = name
+            items.append(copied)
+            action = copied.get("action") or "unknown"
+            actions[action] = actions.get(action, 0) + 1
+    priority_rank = {"high": 0, "medium": 1, "low": 2}
+    items.sort(key=lambda item: (priority_rank.get(item.get("priority"), 9), item.get("stage") or "", item.get("action") or ""))
+    return {
+        "total": len(items),
+        "actions": actions,
+        "items": items[:20],
     }
 
 

@@ -39,8 +39,22 @@ const actionLabels: Record<string, string> = {
     'Run Seed Dance baseline comparison before claiming replacement quality.': '先完成 Seed Dance 基线对比，再判断是否达到替代质量。',
 };
 
+const repairActionLabels: Record<string, string> = {
+    regenerate_character_identity: '重做角色身份/参考图',
+    regenerate_keyframe_with_prop_constraints: '重做关键帧并强化手和道具约束',
+    refine_prompt_composition: '优化构图、光线和提示词',
+    lower_motion_and_regenerate_video: '降低运动强度后重做视频',
+    split_scene: '拆分为更简单的原子镜头',
+    start_local_reviewer: '启动 llama.cpp 视觉审核后重跑',
+    manual_review: '人工复核',
+};
+
 function labelAction(item: string) {
     return actionLabels[item] || item;
+}
+
+function labelRepairAction(action?: string) {
+    return repairActionLabels[action || ''] || action || '未知动作';
 }
 
 function reportTitle(key: string) {
@@ -135,6 +149,19 @@ function ReviewSummary({summary}: {summary?: GenerationReviewSummary}) {
             <h3>下一步动作</h3>
             {summary.action_items.map((item) => <p key={item} className="wb-alert">{labelAction(item)}</p>)}
         </div> : <p className="wb-muted">关键门禁已通过，可以继续进入最终合成或人工抽检。</p>}
+        {summary.repair_queue?.total ? <div className="wb-summary-actions">
+            <h3>返工队列 · {summary.repair_queue.total}</h3>
+            <div className="wb-grid compact">
+                {Object.entries(summary.repair_queue.actions || {}).map(([action, count]) => <div className="wb-kv" key={action}>
+                    <span>{labelRepairAction(action)}</span>
+                    <strong>{count}</strong>
+                </div>)}
+            </div>
+            {summary.repair_queue.items?.slice(0, 6).map((item, index) => <p key={`${item.source_report}-${item.action}-${index}`} className={`wb-issue ${item.priority === 'high' ? 'blocker' : 'warning'}`}>
+                <span>{item.priority === 'high' ? '高' : '中'}</span>
+                {item.scene_number ? `分镜 ${item.scene_number} · ` : ''}{labelRepairAction(item.action)}：{item.recommendation || item.reason}
+            </p>)}
+        </div> : null}
         {reportEntries.length > 0 && <div className="wb-grid compact" aria-label="报告状态">
             {reportEntries.map(([key, statusValue]) => <div className="wb-kv" key={key}>
                 <span>{reportTitle(key)}</span>

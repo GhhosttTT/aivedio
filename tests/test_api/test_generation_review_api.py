@@ -41,6 +41,35 @@ def test_review_api_returns_score_evidence(tmp_path, monkeypatch):
     assert result["summary"]["status"] == "blocked"
 
 
+def test_review_api_summarizes_repair_queue_from_quality_reports(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    project_root = storage_manager.get_project_path(1)
+    quality_path = project_root / "images" / "scene_1.quality.json"
+    write_report(quality_path, {
+        "kind": "image_candidate_selection",
+        "status": "needs_review",
+        "repair_queue": [
+            {
+                "priority": "high",
+                "stage": "image",
+                "action": "refine_prompt_composition",
+                "reason": "bad crop",
+                "recommendation": "Tighten composition",
+            }
+        ],
+    })
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(id=1)
+
+    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+
+    assert result["summary"]["repair_queue"]["total"] == 1
+    assert result["summary"]["repair_queue"]["actions"] == {"refine_prompt_composition": 1}
+    assert result["summary"]["repair_queue"]["items"][0]["source_report"].startswith("quality_images_scene_1")
+    assert any("Repair queue has 1" in item for item in result["summary"]["action_items"])
+
+
 def test_generation_review_summary_blocks_complex_shots():
     summary = _generation_review_summary({
         "production_story": {"status": "passed"},
@@ -51,6 +80,22 @@ def test_generation_review_summary_blocks_complex_shots():
     assert summary["status"] == "blocked"
     assert summary["shot_complexity"]["needs_split"] == 2
     assert any("Split or simplify" in item for item in summary["action_items"])
+
+
+def test_generation_review_summary_includes_repair_queue():
+    summary = _generation_review_summary({
+        "production_story": {"status": "passed"},
+        "generation": {"status": "passed"},
+        "seed_dance_baseline_comparison": {"status": "passed"},
+        "shot_complexity": {"status": "passed", "summary": {"needs_split": 0, "warn": 0}},
+        "quality_scene_1": {
+            "status": "needs_review",
+            "repair_queue": [{"priority": "high", "stage": "video", "action": "lower_motion_and_regenerate_video"}],
+        },
+    })
+
+    assert summary["repair_queue"]["total"] == 1
+    assert summary["repair_queue"]["actions"]["lower_motion_and_regenerate_video"] == 1
 
 
 def test_generation_review_summary_ready_when_reviews_pass():

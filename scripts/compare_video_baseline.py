@@ -14,9 +14,6 @@ import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-import cv2
-import numpy as np
-
 
 @dataclass
 class VideoStats:
@@ -72,6 +69,7 @@ def _parse_fps(value: str) -> float:
 
 
 def _sample_frames(path: Path, max_samples: int) -> list[np.ndarray]:
+    cv2, np = _load_cv2_numpy()
     capture = cv2.VideoCapture(str(path))
     if not capture.isOpened():
         raise RuntimeError(f"Cannot open video: {path}")
@@ -94,6 +92,7 @@ def _sample_frames(path: Path, max_samples: int) -> list[np.ndarray]:
 
 
 def video_stats(path: Path, max_samples: int = 16) -> VideoStats:
+    cv2, np = _load_cv2_numpy()
     probe = _probe(path)
     frames = _sample_frames(path, max_samples)
     gray_frames = [cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) for frame in frames]
@@ -157,6 +156,7 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
 
 
 def _write_contact_sheet(candidate: Path, baseline: Path, artifact_dir: Path, max_samples: int = 6) -> Path:
+    cv2, np = _load_cv2_numpy()
     candidate_frames = _sample_frames(candidate, max_samples)
     baseline_frames = _sample_frames(baseline, max_samples)
     count = min(len(candidate_frames), len(baseline_frames), max_samples)
@@ -186,6 +186,7 @@ def _write_contact_sheet(candidate: Path, baseline: Path, artifact_dir: Path, ma
 
 
 def _draw_label(image: np.ndarray, text: str, y: int) -> None:
+    cv2, _np = _load_cv2_numpy()
     cv2.putText(
         image,
         text,
@@ -196,6 +197,18 @@ def _draw_label(image: np.ndarray, text: str, y: int) -> None:
         1,
         cv2.LINE_AA,
     )
+
+
+def _load_cv2_numpy():
+    try:
+        import cv2
+        import numpy as np
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Seed Dance baseline comparison requires opencv-python and numpy. "
+            "Install them before running video baseline comparison."
+        ) from exc
+    return cv2, np
 
 
 def _safe_ratio(value: float, baseline: float) -> float | None:
