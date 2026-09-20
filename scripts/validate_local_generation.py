@@ -143,6 +143,23 @@ def _review_low_dimensions(video_review_report: dict | None) -> list[str]:
     return sorted(set(low))
 
 
+def _video_review_gate_scores(video_review_report: dict | None) -> dict[str, float]:
+    if not isinstance(video_review_report, dict):
+        return {}
+    scores: dict[str, list[float]] = {
+        "facial_identity": [],
+        "identity_consistency": [],
+        "temporal_consistency": [],
+    }
+    for batch in video_review_report.get("batches", []):
+        review = batch.get("review", {})
+        for key in scores:
+            value = review.get(key)
+            if isinstance(value, dict) and isinstance(value.get("score"), (int, float)):
+                scores[key].append(float(value["score"]))
+    return {key: min(values) for key, values in scores.items() if values}
+
+
 def _calibration_recommendations(manual_cases: list[dict], video_review_report: dict | None) -> list[dict]:
     recommendations = []
     low_dimensions = _review_low_dimensions(video_review_report)
@@ -223,7 +240,23 @@ def summarize_validation(output: Path):
         and video_workflow_report.get("status") in {"ready_for_live_test", "skipped"}
     )
     checks["images_rendered"] = bool(render_report and render_report.get("status") == "rendered_pending_human_review")
-    checks["video_review_passed"] = bool(video_review_report and video_review_report.get("status") == "passed")
+    video_gate_scores = _video_review_gate_scores(video_review_report)
+    checks["video_gate_scores"] = video_gate_scores
+    checks["video_identity_gate_passed"] = bool(
+        video_gate_scores
+        and video_gate_scores.get("facial_identity", 0) >= settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE
+        and video_gate_scores.get("identity_consistency", 0) >= settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE
+    )
+    checks["video_temporal_gate_passed"] = bool(
+        video_gate_scores
+        and video_gate_scores.get("temporal_consistency", 0) >= settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE
+    )
+    checks["video_review_passed"] = bool(
+        video_review_report
+        and video_review_report.get("status") == "passed"
+        and checks["video_identity_gate_passed"]
+        and checks["video_temporal_gate_passed"]
+    )
     checks["baseline_comparison_present"] = bool(baseline_comparison_report)
     checks["baseline_comparison_passed"] = bool(
         baseline_comparison_report and baseline_comparison_report.get("status") == "passed"
@@ -249,7 +282,10 @@ def summarize_validation(output: Path):
     if not checks["images_rendered"]:
         report["action_items"].append("Run render-images on the fixed validation cases and inspect generated keyframes.")
     if not checks["video_review_passed"]:
-        report["action_items"].append("Run review-video on a generated clip; fix identity drift, flicker, temporal breaks, or VLM setup.")
+        report["action_items"].append(
+            "Run review-video on a generated clip and pass identity/temporal gates; "
+            "fix identity drift, same-face characters, flicker, temporal breaks, or VLM setup."
+        )
     if not checks["baseline_comparison_present"]:
         report["action_items"].append("Run compare-baseline against a Seed Dance reference clip before claiming replacement quality.")
     elif not checks["baseline_comparison_passed"]:

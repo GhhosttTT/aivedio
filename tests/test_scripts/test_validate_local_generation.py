@@ -8,6 +8,19 @@ def write_json(path, payload):
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def passed_video_review():
+    return {
+        "status": "passed",
+        "batches": [{
+            "review": {
+                "facial_identity": {"score": 4, "evidence": "face matches"},
+                "identity_consistency": {"score": 4, "evidence": "identity stable"},
+                "temporal_consistency": {"score": 4, "evidence": "motion stable"},
+            }
+        }],
+    }
+
+
 def test_review_models_endpoint_uses_llama_cpp_openai_contract(monkeypatch):
     monkeypatch.setattr(validator.settings, "LOCAL_REVIEW_BASE_URL", "http://127.0.0.1:8080")
 
@@ -151,7 +164,7 @@ def test_validation_summary_requires_manual_scores(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "render.json", {"status": "rendered_pending_human_review"})
-    write_json(tmp_path / "video_review.json", {"status": "passed"})
+    write_json(tmp_path / "video_review.json", passed_video_review())
     write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
 
     report = validator.summarize_validation(tmp_path)
@@ -165,7 +178,7 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "render.json", {"status": "rendered_pending_human_review"})
-    write_json(tmp_path / "video_review.json", {"status": "passed"})
+    write_json(tmp_path / "video_review.json", passed_video_review())
     write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
     write_json(tmp_path / "manual_review.json", {
         "cases": [
@@ -179,6 +192,8 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     assert report["status"] == "ready_for_seed_dance_candidate"
     assert report["checks"]["manual_average_score"] == 4.25
     assert report["checks"]["baseline_comparison_passed"] is True
+    assert report["checks"]["video_identity_gate_passed"] is True
+    assert report["checks"]["video_temporal_gate_passed"] is True
     assert report["action_items"] == []
 
 
@@ -186,7 +201,7 @@ def test_validation_summary_requires_seed_dance_baseline_comparison(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "render.json", {"status": "rendered_pending_human_review"})
-    write_json(tmp_path / "video_review.json", {"status": "passed"})
+    write_json(tmp_path / "video_review.json", passed_video_review())
     write_json(tmp_path / "manual_review.json", {
         "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
     })
@@ -202,7 +217,7 @@ def test_validation_summary_blocks_failed_seed_dance_comparison(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "render.json", {"status": "rendered_pending_human_review"})
-    write_json(tmp_path / "video_review.json", {"status": "passed"})
+    write_json(tmp_path / "video_review.json", passed_video_review())
     write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "needs_review"})
     write_json(tmp_path / "manual_review.json", {
         "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
@@ -213,6 +228,33 @@ def test_validation_summary_blocks_failed_seed_dance_comparison(tmp_path):
     assert report["status"] == "partial_needs_review"
     assert report["checks"]["baseline_comparison_passed"] is False
     assert any("Seed Dance baseline comparison passes" in item for item in report["action_items"])
+
+
+def test_validation_summary_blocks_low_video_identity_gate(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", {"status": "rendered_pending_human_review"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "video_review.json", {
+        "status": "passed",
+        "batches": [{
+            "review": {
+                "facial_identity": {"score": 3, "evidence": "face drift"},
+                "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
+                "temporal_consistency": {"score": 4, "evidence": "motion stable"},
+            }
+        }],
+    })
+    write_json(tmp_path / "manual_review.json", {
+        "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["video_review_passed"] is False
+    assert report["checks"]["video_identity_gate_passed"] is False
+    assert any("identity/temporal gates" in item for item in report["action_items"])
 
 
 def test_validation_summary_recommends_targeted_calibration(tmp_path):
