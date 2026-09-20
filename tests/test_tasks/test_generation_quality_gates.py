@@ -13,7 +13,7 @@ from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _complexity_report, _composition_constraint, _generate_quality_candidates, _project_complexity_report, _review_feedback, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
-from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _build_video_generator, _generate_quality_video_candidates, _scene_review_payload
+from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _scene_review_payload
 
 
 @pytest.fixture
@@ -510,6 +510,7 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
     assert provider.request.reference_image.endswith("source.png")
     assert provider.request.end_image.endswith("end.png")
     assert provider.request.duration_seconds == 4.2
+    assert provider.request.aspect_ratio == "7:4"
     assert provider.request.fps == 8
     assert provider.request.motion_bucket_id == 120
     assert provider.request.noise_aug_strength == 0.02
@@ -544,6 +545,12 @@ def test_video_generator_uses_svd_for_local_comfy_without_workflow(project_data,
     generator = _build_video_generator(scene, shot_plan, "local_comfyui", None)
 
     assert generator is fake_svd
+
+
+def test_video_aspect_ratio_is_derived_from_generation_size():
+    assert _aspect_ratio_for_size(768, 1344) == "4:7"
+    assert _aspect_ratio_for_size(1344, 768) == "7:4"
+    assert _aspect_ratio_for_size(0, 768) == "unknown"
 
 
 def test_quality_refinement_uses_previous_review_feedback(tmp_path, monkeypatch):

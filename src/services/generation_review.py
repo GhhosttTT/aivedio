@@ -8,6 +8,7 @@ import io
 import json
 import math
 import subprocess
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -73,7 +74,17 @@ def write_report(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + f".{uuid4().hex}.tmp")
     temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
+    last_error = None
+    for attempt in range(5):
+        try:
+            temporary.replace(path)
+            return
+        except OSError as exc:
+            last_error = exc
+            if attempt == 4:
+                break
+            time.sleep(0.05 * (attempt + 1))
+    raise last_error
 
 
 def decision(review: BaseModel) -> tuple[str, float]:

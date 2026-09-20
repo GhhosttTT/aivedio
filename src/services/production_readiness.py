@@ -60,6 +60,7 @@ class ProductionReadinessService:
         checks = {
             "script": self._script_check(project, scenes, blockers),
             "story_rhythm": self._story_rhythm_check(project, scenes, warnings),
+            "visual_format": self._visual_format_check(warnings),
             "characters": self._character_check(project, scenes, characters, blockers, warnings),
             "shot_complexity": self._shot_complexity_check(project, scenes, blockers, warnings),
             "spatial_continuity": self._spatial_continuity_check(project, scenes, warnings),
@@ -102,6 +103,33 @@ class ProductionReadinessService:
             "contiguous_scene_numbers": numbers == expected,
             "draft_fallback_enabled": settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK,
             "has_script_json": bool(project.script),
+        }
+
+    def _visual_format_check(self, warnings: list[ReadinessIssue]) -> dict:
+        width = int(settings.GENERATION_WIDTH)
+        height = int(settings.GENERATION_HEIGHT)
+        ratio = round(width / height, 4) if height else 0
+        target_ratio = round(9 / 16, 4)
+        is_vertical = height > width
+        is_mobile_short_drama = is_vertical and abs(ratio - target_ratio) <= 0.08
+        status = "mobile_short_drama" if is_mobile_short_drama else ("vertical_non_9_16" if is_vertical else "not_vertical")
+        if status != "mobile_short_drama":
+            warnings.append(ReadinessIssue(
+                "non_mobile_short_drama_format",
+                (
+                    "Use a vertical 9:16 generation format such as 768x1344 before claiming "
+                    "mobile short-drama production quality."
+                ),
+                severity="warning",
+            ))
+        return {
+            "status": status,
+            "width": width,
+            "height": height,
+            "aspect_ratio": f"{width}:{height}",
+            "ratio": ratio,
+            "target": "9:16 vertical mobile short drama",
+            "recommended": {"width": 768, "height": 1344},
         }
 
     def _story_rhythm_check(

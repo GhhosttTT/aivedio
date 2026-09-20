@@ -185,9 +185,24 @@ def test_production_readiness_reports_scene_and_review_gaps(setup, monkeypatch):
     payload = response.json()
     assert payload["status"] == "blocked"
     assert payload["checks"]["script"]["scene_count"] == 1
+    assert payload["checks"]["visual_format"]["status"] == "not_vertical"
     assert any(item["code"] == "too_few_atomic_scenes" for item in payload["blockers"])
     assert any(item["code"] == "image_review_not_required" for item in payload["warnings"])
+    assert any(item["code"] == "non_mobile_short_drama_format" for item in payload["warnings"])
     assert "video_engine" not in payload["checks"]
+
+
+def test_production_readiness_accepts_vertical_mobile_format(setup, monkeypatch):
+    client, _, _ = setup
+    monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_WIDTH", 768)
+    monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_HEIGHT", 1344)
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["checks"]["visual_format"]["status"] == "mobile_short_drama"
+    assert not any(item["code"] == "non_mobile_short_drama_format" for item in payload["warnings"])
 
 
 def test_production_readiness_reports_weak_story_rhythm(setup):

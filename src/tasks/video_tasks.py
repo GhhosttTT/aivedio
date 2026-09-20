@@ -1,6 +1,7 @@
 """Video generation Celery tasks."""
 
 import shutil
+from math import gcd
 from pathlib import Path
 
 from src.config import settings
@@ -36,6 +37,13 @@ def _build_video_generator(scene: Scene, shot_plan: VideoShotPlan, provider_name
             shot_plan=shot_plan,
         ).with_end_image(end_image)
     return get_svd_service()
+
+
+def _aspect_ratio_for_size(width: int, height: int) -> str:
+    if width <= 0 or height <= 0:
+        return "unknown"
+    divisor = gcd(width, height)
+    return f"{width // divisor}:{height // divisor}"
 
 
 class _ComfyVideoGenerator:
@@ -78,6 +86,7 @@ class _ComfyVideoGenerator:
             duration_seconds=duration,
             width=settings.GENERATION_WIDTH,
             height=settings.GENERATION_HEIGHT,
+            aspect_ratio=_aspect_ratio_for_size(settings.GENERATION_WIDTH, settings.GENERATION_HEIGHT),
             fps=fps,
             seed=seed,
             motion_bucket_id=motion_bucket_id,
