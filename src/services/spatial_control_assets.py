@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.database.models import Character, Project, Scene
+from src.services.character_turnaround_album import CharacterTurnaroundAlbumService, REQUIRED_TURNAROUND_VIEWS
 from src.services.video_director_service import get_video_director_service
 from src.utils.storage import storage_manager
 
@@ -56,7 +57,12 @@ class SpatialControlAssetService:
             if not stored_item:
                 continue
             changed = [
-                field for field in ("source_hash", "spatial_plan_hash", "control_references_hash")
+                field for field in (
+                    "source_hash",
+                    "spatial_plan_hash",
+                    "control_references_hash",
+                    "turnaround_controls_hash",
+                )
                 if stored_item.get(field) != current_item.get(field)
             ]
             if changed:
@@ -88,6 +94,7 @@ class SpatialControlAssetService:
     ) -> dict:
         script_scenes = self._script_scene_map(project)
         character_by_name = {character.name: character for character in characters}
+        turnaround_service = CharacterTurnaroundAlbumService()
         director = get_video_director_service()
         scene_items = []
         for scene in sorted(scenes, key=lambda item: item.scene_number):
@@ -100,6 +107,11 @@ class SpatialControlAssetService:
             shot_plan = director.plan_scene(scene, project.id, visible_payload)
             spatial_plan = shot_plan.spatial_plan or {}
             control_references = spatial_plan.get("control_references") or {}
+            turnaround_controls = self._scene_turnaround_controls(
+                visible_names,
+                character_by_name,
+                turnaround_service,
+            )
             source_payload = {
                 "scene_number": scene.scene_number,
                 "visual_description": scene.visual_description or "",
@@ -111,22 +123,25 @@ class SpatialControlAssetService:
                 "source_hash": self._hash(source_payload),
                 "spatial_plan_hash": self._hash(spatial_plan),
                 "control_references_hash": self._hash(control_references),
+                "turnaround_controls_hash": self._hash(turnaround_controls),
                 "visible_characters": visible_names,
                 "spatial_plan": spatial_plan,
                 "control_references": control_references,
+                "character_turnaround_controls": turnaround_controls,
             })
         project_signature = self._hash({
             "project_id": project.id,
             "scene_numbers": [item["scene_number"] for item in scene_items],
             "source_hashes": [item["source_hash"] for item in scene_items],
             "spatial_plan_hashes": [item["spatial_plan_hash"] for item in scene_items],
+            "turnaround_hashes": [item["turnaround_controls_hash"] for item in scene_items],
         })
         return {
             "version": 1,
             "status": "draft",
             "project_id": project.id,
             "project_signature": project_signature,
-            "required_control_types": ["pose", "depth", "camera"],
+            "required_control_types": ["pose", "depth", "camera", "character_turnaround"],
             "scenes": scene_items,
         }
 
@@ -161,6 +176,37 @@ class SpatialControlAssetService:
             if isinstance(name, str) and name.strip() and name.strip() not in names:
                 names.append(name.strip())
         return names
+
+    def _scene_turnaround_controls(
+        self,
+        visible_names: list[str],
+        character_by_name: dict[str, Character],
+        turnaround_service: CharacterTurnaroundAlbumService,
+    ) -> dict:
+        controls = {}
+        for name in visible_names:
+            character = character_by_name.get(name)
+            if not character:
+                continue
+            validation = turnaround_service.validate_album(character)
+            manifest = validation.get("manifest") if isinstance(validation.get("manifest"), dict) else {}
+            views = manifest.get("views") if isinstance(manifest.get("views"), dict) else {}
+            controls[name] = {
+                "status": validation.get("status"),
+                "identity_spec_hash": manifest.get("identity_spec_hash"),
+                "missing": validation.get("missing", []),
+                "stale": validation.get("stale", []),
+                "views": {
+                    view: {
+                        "path": (views.get(view) or {}).get("path"),
+                        "sha256": (views.get(view) or {}).get("sha256"),
+                        "control_prompt": (views.get(view) or {}).get("control_prompt"),
+                    }
+                    for view in REQUIRED_TURNAROUND_VIEWS
+                    if isinstance(views.get(view), dict)
+                },
+            }
+        return controls
 
     def _hash(self, payload) -> str:
         return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
