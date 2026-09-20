@@ -334,6 +334,18 @@ export interface ProductionReadinessReport {
             status: string;
             summary: {total: number; needs_split: number; warn: number};
         };
+        spatial_continuity?: {
+            status: string;
+            summary: {total: number; weak: number};
+            scenes: Array<{
+                scene_number: number;
+                status: string;
+                shot_scale?: string;
+                camera_angle?: string;
+                character_positions: Record<string, string>;
+                prop_focus?: string;
+            }>;
+        };
         reviewer?: {
             backend: string;
             configured: boolean;

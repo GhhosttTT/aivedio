@@ -224,6 +224,35 @@ def test_production_readiness_accepts_complete_identity_bible_but_requires_refer
     assert any(item["code"] == "missing_character_references" for item in payload["blockers"])
 
 
+def test_production_readiness_reports_spatial_continuity_plan(setup):
+    client, db, _ = setup
+    from src.services.character_identity_service import CharacterIdentityService
+
+    project = db.query(Project).filter(Project.id == 1).one()
+    scene = db.query(Scene).filter(Scene.project_id == 1).one()
+    scene.character_name = "Alice"
+    scene.visual_description = "Alice hands the sealed letter to Bob across the office table."
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice", "Bob"]}]})
+    service = CharacterIdentityService()
+    for name in ("Alice", "Bob"):
+        spec = service.build_identity_spec(name, "lead", project_id=1)
+        db.add(Character(
+            project_id=1,
+            name=name,
+            appearance=spec["identity_anchor"],
+            visual_description=json.dumps(spec),
+        ))
+    db.commit()
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    spatial = response.json()["checks"]["spatial_continuity"]
+    assert spatial["status"] == "planned"
+    assert spatial["scenes"][0]["shot_scale"] == "medium two-shot"
+    assert spatial["scenes"][0]["character_positions"] == {"Alice": "frame left", "Bob": "frame right"}
+
+
 def test_reference_upload_and_signed_media_access(setup):
     client, db, path = setup
     c = client.post("/api/projects/1/characters", json={"name": "Actor"}).json()

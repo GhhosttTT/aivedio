@@ -13,6 +13,7 @@ from src.services.character_service import get_character_manager
 from src.services.character_identity_service import CharacterIdentityService, FACIAL_FIELDS, load_identity_spec
 from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.shot_complexity_service import ShotComplexityService
+from src.services.video_director_service import get_video_director_service
 from src.services.video_engine_preflight import preflight_production_video_engine
 
 
@@ -59,6 +60,7 @@ class ProductionReadinessService:
             "script": self._script_check(project, scenes, blockers),
             "characters": self._character_check(project, scenes, characters, blockers, warnings),
             "shot_complexity": self._shot_complexity_check(project, scenes, blockers, warnings),
+            "spatial_continuity": self._spatial_continuity_check(project, scenes, warnings),
             "reviewer": self._reviewer_check(warnings),
         }
         if include_engine_preflight:
@@ -241,6 +243,49 @@ class ProductionReadinessService:
             "scenes": reports,
         }
 
+    def _spatial_continuity_check(
+        self,
+        project: Project,
+        scenes: list[Scene],
+        warnings: list[ReadinessIssue],
+    ) -> dict:
+        script_scenes = self._script_scene_map(project)
+        director = get_video_director_service()
+        reports = []
+        weak = []
+        for scene in scenes:
+            names = self._visible_character_names(scene, script_scenes.get(scene.scene_number, {}))
+            visible = self._visible_character_payload(project.id, names)
+            plan = director.plan_scene(scene, project.id, visible).spatial_plan or {}
+            missing = [
+                field for field in ("shot_scale", "camera_angle", "camera_axis", "character_positions", "continuity_prompt")
+                if not plan.get(field)
+            ]
+            item = {
+                "scene_number": scene.scene_number,
+                "status": "weak" if missing else "planned",
+                "missing_fields": missing,
+                "shot_scale": plan.get("shot_scale"),
+                "camera_angle": plan.get("camera_angle"),
+                "character_positions": plan.get("character_positions") or {},
+                "prop_focus": plan.get("prop_focus") or "",
+            }
+            reports.append(item)
+            if missing:
+                weak.append(item)
+        if weak:
+            scene_numbers = ", ".join(str(item["scene_number"]) for item in weak)
+            warnings.append(ReadinessIssue(
+                "weak_spatial_continuity",
+                f"Review spatial continuity plans for scenes: {scene_numbers}.",
+                severity="warning",
+            ))
+        return {
+            "status": "weak" if weak else "planned",
+            "summary": {"total": len(reports), "weak": len(weak)},
+            "scenes": reports,
+        }
+
     def _video_engine_check(self, blockers: list[ReadinessIssue]) -> dict:
         report = preflight_production_video_engine()
         if report.get("status") != "ready_for_production_video_test":
@@ -318,3 +363,17 @@ class ProductionReadinessService:
         if not identity_spec:
             return required
         return [field for field in required if not str(identity_spec.get(field) or "").strip()]
+
+    def _visible_character_payload(self, project_id: int, names: list[str]) -> list[dict[str, str]]:
+        if not names:
+            return []
+        characters = self.db.query(Character).filter(
+            Character.project_id == project_id,
+            Character.name.in_(names),
+        ).all()
+        by_name = {character.name: character for character in characters}
+        return [
+            {"name": name, "appearance": by_name[name].appearance or ""}
+            for name in names
+            if name in by_name
+        ]

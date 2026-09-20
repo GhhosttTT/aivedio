@@ -38,6 +38,7 @@ class VideoShotPlan:
     end_frame_prompt: str
     negative_prompt: str
     notes: list[str]
+    spatial_plan: dict | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -52,6 +53,7 @@ class VideoShotPlan:
             "end_frame_prompt": self.end_frame_prompt,
             "negative_prompt": self.negative_prompt,
             "notes": list(self.notes),
+            "spatial_plan": self.spatial_plan or {},
         }
 
 
@@ -82,8 +84,9 @@ class VideoDirectorService:
         fps = max(8, int(settings.GENERATION_VIDEO_MODEL_FPS))
         num_frames = max(8, min(int(settings.GENERATION_VIDEO_MAX_FRAMES), math.ceil(duration * fps)))
         motion, noise = self._motion_params(shot_role, action_intensity)
-        director_prompt = self._director_prompt(prompt or visual, shot_role, action_intensity, visible)
-        end_frame_prompt = self._end_frame_prompt(prompt or visual, shot_role, action_intensity, visible)
+        spatial_plan = self._spatial_plan(prompt or visual, shot_role, visible)
+        director_prompt = self._director_prompt(prompt or visual, shot_role, action_intensity, visible, spatial_plan)
+        end_frame_prompt = self._end_frame_prompt(prompt or visual, shot_role, action_intensity, visible, spatial_plan)
         negative_prompt = self._negative_prompt()
         notes = [
             "single continuous shot",
@@ -104,6 +107,7 @@ class VideoDirectorService:
             end_frame_prompt=end_frame_prompt,
             negative_prompt=negative_prompt,
             notes=notes,
+            spatial_plan=spatial_plan,
         )
 
     def normalize_clip(self, input_path: str, output_path: str, target_duration: float | None = None) -> str:
@@ -188,7 +192,56 @@ class VideoDirectorService:
             return 105, 0.015
         return 127, 0.02
 
-    def _director_prompt(self, prompt: str, shot_role: str, action_intensity: str, visible_characters: list[dict]) -> str:
+    def _spatial_plan(self, prompt: str, shot_role: str, visible_characters: list[dict]) -> dict:
+        text = prompt.lower()
+        names = [str(item.get("name") or f"character {index + 1}") for index, item in enumerate(visible_characters)]
+        if any(term in text for term in ("close-up", "close up", "特写", "脸部", "face")):
+            shot_scale = "close-up"
+        elif len(names) >= 2 or any(term in text for term in ("two-shot", "two shot", "对峙", "面对面")):
+            shot_scale = "medium two-shot"
+        elif shot_role == "establishing" or any(term in text for term in ("wide", "全景", "街景", "room", "location")):
+            shot_scale = "wide establishing shot"
+        else:
+            shot_scale = "medium shot"
+
+        if any(term in text for term in ("俯拍", "overhead", "top-down")):
+            camera_angle = "slight overhead angle"
+        elif any(term in text for term in ("低角度", "low angle")):
+            camera_angle = "low eye-line angle"
+        elif any(term in text for term in ("侧脸", "profile", "side")):
+            camera_angle = "stable side angle"
+        else:
+            camera_angle = "eye-level angle"
+
+        slots = ["frame left", "frame right", "center", "background left", "background right"]
+        if len(names) == 1:
+            positions = {names[0]: "center foreground"}
+        else:
+            positions = {name: slots[index % len(slots)] for index, name in enumerate(names)}
+        prop_focus = self._prop_focus(prompt)
+        axis = "keep a fixed 180-degree screen direction; do not flip left/right positions"
+        continuity = (
+            f"{shot_scale}, {camera_angle}; "
+            + ", ".join(f"{name} at {position}" for name, position in positions.items())
+            + (f"; prop focus: {prop_focus}" if prop_focus else "")
+            + f"; {axis}."
+        )
+        return {
+            "shot_scale": shot_scale,
+            "camera_angle": camera_angle,
+            "camera_axis": axis,
+            "character_positions": positions,
+            "prop_focus": prop_focus,
+            "continuity_prompt": continuity,
+        }
+
+    def _prop_focus(self, prompt: str) -> str:
+        for term in self.PROP_TERMS:
+            if term.lower() in prompt.lower():
+                return term
+        return ""
+
+    def _director_prompt(self, prompt: str, shot_role: str, action_intensity: str, visible_characters: list[dict], spatial_plan: dict) -> str:
         identity = ""
         if visible_characters:
             identity = "; ".join(
@@ -203,12 +256,13 @@ class VideoDirectorService:
             "dialogue_reaction": "Use natural breathing, small eye movement, and restrained reaction timing.",
             "establishing": "Use gentle cinematic camera drift while keeping the location stable.",
         }.get(shot_role, "Use natural short-drama motion.")
+        spatial = f" Spatial continuity contract: {spatial_plan.get('continuity_prompt', '')}"
         return (
             f"{prompt}. {role_guidance} Shot role: {shot_role}. Motion intensity: {action_intensity}."
-            f"{identity} Cinematic short-drama clip, one atomic beat, stable identity, stable background."
+            f"{identity}{spatial} Cinematic short-drama clip, one atomic beat, stable identity, stable background."
         )
 
-    def _end_frame_prompt(self, prompt: str, shot_role: str, action_intensity: str, visible_characters: list[dict]) -> str:
+    def _end_frame_prompt(self, prompt: str, shot_role: str, action_intensity: str, visible_characters: list[dict], spatial_plan: dict) -> str:
         identity = ""
         if visible_characters:
             identity = "; ".join(
@@ -225,7 +279,8 @@ class VideoDirectorService:
         }.get(shot_role, "the same shot at the end of one short-drama beat")
         return (
             f"{prompt}. End frame: {ending}. Motion intensity was {action_intensity}."
-            f"{identity} Same scene, same wardrobe, same props, no new people, cinematic short-drama keyframe."
+            f"{identity} Preserve spatial contract: {spatial_plan.get('continuity_prompt', '')} "
+            "Same scene, same wardrobe, same props, no new people, cinematic short-drama keyframe."
         )
 
     def _negative_prompt(self) -> str:
