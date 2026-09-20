@@ -36,6 +36,20 @@ TURNAROUND_FEATURES: dict[str, tuple[str, ...]] = {
 
 
 def turnaround_expected_features(view: str, character_data: dict[str, Any]) -> dict[str, str]:
+    supplied = {
+        feature: str(character_data.get(feature) or "").strip()
+        for feature in TURNAROUND_FEATURES[view]
+        if str(character_data.get(feature) or "").strip()
+    }
+    if supplied:
+        view_requirements = {
+            "front": {"view_angle": "strict front view, shoulders square to camera"},
+            "side": {"view_angle": "strict 90 degree side profile", "no_three_quarter": "not a three-quarter view"},
+            "back": {"view_angle": "strict rear view", "no_face_visible": "no visible face or front-facing pose"},
+        }
+        merged = {key: supplied.get(key, "") for key in TURNAROUND_FEATURES[view]}
+        merged.update({key: value for key, value in view_requirements.get(view, {}).items() if not merged.get(key)})
+        return merged
     wardrobe = character_data.get("outfit_details") or character_data.get("wardrobe") or ""
     identity = {
         "face_shape": character_data.get("face_shape", ""),

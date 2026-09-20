@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt
 from src.config import settings
 from src.services.generation_review import Issue, ReviewError, Score, decision, file_hash, get_local_reviewer, write_report
 from src.services.repair_queue import attach_repair_queue
+from src.services.turnaround_quality import attach_turnaround_quality_gate
 
 
 class ImageReview(BaseModel):
@@ -154,6 +155,55 @@ def attach_platform_aesthetic_gate(candidate: dict[str, Any]) -> None:
         candidate["platform_score"] = candidate["platform_aesthetic_score"]
 
 
+def _scene_turnaround_contract(scene: dict[str, Any]) -> dict[str, Any] | None:
+    if scene.get("turnaround_view"):
+        return {
+            "view": scene.get("turnaround_view"),
+            "expected_features": scene.get("turnaround_expected_features") or scene.get("identity") or {},
+            "control_prompt": scene.get("turnaround_control_prompt", ""),
+        }
+    for character in scene.get("visible_characters", []) or []:
+        if not isinstance(character, dict):
+            continue
+        reference = character.get("turnaround_reference")
+        if not isinstance(reference, dict) or not reference.get("view"):
+            continue
+        return {
+            "view": reference.get("view"),
+            "expected_features": reference.get("expected_features") or {},
+            "control_prompt": reference.get("control_prompt", ""),
+            "character_name": character.get("name"),
+        }
+    return None
+
+
+def _review_scene_payload(scene: dict[str, Any]) -> dict[str, Any]:
+    payload = json.loads(json.dumps(scene, ensure_ascii=False))
+    contract = _scene_turnaround_contract(payload)
+    if not contract:
+        return payload
+    payload["turnaround_view"] = contract["view"]
+    payload["turnaround_expected_features"] = contract["expected_features"]
+    payload["turnaround_control_prompt"] = contract["control_prompt"]
+    payload["reference_requirements"] = list(payload.get("reference_requirements") or []) + [
+        f"match frozen {contract['view']} character turnaround reference",
+        "score every required facial, body, wardrobe, and view-angle feature",
+    ]
+    return payload
+
+
+def attach_scene_turnaround_gate(candidate: dict[str, Any], scene: dict[str, Any]) -> None:
+    contract = _scene_turnaround_contract(scene)
+    if not contract or not contract.get("expected_features"):
+        return
+    attach_turnaround_quality_gate(
+        candidate,
+        str(contract["view"]),
+        contract["expected_features"],
+        settings.GENERATION_TURNAROUND_FEATURE_MIN_SCORE,
+    )
+
+
 def _identity_gate(candidate: dict[str, Any], min_score: float) -> tuple[bool, dict[str, float]]:
     scores = {
         key: score
@@ -207,13 +257,14 @@ class ImageQualitySelector:
         reference_image: str | None = None,
     ) -> dict[str, Any]:
         report = {"index": index, "status": "error", "metrics": self.technical_metrics(image_path)}
+        review_scene = _review_scene_payload(scene)
         try:
             images = ([reference_image] if reference_image else []) + [str(image_path)]
             review = self.reviewer.evaluate(
                 IMAGE_REVIEW_RUBRIC,
                 {
                     "candidate_index": index,
-                    "scene": scene,
+                    "scene": review_scene,
                     "prompt": prompt,
                     "has_reference": bool(reference_image),
                     "technical_metrics": report["metrics"],
@@ -229,6 +280,7 @@ class ImageQualitySelector:
             if platform_score is not None:
                 report["platform_score"] = platform_score
             attach_platform_aesthetic_gate(report)
+            attach_scene_turnaround_gate(report, review_scene)
         except Exception as exc:
             fallback = report["metrics"]["technical_score"]
             report.update({

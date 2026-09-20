@@ -11,6 +11,7 @@ from src.services.image_quality_service import (
     candidate_output_path,
     platform_aesthetic_gate,
 )
+from src.services.turnaround_quality import TURNAROUND_FEATURES
 
 
 def make_image(path: Path, color: tuple[int, int, int]) -> None:
@@ -313,6 +314,64 @@ def test_review_candidate_accepts_turnaround_feature_scores(tmp_path):
 
     assert report["status"] == "passed"
     assert report["review"]["turnaround_feature_scores"]["view_angle"]["score"] == 5
+
+
+def test_review_candidate_promotes_visible_character_turnaround_contract(tmp_path, monkeypatch):
+    image = tmp_path / "candidate.png"
+    reference = tmp_path / "side_reference.png"
+    make_image(image, (120, 120, 120))
+    make_image(reference, (80, 140, 80))
+    monkeypatch.setattr("src.services.image_quality_service.settings.GENERATION_TURNAROUND_FEATURE_MIN_SCORE", 4.0)
+    expected = {
+        feature: f"expected {feature}"
+        for feature in TURNAROUND_FEATURES["side"]
+    }
+
+    class FakeReviewer:
+        def evaluate(self, _instruction, payload, schema, images=()):
+            assert payload["scene"]["turnaround_view"] == "side"
+            assert payload["scene"]["turnaround_expected_features"]["nose_silhouette"] == "expected nose_silhouette"
+            assert "match frozen side character turnaround reference" in payload["scene"]["reference_requirements"]
+            assert len(images) == 2
+            return schema.model_validate({
+                "prompt_alignment": {"score": 4, "evidence": "matches side shot"},
+                "composition": {"score": 4, "evidence": "readable side composition"},
+                "aesthetic_quality": {"score": 4, "evidence": "commercial lighting"},
+                "visual_integrity": {"score": 4, "evidence": "clean render"},
+                "facial_identity": {"score": 4, "evidence": "profile matches reference"},
+                "identity_consistency": {"score": 4, "evidence": "wardrobe and body shape match"},
+                "turnaround_feature_scores": {
+                    feature: {"score": 4, "evidence": f"{feature} matches"}
+                    for feature in TURNAROUND_FEATURES["side"]
+                },
+                "reviewed_images": [1],
+                "issues": [],
+            })
+
+    report = ImageQualitySelector(reviewer=FakeReviewer()).review_candidate(
+        1,
+        image,
+        {
+            "scene_number": 1,
+            "visual_description": "Alice side profile in a premium office scene",
+            "visible_characters": [{
+                "name": "Alice",
+                "appearance": "Alice identity",
+                "turnaround_reference": {
+                    "view": "side",
+                    "path": str(reference),
+                    "expected_features": expected,
+                    "control_prompt": "strict side profile reference",
+                },
+            }],
+        },
+        "Alice side profile in office",
+        str(reference),
+    )
+
+    assert report["status"] == "passed"
+    assert report["turnaround_gate"]["status"] == "passed"
+    assert report["platform_score"] >= 4.0
 
 
 def test_review_candidate_accepts_platform_aesthetic_scores(tmp_path):
