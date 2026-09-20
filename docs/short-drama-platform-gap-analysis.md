@@ -150,6 +150,11 @@ Priority 2: Add a production readiness report endpoint.
   - production video engine status
   - local reviewer status
   - localization model status
+- Current implementation exposes `GET /api/projects/{project_id}/production-readiness`.
+  The response separates `blockers` from `warnings` and includes `checks` for
+  script structure, character assets, shot complexity, local reviewer settings,
+  and optional video-engine preflight. The frontend should show this before the
+  user starts final production.
 
 Priority 3: Add character bible enforcement.
 

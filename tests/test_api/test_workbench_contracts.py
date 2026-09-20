@@ -14,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 
 from src.api.app import create_app
 from src.api.auth import create_access_token
-from src.database.models import Base, User, Project, Scene, Task, ProjectStatus, TaskStatus
+from src.database.models import Base, User, Project, Scene, Character, Task, ProjectStatus, TaskStatus
 from src.database.session import get_db_session
 from src.services.task_orchestrator import TaskOrchestrator
 from src.utils.storage import storage_manager
@@ -62,7 +62,7 @@ def test_project_crud_and_owner_isolation(setup):
     assert client.delete(f"/api/projects/{pid}").status_code == 200
     client.headers["Authorization"] = "Bearer " + create_access_token({"sub": "2"})
     assert client.get("/api/projects").json()["total"] == 0
-    for method, url in [("get", "/api/projects/1"), ("delete", "/api/projects/1"), ("post", "/api/projects/1/produce"), ("get", "/api/projects/1/generation-review"), ("get", "/api/projects/1/characters")]:
+    for method, url in [("get", "/api/projects/1"), ("delete", "/api/projects/1"), ("post", "/api/projects/1/produce"), ("get", "/api/projects/1/generation-review"), ("get", "/api/projects/1/production-readiness"), ("get", "/api/projects/1/characters")]:
         assert getattr(client, method)(url).status_code == 404
 
 
@@ -143,6 +143,40 @@ def test_short_drama_scene_count_block_returns_actionable_400(setup, monkeypatch
     assert response.status_code == 400
     assert "at least 16 atomic scenes" in response.json()["detail"]
     assert "current project has 1" in response.json()["detail"]
+
+
+def test_production_readiness_reports_scene_and_review_gaps(setup, monkeypatch):
+    client, db, _ = setup
+    monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "blocked"
+    assert payload["checks"]["script"]["scene_count"] == 1
+    assert any(item["code"] == "too_few_atomic_scenes" for item in payload["blockers"])
+    assert any(item["code"] == "image_review_not_required" for item in payload["warnings"])
+    assert "video_engine" not in payload["checks"]
+
+
+def test_production_readiness_reports_missing_character_references(setup):
+    client, db, _ = setup
+    project = db.query(Project).filter(Project.id == 1).one()
+    scene = db.query(Scene).filter(Scene.project_id == 1).one()
+    scene.character_name = "Alice"
+    scene.visual_description = "Alice stands by the table and opens the sealed letter."
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice"]}]})
+    db.add(Character(project_id=1, name="Alice", appearance="woman, black hair, red coat"))
+    db.commit()
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert any(item["code"] == "missing_character_references" for item in payload["blockers"])
+    assert payload["checks"]["characters"]["visible_character_names"] == ["Alice"]
+    assert payload["checks"]["characters"]["missing_references"] == ["Alice"]
 
 
 def test_reference_upload_and_signed_media_access(setup):

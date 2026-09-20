@@ -25,6 +25,7 @@ from src.api.dependencies import get_current_user, require_project_access
 from src.services.project_manager import ProjectManager, get_project_manager
 from src.services.script_generator import ScriptGenerator, get_script_generator
 from src.services.task_orchestrator import TaskOrchestrator, get_task_orchestrator
+from src.services.production_readiness import ProductionReadinessService
 from src.database.session import get_db_session
 from src.database.models import ProjectStatus
 from src.services.llm_service import get_llm_service
@@ -165,6 +166,24 @@ async def get_generation_review(
                 report["status"] = "stale"
     summary = _generation_review_summary(reports)
     return {"project_id": project_id, "reports": reports, "summary": summary}
+
+
+@router.get("/{project_id}/production-readiness")
+async def get_production_readiness(
+    project_id: int,
+    include_engine_preflight: bool = Query(True, description="是否执行视频引擎预检"),
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    from src.database.models import Project
+
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return ProductionReadinessService(db_session).build_report(
+        project_id,
+        include_engine_preflight=include_engine_preflight,
+    )
 
 
 def _generation_review_summary(reports: dict) -> dict:
