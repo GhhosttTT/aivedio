@@ -15,6 +15,7 @@ from src.services.generation_review import write_report
 from src.services.image_quality_service import ImageQualitySelector, candidate_output_path
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, get_generation_provider
+from src.services.image_postprocess import ImagePostprocessor
 from src.services.shot_complexity_service import ShotComplexityService
 from src.tasks.celery_app import celery_app
 from src.utils.logger import get_logger
@@ -511,6 +512,15 @@ def _generate_quality_candidates(provider, request: ImageGenerationRequest, scen
         request.output_path,
         Path(request.output_path).with_suffix(".quality.json"),
     )
+    postprocess_report = ImagePostprocessor().process(
+        request.output_path,
+        prompt=request.prompt,
+        negative_prompt=request.negative_prompt or "",
+        reference_image=reference_image,
+        report_path=Path(request.output_path).with_suffix(".postprocess.json"),
+    )
+    selection["postprocess"] = postprocess_report
+    write_report(Path(request.output_path).with_suffix(".quality.json"), selection)
     return request.output_path, selection
 
 

@@ -59,11 +59,16 @@ class ProductionWorkflowProfileService:
             "quality_gates": {
                 "image_min_score": settings.GENERATION_IMAGE_MIN_SCORE,
                 "image_identity_min_score": settings.GENERATION_IMAGE_IDENTITY_MIN_SCORE,
+                "image_platform_min_score": settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE,
                 "video_min_score": settings.GENERATION_VIDEO_MIN_SCORE,
                 "video_identity_min_score": settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE,
                 "video_temporal_min_score": settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE,
+                "video_platform_min_score": settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE,
                 "image_review_required": settings.GENERATION_REQUIRE_IMAGE_REVIEW,
                 "video_review_required": settings.GENERATION_REQUIRE_VIDEO_REVIEW,
+                "image_postprocess_required": settings.GENERATION_REQUIRE_IMAGE_POSTPROCESS,
+                "image_postprocess_command_hash": self._text_hash(settings.GENERATION_IMAGE_POSTPROCESS_COMMAND)
+                if settings.GENERATION_IMAGE_POSTPROCESS_COMMAND else "",
                 "width": settings.GENERATION_WIDTH,
                 "height": settings.GENERATION_HEIGHT,
                 "steps": settings.GENERATION_STEPS,
@@ -99,6 +104,11 @@ class ProductionWorkflowProfileService:
             missing.append("required_capabilities")
         workflow_paths = profile.get("workflow_paths") if isinstance(profile.get("workflow_paths"), dict) else {}
         workflow_hashes = profile.get("workflow_hashes") if isinstance(profile.get("workflow_hashes"), dict) else {}
+        quality_gates = profile.get("quality_gates") if isinstance(profile.get("quality_gates"), dict) else {}
+        current_quality_gates = self._current_quality_gates()
+        for name, value in current_quality_gates.items():
+            if quality_gates.get(name) != value:
+                stale.append(f"quality_gate_{name}")
         current_paths = self._current_workflow_paths()
         for name, current_path in current_paths.items():
             if name in REQUIRED_WORKFLOWS and not current_path:
@@ -151,3 +161,26 @@ class ProductionWorkflowProfileService:
             for block in iter(lambda: stream.read(1024 * 1024), b""):
                 digest.update(block)
         return digest.hexdigest()
+
+    def _text_hash(self, value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+    def _current_quality_gates(self) -> dict:
+        return {
+            "image_min_score": settings.GENERATION_IMAGE_MIN_SCORE,
+            "image_identity_min_score": settings.GENERATION_IMAGE_IDENTITY_MIN_SCORE,
+            "image_platform_min_score": settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE,
+            "video_min_score": settings.GENERATION_VIDEO_MIN_SCORE,
+            "video_identity_min_score": settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE,
+            "video_temporal_min_score": settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE,
+            "video_platform_min_score": settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE,
+            "image_review_required": settings.GENERATION_REQUIRE_IMAGE_REVIEW,
+            "video_review_required": settings.GENERATION_REQUIRE_VIDEO_REVIEW,
+            "image_postprocess_required": settings.GENERATION_REQUIRE_IMAGE_POSTPROCESS,
+            "image_postprocess_command_hash": self._text_hash(settings.GENERATION_IMAGE_POSTPROCESS_COMMAND)
+            if settings.GENERATION_IMAGE_POSTPROCESS_COMMAND else "",
+            "width": settings.GENERATION_WIDTH,
+            "height": settings.GENERATION_HEIGHT,
+            "steps": settings.GENERATION_STEPS,
+            "cfg": settings.GENERATION_CFG,
+        }

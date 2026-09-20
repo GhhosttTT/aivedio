@@ -64,6 +64,9 @@ GENERATION_IMAGE_REFINEMENT_PASSES=2
 GENERATION_IMAGE_MIN_SCORE=4.0
 GENERATION_IMAGE_PLATFORM_MIN_SCORE=4.1
 GENERATION_REQUIRE_IMAGE_REVIEW=true
+GENERATION_IMAGE_POSTPROCESS_COMMAND=
+GENERATION_REQUIRE_IMAGE_POSTPROCESS=false
+GENERATION_IMAGE_POSTPROCESS_TIMEOUT_SECONDS=1800
 GENERATION_BLOCK_COMPLEX_SHOTS=true
 GENERATION_VIDEO_CANDIDATES=4
 GENERATION_VIDEO_REFINEMENT_PASSES=2
@@ -119,6 +122,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 `GENERATION_IMAGE_REFINEMENT_PASSES` 是额外精修轮数。设为 2 表示最多生成三轮候选；第一轮已经有 VLM 高分图时会提前停止。
 `GENERATION_IMAGE_MIN_SCORE` 是晋级门槛。建议先用 4.0，人工校准后再提高。
 `GENERATION_IMAGE_PLATFORM_MIN_SCORE` 是图片短剧平台观感门槛，会对商业美观、构图、画面完整性、脸部身份和整体身份加权；平均分够但塑料感、廉价滤镜、脏光或平台观感差的候选不会晋级。
+`GENERATION_IMAGE_POSTPROCESS_COMMAND` 是入选关键帧后的本地精修命令，可接 FaceDetailer、CodeFormer/GFPGAN、高清化、超分或 ComfyUI 二段工作流。命令支持 `{input}`、`{output}`、`{prompt}`、`{negative_prompt}`、`{reference}` 占位符。开启 `GENERATION_REQUIRE_IMAGE_POSTPROCESS=true` 后，精修命令未配置、失败、未产出图像或输出与输入完全一致都会阻断该镜头，避免“生产 profile 写了 face_repair/upscale，但实际没有跑精修”。
 `GENERATION_REQUIRE_IMAGE_REVIEW=true` 时，本地 VLM 不可用会直接拦截图片，不会只靠技术指标放行。正式跑片建议打开；开发调试可以先保持 false。
 `GENERATION_QUALITY_PROMPT_APPEND` 会追加到每张候选图的正向提示词，用来稳定构图、人体和主动作可读性。
 `GENERATION_QUALITY_NEGATIVE_APPEND` 会追加到负向提示词，用来压制截断、脏光、畸形手脸、随机文字和水印。
@@ -144,6 +148,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 生产前应先冻结角色定妆包：先生成或上传角色参考图，再生成身份方案，最后调用 `POST /api/projects/{project_id}/characters/{character_id}/freeze-asset-pack`。冻结包会保存身份档案 hash、参考图路径和参考图 hash。后续只要修改身份方案或替换参考图，生产就绪检查会要求重新冻结，避免未审批的新脸进入成片生成。
 角色定妆后还应冻结项目空间计划：调用 `POST /api/projects/{project_id}/freeze-spatial-plan`，把每个分镜的景别、机位、轴线、人物站位、道具焦点和 pose/depth/camera 控制提示写入 `spatial_asset_pack.json`。如果分镜、对白、可见角色或空间计划变化，生产就绪检查会要求重新冻结，避免前后镜头站位和机位漂移。
 本机 ComfyUI 工作流也需要冻结：配置 `COMFYUI_WORKFLOW_PATH`、`COMFYUI_VIDEO_WORKFLOW_PATH` 后调用 `POST /api/projects/workflow-profile/freeze`。生产 profile 会记录 image/video workflow 路径、文件 hash、能力声明和质量阈值。后续如果 workflow 文件被替换，或缺少 identity、spatial control、pose/depth、first-last-frame video、motion control、face repair、upscale、candidate review 等能力，生产就绪检查会阻断最终生成。
+生产 profile 也会冻结平台观感门槛和图片后处理命令 hash。调整 `GENERATION_IMAGE_PLATFORM_MIN_SCORE`、`GENERATION_VIDEO_PLATFORM_MIN_SCORE`、`GENERATION_IMAGE_POSTPROCESS_COMMAND` 或 `GENERATION_REQUIRE_IMAGE_POSTPROCESS` 后，需要重新冻结 workflow profile。
 评分报告位于正式图片同目录，后缀为 `.quality.json`。候选图保留为 `.candidate_01.png` 等，便于人工回看和调参。
 
 画面评分：每镜头至少 3 帧，长镜头约每秒一帧；采样覆盖时长的 5% 至 95%。超过 59 秒的片段要求拆分，避免静默截断审核范围。

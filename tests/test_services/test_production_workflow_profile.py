@@ -43,3 +43,30 @@ def test_workflow_profile_requires_quality_capabilities(tmp_path, monkeypatch):
     assert report["status"] == "blocked"
     assert "required_capabilities" in report["missing"]
     assert "face_repair" in report["missing_capabilities"]
+
+
+def test_workflow_profile_tracks_postprocess_command(tmp_path, monkeypatch):
+    image = tmp_path / "image_workflow.json"
+    video = tmp_path / "video_workflow.json"
+    profile = tmp_path / "profile.json"
+    image.write_text("{}", encoding="utf-8")
+    video.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", "")
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_IMAGE_POSTPROCESS_COMMAND", "facefix --input {input} --output {output}")
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_REQUIRE_IMAGE_POSTPROCESS", True)
+
+    service = ProductionWorkflowProfileService()
+    manifest = service.freeze_profile(profile_path=str(profile))
+
+    assert manifest["quality_gates"]["image_postprocess_required"] is True
+    assert manifest["quality_gates"]["image_postprocess_command_hash"]
+    assert service.validate_profile(profile_path=str(profile))["status"] == "valid"
+
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_IMAGE_POSTPROCESS_COMMAND", "upscale --input {input} --output {output}")
+
+    report = service.validate_profile(profile_path=str(profile))
+
+    assert report["status"] == "blocked"
+    assert "quality_gate_image_postprocess_command_hash" in report["stale"]

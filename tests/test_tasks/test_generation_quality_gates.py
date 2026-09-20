@@ -340,6 +340,7 @@ def test_image_generation_uses_multiple_quality_candidates(tmp_path, monkeypatch
     assert len(provider.requests) == 3
     assert len({item.seed for item in provider.requests}) == 3
     assert report["kind"] == "image_candidate_selection"
+    assert report["postprocess"]["status"] == "skipped"
 
 
 def test_video_generation_selects_best_reviewed_candidate(project_data, tmp_path, monkeypatch):
