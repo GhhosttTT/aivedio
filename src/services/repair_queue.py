@@ -7,10 +7,28 @@ from typing import Any
 
 ACTION_RULES = [
     (
+        ("turnaround", "front view", "side view", "back view", "profile view", "body proportion", "wardrobe silhouette", "hair silhouette"),
+        "regenerate_turnaround_album",
+        "Generate and freeze a front/side/back turnaround album before regenerating this character.",
+        "character",
+    ),
+    (
         ("identity", "facial", "face drift", "same-face", "same face", "changed face"),
         "regenerate_character_identity",
-        "Refresh character identity bible/reference image before regenerating this shot.",
+        "Refresh character identity bible, three-view album, and reference image before regenerating this shot.",
         "character",
+    ),
+    (
+        ("spatial", "position", "left/right", "screen direction", "camera axis", "blocking", "stage map", "relative position"),
+        "refreeze_spatial_plan",
+        "Review and freeze the spatial plan before regenerating the affected shots.",
+        "spatial",
+    ),
+    (
+        ("workflow profile", "workflow", "controlnet", "openpose", "depth", "face repair", "upscale", "missing capability"),
+        "fix_workflow_profile",
+        "Fix and approve the ComfyUI production workflow profile before rerunning generation.",
+        "workflow",
     ),
     (
         ("hand", "finger", "prop", "disappear", "letter", "phone", "cup", "object"),
@@ -25,7 +43,7 @@ ACTION_RULES = [
         "image",
     ),
     (
-        ("flicker", "temporal", "motion", "camera jump", "warped body", "melting"),
+        ("flicker", "temporal", "motion", "camera jump", "warped body", "melting", "first frame", "last frame"),
         "lower_motion_and_regenerate_video",
         "Lower motion strength/noise and regenerate the video clip from the accepted keyframe.",
         "video",
@@ -102,12 +120,21 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
                 "priority": _priority(text),
                 "stage": stage if media_type == "video" or stage != "video" else media_type,
                 "action": action,
+                "execution": _execution_mode(action),
                 "reason": evidence[:240],
                 "recommendation": message,
                 "candidate_index": candidate.get("index"),
                 "scene_number": _scene_number(candidate),
             }
     return None
+
+
+def _execution_mode(action: str) -> str:
+    if action in {"regenerate_keyframe_with_prop_constraints", "refine_prompt_composition", "lower_motion_and_regenerate_video"}:
+        return "auto"
+    if action in {"regenerate_turnaround_album", "regenerate_character_identity", "refreeze_spatial_plan", "fix_workflow_profile", "start_local_reviewer"}:
+        return "setup_required"
+    return "manual"
 
 
 def _priority(text: str) -> str:

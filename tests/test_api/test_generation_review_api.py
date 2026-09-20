@@ -90,12 +90,20 @@ def test_generation_review_summary_includes_repair_queue():
         "shot_complexity": {"status": "passed", "summary": {"needs_split": 0, "warn": 0}},
         "quality_scene_1": {
             "status": "needs_review",
-            "repair_queue": [{"priority": "high", "stage": "video", "action": "lower_motion_and_regenerate_video"}],
+            "repair_queue": [{"priority": "high", "stage": "video", "action": "lower_motion_and_regenerate_video", "execution": "auto"}],
+        },
+        "quality_scene_2": {
+            "status": "needs_review",
+            "repair_queue": [{"priority": "high", "stage": "workflow", "action": "fix_workflow_profile", "execution": "setup_required"}],
         },
     })
 
-    assert summary["repair_queue"]["total"] == 1
+    assert summary["repair_queue"]["total"] == 2
     assert summary["repair_queue"]["actions"]["lower_motion_and_regenerate_video"] == 1
+    assert summary["repair_queue"]["execution"]["auto"] == 1
+    assert summary["repair_queue"]["execution"]["setup_required"] == 1
+    assert summary["repair_queue"]["auto_actions"][0]["action"] == "lower_motion_and_regenerate_video"
+    assert summary["repair_queue"]["setup_required"][0]["action"] == "fix_workflow_profile"
 
 
 def test_generation_review_summary_ready_when_reviews_pass():

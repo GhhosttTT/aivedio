@@ -191,6 +191,7 @@ python -m scripts.validate_local_generation summarize
 人工复核可写入 `storage/validation/manual_review.json`，格式为 `{"cases":[{"id":"discovery","score":4.5,"decision":"accept","note":"身份稳定"}]}`。`manual_review.json` 必须覆盖 `render.json` 中的每个 case id，不能只挑好看的样片评分。`summarize` 会汇总预检、渲染、视频抽帧审核、Seed Dance 基准对比和人工评分，生成 `validation_summary.json`。只有环境、workflow、关键帧、视频审核、视频身份/时间门槛、基准对比和人工评分都通过时，才会标记为 `ready_for_seed_dance_candidate`。
 `validation_summary.json` 还会生成 `calibration_recommendations`：身份漂移会建议重做角色参考或加严参考权重，闪烁/动作断裂会建议降低运动强度和增加视频精修轮，构图/裁切会建议拆镜头或加 Control/Depth/Pose 约束。
 项目生产就绪检查会读取 `storage/validation/validation_summary.json`。如果该文件缺失或状态不是 `ready_for_seed_dance_candidate`，前端“生产就绪”面板会显示样片验证警告。这个警告用于防止只凭单元测试、接口测试或未人工验收的样片宣称达到短剧成片质量。
+生成审核报告中的 `repair_queue` 会区分三类动作：`auto` 可直接重跑关键帧或视频，`setup_required` 需要先重做三视图、身份档案、空间冻结、workflow profile 或启动本地 VLM，`manual` 需要人工判断后再选择返工动作。
 命令行单独执行视觉审核前，应先结束其他 GPU 作业并卸载其模型。
 
 ## 7. 下一步验收顺序

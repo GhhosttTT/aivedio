@@ -297,7 +297,10 @@ Priority 5: Add repair queue.
 - Current implementation writes `repair_queue` into failed or review-unavailable
   image/video `.quality.json` reports. The queue maps evidence such as identity
   drift, bad crop, prop issues, temporal flicker, camera jumps, complex shots,
-  and missing local VLM review into targeted repair actions.
+  and missing local VLM review into targeted repair actions. It now separates
+  directly executable repairs such as keyframe/video regeneration from setup
+  repairs such as regenerating the three-view album, re-freezing spatial plans,
+  approving the workflow profile, or starting the local VLM reviewer.
 
 ## Sources Used For Benchmarking
 

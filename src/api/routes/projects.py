@@ -303,6 +303,7 @@ def _generation_review_summary(reports: dict) -> dict:
 def _repair_queue_summary(reports: dict) -> dict:
     items = []
     actions = {}
+    execution = {"auto": 0, "setup_required": 0, "manual": 0}
     for name, report in reports.items():
         if not isinstance(report, dict):
             continue
@@ -314,11 +315,17 @@ def _repair_queue_summary(reports: dict) -> dict:
             items.append(copied)
             action = copied.get("action") or "unknown"
             actions[action] = actions.get(action, 0) + 1
+            mode = copied.get("execution") or "manual"
+            execution[mode] = execution.get(mode, 0) + 1
     priority_rank = {"high": 0, "medium": 1, "low": 2}
     items.sort(key=lambda item: (priority_rank.get(item.get("priority"), 9), item.get("stage") or "", item.get("action") or ""))
     return {
         "total": len(items),
         "actions": actions,
+        "execution": execution,
+        "auto_actions": [item for item in items if item.get("execution") == "auto"][:10],
+        "setup_required": [item for item in items if item.get("execution") == "setup_required"][:10],
+        "manual_actions": [item for item in items if item.get("execution") not in {"auto", "setup_required"}][:10],
         "items": items[:20],
     }
 
