@@ -961,6 +961,29 @@ def test_review_feedback_deduplicates_low_score_evidence():
     assert "broken fingers" in feedback
 
 
+def test_review_feedback_reads_nested_aesthetic_gate_evidence():
+    feedback = _review_feedback([
+        {
+            "average": 2,
+            "review": {
+                "platform_aesthetic_scores": {
+                    "skin_texture": {"score": 2, "evidence": "plastic skin"},
+                    "lighting_quality": {"score": 2, "evidence": "muddy light"},
+                },
+            },
+            "platform_aesthetic_gate": {
+                "low": {
+                    "production_polish": {"score": 2, "evidence": "low production value"},
+                }
+            },
+        }
+    ])
+
+    assert "plastic skin" in feedback
+    assert "muddy light" in feedback
+    assert "low production value" in feedback
+
+
 def test_append_terms_does_not_duplicate_terms():
     assert _append_terms("blurry, bad crop", "bad crop, watermark") == "blurry, bad crop, watermark"
 

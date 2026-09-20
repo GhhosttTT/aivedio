@@ -55,6 +55,42 @@ def test_repair_queue_classifies_video_motion_failures():
     assert queue[0]["execution"] == "auto"
 
 
+def test_repair_queue_reads_nested_platform_aesthetic_gates():
+    report = {
+        "status": "needs_review",
+        "candidates": [
+            {
+                "index": 1,
+                "platform_aesthetic_gate": {
+                    "status": "needs_review",
+                    "low": {
+                        "skin_texture": {"score": 2, "evidence": "plastic skin"},
+                        "lighting_quality": {"score": 2, "evidence": "muddy light"},
+                    },
+                },
+            },
+            {
+                "index": 2,
+                "video_aesthetic_gate": {
+                    "status": "needs_review",
+                    "low": {
+                        "motion_smoothness": {"score": 2, "evidence": "motion stutter"},
+                        "artifact_absence": {"score": 2, "evidence": "repair scar flickers"},
+                    },
+                },
+            },
+        ],
+    }
+
+    image_queue = build_repair_queue({"status": "needs_review", "candidates": [report["candidates"][0]]}, "image")
+    video_queue = build_repair_queue({"status": "needs_review", "candidates": [report["candidates"][1]]}, "video")
+
+    assert image_queue[0]["action"] == "refine_prompt_composition"
+    assert image_queue[0]["execution"] == "auto"
+    assert video_queue[0]["action"] == "lower_motion_and_regenerate_video"
+    assert video_queue[0]["execution"] == "auto"
+
+
 def test_repair_queue_handles_review_unavailable():
     report = {"status": "review_unavailable", "error": "No local VLM review unavailable", "candidates": []}
 

@@ -37,7 +37,12 @@ ACTION_RULES = [
         "image",
     ),
     (
-        ("crop", "composition", "lighting", "muddy", "blur", "sharpness", "exposure", "aesthetic", "platform score", "production value", "cheap filter", "plastic skin", "commercial"),
+        (
+            "crop", "composition", "lighting", "light jumps", "muddy", "blur", "sharpness", "exposure",
+            "aesthetic", "platform score", "production value", "cheap filter", "plastic skin", "commercial",
+            "skin_texture", "lighting_quality", "lighting_consistency", "color_grade", "color_grade_consistency",
+            "phone_readability", "background_separation", "production_polish",
+        ),
         "refine_prompt_composition",
         "Tighten composition, lighting, crop, and visual clarity before regenerating candidates.",
         "image",
@@ -49,7 +54,11 @@ ACTION_RULES = [
         "image",
     ),
     (
-        ("flicker", "temporal", "motion", "camera jump", "warped body", "melting", "first frame", "last frame"),
+        (
+            "flicker", "flickers", "temporal", "motion", "motion_smoothness", "stutter", "camera jump",
+            "warped body", "melting", "first frame", "last frame", "background_stability",
+            "artifact_absence", "repair scar flickers",
+        ),
         "lower_motion_and_regenerate_video",
         "Lower motion strength/noise and regenerate the video clip from the accepted keyframe.",
         "video",
@@ -112,10 +121,40 @@ def _candidate_evidence(candidate: dict[str, Any]) -> list[str]:
         if isinstance(value, dict) and value.get("score", 5) <= 3:
             evidence.append(str(value.get("evidence") or key))
             evidence.append(str(key))
+        elif isinstance(value, dict):
+            evidence.extend(_nested_score_evidence(value))
+    for gate_name in ("platform_aesthetic_gate", "video_aesthetic_gate", "turnaround_gate"):
+        gate = candidate.get(gate_name) if isinstance(candidate.get(gate_name), dict) else {}
+        evidence.extend(_gate_evidence(gate, gate_name))
     metrics = candidate.get("metrics") if isinstance(candidate.get("metrics"), dict) else {}
     if metrics.get("technical_score", 5) < 3:
         evidence.append("low technical image score: exposure sharpness composition")
     return [item for item in evidence if item]
+
+
+def _nested_score_evidence(section: dict[str, Any]) -> list[str]:
+    evidence = []
+    for key, value in section.items():
+        if isinstance(value, dict) and value.get("score", 5) <= 3:
+            evidence.append(str(value.get("evidence") or key))
+            evidence.append(str(key))
+    return evidence
+
+
+def _gate_evidence(gate: dict[str, Any], gate_name: str) -> list[str]:
+    evidence = []
+    for bucket in ("low", "missing"):
+        values = gate.get(bucket)
+        if isinstance(values, dict):
+            for key, value in values.items():
+                if isinstance(value, dict):
+                    evidence.append(str(value.get("evidence") or key))
+                evidence.append(str(key))
+        elif isinstance(values, list):
+            evidence.extend(str(item) for item in values)
+    if evidence:
+        evidence.append(gate_name)
+    return evidence
 
 
 def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]) -> dict[str, Any] | None:

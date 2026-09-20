@@ -464,6 +464,15 @@ def _review_feedback(reports: list[dict]) -> str:
         for key, value in review.items():
             if isinstance(value, dict) and value.get("score", 5) <= 2:
                 feedback.append(value.get("evidence", key))
+            elif isinstance(value, dict):
+                for nested_key, nested_value in value.items():
+                    if isinstance(nested_value, dict) and nested_value.get("score", 5) <= 2:
+                        feedback.append(nested_value.get("evidence", nested_key))
+        for gate_name in ("platform_aesthetic_gate", "turnaround_gate"):
+            gate = report.get(gate_name) if isinstance(report.get(gate_name), dict) else {}
+            low = gate.get("low") if isinstance(gate.get("low"), dict) else {}
+            for key, value in low.items():
+                feedback.append(value.get("evidence", key) if isinstance(value, dict) else key)
         if report.get("status") == "technical_only" and report.get("metrics", {}).get("technical_score", 5) < 3:
             feedback.append("improve exposure, sharpness, color separation and visual clarity")
     compact = []
