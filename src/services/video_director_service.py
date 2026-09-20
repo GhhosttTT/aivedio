@@ -78,6 +78,7 @@ class VideoDirectorService:
         prompt = (scene.image_prompt or visual).strip()
         dialogue = (scene.dialogue or "").strip()
         visible = list(visible_characters or [])
+        visual_style = self._visual_style_prompt(project_id)
         shot_role = self._shot_role(visual, prompt, dialogue)
         action_intensity = self._action_intensity(visual, prompt)
         duration = self._target_duration(dialogue, shot_role)
@@ -85,9 +86,9 @@ class VideoDirectorService:
         num_frames = max(8, min(int(settings.GENERATION_VIDEO_MAX_FRAMES), math.ceil(duration * fps)))
         motion, noise = self._motion_params(shot_role, action_intensity)
         spatial_plan = self._spatial_plan(prompt or visual, shot_role, visible)
-        director_prompt = self._director_prompt(prompt or visual, shot_role, action_intensity, visible, spatial_plan)
-        end_frame_prompt = self._end_frame_prompt(prompt or visual, shot_role, action_intensity, visible, spatial_plan)
-        negative_prompt = self._negative_prompt()
+        director_prompt = self._director_prompt(prompt or visual, shot_role, action_intensity, visible, spatial_plan, visual_style)
+        end_frame_prompt = self._end_frame_prompt(prompt or visual, shot_role, action_intensity, visible, spatial_plan, visual_style)
+        negative_prompt = self._negative_prompt(project_id)
         notes = [
             "single continuous shot",
             "preserve the source keyframe identity and layout",
@@ -255,7 +256,7 @@ class VideoDirectorService:
                 return term
         return ""
 
-    def _director_prompt(self, prompt: str, shot_role: str, action_intensity: str, visible_characters: list[dict], spatial_plan: dict) -> str:
+    def _director_prompt(self, prompt: str, shot_role: str, action_intensity: str, visible_characters: list[dict], spatial_plan: dict, visual_style: str = "") -> str:
         identity = self._identity_prompt(visible_characters)
         role_guidance = {
             "action": "Make the action readable as one continuous movement with clear start, middle, and end.",
@@ -267,10 +268,10 @@ class VideoDirectorService:
         spatial = f" Spatial continuity contract: {spatial_plan.get('continuity_prompt', '')}"
         return (
             f"{prompt}. {role_guidance} Shot role: {shot_role}. Motion intensity: {action_intensity}."
-            f"{identity}{spatial} Cinematic short-drama clip, one atomic beat, stable identity, stable background."
+            f"{identity}{spatial} {visual_style} Cinematic short-drama clip, one atomic beat, stable identity, stable background."
         )
 
-    def _end_frame_prompt(self, prompt: str, shot_role: str, action_intensity: str, visible_characters: list[dict], spatial_plan: dict) -> str:
+    def _end_frame_prompt(self, prompt: str, shot_role: str, action_intensity: str, visible_characters: list[dict], spatial_plan: dict, visual_style: str = "") -> str:
         identity = self._identity_prompt(visible_characters, prefix=" Keep identity anchors unchanged")
         ending = {
             "action": "the action has just completed, body pose naturally settled, readable result of the movement",
@@ -282,17 +283,34 @@ class VideoDirectorService:
         return (
             f"{prompt}. End frame: {ending}. Motion intensity was {action_intensity}."
             f"{identity} Preserve spatial contract: {spatial_plan.get('continuity_prompt', '')} "
-            "Same scene, same wardrobe, same props, no new people, cinematic short-drama keyframe."
+            f"{visual_style} Same scene, same wardrobe, same props, no new people, cinematic short-drama keyframe."
         )
 
-    def _negative_prompt(self) -> str:
+    def _negative_prompt(self, project_id: int | None = None) -> str:
         base = settings.GENERATION_QUALITY_NEGATIVE_APPEND
+        if project_id is not None:
+            try:
+                from src.services.visual_style_assets import VisualStyleAssetService
+                style_negative = VisualStyleAssetService().negative_prompt_for_project(project_id)
+                if style_negative:
+                    base = f"{base}, {style_negative}" if base else style_negative
+            except Exception:
+                pass
         video_terms = (
             "face morphing, identity drift, duplicated character, new stranger, flicker, warped body, "
             "melting hands, changing clothes, changing room, disappearing prop, unreadable action, "
             "random camera jump, slideshow, still image only"
         )
         return f"{base}, {video_terms}" if base else video_terms
+
+    def _visual_style_prompt(self, project_id: int | None) -> str:
+        if project_id is None:
+            return ""
+        try:
+            from src.services.visual_style_assets import VisualStyleAssetService
+            return VisualStyleAssetService().style_prompt_for_project(project_id)
+        except Exception:
+            return ""
 
     def _identity_prompt(self, visible_characters: list[dict], prefix: str = " Visible character identity anchors") -> str:
         if not visible_characters:

@@ -23,6 +23,8 @@ from src.api.schemas import (
     ProductionTaskResponse,
     SpatialAssetFreezeRequest,
     SpatialAssetPackResponse,
+    VisualStyleFreezeRequest,
+    VisualStyleAssetPackResponse,
     WorkflowProfileFreezeRequest,
     WorkflowProfileResponse,
 )
@@ -32,6 +34,7 @@ from src.services.script_generator import ScriptGenerator, get_script_generator
 from src.services.task_orchestrator import TaskOrchestrator, get_task_orchestrator
 from src.services.production_readiness import ProductionReadinessService
 from src.services.spatial_control_assets import SpatialControlAssetService
+from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
 from src.database.session import get_db_session
 from src.database.models import Character, ProjectStatus, Scene
@@ -249,6 +252,40 @@ async def freeze_spatial_plan(
         notes=request.notes or "",
     )
     return SpatialAssetPackResponse(
+        project_id=project_id,
+        status=asset_pack["status"],
+        asset_pack=asset_pack,
+    )
+
+
+@router.post("/{project_id}/freeze-visual-style", response_model=VisualStyleAssetPackResponse)
+async def freeze_visual_style(
+    project_id: int,
+    request: VisualStyleFreezeRequest,
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    from src.database.models import Project
+
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    scenes = (
+        db_session.query(Scene)
+        .filter(Scene.project_id == project_id)
+        .order_by(Scene.scene_number)
+        .all()
+    )
+    if not scenes:
+        raise HTTPException(status_code=409, detail="请先生成分镜再冻结视觉风格")
+    asset_pack = VisualStyleAssetService().freeze_project_style(
+        project=project,
+        scenes=scenes,
+        style_prompt=request.style_prompt,
+        negative_prompt=request.negative_prompt,
+        notes=request.notes or "",
+    )
+    return VisualStyleAssetPackResponse(
         project_id=project_id,
         status=asset_pack["status"],
         asset_pack=asset_pack,

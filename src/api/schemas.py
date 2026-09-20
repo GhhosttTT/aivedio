@@ -216,6 +216,24 @@ class SpatialAssetFreezeRequest(BaseModel):
     notes: Optional[str] = Field(None, max_length=500, description="空间/机位审核备注")
 
 
+class VisualStyleFreezeRequest(BaseModel):
+    """
+    冻结项目视觉风格资产包
+    """
+    style_prompt: Optional[str] = Field(None, max_length=1200, description="统一画面风格正向约束")
+    negative_prompt: Optional[str] = Field(None, max_length=1200, description="统一画面风格负向约束")
+    notes: Optional[str] = Field(None, max_length=500, description="视觉风格审核备注")
+
+
+class VisualStyleAssetPackResponse(BaseModel):
+    """
+    项目视觉风格资产包响应
+    """
+    project_id: int
+    status: str
+    asset_pack: dict
+
+
 class SpatialAssetPackResponse(BaseModel):
     """
     项目空间连续性资产包响应

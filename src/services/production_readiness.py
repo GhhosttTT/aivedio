@@ -16,6 +16,7 @@ from src.services.character_turnaround_album import CharacterTurnaroundAlbumServ
 from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.shot_complexity_service import ShotComplexityService
 from src.services.spatial_control_assets import SpatialControlAssetService
+from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
 from src.services.story_room_quality import StoryRoomQualityService
 from src.services.video_director_service import get_video_director_service
@@ -70,6 +71,7 @@ class ProductionReadinessService:
             "characters": self._character_check(project, scenes, characters, blockers, warnings),
             "shot_complexity": self._shot_complexity_check(project, scenes, blockers, warnings),
             "spatial_continuity": self._spatial_continuity_check(project, scenes, characters, blockers, warnings),
+            "visual_style": self._visual_style_check(project, scenes, blockers),
             "workflow_profile": self._workflow_profile_check(blockers),
             "reviewer": self._reviewer_check(warnings),
             "sample_validation": self._sample_validation_check(warnings),
@@ -504,6 +506,31 @@ class ProductionReadinessService:
                 "stale": asset_pack.get("stale", []),
                 "scene_stale": asset_pack.get("scene_stale", []),
             },
+        }
+
+    def _visual_style_check(
+        self,
+        project: Project,
+        scenes: list[Scene],
+        blockers: list[ReadinessIssue],
+    ) -> dict:
+        report = VisualStyleAssetService().validate_project_style(project, scenes)
+        if report.get("status") == "missing":
+            blockers.append(ReadinessIssue(
+                "missing_visual_style_asset_pack",
+                "Freeze the project visual style pack before final production.",
+            ))
+        elif report.get("status") != "valid":
+            blockers.append(ReadinessIssue(
+                "stale_visual_style_asset_pack",
+                "Re-freeze the project visual style pack before final production: "
+                + ", ".join(report.get("stale") or [report.get("status", "unknown")]),
+            ))
+        return {
+            "status": report.get("status"),
+            "path": report.get("path"),
+            "stale": report.get("stale", []),
+            "style_prompt": (report.get("manifest") or report.get("current") or {}).get("style_prompt", ""),
         }
 
     def _video_engine_check(self, blockers: list[ReadinessIssue]) -> dict:

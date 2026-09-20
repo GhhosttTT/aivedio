@@ -17,6 +17,7 @@ from src.services.image_quality_service import ImageQualitySelector, candidate_o
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, get_generation_provider
 from src.services.image_postprocess import ImagePostprocessor
+from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.shot_complexity_service import ShotComplexityService
 from src.tasks.celery_app import celery_app
 from src.utils.logger import get_logger
@@ -177,20 +178,37 @@ def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=Non
     appearance = _appearance_anchor(characters, db, compiler)
     character = characters[0] if len(characters) == 1 else None
     composition = _composition_constraint(scene, project_id, db)
+    visual_style = VisualStyleAssetService().style_prompt_for_project(project_id)
+    style_negative = VisualStyleAssetService().negative_prompt_for_project(project_id)
     complexity = _complexity_report(scene, project_id, db)
     if settings.GENERATION_BLOCK_COMPLEX_SHOTS and complexity["status"] == "needs_split":
         raise ValueError("Shot is too complex for one stable generation: " + "; ".join(complexity["reasons"]))
-    layout_parts = [composition, complexity["prompt_constraint"]]
+    layout_parts = [part for part in (visual_style, composition, complexity["prompt_constraint"]) if part]
     appearance_with_layout = f"{appearance}. {' '.join(layout_parts)}" if appearance else " ".join(layout_parts)
     prompt_with_layout = f"{prompt}\n" + "\n".join(layout_parts)
     artifact = Path(get_scene_image_path(project_id, scene.id)).with_suffix(".prompt.json")
-    source_hash = compiler.source_hash(prompt_with_layout, appearance_with_layout)
+    source_hash = compiler.source_hash(f"{prompt_with_layout}\n{style_negative}", appearance_with_layout)
     if artifact.is_file():
         cached = json.loads(artifact.read_text(encoding="utf-8"))
         if cached.get("source_hash") == source_hash and cached.get("version") == 1:
             compiler.validate_cached_prompt(cached["prompt"])
             return CompiledShot(**cached), character
     compiled = compiler.compile(prompt_with_layout, appearance_with_layout)
+    compiled = CompiledShot(
+        compiled.prompt,
+        compiled.negative_prompt,
+        source_hash,
+        compiled.word_count,
+        compiled.version,
+    )
+    if style_negative:
+        compiled = CompiledShot(
+            compiled.prompt,
+            _append_terms(compiled.negative_prompt, style_negative),
+            compiled.source_hash,
+            compiled.word_count,
+            compiled.version,
+        )
     write_report(artifact, compiled.to_dict())
     return compiled, character
 

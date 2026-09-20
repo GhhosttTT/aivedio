@@ -190,7 +190,32 @@ def test_production_readiness_reports_scene_and_review_gaps(setup, monkeypatch):
     assert any(item["code"] == "image_review_not_required" for item in payload["warnings"])
     assert any(item["code"] == "non_mobile_short_drama_format" for item in payload["warnings"])
     assert any(item["code"] == "workflow_profile_not_ready" for item in payload["blockers"])
+    assert any(item["code"] == "missing_visual_style_asset_pack" for item in payload["blockers"])
     assert "video_engine" not in payload["checks"]
+
+
+def test_visual_style_freeze_clears_readiness_visual_style_blocker(setup):
+    client, _, _ = setup
+
+    before = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
+    assert before["checks"]["visual_style"]["status"] == "missing"
+    assert any(item["code"] == "missing_visual_style_asset_pack" for item in before["blockers"])
+
+    frozen = client.post(
+        "/api/projects/1/freeze-visual-style",
+        json={
+            "style_prompt": "consistent premium red-and-teal short drama look",
+            "negative_prompt": "random color grade",
+            "notes": "approved look bible",
+        },
+    )
+    assert frozen.status_code == 200, frozen.text
+    assert frozen.json()["status"] == "frozen"
+    assert frozen.json()["asset_pack"]["style_prompt"] == "consistent premium red-and-teal short drama look"
+
+    after = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
+    assert after["checks"]["visual_style"]["status"] == "valid"
+    assert not any(item["code"] == "missing_visual_style_asset_pack" for item in after["blockers"])
 
 
 def test_workflow_profile_freeze_clears_readiness_workflow_profile_blocker(setup, monkeypatch):

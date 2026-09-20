@@ -161,6 +161,27 @@ def test_video_director_prompt_includes_identity_contrast(project_data):
     assert "No same-face cast" in plan.end_frame_prompt
 
 
+def test_video_director_prompt_includes_project_visual_style(project_data):
+    _, project, scene, _, _ = project_data
+    from src.services.visual_style_assets import VisualStyleAssetService
+    VisualStyleAssetService().freeze_project_style(
+        project,
+        [scene],
+        style_prompt="consistent premium red-and-teal short drama look",
+        negative_prompt="random color grade",
+    )
+
+    plan = get_video_director_service().plan_scene(
+        scene,
+        project.id,
+        [{"name": "Alice", "appearance": "woman, short black hair, green jacket"}],
+    )
+
+    assert "consistent premium red-and-teal short drama look" in plan.director_prompt
+    assert "consistent premium red-and-teal short drama look" in plan.end_frame_prompt
+    assert "random color grade" in plan.negative_prompt
+
+
 def test_composition_constraint_tracks_visible_actor_count(project_data):
     db, project, scene, _, _ = project_data
     assert "Alice is the only visible person" in _composition_constraint(scene, project.id, db)
@@ -183,6 +204,57 @@ def test_complexity_constraint_is_added_to_prompt(project_data):
 
     assert "one frozen instant" in compiled.prompt
     assert _complexity_report(scene, project.id, db)["status"] == "ok"
+
+
+def test_visual_style_pack_is_added_to_image_prompt(project_data):
+    db, project, scene, _, _ = project_data
+    from src.services.visual_style_assets import VisualStyleAssetService
+    VisualStyleAssetService().freeze_project_style(
+        project,
+        [scene],
+        style_prompt="consistent premium red-and-teal short drama look",
+        negative_prompt="random color grade",
+    )
+    llm = Mock()
+    llm.generate.return_value = json.dumps({"subject": "the character", "action": "holding a red letter",
+        "setting": "office doorway", "framing": "medium shot", "lighting": "window light", "style": "cinematic",
+        "needs_split": False, "reason": ""})
+
+    compiled, _ = _prepare_prompt(scene, project.id, scene.visual_description, db, ShotPromptService(llm))
+
+    assert "consistent premium red-and-teal short drama look" in compiled.prompt
+    assert "random color grade" in compiled.negative_prompt
+
+
+def test_visual_style_negative_prompt_edit_invalidates_cached_prompt(project_data):
+    db, project, scene, _, _ = project_data
+    from src.services.visual_style_assets import VisualStyleAssetService
+    style_service = VisualStyleAssetService()
+    style_service.freeze_project_style(
+        project,
+        [scene],
+        style_prompt="consistent premium red-and-teal short drama look",
+        negative_prompt="old random color grade",
+    )
+    llm = Mock()
+    llm.generate.return_value = json.dumps({"subject": "the character", "action": "holding a red letter",
+        "setting": "office doorway", "framing": "medium shot", "lighting": "window light", "style": "cinematic",
+        "needs_split": False, "reason": ""})
+    compiler = ShotPromptService(llm)
+    first, _ = _prepare_prompt(scene, project.id, scene.visual_description, db, compiler)
+    style_service.freeze_project_style(
+        project,
+        [scene],
+        style_prompt="consistent premium red-and-teal short drama look",
+        negative_prompt="new random color grade",
+    )
+
+    second, _ = _prepare_prompt(scene, project.id, scene.visual_description, db, compiler)
+
+    assert "old random color grade" in first.negative_prompt
+    assert "new random color grade" in second.negative_prompt
+    assert second.source_hash != first.source_hash
+    assert llm.generate.call_count == 2
 
 
 def test_complex_shot_can_be_blocked_before_generation(project_data, monkeypatch):
