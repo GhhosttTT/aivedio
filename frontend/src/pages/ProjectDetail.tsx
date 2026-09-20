@@ -6,6 +6,7 @@ import type { Project } from '../types';
 import { ScriptPreview } from '../components/ScriptPreview';
 import { ProductionProgress } from '../components/ProductionProgress';
 import { ReviewPanel } from '../components/ReviewPanel';
+import { VideoEngineStatus } from '../components/VideoEngineStatus';
 import CharacterManager from './CharacterManager';
 
 export function ProjectDetail() {
@@ -62,6 +63,7 @@ export function ProjectDetail() {
         </header>
         {error && <p role="alert" className="wb-alert">{error}</p>}
         {busy && <p role="status" className="wb-alert"><RefreshCw size={15} className="inline animate-spin"/> {busy}进行中</p>}
+        <VideoEngineStatus/>
         <nav className="wb-tabs" role="tablist" aria-label="项目工作区">
             {[['script', '剧本分镜', FileText], ['characters', '角色参考', Users], ['production', '制作进度', Activity], ['review', '质量审核', ShieldCheck]].map(([key, label, Icon]) => <button key={String(key)} role="tab" aria-selected={tab === key} onClick={() => setTab(String(key))}><Icon size={17}/>{String(label)}</button>)}
         </nav>

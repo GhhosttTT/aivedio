@@ -12,41 +12,16 @@ import httpx
 
 from src.config import settings
 from src.services.comfyui_service import ComfyUIService
+from src.services.video_engine_preflight import (
+    VIDEO_WORKFLOW_PLACEHOLDERS,
+    likely_video_outputs as _likely_video_outputs,
+    preflight_production_video_engine,
+    preflight_video_workflow,
+    scan_placeholders as _scan_placeholders,
+)
 from src.services.generation_review import GenerationReviewService, write_report
 from src.services.shot_prompt_service import ShotPromptService
-
-
-VIDEO_WORKFLOW_PLACEHOLDERS = {
-    "prompt", "positive_prompt", "negative_prompt", "reference_image", "image",
-    "width", "height", "duration_seconds", "fps", "seed", "output_prefix",
-    "motion_bucket_id", "noise_aug_strength",
-}
-
-
-def _scan_placeholders(value):
-    found = set()
-    if isinstance(value, dict):
-        for item in value.values():
-            found.update(_scan_placeholders(item))
-    elif isinstance(value, list):
-        for item in value:
-            found.update(_scan_placeholders(item))
-    elif isinstance(value, str):
-        for name in VIDEO_WORKFLOW_PLACEHOLDERS:
-            if "{" + name + "}" in value:
-                found.add(name)
-    return found
-
-
-def _likely_video_outputs(workflow):
-    output_keywords = ("video", "vhs", "webm", "gif", "animated")
-    matches = []
-    for node_id, node in workflow.items():
-        class_type = str(node.get("class_type", ""))
-        lowered = class_type.lower()
-        if any(keyword in lowered for keyword in output_keywords):
-            matches.append({"node_id": node_id, "class_type": class_type})
-    return matches
+from scripts.compare_video_baseline import compare as compare_video_baseline
 
 
 def _review_models_endpoint() -> str:
@@ -111,69 +86,6 @@ def preflight(base_url=None):
         report["review_error"] = str(exc)
     if all(checks.get(key) for key in ("ffmpeg", "ffprobe", "text_model", "comfyui", "review_model")):
         report["status"] = "ready_for_live_test"
-    return report
-
-
-def preflight_video_workflow(base_url=None, workflow_path=None):
-    path = workflow_path or settings.COMFYUI_VIDEO_WORKFLOW_PATH
-    report = {"status": "blocked", "workflow_path": path, "checks": {}}
-    checks = report["checks"]
-    if not path:
-        checks["configured"] = False
-        report["status"] = "skipped"
-        report["message"] = "COMFYUI_VIDEO_WORKFLOW_PATH is empty; video generation will use SVD"
-        return report
-    checks["configured"] = True
-    workflow_file = Path(path)
-    if not workflow_file.is_absolute():
-        workflow_file = Path.cwd() / workflow_file
-    checks["workflow_file"] = workflow_file.is_file()
-    report["resolved_workflow_path"] = str(workflow_file)
-    if not workflow_file.is_file():
-        report["error"] = f"workflow file does not exist: {workflow_file}"
-        return report
-    try:
-        workflow = json.loads(workflow_file.read_text(encoding="utf-8"))
-        if not isinstance(workflow, dict):
-            raise ValueError("workflow JSON root must be an object")
-        placeholders = sorted(_scan_placeholders(workflow))
-        outputs = _likely_video_outputs(workflow)
-        report["placeholders"] = placeholders
-        report["recognized_placeholders"] = sorted(VIDEO_WORKFLOW_PLACEHOLDERS)
-        report["likely_output_nodes"] = outputs
-        checks["has_reference_placeholder"] = bool({"reference_image", "image"} & set(placeholders))
-        checks["has_prompt_placeholder"] = bool({"prompt", "positive_prompt"} & set(placeholders))
-        checks["has_likely_video_output"] = bool(outputs)
-        service = ComfyUIService(base_url=base_url, timeout=15)
-        try:
-            resolved = service._replace_workflow_placeholders(workflow, {
-                "prompt": "validation cinematic short-drama shot",
-                "positive_prompt": "validation cinematic short-drama shot",
-                "negative_prompt": "flicker, warped face, bad motion",
-                "reference_image": "validation_reference.png",
-                "image": "validation_reference.png",
-                "width": settings.GENERATION_WIDTH,
-                "height": settings.GENERATION_HEIGHT,
-                "duration_seconds": 2.0,
-                "fps": settings.SVD_FPS,
-                "seed": 31001,
-                "output_prefix": "validation_video",
-                "motion_bucket_id": 127,
-                "noise_aug_strength": 0.02,
-            })
-            service.preflight(resolved)
-            checks["comfyui_preflight"] = True
-            stats = service.client.get(service.base_url + "/system_stats")
-            stats.raise_for_status()
-            report["comfyui_devices"] = stats.json().get("devices", [])
-        finally:
-            service.client.close()
-    except Exception as exc:
-        checks["comfyui_preflight"] = False
-        report["error"] = str(exc)
-        return report
-    required = ("workflow_file", "has_reference_placeholder", "has_prompt_placeholder", "has_likely_video_output", "comfyui_preflight")
-    report["status"] = "ready_for_live_test" if all(checks.get(key) for key in required) else "blocked"
     return report
 
 
@@ -287,6 +199,7 @@ def summarize_validation(output: Path):
     video_workflow_report = _read_json(output / "video_workflow_preflight.json")
     render_report = _read_json(output / "render.json")
     video_review_report = _read_json(output / "video_review.json")
+    baseline_comparison_report = _read_json(output / "seed_dance_baseline_comparison.json")
     manual_review = _read_json(output / "manual_review.json")
     report = {
         "status": "needs_action",
@@ -296,6 +209,7 @@ def summarize_validation(output: Path):
             "video_workflow_preflight": str(output / "video_workflow_preflight.json"),
             "render": str(output / "render.json"),
             "video_review": str(output / "video_review.json"),
+            "seed_dance_baseline_comparison": str(output / "seed_dance_baseline_comparison.json"),
             "manual_review": str(output / "manual_review.json"),
         },
         "checks": {},
@@ -310,6 +224,10 @@ def summarize_validation(output: Path):
     )
     checks["images_rendered"] = bool(render_report and render_report.get("status") == "rendered_pending_human_review")
     checks["video_review_passed"] = bool(video_review_report and video_review_report.get("status") == "passed")
+    checks["baseline_comparison_present"] = bool(baseline_comparison_report)
+    checks["baseline_comparison_passed"] = bool(
+        baseline_comparison_report and baseline_comparison_report.get("status") == "passed"
+    )
     manual_cases = manual_review.get("cases", []) if isinstance(manual_review, dict) else []
     checks["manual_review_present"] = bool(manual_cases)
     if manual_cases:
@@ -332,6 +250,10 @@ def summarize_validation(output: Path):
         report["action_items"].append("Run render-images on the fixed validation cases and inspect generated keyframes.")
     if not checks["video_review_passed"]:
         report["action_items"].append("Run review-video on a generated clip; fix identity drift, flicker, temporal breaks, or VLM setup.")
+    if not checks["baseline_comparison_present"]:
+        report["action_items"].append("Run compare-baseline against a Seed Dance reference clip before claiming replacement quality.")
+    elif not checks["baseline_comparison_passed"]:
+        report["action_items"].append("Improve video engine/settings until Seed Dance baseline comparison passes measurable gates.")
     if not checks["manual_review_present"]:
         report["action_items"].append("Create manual_review.json with 0-5 human scores for each rendered case and clip.")
     elif not checks["manual_review_passed"]:
@@ -340,21 +262,28 @@ def summarize_validation(output: Path):
 
     if all(checks[key] for key in (
         "environment_ready", "video_workflow_ready", "images_rendered",
-        "video_review_passed", "manual_review_passed",
+        "video_review_passed", "baseline_comparison_passed", "manual_review_passed",
     )):
-        report["status"] = "ready_for_calibrated_generation"
-    elif checks["images_rendered"] or checks["video_review_passed"] or checks["manual_review_present"]:
+        report["status"] = "ready_for_seed_dance_candidate"
+    elif (
+        checks["images_rendered"]
+        or checks["video_review_passed"]
+        or checks["baseline_comparison_present"]
+        or checks["manual_review_present"]
+    ):
         report["status"] = "partial_needs_review"
     return report
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["preflight", "preflight-video-workflow", "render-images", "review-video", "summarize"], nargs="?", default="preflight")
+    parser.add_argument("mode", choices=["preflight", "preflight-video-workflow", "preflight-production-video", "render-images", "review-video", "compare-baseline", "summarize"], nargs="?", default="preflight")
     parser.add_argument("--base-url", help="ComfyUI address on the GPU machine")
     parser.add_argument("--cases", default="examples/local_generation_cases.json")
     parser.add_argument("--output", type=Path, default=Path("storage/validation"))
     parser.add_argument("--video")
+    parser.add_argument("--candidate", help="Generated video to compare against a Seed Dance baseline")
+    parser.add_argument("--baseline", help="Seed Dance reference video for measurable comparison")
     parser.add_argument("--video-workflow", help="ComfyUI image-to-video API workflow JSON")
     parser.add_argument("--reference", help="An explicitly selected character reference image")
     parser.add_argument("--description", help="Expected scene content for frame review")
@@ -366,6 +295,9 @@ def main():
     elif args.mode == "preflight-video-workflow":
         report = preflight_video_workflow(args.base_url, args.video_workflow)
         write_report(args.output / "video_workflow_preflight.json", report)
+    elif args.mode == "preflight-production-video":
+        report = preflight_production_video_engine(args.base_url, args.video_workflow)
+        write_report(args.output / "production_video_engine_preflight.json", report)
     elif args.mode == "render-images":
         report = render_images(json.loads(Path(args.cases).read_text(encoding="utf-8")), args.output, args.base_url, args.reference)
     elif args.mode == "review-video":
@@ -375,13 +307,18 @@ def main():
             args.video, {"scene_number": 1, "description": args.description},
             args.output / "video_review.json", args.reference,
         )
+    elif args.mode == "compare-baseline":
+        if not args.candidate or not args.baseline:
+            parser.error("compare-baseline needs --candidate and --baseline")
+        report = compare_video_baseline(Path(args.candidate), Path(args.baseline))
+        write_report(args.output / "seed_dance_baseline_comparison.json", report)
     else:
         report = summarize_validation(args.output)
         write_report(args.output / "validation_summary.json", report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["status"] in {
         "ready_for_live_test", "rendered_pending_human_review", "passed",
-        "ready_for_calibrated_generation",
+        "ready_for_seed_dance_candidate",
     } else 1
 
 

@@ -7,9 +7,10 @@ from src.config import settings
 from src.database.database import get_db
 from src.database.models import Scene
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
-from src.services.generation_provider import VideoGenerationRequest, get_generation_provider
+from src.services.generation_provider import ImageGenerationRequest, VideoGenerationRequest, get_generation_provider
 from src.services.generation_review import GenerationReviewService, ReviewError, write_report
 from src.services.svd_service import get_svd_service
+from src.services.video_director_service import VideoShotPlan, get_video_director_service
 from src.tasks.celery_app import celery_app
 from src.utils.logger import get_logger
 from src.utils.storage import get_scene_video_path
@@ -17,10 +18,30 @@ from src.utils.storage import get_scene_video_path
 logger = get_logger(__name__)
 
 
+def _configured_video_provider_name(kwargs: dict | None = None) -> str:
+    kwargs = kwargs or {}
+    return kwargs.get("provider") or settings.GENERATION_PROVIDER
+
+
+def _uses_configured_video_provider(provider_name: str) -> bool:
+    return provider_name != "local_comfyui" or bool(settings.COMFYUI_VIDEO_WORKFLOW_PATH)
+
+
+def _build_video_generator(scene: Scene, shot_plan: VideoShotPlan, provider_name: str, end_image: str | None):
+    if _uses_configured_video_provider(provider_name):
+        return _ComfyVideoGenerator(
+            scene,
+            provider=get_generation_provider(provider_name),
+            shot_plan=shot_plan,
+        ).with_end_image(end_image)
+    return get_svd_service()
+
+
 class _ComfyVideoGenerator:
-    def __init__(self, scene: Scene, provider=None):
+    def __init__(self, scene: Scene, provider=None, shot_plan: VideoShotPlan | None = None):
         self.scene = scene
         self.provider = provider or get_generation_provider("local_comfyui")
+        self.shot_plan = shot_plan
 
     def generate_video(
         self,
@@ -31,12 +52,27 @@ class _ComfyVideoGenerator:
         motion_bucket_id: int,
         noise_aug_strength: float,
     ) -> str:
-        duration = max(1.0, num_frames / max(fps, 1))
+        duration = (
+            self.shot_plan.target_duration_seconds
+            if self.shot_plan
+            else max(1.0, num_frames / max(fps, 1))
+        )
+        prompt = (
+            self.shot_plan.director_prompt
+            if self.shot_plan
+            else self.scene.image_prompt or self.scene.visual_description
+        )
+        negative_prompt = (
+            self.shot_plan.negative_prompt
+            if self.shot_plan
+            else settings.GENERATION_QUALITY_NEGATIVE_APPEND
+        )
         seed = abs(hash((self.scene.id, output_path, motion_bucket_id, round(noise_aug_strength, 4)))) % (2 ** 31)
         result = self.provider.generate_video(VideoGenerationRequest(
-            prompt=self.scene.image_prompt or self.scene.visual_description,
-            negative_prompt=settings.GENERATION_QUALITY_NEGATIVE_APPEND,
+            prompt=prompt,
+            negative_prompt=negative_prompt,
             reference_image=image_path,
+            end_image=getattr(self, "end_image", None),
             output_path=output_path,
             duration_seconds=duration,
             width=settings.GENERATION_WIDTH,
@@ -47,6 +83,10 @@ class _ComfyVideoGenerator:
             noise_aug_strength=noise_aug_strength,
         ))
         return result.output_path
+
+    def with_end_image(self, end_image: str | None):
+        self.end_image = end_image
+        return self
 
 
 def _candidate_video_path(final_path: str | Path, index: int) -> str:
@@ -80,6 +120,37 @@ def _scene_review_payload(scene: Scene, project_id: int | None = None, db=None) 
         "expected_image": scene.image_path,
         "visible_characters": visible_characters,
     }
+
+
+def _visible_characters_for_scene(scene: Scene, project_id: int, db) -> list[dict]:
+    from src.tasks.image_tasks import _visible_character_payload
+    return _visible_character_payload(scene, project_id, db)
+
+
+def _scene_end_frame_path(project_id: int, scene_id: int) -> str:
+    from src.utils.storage import storage_manager
+    path = storage_manager.get_image_path(project_id, scene_id, f"scene_{scene_id}_end.png")
+    return str(path)
+
+
+def _generate_end_frame(scene: Scene, project_id: int, shot_plan: VideoShotPlan, provider=None) -> str:
+    provider = provider or get_generation_provider("local_comfyui")
+    output_path = _scene_end_frame_path(project_id, scene.id)
+    request = ImageGenerationRequest(
+        prompt=shot_plan.end_frame_prompt,
+        negative_prompt=shot_plan.negative_prompt,
+        output_path=output_path,
+        width=settings.GENERATION_WIDTH,
+        height=settings.GENERATION_HEIGHT,
+        steps=settings.GENERATION_STEPS,
+        cfg_scale=settings.GENERATION_CFG,
+        seed=abs(hash((scene.id, "end_frame", shot_plan.shot_role))) % (2 ** 31),
+        reference_image=scene.image_path,
+        use_ipadapter=bool(scene.image_path and settings.COMFYUI_REFERENCE_WORKFLOW_PATH),
+        quality_mode=settings.GENERATION_QUALITY_PROFILE,
+    )
+    result = provider.generate_image(request)
+    return result.output_path
 
 
 def _reference_for_scene(scene: Scene, project_id: int, db) -> str | None:
@@ -125,11 +196,13 @@ def _generate_quality_video_candidates(
     fps: int,
     motion_bucket_id: int,
     noise_aug_strength: float,
+    shot_plan: VideoShotPlan | None = None,
 ) -> tuple[str, dict]:
     candidate_count = max(1, min(settings.GENERATION_VIDEO_CANDIDATES, 6))
     refinement_passes = max(0, min(settings.GENERATION_VIDEO_REFINEMENT_PASSES, 3))
     reviewer = GenerationReviewService()
     reference = _reference_for_scene(scene, project_id, db)
+    shot_plan_payload = shot_plan.as_dict() if shot_plan else None
     candidates = []
     from src.services.svd_service import cleanup_svd_service
     current_motion = motion_bucket_id
@@ -155,6 +228,7 @@ def _generate_quality_video_candidates(
                     "path": generated_path,
                     "motion_bucket_id": motion,
                     "noise_aug_strength": noise,
+                    "shot_plan": shot_plan_payload,
                 })
         finally:
             cleanup_svd_service()
@@ -168,6 +242,7 @@ def _generate_quality_video_candidates(
                 generated_path,
                 {
                     **_scene_review_payload(scene, project_id, db),
+                    "shot_plan": shot_plan_payload,
                     "candidate_index": index,
                     "refinement_pass": generated_candidate["pass"],
                     "motion_bucket_id": generated_candidate["motion_bucket_id"],
@@ -186,6 +261,8 @@ def _generate_quality_video_candidates(
                 "motion_bucket_id": generated_candidate["motion_bucket_id"],
                 "noise_aug_strength": generated_candidate["noise_aug_strength"],
             }
+            if shot_plan_payload:
+                candidate["shot_plan"] = shot_plan_payload
             if review.get("error"):
                 candidate["error"] = review["error"]
             candidates.append(candidate)
@@ -239,24 +316,43 @@ def generate_video_task(
         self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "svd_generation"})
 
         try:
-            from src.services.comfyui_service import get_comfyui_service
-            get_comfyui_service().free_memory()
-            video_generator = (
-                _ComfyVideoGenerator(scene)
-                if settings.COMFYUI_VIDEO_WORKFLOW_PATH
-                else get_svd_service()
-            )
+            try:
+                from src.services.comfyui_service import get_comfyui_service
+                get_comfyui_service().free_memory()
+            except Exception as exc:
+                logger.warning("Could not ask ComfyUI to free memory before video generation; continuing: {}", exc)
+            visible_characters = _visible_characters_for_scene(scene, project_id, db)
+            shot_plan = get_video_director_service().plan_scene(scene, project_id, visible_characters)
+            num_frames = max(kwargs.get("num_frames", settings.SVD_NUM_FRAMES), shot_plan.num_frames)
+            fps = kwargs.get("fps", shot_plan.fps)
+            motion_bucket_id = kwargs.get("motion_bucket_id", shot_plan.motion_bucket_id)
+            noise_aug_strength = kwargs.get("noise_aug_strength", shot_plan.noise_aug_strength)
+            provider_name = _configured_video_provider_name(kwargs)
+            end_image = None
+            if settings.GENERATION_VIDEO_END_FRAME_ENABLED and _uses_configured_video_provider(provider_name):
+                end_image = _generate_end_frame(scene, project_id, shot_plan)
+            video_generator = _build_video_generator(scene, shot_plan, provider_name, end_image)
             result_path, quality_report = _generate_quality_video_candidates(
                 video_generator,
                 scene,
                 project_id,
                 video_path,
                 db,
-                num_frames=kwargs.get("num_frames", settings.SVD_NUM_FRAMES),
-                fps=kwargs.get("fps", settings.SVD_FPS),
-                motion_bucket_id=kwargs.get("motion_bucket_id", 127),
-                noise_aug_strength=kwargs.get("noise_aug_strength", 0.02),
+                num_frames=num_frames,
+                fps=fps,
+                motion_bucket_id=motion_bucket_id,
+                noise_aug_strength=noise_aug_strength,
+                shot_plan=shot_plan,
             )
+            normalized_path = str(Path(video_path).with_name(f"{Path(video_path).stem}.normalized.mp4"))
+            normalized = get_video_director_service().normalize_clip(
+                result_path,
+                normalized_path,
+                shot_plan.target_duration_seconds,
+            )
+            if normalized != result_path:
+                shutil.copyfile(normalized, video_path)
+                result_path = video_path
             logger.info("Video candidate selection completed: scene_id={}, report={}", scene_id, quality_report)
         except Exception as exc:
             if not draft_fallback_enabled():

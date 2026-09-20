@@ -7,6 +7,7 @@ from src.services.generation_provider import (
     GenerationProviderName,
     GenerationResult,
     HailuoApiProvider,
+    HttpVideoApiProvider,
     ImageGenerationRequest,
     JimengApiProvider,
     KlingApiProvider,
@@ -116,3 +117,102 @@ def test_get_generation_provider_from_environment(monkeypatch):
     monkeypatch.setenv("GENERATION_PROVIDER", "kling_api")
     provider = get_generation_provider()
     assert isinstance(provider, KlingApiProvider)
+
+
+def test_http_video_provider_downloads_synchronous_video(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, payload=None, content=b"video"):
+            self.payload = payload or {}
+            self.content = content
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.payload
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            calls.append(("init", kwargs))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def post(self, url, json, headers):
+            calls.append(("post", url, json, headers))
+            return FakeResponse({"video_url": "https://media.example/out.mp4"})
+
+        def get(self, url, headers):
+            calls.append(("get", url, headers))
+            return FakeResponse(content=b"mp4-bytes")
+
+    monkeypatch.setattr("src.services.generation_provider.httpx.Client", FakeClient)
+    provider = HttpVideoApiProvider(endpoint="https://gateway.example/video", api_key="secret")
+    output = tmp_path / "scene.mp4"
+
+    result = provider.generate_video(VideoGenerationRequest(prompt="hero turns", output_path=str(output)))
+
+    assert result.output_path == str(output)
+    assert output.read_bytes() == b"mp4-bytes"
+    assert calls[1][2]["prompt"] == "hero turns"
+    assert calls[1][3]["Authorization"] == "Bearer secret"
+
+
+def test_http_video_provider_polls_async_job(tmp_path, monkeypatch):
+    class FakeResponse:
+        def __init__(self, payload=None, content=b"video"):
+            self.payload = payload or {}
+            self.content = content
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.payload
+
+    class FakeClient:
+        polls = 0
+
+        def __init__(self, **_kwargs):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def post(self, *_args, **_kwargs):
+            return FakeResponse({"job_id": "abc"})
+
+        def get(self, url, **_kwargs):
+            if "status" in url:
+                FakeClient.polls += 1
+                if FakeClient.polls == 1:
+                    return FakeResponse({"status": "running"})
+                return FakeResponse({"status": "completed", "video_url": "https://media.example/out.mp4"})
+            return FakeResponse(content=b"done")
+
+    monkeypatch.setattr("src.services.generation_provider.httpx.Client", FakeClient)
+    monkeypatch.setattr("src.services.generation_provider.time.sleep", lambda *_args: None)
+    provider = HttpVideoApiProvider(endpoint="https://gateway.example/video", api_key="secret")
+    provider.status_endpoint = "https://gateway.example/status/{job_id}"
+    provider.poll_interval = 0
+    output = tmp_path / "scene.mp4"
+
+    result = provider.generate_video(VideoGenerationRequest(prompt="hero turns", output_path=str(output)))
+
+    assert result.output_path == str(output)
+    assert output.read_bytes() == b"done"
+    assert FakeClient.polls == 2
+
+
+def test_get_generation_provider_supports_http_video(monkeypatch):
+    monkeypatch.setenv("GENERATION_PROVIDER", "http_video_api")
+    provider = get_generation_provider()
+    assert isinstance(provider, HttpVideoApiProvider)

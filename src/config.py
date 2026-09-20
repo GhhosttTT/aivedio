@@ -81,12 +81,20 @@ class Settings(BaseSettings):
 
     # SVD 配置
     SVD_MODEL_PATH: str = "./models/stable-video-diffusion-img2vid-xt"
-    SVD_NUM_FRAMES: int = 16
+    SVD_NUM_FRAMES: int = 25
     SVD_FPS: int = 8
     GENERATION_VIDEO_CANDIDATES: int = 2
     GENERATION_VIDEO_REFINEMENT_PASSES: int = 1
     GENERATION_VIDEO_MIN_SCORE: float = 4.0
     GENERATION_REQUIRE_VIDEO_REVIEW: bool = False
+    GENERATION_VIDEO_TARGET_SECONDS: float = 3.6
+    GENERATION_VIDEO_MAX_SECONDS: float = 6.0
+    GENERATION_VIDEO_MODEL_FPS: int = 8
+    GENERATION_VIDEO_MAX_FRAMES: int = 40
+    GENERATION_VIDEO_OUTPUT_FPS: int = 24
+    GENERATION_VIDEO_POSTPROCESS: bool = True
+    GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK: bool = False
+    GENERATION_VIDEO_END_FRAME_ENABLED: bool = True
 
     # TTS 配置
     TTS_API_KEY: str = ""
@@ -142,6 +150,14 @@ class Settings(BaseSettings):
     KLING_API_KEY: str = ""
     HAILUO_ENDPOINT: str = ""
     HAILUO_API_KEY: str = ""
+    HTTP_VIDEO_ENDPOINT: str = ""
+    HTTP_VIDEO_API_KEY: str = ""
+    HTTP_VIDEO_STATUS_ENDPOINT: str = ""
+    HTTP_VIDEO_TIMEOUT_SECONDS: int = 1800
+    HTTP_VIDEO_POLL_INTERVAL_SECONDS: float = 5.0
+    HTTP_VIDEO_MAX_POLLS: int = 240
+    HTTP_VIDEO_AUTH_HEADER: str = "Authorization"
+    HTTP_VIDEO_AUTH_SCHEME: str = "Bearer"
 
     # 文件存储配置
     STORAGE_PATH: str = "./storage"

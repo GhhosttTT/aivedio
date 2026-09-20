@@ -1,6 +1,7 @@
 import json
 
 from scripts import validate_local_generation as validator
+from src.services import video_engine_preflight
 
 
 def write_json(path, payload):
@@ -54,6 +55,27 @@ def test_video_workflow_preflight_skips_when_unconfigured(monkeypatch):
     assert report["checks"]["configured"] is False
 
 
+def test_production_video_preflight_blocks_svd_only(monkeypatch):
+    monkeypatch.setattr(validator.settings, "COMFYUI_VIDEO_WORKFLOW_PATH", "")
+
+    report = validator.preflight_production_video_engine()
+
+    assert report["status"] == "production_not_ready"
+    assert "COMFYUI_VIDEO_WORKFLOW_PATH" in report["action_items"][0]
+
+
+def test_production_video_preflight_accepts_configured_http_provider(monkeypatch):
+    monkeypatch.setattr(validator.settings, "GENERATION_PROVIDER", "http_video_api")
+    monkeypatch.setenv("HTTP_VIDEO_ENDPOINT", "https://gateway.example/video")
+    monkeypatch.setenv("HTTP_VIDEO_API_KEY", "secret")
+    monkeypatch.setattr(video_engine_preflight, "preflight_video_workflow", lambda *_args, **_kwargs: {"status": "skipped"})
+
+    report = validator.preflight_production_video_engine()
+
+    assert report["status"] == "ready_for_production_video_test"
+    assert report["provider"]["status"] == "configured"
+
+
 def test_video_workflow_preflight_blocks_missing_video_contract(tmp_path, monkeypatch):
     workflow = tmp_path / "video.json"
     workflow.write_text(json.dumps({
@@ -71,7 +93,7 @@ def test_video_workflow_preflight_blocks_missing_video_contract(tmp_path, monkey
         def preflight(self, _workflow):
             return None
 
-    monkeypatch.setattr(validator, "ComfyUIService", FakeService)
+    monkeypatch.setattr(video_engine_preflight, "ComfyUIService", FakeService)
 
     report = validator.preflight_video_workflow(workflow_path=str(workflow))
 
@@ -86,7 +108,8 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
     workflow.write_text(json.dumps({
         "1": {"class_type": "LoadImage", "inputs": {"image": "{reference_image}"}},
         "2": {"class_type": "CLIPTextEncode", "inputs": {"text": "{prompt}"}},
-        "3": {"class_type": "VHS_VideoCombine", "inputs": {"filename_prefix": "{output_prefix}"}},
+        "3": {"class_type": "LoadImage", "inputs": {"image": "{last_frame}"}},
+        "4": {"class_type": "VHS_VideoCombine", "inputs": {"filename_prefix": "{output_prefix}"}},
     }), encoding="utf-8")
 
     class FakeResponse:
@@ -114,12 +137,13 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
         def preflight(self, _workflow):
             return None
 
-    monkeypatch.setattr(validator, "ComfyUIService", FakeService)
+    monkeypatch.setattr(video_engine_preflight, "ComfyUIService", FakeService)
 
     report = validator.preflight_video_workflow(workflow_path=str(workflow))
 
     assert report["status"] == "ready_for_live_test"
-    assert report["placeholders"] == ["output_prefix", "prompt", "reference_image"]
+    assert report["checks"]["has_end_frame_placeholder"] is True
+    assert report["placeholders"] == ["last_frame", "output_prefix", "prompt", "reference_image"]
     assert report["likely_output_nodes"][0]["class_type"] == "VHS_VideoCombine"
 
 
@@ -128,6 +152,7 @@ def test_validation_summary_requires_manual_scores(tmp_path):
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "render.json", {"status": "rendered_pending_human_review"})
     write_json(tmp_path / "video_review.json", {"status": "passed"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
 
     report = validator.summarize_validation(tmp_path)
 
@@ -136,11 +161,12 @@ def test_validation_summary_requires_manual_scores(tmp_path):
     assert any("manual_review.json" in item for item in report["action_items"])
 
 
-def test_validation_summary_accepts_calibrated_run(tmp_path):
+def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "render.json", {"status": "rendered_pending_human_review"})
     write_json(tmp_path / "video_review.json", {"status": "passed"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
     write_json(tmp_path / "manual_review.json", {
         "cases": [
             {"id": "discovery", "score": 4.5, "decision": "accept"},
@@ -150,15 +176,50 @@ def test_validation_summary_accepts_calibrated_run(tmp_path):
 
     report = validator.summarize_validation(tmp_path)
 
-    assert report["status"] == "ready_for_calibrated_generation"
+    assert report["status"] == "ready_for_seed_dance_candidate"
     assert report["checks"]["manual_average_score"] == 4.25
+    assert report["checks"]["baseline_comparison_passed"] is True
     assert report["action_items"] == []
+
+
+def test_validation_summary_requires_seed_dance_baseline_comparison(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", {"status": "rendered_pending_human_review"})
+    write_json(tmp_path / "video_review.json", {"status": "passed"})
+    write_json(tmp_path / "manual_review.json", {
+        "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["baseline_comparison_present"] is False
+    assert any("compare-baseline" in item for item in report["action_items"])
+
+
+def test_validation_summary_blocks_failed_seed_dance_comparison(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", {"status": "rendered_pending_human_review"})
+    write_json(tmp_path / "video_review.json", {"status": "passed"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "needs_review"})
+    write_json(tmp_path / "manual_review.json", {
+        "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["baseline_comparison_passed"] is False
+    assert any("Seed Dance baseline comparison passes" in item for item in report["action_items"])
 
 
 def test_validation_summary_recommends_targeted_calibration(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "render.json", {"status": "rendered_pending_human_review"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
     write_json(tmp_path / "video_review.json", {
         "status": "needs_review",
         "batches": [{

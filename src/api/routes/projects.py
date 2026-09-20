@@ -4,9 +4,12 @@
 提供项目的 CRUD 操作和剧本生成功能
 """
 
-from fastapi import APIRouter, HTTPException, status, Query, Depends
+from fastapi import APIRouter, HTTPException, status, Query, Depends, UploadFile, File
 from typing import Optional
+from pathlib import Path
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
+import shutil
 
 from src.api.schemas import (
     ProjectCreate,
@@ -30,6 +33,90 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/projects", tags=["项目管理"], dependencies=[Depends(require_project_access)])
+
+class SeedDanceBaselineRequest(BaseModel):
+    baseline_path: str
+    candidate_path: Optional[str] = None
+
+
+@router.post("/{project_id}/seed-dance-baseline")
+async def compare_seed_dance_baseline(
+    project_id: int,
+    request: SeedDanceBaselineRequest,
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    from src.database.models import Project
+    from src.services.generation_review import write_report
+    from src.utils.storage import storage_manager
+    from scripts.compare_video_baseline import compare
+
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    candidate = Path(request.candidate_path or project.final_video_path or "")
+    baseline = Path(request.baseline_path)
+    if not candidate.is_file():
+        raise HTTPException(status_code=400, detail="Candidate video does not exist; generate the project video first")
+    if not baseline.is_file():
+        raise HTTPException(status_code=400, detail="Seed Dance baseline video does not exist")
+
+    review_root = storage_manager.get_project_path(project_id) / "reviews"
+    report = compare(candidate, baseline, artifact_dir=review_root)
+    report["candidate_video_path"] = str(candidate)
+    report["baseline_video_path"] = str(baseline)
+    write_report(review_root / "seed_dance_baseline_comparison.json", report)
+    return report
+
+
+@router.post("/{project_id}/seed-dance-baseline/upload")
+async def upload_seed_dance_baseline(
+    project_id: int,
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    from src.database.models import Project
+    from src.services.generation_review import write_report
+    from src.utils.storage import storage_manager
+    from scripts.compare_video_baseline import compare
+
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    candidate = Path(project.final_video_path or "")
+    if not candidate.is_file():
+        raise HTTPException(status_code=400, detail="Candidate video does not exist; generate the project video first")
+
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in {".mp4", ".mov", ".mkv", ".webm"}:
+        raise HTTPException(status_code=400, detail="Baseline must be a video file")
+
+    review_root = storage_manager.get_project_path(project_id) / "reviews"
+    baseline_dir = review_root / "baselines"
+    baseline_dir.mkdir(parents=True, exist_ok=True)
+    baseline = baseline_dir / f"seed_dance_baseline{suffix}"
+    with baseline.open("wb") as stream:
+        shutil.copyfileobj(file.file, stream)
+    if baseline.stat().st_size <= 0:
+        baseline.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Baseline video is empty")
+
+    report = compare(candidate, baseline, artifact_dir=review_root)
+    report["candidate_video_path"] = str(candidate)
+    report["baseline_video_path"] = str(baseline)
+    report["uploaded_baseline_path"] = str(baseline)
+    write_report(review_root / "seed_dance_baseline_comparison.json", report)
+    return report
+
+
+
+@router.get("/video-engine/preflight")
+async def get_video_engine_preflight(current_user=Depends(get_current_user)):
+    from src.services.video_engine_preflight import preflight_production_video_engine
+    return preflight_production_video_engine()
 
 
 @router.get("/{project_id}/generation-review")
@@ -83,12 +170,15 @@ def _generation_review_summary(reports: dict) -> dict:
 
     production_story = statuses.get("production_story")
     generation = statuses.get("generation")
+    baseline = statuses.get("seed_dance_baseline_comparison")
     if production_story != "passed":
         action_items.append("Run production story review before generating final assets.")
     if generation != "passed":
         action_items.append("Run sampled-frame generation review before final composition.")
+    if baseline != "passed":
+        action_items.append("Run Seed Dance baseline comparison before claiming replacement quality.")
 
-    blocking = bool(stale or needs_split or production_story != "passed" or generation != "passed")
+    blocking = bool(stale or needs_split or production_story != "passed" or generation != "passed" or baseline != "passed")
     return {
         "status": "blocked" if blocking else "ready",
         "reports": statuses,

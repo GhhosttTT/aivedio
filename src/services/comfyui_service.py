@@ -598,6 +598,7 @@ class ComfyUIService:
         prompt: str,
         reference_image: str,
         output_path: str,
+        end_image: Optional[str] = None,
         negative_prompt: str = "",
         width: int = 1024,
         height: int = 576,
@@ -621,11 +622,16 @@ class ComfyUIService:
             raise ComfyUIError(f"ComfyUI 视频工作流不存在: {workflow_file}")
         workflow = json.loads(workflow_file.read_text(encoding="utf-8"))
         uploaded_reference = self._upload_reference_image(reference_image)
+        uploaded_end = self._upload_reference_image(end_image) if end_image else uploaded_reference
         replacements = {
             "prompt": prompt,
             "positive_prompt": prompt,
             "negative_prompt": negative_prompt or "",
             "reference_image": uploaded_reference,
+            "start_image": uploaded_reference,
+            "first_frame": uploaded_reference,
+            "end_image": uploaded_end,
+            "last_frame": uploaded_end,
             "image": uploaded_reference,
             "width": width,
             "height": height,

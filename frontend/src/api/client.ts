@@ -68,8 +68,18 @@ export const authApi = {
  * 项目 API
  */
 export const projectApi = {
+    videoEnginePreflight: () => apiClient.get<any, VideoEnginePreflight>('/projects/video-engine/preflight'),
     latestTask: (id: number) => apiClient.get<any, ProductionTask | null>(`/projects/${id}/production-task`),
     reviews: (id: number) => apiClient.get<any, GenerationReviewResponse>(`/projects/${id}/generation-review`),
+    compareSeedDanceBaseline: (id: number, data: {baseline_path: string; candidate_path?: string}) => apiClient.post(`/projects/${id}/seed-dance-baseline`, data, {timeout: 300000}),
+    uploadSeedDanceBaseline: (id: number, file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return apiClient.post(`/projects/${id}/seed-dance-baseline/upload`, formData, {
+            headers: {'Content-Type': 'multipart/form-data'},
+            timeout: 300000,
+        });
+    },
     updateScene: (id: number, scene: number, data: any) => apiClient.put(`/projects/${id}/scenes/${scene}`, data),
     mediaUrl: async (id: number, path: string) => { const data = await apiClient.get<any, {url: string}>(`/projects/${id}/media-url`, {params: {path}}); return new URL(data.url, apiOrigin).href; },
     /**
@@ -272,4 +282,19 @@ export interface GenerationReviewResponse {
     project_id: number;
     reports: Record<string, any>;
     summary?: GenerationReviewSummary;
+}
+
+export interface VideoEnginePreflight {
+    status: 'ready_for_production_video_test' | 'production_not_ready' | string;
+    engine: string;
+    workflow: {
+        status: string;
+        workflow_path?: string;
+        checks?: Record<string, any>;
+        placeholders?: string[];
+        likely_output_nodes?: Array<{node_id: string; class_type: string}>;
+        error?: string;
+    };
+    requirements: string[];
+    action_items: string[];
 }

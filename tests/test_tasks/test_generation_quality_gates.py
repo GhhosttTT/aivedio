@@ -12,7 +12,8 @@ from src.services.generation_provider import GenerationProviderName, GenerationR
 from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _complexity_report, _composition_constraint, _generate_quality_candidates, _project_complexity_report, _review_feedback, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
-from src.tasks.video_tasks import _ComfyVideoGenerator, _generate_quality_video_candidates, _scene_review_payload
+from src.services.video_director_service import VideoShotPlan, get_video_director_service
+from src.tasks.video_tasks import _ComfyVideoGenerator, _build_video_generator, _generate_quality_video_candidates, _scene_review_payload
 
 
 @pytest.fixture
@@ -96,6 +97,27 @@ def test_video_review_payload_carries_visible_character_anchors(project_data):
         {"name": "Alice", "appearance": "woman, short black hair, green jacket"},
         {"name": "Bob", "appearance": "man, square jaw, navy coat"},
     ]
+
+
+def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_data, monkeypatch):
+    _, project, scene, _, _ = project_data
+    scene.dialogue = "你把那封信递给我。"
+    scene.visual_description = "Alice reaches across the bar and takes the red letter"
+    monkeypatch.setattr("src.services.video_director_service.settings.GENERATION_VIDEO_TARGET_SECONDS", 3.6)
+    monkeypatch.setattr("src.services.video_director_service.settings.GENERATION_VIDEO_MODEL_FPS", 8)
+
+    plan = get_video_director_service().plan_scene(
+        scene,
+        project.id,
+        [{"name": "Alice", "appearance": "woman, short black hair, green jacket"}],
+    )
+
+    assert plan.shot_role in {"action", "prop_interaction"}
+    assert plan.target_duration_seconds >= 3.6
+    assert plan.num_frames >= 25
+    assert "Visible character identity anchors" in plan.director_prompt
+    assert "End frame:" in plan.end_frame_prompt
+    assert "identity drift" in plan.negative_prompt
 
 
 def test_composition_constraint_tracks_visible_actor_count(project_data):
@@ -339,14 +361,29 @@ def test_video_generation_selects_best_reviewed_candidate(project_data, tmp_path
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
 
+    shot_plan = VideoShotPlan(
+        shot_role="prop_interaction",
+        action_intensity="medium",
+        target_duration_seconds=3.6,
+        fps=8,
+        num_frames=29,
+        motion_bucket_id=118,
+        noise_aug_strength=0.018,
+        director_prompt="directed short-drama prop handoff",
+        end_frame_prompt="end frame after the prop handoff",
+        negative_prompt="identity drift",
+        notes=["test"],
+    )
+
     final_path, report = _generate_quality_video_candidates(
         fake_svd, scene, project.id, str(tmp_path / "scene.mp4"), db,
-        num_frames=16, fps=8, motion_bucket_id=127, noise_aug_strength=0.02,
+        num_frames=29, fps=8, motion_bucket_id=118, noise_aug_strength=0.018, shot_plan=shot_plan,
     )
 
     assert Path(final_path).read_bytes() == b"video-2"
     assert report["status"] == "passed"
     assert report["selected_average"] == 4.7
+    assert report["candidates"][0]["shot_plan"]["shot_role"] == "prop_interaction"
     assert [candidate["index"] for candidate in report["candidates"]] == [2, 1]
     assert fake_svd.requests[0]["motion_bucket_id"] != fake_svd.requests[1]["motion_bucket_id"]
 
@@ -438,7 +475,21 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
 
     provider = FakeProvider()
     output = tmp_path / "scene.mp4"
-    result = _ComfyVideoGenerator(scene, provider).generate_video(
+    shot_plan = VideoShotPlan(
+        shot_role="emotion_reaction",
+        action_intensity="low",
+        target_duration_seconds=4.2,
+        fps=8,
+        num_frames=34,
+        motion_bucket_id=92,
+        noise_aug_strength=0.012,
+        director_prompt="directed emotional reaction",
+        end_frame_prompt="end frame emotional reaction",
+        negative_prompt="identity drift",
+        notes=[],
+    )
+
+    result = _ComfyVideoGenerator(scene, provider, shot_plan).with_end_image(str(tmp_path / "end.png")).generate_video(
         image_path=str(tmp_path / "source.png"),
         output_path=str(output),
         num_frames=16,
@@ -448,12 +499,45 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
     )
 
     assert result == str(output)
-    assert provider.request.prompt == "cinematic woman holding a red letter"
+    assert provider.request.prompt == "directed emotional reaction"
+    assert provider.request.negative_prompt == "identity drift"
     assert provider.request.reference_image.endswith("source.png")
-    assert provider.request.duration_seconds == 2.0
+    assert provider.request.end_image.endswith("end.png")
+    assert provider.request.duration_seconds == 4.2
     assert provider.request.fps == 8
     assert provider.request.motion_bucket_id == 120
     assert provider.request.noise_aug_strength == 0.02
+
+
+def test_video_generator_routes_external_provider_instead_of_svd(project_data, monkeypatch):
+    _, _, scene, _, _ = project_data
+    shot_plan = get_video_director_service().plan_scene(scene)
+
+    class FakeProvider:
+        name = GenerationProviderName.HTTP_VIDEO_API
+
+        def generate_video(self, _request):
+            return GenerationResult("http_video_api", "out.mp4", "video", {})
+
+    monkeypatch.setattr("src.tasks.video_tasks.get_generation_provider", lambda provider_name: FakeProvider())
+    monkeypatch.setattr("src.tasks.video_tasks.get_svd_service", lambda: (_ for _ in ()).throw(AssertionError("SVD should not be used")))
+
+    generator = _build_video_generator(scene, shot_plan, "http_video_api", "end.png")
+
+    assert isinstance(generator, _ComfyVideoGenerator)
+    assert generator.provider.name == GenerationProviderName.HTTP_VIDEO_API
+
+
+def test_video_generator_uses_svd_for_local_comfy_without_workflow(project_data, monkeypatch):
+    _, _, scene, _, _ = project_data
+    shot_plan = get_video_director_service().plan_scene(scene)
+    fake_svd = object()
+    monkeypatch.setattr("src.tasks.video_tasks.settings.COMFYUI_VIDEO_WORKFLOW_PATH", "")
+    monkeypatch.setattr("src.tasks.video_tasks.get_svd_service", lambda: fake_svd)
+
+    generator = _build_video_generator(scene, shot_plan, "local_comfyui", None)
+
+    assert generator is fake_svd
 
 
 def test_quality_refinement_uses_previous_review_feedback(tmp_path, monkeypatch):

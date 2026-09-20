@@ -171,6 +171,51 @@ class TestTaskChain:
         # 验证返回了任务ID
         assert task_id == "test-task-id-123"
 
+    def test_create_production_task_blocks_svd_only_engine(
+        self,
+        mock_db_session,
+        mock_project,
+        mock_scenes,
+        monkeypatch,
+    ):
+        mock_db_session.query.return_value.filter.return_value.first.return_value = mock_project
+        mock_db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = mock_scenes
+        monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)
+        monkeypatch.setattr(
+            "src.services.task_orchestrator.preflight_production_video_engine",
+            lambda: {"status": "production_not_ready", "action_items": ["configure video workflow"]},
+        )
+
+        orchestrator = TaskOrchestrator(mock_db_session)
+
+        with pytest.raises(ValueError, match="Production video engine is not ready"):
+            orchestrator.create_production_task(project_id=1)
+
+    def test_create_production_task_can_explicitly_allow_draft_video_fallback(
+        self,
+        mock_db_session,
+        mock_project,
+        mock_scenes,
+        monkeypatch,
+    ):
+        mock_db_session.query.return_value.filter.return_value.first.return_value = mock_project
+        mock_db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = mock_scenes
+        monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", True)
+        preflight = Mock(return_value={"status": "production_not_ready"})
+        monkeypatch.setattr("src.services.task_orchestrator.preflight_production_video_engine", preflight)
+
+        frozen = Mock(id="draft-task-id")
+        task_chain = Mock()
+        task_chain.freeze.return_value = frozen
+        monkeypatch.setattr(TaskOrchestrator, "_build_task_chain", Mock(return_value=task_chain))
+
+        orchestrator = TaskOrchestrator(mock_db_session)
+        task_id = orchestrator.create_production_task(project_id=1)
+
+        assert task_id == "draft-task-id"
+        preflight.assert_not_called()
+        task_chain.apply_async.assert_called_once()
+
 
 class TestTaskSignatures:
     """测试任务签名"""

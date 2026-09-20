@@ -27,6 +27,8 @@
 .wb-item p { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
 .wb-thumbnails { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
 .wb-thumbnails img { width: 150px; height: 150px; object-fit: contain; background: #121313; border-radius: 4px; }
+.wb-comparison-sheet { margin: 16px 0 0; }
+.wb-comparison-sheet img { width: 100%; max-height: 420px; object-fit: contain; background: #111; border-radius: 4px; }
 .wb-scene img { width: 100%; max-height: 200px; object-fit: contain; }
 .wb-score { display: inline-block; padding: 3px 8px; border-radius: 4px; background: #303538; font-size: 13px; }
 .wb-score.passed, .wb-score.completed { color: #8adfbd; background: #163e32; }

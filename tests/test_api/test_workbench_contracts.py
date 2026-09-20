@@ -24,6 +24,8 @@ from src.utils.storage import storage_manager
 def setup(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(storage_manager, "base_path", tmp_path / "storage")
+    monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", True)
+    monkeypatch.setattr("src.api.rate_limiter.get_redis_client", lambda: None)
     from src.services import character_service
     monkeypatch.setattr(character_service, "_character_manager", None)
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
@@ -83,6 +85,8 @@ def test_production_id_persistence_duplicate_submission_status_cancel(setup, mon
             record = self.db.query(Task).filter(Task.id == task_id).one()
             assert record.celery_task_id == identifier
             assert record.project.status == ProjectStatus.IN_PRODUCTION
+            record.status = TaskStatus.RUNNING
+            self.db.commit()
             submitted.append(task_id)
         return SimpleNamespace(freeze=lambda: SimpleNamespace(id=identifier), apply_async=publish)
     monkeypatch.setattr(TaskOrchestrator, "_build_task_chain", build)

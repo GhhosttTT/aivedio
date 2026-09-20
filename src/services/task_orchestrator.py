@@ -10,7 +10,9 @@ from celery import chain, group
 from celery.result import AsyncResult, GroupResult
 from sqlalchemy.orm import Session
 
+from src.config import settings
 from src.database.models import Project, Scene, Task as TaskModel, TaskStatus, ProjectStatus
+from src.services.video_engine_preflight import preflight_production_video_engine
 from src.tasks.celery_app import celery_app
 from src.tasks.image_tasks import generate_image_task, prepare_generation_task
 from src.tasks.review_tasks import review_generation_task
@@ -83,6 +85,16 @@ class TaskOrchestrator:
         
         if project.status == ProjectStatus.IN_PRODUCTION:
             raise ValueError("项目正在制作，请等待当前任务结束")
+        if generate_videos and not settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK:
+            video_engine = preflight_production_video_engine()
+            if video_engine.get("status") != "ready_for_production_video_test":
+                detail = "; ".join(video_engine.get("action_items") or [])
+                raise ValueError(
+                    "Production video engine is not ready. "
+                    "Configure a prompt-aware ComfyUI video workflow or set "
+                    "GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK=true for draft-only runs. "
+                    f"{detail}"
+                )
         # Persist the real task ID before a worker can consume the first step.
         task_model = TaskModel(
             project_id=project_id, celery_task_id=str(uuid4()),
