@@ -10,7 +10,7 @@ from src.database.models import Base, Character, Project, Scene, Task, TaskStatu
 from src.services.generation_review import fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName, GenerationResult
 from src.services.shot_prompt_service import ShotPromptService
-from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _complexity_report, _composition_constraint, _generate_quality_candidates, _project_complexity_report, _quality_parameters, _repair_parameter_profile, _review_feedback, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
+from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _complexity_report, _composition_constraint, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
 from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _scene_review_payload
@@ -95,6 +95,36 @@ def test_visible_character_payload_carries_identity_anchors(project_data):
         {"name": "Alice", "appearance": "woman, short black hair, green jacket"},
         {"name": "Bob", "appearance": "man, square jaw, navy coat"},
     ]
+
+
+def test_turnaround_album_drives_scene_reference_view(project_data, tmp_path, monkeypatch):
+    from PIL import Image
+    from src.services.character_identity_service import CharacterIdentityService
+    from src.services.character_turnaround_album import CharacterTurnaroundAlbumService
+    from src.utils.storage import storage_manager
+
+    db, project, scene, character, _ = project_data
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path / "storage")
+    spec = CharacterIdentityService().build_identity_spec("Alice", "lead", project_id=project.id)
+    character.appearance = spec["identity_anchor"]
+    character.visual_description = json.dumps(spec)
+    scene.visual_description = "Alice side profile by the office doorway, readable nose silhouette"
+    views = {}
+    for view, color in {"front": "red", "side": "green", "back": "blue"}.items():
+        image_path = tmp_path / f"{view}.png"
+        Image.new("RGB", (32, 32), color).save(image_path)
+        views[view] = str(image_path)
+    CharacterTurnaroundAlbumService().freeze_album(character, views)
+    db.commit()
+
+    payload = _visible_character_payload(scene, project.id, db)
+    reference_image = _get_reference_image(character, project.id, scene)
+
+    assert _turnaround_view_for_scene(scene) == "side"
+    assert reference_image == views["side"]
+    assert payload[0]["turnaround_reference"]["view"] == "side"
+    assert payload[0]["turnaround_reference"]["path"] == views["side"]
+    assert "strict side profile" in payload[0]["turnaround_reference"]["control_prompt"]
 
 
 def test_video_review_payload_carries_visible_character_anchors(project_data):

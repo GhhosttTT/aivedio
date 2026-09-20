@@ -11,6 +11,7 @@ from src.database.database import get_db
 from src.database.models import Character, Project, ProjectStatus, Scene, Task as TaskModel
 from src.config import settings
 from src.services.character_identity_service import CharacterIdentityService, load_identity_spec
+from src.services.character_turnaround_album import CharacterTurnaroundAlbumService
 from src.services.shot_prompt_service import ShotPromptService, CompiledShot
 from src.services.generation_review import write_report
 from src.services.image_quality_service import ImageQualitySelector, candidate_output_path
@@ -24,6 +25,43 @@ from src.utils.logger import get_logger
 from src.utils.storage import get_scene_image_path
 
 logger = get_logger(__name__)
+
+
+def _turnaround_view_for_scene(scene: Scene | None, prompt: str = "") -> str:
+    text = " ".join(filter(None, [
+        prompt,
+        getattr(scene, "image_prompt", "") if scene else "",
+        getattr(scene, "visual_description", "") if scene else "",
+        getattr(scene, "dialogue", "") if scene else "",
+    ])).lower()
+    if any(term in text for term in ("back view", "rear view", "from behind", "turns away", "背影", "背面", "背对")):
+        return "back"
+    if any(term in text for term in ("side view", "side profile", "profile", "90 degree", "侧脸", "侧面", "侧身")):
+        return "side"
+    return "front"
+
+
+def _turnaround_control_for_character(character: Character, project_id: int, view: str) -> dict | None:
+    try:
+        validation = CharacterTurnaroundAlbumService().validate_album(character)
+    except Exception as exc:
+        logger.warning("读取角色三视图画册失败: {}", exc)
+        return None
+    if validation.get("status") != "valid":
+        return None
+    manifest = validation.get("manifest") if isinstance(validation.get("manifest"), dict) else {}
+    views = manifest.get("views") if isinstance(manifest.get("views"), dict) else {}
+    item = views.get(view)
+    if not isinstance(item, dict) or not item.get("path"):
+        return None
+    return {
+        "view": view,
+        "path": item.get("path"),
+        "sha256": item.get("sha256"),
+        "control_prompt": item.get("control_prompt", ""),
+        "identity_spec_hash": manifest.get("identity_spec_hash"),
+        "project_id": project_id,
+    }
 
 
 def _prompt_safe_name(name: str, fallback: str = "the character") -> str:
@@ -66,6 +104,7 @@ def _visual_character(scene: Scene, project_id: int, db) -> Optional[Character]:
 
 def _visible_character_payload(scene: Scene, project_id: int, db) -> list[dict]:
     payload = []
+    view = _turnaround_view_for_scene(scene)
     for character in _visual_characters(scene, project_id, db):
         identity_spec = load_identity_spec(character.visual_description)
         item = {
@@ -74,6 +113,9 @@ def _visible_character_payload(scene: Scene, project_id: int, db) -> list[dict]:
         }
         if identity_spec:
             item["identity_spec"] = identity_spec
+        turnaround = _turnaround_control_for_character(character, project_id, view)
+        if turnaround:
+            item["turnaround_reference"] = turnaround
         payload.append({
             **item,
         })
@@ -306,9 +348,12 @@ def prepare_generation_task(self, project_id: int, task_id: int, compile_images:
         db.close()
 
 
-def _get_reference_image(character: Optional[Character], project_id: int) -> Optional[str]:
+def _get_reference_image(character: Optional[Character], project_id: int, scene: Scene | None = None) -> Optional[str]:
     if not character:
         return None
+    turnaround = _turnaround_control_for_character(character, project_id, _turnaround_view_for_scene(scene))
+    if turnaround and turnaround.get("path"):
+        return str(turnaround["path"])
     try:
         from src.services.character_service import get_character_manager
 
@@ -643,7 +688,7 @@ def generate_image_task(
         finally:
             from src.services.llm_service import cleanup_llm_service
             cleanup_llm_service()
-        reference_image = _get_reference_image(character, project_id)
+        reference_image = _get_reference_image(character, project_id, scene)
         enhanced_prompt = compiled.prompt
         repair_action = kwargs.get("repair_action")
         enhanced_prompt, negative_prompt = _apply_image_repair_action(
