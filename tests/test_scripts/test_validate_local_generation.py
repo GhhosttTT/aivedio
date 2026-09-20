@@ -313,3 +313,54 @@ def test_validation_summary_recommends_targeted_calibration(tmp_path):
     assert "video_motion" in areas
     assert "composition" in areas
     assert "shot_design" in areas
+
+
+def test_acceptance_package_writes_json_and_markdown(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery", "reaction"))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed", "score": 4.2})
+    write_json(tmp_path / "manual_review.json", {
+        "cases": [
+            {"id": "discovery", "score": 4.5, "decision": "accept", "note": "face stable"},
+            {"id": "reaction", "score": 4.0, "decision": "accept", "note": "composition OK"},
+        ]
+    })
+
+    package = validator.build_acceptance_package(tmp_path)
+
+    assert package["status"] == "ready_for_seed_dance_candidate"
+    assert package["required_status"] == "ready_for_seed_dance_candidate"
+    assert package["manual_review"]["missing_case_ids"] == []
+    assert [case["id"] for case in package["manual_review"]["cases"]] == ["discovery", "reaction"]
+    assert package["evidence_files"]["render"]["present"] is True
+    assert (tmp_path / "acceptance_package.json").is_file()
+    markdown = (tmp_path / "acceptance_package.md").read_text(encoding="utf-8")
+    assert "Local Generation Acceptance Package" in markdown
+    assert "discovery" in markdown
+    assert "ready_for_seed_dance_candidate" in markdown
+
+
+def test_acceptance_package_surfaces_missing_manual_review_and_setup_actions(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery", "reaction"))
+    write_json(tmp_path / "video_review.json", {
+        **passed_video_review(),
+        "repair_queue": [
+            {"action": "regenerate_turnaround_album", "execution": "setup_required", "reason": "identity drift"}
+        ],
+    })
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "manual_review.json", {
+        "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
+    })
+
+    package = validator.build_acceptance_package(tmp_path)
+
+    assert package["status"] == "partial_needs_review"
+    assert package["manual_review"]["missing_case_ids"] == ["reaction"]
+    assert package["repair_queue"][0]["execution"] == "setup_required"
+    assert any("missing rendered cases" in item for item in package["blocking_action_items"])
+    assert any("setup-required" in item for item in package["blocking_action_items"])

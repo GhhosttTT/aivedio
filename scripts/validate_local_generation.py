@@ -330,9 +330,194 @@ def summarize_validation(output: Path):
     return report
 
 
+def _path_exists(path: Path) -> bool:
+    return path.is_file()
+
+
+def _collect_validation_evidence(output: Path) -> dict:
+    known = {
+        "preflight": output / "preflight.json",
+        "video_workflow_preflight": output / "video_workflow_preflight.json",
+        "production_video_engine_preflight": output / "production_video_engine_preflight.json",
+        "render": output / "render.json",
+        "video_review": output / "video_review.json",
+        "seed_dance_baseline_comparison": output / "seed_dance_baseline_comparison.json",
+        "manual_review": output / "manual_review.json",
+        "validation_summary": output / "validation_summary.json",
+    }
+    return {
+        name: {"path": str(path), "present": _path_exists(path)}
+        for name, path in known.items()
+    }
+
+
+def _collect_repair_queue(*reports) -> list[dict]:
+    queue = []
+    for report in reports:
+        if not isinstance(report, dict):
+            continue
+        items = report.get("repair_queue")
+        if isinstance(items, list):
+            queue.extend(item for item in items if isinstance(item, dict))
+        for batch in report.get("batches", []):
+            if isinstance(batch, dict) and isinstance(batch.get("repair_queue"), list):
+                queue.extend(item for item in batch["repair_queue"] if isinstance(item, dict))
+    return queue
+
+
+def _manual_review_section(summary: dict, render_report: dict | None, manual_review: dict | None) -> dict:
+    checks = summary.get("checks", {})
+    rendered_cases = render_report.get("cases", []) if isinstance(render_report, dict) else []
+    manual_cases = manual_review.get("cases", []) if isinstance(manual_review, dict) else []
+    manual_by_id = {str(case.get("id")): case for case in manual_cases if case.get("id") is not None}
+    rendered_case_ids = [str(case.get("id")) for case in rendered_cases if case.get("id") is not None]
+    return {
+        "required_case_ids": rendered_case_ids,
+        "reviewed_case_ids": sorted(manual_by_id.keys()),
+        "missing_case_ids": checks.get("manual_review_missing_case_ids", []),
+        "average_score": checks.get("manual_average_score"),
+        "min_score": checks.get("manual_min_score"),
+        "failures": summary.get("manual_failures", []),
+        "cases": [
+            {
+                "id": case_id,
+                "image": next((case.get("image") for case in rendered_cases if str(case.get("id")) == case_id), None),
+                "manual_score": manual_by_id.get(case_id, {}).get("score"),
+                "decision": manual_by_id.get(case_id, {}).get("decision"),
+                "note": manual_by_id.get(case_id, {}).get("note"),
+            }
+            for case_id in rendered_case_ids
+        ],
+    }
+
+
+def _acceptance_action_items(summary: dict, manual_section: dict, repair_queue: list[dict]) -> list[str]:
+    items = list(summary.get("action_items", []))
+    if manual_section["missing_case_ids"]:
+        items.append("Finish human review for missing rendered cases before scaling production.")
+    setup_required = [item for item in repair_queue if item.get("execution") == "setup_required"]
+    if setup_required:
+        items.append("Resolve setup-required repair actions before rerunning automatic generation.")
+    manual_actions = [item for item in repair_queue if item.get("execution") == "manual"]
+    if manual_actions:
+        items.append("Confirm manual repair decisions for subjective or ambiguous failures.")
+    unique = []
+    seen = set()
+    for item in items:
+        if item not in seen:
+            unique.append(item)
+            seen.add(item)
+    return unique
+
+
+def _markdown_bool(value) -> str:
+    return "PASS" if value else "FAIL"
+
+
+def _build_acceptance_markdown(package: dict) -> str:
+    checks = package.get("checks", {})
+    manual = package.get("manual_review", {})
+    lines = [
+        "# Local Generation Acceptance Package",
+        "",
+        f"- Status: `{package['status']}`",
+        f"- Required status: `{package['required_status']}`",
+        f"- Generated at: `{package['generated_at']}`",
+        "",
+        "## Gate Summary",
+        "",
+        "| Gate | Result |",
+        "| --- | --- |",
+    ]
+    for key in (
+        "environment_ready",
+        "video_workflow_ready",
+        "images_rendered",
+        "video_review_passed",
+        "video_identity_gate_passed",
+        "video_temporal_gate_passed",
+        "baseline_comparison_passed",
+        "manual_review_passed",
+    ):
+        lines.append(f"| {key} | {_markdown_bool(checks.get(key))} |")
+    lines.extend([
+        "",
+        "## Rendered Case Review",
+        "",
+        "| Case | Image | Manual Score | Decision | Note |",
+        "| --- | --- | --- | --- | --- |",
+    ])
+    for case in manual.get("cases", []):
+        lines.append(
+            "| {id} | {image} | {score} | {decision} | {note} |".format(
+                id=case.get("id", ""),
+                image=case.get("image") or "",
+                score=case.get("manual_score", ""),
+                decision=case.get("decision") or "",
+                note=(case.get("note") or "").replace("|", "/"),
+            )
+        )
+    lines.extend([
+        "",
+        "## Human Checklist",
+        "",
+    ])
+    for item in package["human_review_checklist"]:
+        lines.append(f"- [ ] {item}")
+    lines.extend([
+        "",
+        "## Blocking Action Items",
+        "",
+    ])
+    action_items = package.get("blocking_action_items") or ["No blocking action items."]
+    for item in action_items:
+        lines.append(f"- {item}")
+    return "\n".join(lines) + "\n"
+
+
+def build_acceptance_package(output: Path) -> dict:
+    summary = _read_json(output / "validation_summary.json") or summarize_validation(output)
+    render_report = _read_json(output / "render.json")
+    video_review_report = _read_json(output / "video_review.json")
+    baseline_report = _read_json(output / "seed_dance_baseline_comparison.json")
+    manual_review = _read_json(output / "manual_review.json")
+    repair_queue = _collect_repair_queue(render_report, video_review_report, baseline_report, manual_review, summary)
+    manual_section = _manual_review_section(summary, render_report, manual_review)
+    package = {
+        "status": summary.get("status", "needs_action"),
+        "required_status": "ready_for_seed_dance_candidate",
+        "generated_at": round(time.time()),
+        "summary_path": str(output / "validation_summary.json"),
+        "evidence_files": _collect_validation_evidence(output),
+        "checks": summary.get("checks", {}),
+        "rendered_cases": render_report.get("cases", []) if isinstance(render_report, dict) else [],
+        "manual_review": manual_section,
+        "video_review": {
+            "status": video_review_report.get("status") if isinstance(video_review_report, dict) else None,
+            "gate_scores": summary.get("checks", {}).get("video_gate_scores", {}),
+            "batches": video_review_report.get("batches", []) if isinstance(video_review_report, dict) else [],
+        },
+        "seed_dance_baseline": baseline_report if isinstance(baseline_report, dict) else None,
+        "calibration_recommendations": summary.get("calibration_recommendations", []),
+        "repair_queue": repair_queue,
+        "human_review_checklist": [
+            "Confirm every rendered case image matches the intended character, wardrobe, scene, and camera angle.",
+            "Reject same-face characters, face drift, broken hands, unreadable expressions, bad crops, and random text/watermarks.",
+            "Watch the generated clip at normal speed and half speed for flicker, warping, identity drift, and broken motion.",
+            "Compare against the Seed Dance reference clip for composition, lighting, facial consistency, motion stability, and overall appeal.",
+            "Update manual_review.json with scores for every rendered case; do not score only the best-looking outputs.",
+        ],
+    }
+    package["blocking_action_items"] = _acceptance_action_items(summary, manual_section, repair_queue)
+    write_report(output / "validation_summary.json", summary)
+    write_report(output / "acceptance_package.json", package)
+    (output / "acceptance_package.md").write_text(_build_acceptance_markdown(package), encoding="utf-8")
+    return package
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["preflight", "preflight-video-workflow", "preflight-production-video", "render-images", "review-video", "compare-baseline", "summarize"], nargs="?", default="preflight")
+    parser.add_argument("mode", choices=["preflight", "preflight-video-workflow", "preflight-production-video", "render-images", "review-video", "compare-baseline", "summarize", "acceptance-package"], nargs="?", default="preflight")
     parser.add_argument("--base-url", help="ComfyUI address on the GPU machine")
     parser.add_argument("--cases", default="examples/local_generation_cases.json")
     parser.add_argument("--output", type=Path, default=Path("storage/validation"))
@@ -367,9 +552,11 @@ def main():
             parser.error("compare-baseline needs --candidate and --baseline")
         report = compare_video_baseline(Path(args.candidate), Path(args.baseline))
         write_report(args.output / "seed_dance_baseline_comparison.json", report)
-    else:
+    elif args.mode == "summarize":
         report = summarize_validation(args.output)
         write_report(args.output / "validation_summary.json", report)
+    else:
+        report = build_acceptance_package(args.output)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["status"] in {
         "ready_for_live_test", "rendered_pending_human_review", "passed",
