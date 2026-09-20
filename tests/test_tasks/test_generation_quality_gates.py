@@ -568,7 +568,7 @@ def test_image_repair_action_is_recorded_in_candidate_request(tmp_path, monkeypa
     _, report = _generate_quality_candidates(
         provider,
         request,
-        {"scene_number": 1, "visual_description": "A woman opens a letter"},
+        {"scene_number": 1, "visual_description": "A woman opens a letter", "repair_action": "refine_prompt_composition"},
         reference_image=None,
         repair_action="refine_prompt_composition",
     )
@@ -578,6 +578,8 @@ def test_image_repair_action_is_recorded_in_candidate_request(tmp_path, monkeypa
     candidate_request = report["candidates"][0]["request"]
     assert candidate_request["repair_action"] == "refine_prompt_composition"
     assert candidate_request["repair_parameter_profile"]["reason"] == "composition_aesthetic_repair"
+    assert report["candidates"][0]["scene"]["scene_number"] == 1
+    assert report["candidates"][0]["scene"]["repair_action"] == "refine_prompt_composition"
     assert report["candidates"][0]["provider_metadata"]["workflow"]["steps"] == 45
     assert report["candidates"][0]["provider_metadata"]["workflow"]["sampler_name"] == "dpmpp_2m"
 

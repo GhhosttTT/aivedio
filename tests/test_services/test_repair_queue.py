@@ -91,6 +91,29 @@ def test_repair_queue_reads_nested_platform_aesthetic_gates():
     assert video_queue[0]["execution"] == "auto"
 
 
+def test_repair_queue_reads_scene_number_from_candidate_scene_payload():
+    report = {
+        "status": "needs_review",
+        "candidates": [
+            {
+                "index": 1,
+                "scene": {"scene_number": 7},
+                "platform_aesthetic_gate": {
+                    "status": "needs_review",
+                    "low": {
+                        "lighting_quality": {"score": 2, "evidence": "muddy light"},
+                    },
+                },
+            }
+        ],
+    }
+
+    queue = build_repair_queue(report, "image")
+
+    assert queue[0]["action"] == "refine_prompt_composition"
+    assert queue[0]["scene_number"] == 7
+
+
 def test_repair_queue_handles_review_unavailable():
     report = {"status": "review_unavailable", "error": "No local VLM review unavailable", "candidates": []}
 

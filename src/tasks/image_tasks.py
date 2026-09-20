@@ -616,6 +616,11 @@ def _generate_quality_candidates(
             )
             report["provider"] = result.provider
             report["provider_metadata"] = result.metadata
+            report["scene"] = {
+                "scene_number": scene_payload.get("scene_number"),
+                "visual_description": scene_payload.get("visual_description") or scene_payload.get("description"),
+                "repair_action": scene_payload.get("repair_action"),
+            }
             report["request"] = {
                 "seed": candidate_request.seed,
                 "steps": candidate_request.steps,
