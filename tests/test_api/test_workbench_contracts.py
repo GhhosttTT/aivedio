@@ -310,6 +310,8 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
             "manual_review_covers_rendered_cases": True,
             "manual_review_missing_case_ids": [],
             "manual_review_passed": True,
+            "image_review_present": True,
+            "image_review_passed": True,
             "render_profile": {
                 "quality_mode": "ultra",
                 "optimization_mode": "quality",
@@ -331,6 +333,7 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
     assert validation["checks"]["video_identity_gate_passed"] is True
     assert validation["checks"]["render_profile_passed"] is True
     assert validation["checks"]["render_workflow_parameters_passed"] is True
+    assert validation["checks"]["image_review_passed"] is True
     assert validation["checks"]["render_profile"]["quality_mode"] == "ultra"
     assert validation["checks"]["manual_review_covers_rendered_cases"] is True
     assert validation["checks"]["manual_review_missing_case_ids"] == []
@@ -338,6 +341,44 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
     assert not any(item["code"] == "sample_validation_not_ready" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_render_profile_not_production" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_workflow_parameters_missing" for item in payload["warnings"])
+    assert not any(item["code"] == "sample_validation_image_review_not_passed" for item in payload["warnings"])
+
+
+def test_production_readiness_warns_when_sample_image_review_is_missing(setup):
+    client, _, path = setup
+    validation_dir = path / "storage" / "validation"
+    validation_dir.mkdir(parents=True, exist_ok=True)
+    (validation_dir / "validation_summary.json").write_text(json.dumps({
+        "status": "ready_for_seed_dance_candidate",
+        "checks": {
+            "video_review_passed": True,
+            "video_identity_gate_passed": True,
+            "video_temporal_gate_passed": True,
+            "baseline_comparison_passed": True,
+            "manual_review_covers_rendered_cases": True,
+            "manual_review_missing_case_ids": [],
+            "manual_review_passed": True,
+            "render_profile": {
+                "quality_mode": "ultra",
+                "optimization_mode": "quality",
+                "prompt_optimization": True,
+                "parameter_optimization": True,
+            },
+            "render_profile_passed": True,
+            "render_workflow_parameters_passed": True,
+            "image_review_present": False,
+            "image_review_passed": False,
+        },
+        "action_items": ["Run review-images."],
+    }), encoding="utf-8")
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    validation = payload["checks"]["sample_validation"]
+    assert validation["checks"]["image_review_passed"] is False
+    assert any(item["code"] == "sample_validation_image_review_not_passed" for item in payload["warnings"])
 
 
 def test_production_readiness_warns_when_sample_render_profile_is_not_production(setup):

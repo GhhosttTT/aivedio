@@ -13,6 +13,7 @@ import httpx
 from src.config import settings
 from src.services.generation_provider import _extract_workflow_image_metadata
 from src.services.comfyui_service import ComfyUIService
+from src.services.image_quality_service import ImageQualitySelector
 from src.services.video_engine_preflight import (
     VIDEO_WORKFLOW_PLACEHOLDERS,
     likely_video_outputs as _likely_video_outputs,
@@ -163,6 +164,51 @@ def render_images(
     return report
 
 
+def review_images(output: Path, reference=None):
+    render_report = _read_json(output / "render.json")
+    report = {"status": "error", "cases": [], "repair_queue": []}
+    if not isinstance(render_report, dict) or render_report.get("status") != "rendered_pending_human_review":
+        report["error"] = "render.json is missing or render-images has not completed"
+        write_report(output / "image_review.json", report)
+        return report
+    selector = ImageQualitySelector()
+    for index, case in enumerate(render_report.get("cases", []), start=1):
+        image = Path(str(case.get("image") or ""))
+        if not image.is_absolute():
+            image = output / image
+        scene = case.get("scene") if isinstance(case.get("scene"), dict) else {}
+        payload = {
+            "scene_number": int(scene.get("scene_number") or index),
+            "visual_description": scene.get("visual_description") or case.get("prompt") or case.get("id") or "",
+            "visible_characters": scene.get("visible_characters", []),
+            "reference_requirements": scene.get("reference_requirements", []),
+        }
+        try:
+            case_report = selector.review_candidate(
+                index,
+                image,
+                payload,
+                str(case.get("prompt") or ""),
+                reference,
+            )
+        except Exception as exc:
+            case_report = {
+                "index": index,
+                "status": "error",
+                "path": str(image),
+                "error": str(exc),
+            }
+        case_report["id"] = case.get("id")
+        case_report["image"] = str(image)
+        report["cases"].append(case_report)
+    report["status"] = "passed" if _image_review_cases_passed(report) else "needs_review"
+    for case in report["cases"]:
+        if isinstance(case, dict) and isinstance(case.get("repair_queue"), list):
+            report["repair_queue"].extend(case["repair_queue"])
+    write_report(output / "image_review.json", report)
+    return report
+
+
 def _read_json(path: Path):
     if not path.is_file():
         return None
@@ -218,6 +264,32 @@ def _video_review_platform_score(video_review_report: dict | None) -> float | No
         if score is not None:
             scores.append(score)
     return round(min(scores), 2) if scores else None
+
+
+def _image_review_cases_passed(image_review_report: dict | None) -> bool:
+    if not isinstance(image_review_report, dict):
+        return False
+    cases = image_review_report.get("cases", [])
+    if not cases:
+        return False
+    for case in cases:
+        if not isinstance(case, dict) or case.get("status") != "passed":
+            return False
+        review = case.get("review") if isinstance(case.get("review"), dict) else {}
+        for key in ("facial_identity", "identity_consistency"):
+            value = review.get(key)
+            if isinstance(value, dict) and float(value.get("score", 0)) < settings.GENERATION_IMAGE_IDENTITY_MIN_SCORE:
+                return False
+        platform_score = case.get("platform_score")
+        if not isinstance(platform_score, (int, float)) or platform_score < settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE:
+            return False
+        aesthetic_gate = case.get("platform_aesthetic_gate")
+        if not isinstance(aesthetic_gate, dict) or aesthetic_gate.get("status") != "passed":
+            return False
+        turnaround_gate = case.get("turnaround_gate")
+        if isinstance(turnaround_gate, dict) and turnaround_gate.get("status") != "passed":
+            return False
+    return True
 
 
 def _render_workflow_parameters_passed(render_report: dict | None) -> bool:
@@ -293,6 +365,7 @@ def summarize_validation(output: Path):
     preflight_report = _read_json(output / "preflight.json")
     video_workflow_report = _read_json(output / "video_workflow_preflight.json")
     render_report = _read_json(output / "render.json")
+    image_review_report = _read_json(output / "image_review.json")
     video_review_report = _read_json(output / "video_review.json")
     baseline_comparison_report = _read_json(output / "seed_dance_baseline_comparison.json")
     manual_review = _read_json(output / "manual_review.json")
@@ -303,6 +376,7 @@ def summarize_validation(output: Path):
             "preflight": str(output / "preflight.json"),
             "video_workflow_preflight": str(output / "video_workflow_preflight.json"),
             "render": str(output / "render.json"),
+            "image_review": str(output / "image_review.json"),
             "video_review": str(output / "video_review.json"),
             "seed_dance_baseline_comparison": str(output / "seed_dance_baseline_comparison.json"),
             "manual_review": str(output / "manual_review.json"),
@@ -328,6 +402,8 @@ def summarize_validation(output: Path):
         and render_profile.get("parameter_optimization") is True
     )
     checks["render_workflow_parameters_passed"] = _render_workflow_parameters_passed(render_report)
+    checks["image_review_present"] = bool(image_review_report)
+    checks["image_review_passed"] = _image_review_cases_passed(image_review_report)
     video_gate_scores = _video_review_gate_scores(video_review_report)
     checks["video_gate_scores"] = video_gate_scores
     checks["video_identity_gate_passed"] = bool(
@@ -394,6 +470,10 @@ def summarize_validation(output: Path):
         report["action_items"].append("Rerun render-images with --quality-mode ultra --optimization-mode quality before accepting sample quality.")
     elif not checks["render_workflow_parameters_passed"]:
         report["action_items"].append("Rerun render-images and verify every case records actual ComfyUI workflow steps for the production quality profile.")
+    if not checks["image_review_present"]:
+        report["action_items"].append("Run review-images so local llama.cpp VLM checks every rendered keyframe before accepting sample quality.")
+    elif not checks["image_review_passed"]:
+        report["action_items"].append("Improve rendered keyframes until image VLM review passes platform aesthetic, identity, and turnaround gates.")
     if not checks["video_review_passed"]:
         report["action_items"].append(
             "Run review-video on a generated clip and pass identity/temporal/platform gates; "
@@ -417,7 +497,7 @@ def summarize_validation(output: Path):
     if all(checks[key] for key in (
         "environment_ready", "video_workflow_ready", "images_rendered",
         "render_profile_passed", "render_workflow_parameters_passed",
-        "video_review_passed", "baseline_comparison_passed", "manual_review_passed",
+        "image_review_passed", "video_review_passed", "baseline_comparison_passed", "manual_review_passed",
     )):
         report["status"] = "ready_for_seed_dance_candidate"
     elif (
@@ -440,6 +520,7 @@ def _collect_validation_evidence(output: Path) -> dict:
         "video_workflow_preflight": output / "video_workflow_preflight.json",
         "production_video_engine_preflight": output / "production_video_engine_preflight.json",
         "render": output / "render.json",
+        "image_review": output / "image_review.json",
         "video_review": output / "video_review.json",
         "seed_dance_baseline_comparison": output / "seed_dance_baseline_comparison.json",
         "manual_review": output / "manual_review.json",
@@ -579,10 +660,11 @@ def _build_acceptance_markdown(package: dict) -> str:
 def build_acceptance_package(output: Path) -> dict:
     summary = _read_json(output / "validation_summary.json") or summarize_validation(output)
     render_report = _read_json(output / "render.json")
+    image_review_report = _read_json(output / "image_review.json")
     video_review_report = _read_json(output / "video_review.json")
     baseline_report = _read_json(output / "seed_dance_baseline_comparison.json")
     manual_review = _read_json(output / "manual_review.json")
-    repair_queue = _collect_repair_queue(render_report, video_review_report, baseline_report, manual_review, summary)
+    repair_queue = _collect_repair_queue(render_report, image_review_report, video_review_report, baseline_report, manual_review, summary)
     manual_section = _manual_review_section(summary, render_report, manual_review)
     package = {
         "status": summary.get("status", "needs_action"),
@@ -592,6 +674,10 @@ def build_acceptance_package(output: Path) -> dict:
         "evidence_files": _collect_validation_evidence(output),
         "checks": summary.get("checks", {}),
         "rendered_cases": render_report.get("cases", []) if isinstance(render_report, dict) else [],
+        "image_review": {
+            "status": image_review_report.get("status") if isinstance(image_review_report, dict) else None,
+            "cases": image_review_report.get("cases", []) if isinstance(image_review_report, dict) else [],
+        },
         "manual_review": manual_section,
         "video_review": {
             "status": video_review_report.get("status") if isinstance(video_review_report, dict) else None,
@@ -618,7 +704,7 @@ def build_acceptance_package(output: Path) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["preflight", "preflight-video-workflow", "preflight-production-video", "render-images", "review-video", "compare-baseline", "summarize", "acceptance-package"], nargs="?", default="preflight")
+    parser.add_argument("mode", choices=["preflight", "preflight-video-workflow", "preflight-production-video", "render-images", "review-images", "review-video", "compare-baseline", "summarize", "acceptance-package"], nargs="?", default="preflight")
     parser.add_argument("--base-url", help="ComfyUI address on the GPU machine")
     parser.add_argument("--cases", default="examples/local_generation_cases.json")
     parser.add_argument("--output", type=Path, default=Path("storage/validation"))
@@ -650,6 +736,8 @@ def main():
             quality_mode=args.quality_mode,
             optimization_mode=args.optimization_mode,
         )
+    elif args.mode == "review-images":
+        report = review_images(args.output, args.reference)
     elif args.mode == "review-video":
         if not args.video or not args.description:
             parser.error("review-video needs --video and --description")

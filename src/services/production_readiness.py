@@ -646,6 +646,12 @@ class ProductionReadinessService:
                 "Rerun local validation samples and verify actual ComfyUI workflow parameters are recorded for every rendered case.",
                 severity="warning",
             ))
+        if checks.get("image_review_passed") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_image_review_not_passed",
+                "Run review-images and pass local image VLM platform aesthetic, identity, and turnaround gates for every rendered keyframe.",
+                severity="warning",
+            ))
         return {
             "status": status or "unknown",
             "path": str(path),
@@ -654,6 +660,8 @@ class ProductionReadinessService:
                 "render_profile": checks.get("render_profile"),
                 "render_profile_passed": checks.get("render_profile_passed"),
                 "render_workflow_parameters_passed": checks.get("render_workflow_parameters_passed"),
+                "image_review_present": checks.get("image_review_present"),
+                "image_review_passed": checks.get("image_review_passed"),
                 "video_review_passed": checks.get("video_review_passed"),
                 "video_identity_gate_passed": checks.get("video_identity_gate_passed"),
                 "video_temporal_gate_passed": checks.get("video_temporal_gate_passed"),
