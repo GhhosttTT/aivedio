@@ -36,6 +36,7 @@ TURNAROUND_FEATURES: dict[str, tuple[str, ...]] = {
 
 
 def turnaround_expected_features(view: str, character_data: dict[str, Any]) -> dict[str, str]:
+    wardrobe = character_data.get("outfit_details") or character_data.get("wardrobe") or ""
     identity = {
         "face_shape": character_data.get("face_shape", ""),
         "eyes": character_data.get("eyes", ""),
@@ -48,9 +49,9 @@ def turnaround_expected_features(view: str, character_data: dict[str, Any]) -> d
             for item in (character_data.get("body_type"), character_data.get("height"))
             if str(item or "").strip()
         ),
-        "wardrobe_front": character_data.get("outfit_details", ""),
-        "wardrobe_side": character_data.get("outfit_details", ""),
-        "outfit_back_silhouette": character_data.get("outfit_details", ""),
+        "wardrobe_front": wardrobe,
+        "wardrobe_side": wardrobe,
+        "outfit_back_silhouette": wardrobe,
         "nose_silhouette": character_data.get("nose", ""),
         "hair_outline": character_data.get("hair", ""),
         "hair_back_shape": character_data.get("hair", ""),

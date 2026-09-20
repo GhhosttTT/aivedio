@@ -9,6 +9,7 @@ from pathlib import Path
 
 from src.database.models import Character
 from src.services.character_identity_service import load_identity_spec
+from src.services.turnaround_quality import turnaround_expected_features
 from src.utils.storage import storage_manager
 
 
@@ -53,6 +54,7 @@ class CharacterTurnaroundAlbumService:
                     "path": path,
                     "sha256": self._file_hash(Path(path)),
                     "control_prompt": self._view_control_prompt(view, identity_spec),
+                    "expected_features": turnaround_expected_features(view, identity_spec),
                 }
                 for view, path in normalized.items()
             },

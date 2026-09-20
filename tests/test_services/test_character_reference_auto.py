@@ -5,6 +5,7 @@ from PIL import Image
 from src.services.character_reference_auto import (
     CharacterReferenceAutoGenerator,
     _reference_review_payload,
+    _turnaround_review_payload,
 )
 from src.services.turnaround_quality import TURNAROUND_FEATURES
 
@@ -128,6 +129,21 @@ def test_turnaround_album_generation_selects_each_required_view(tmp_path, monkey
     assert any("strict front turnaround view" in prompt for prompt in prompts)
     assert any("90 degree side view" in prompt for prompt in prompts)
     assert any("strict rear turnaround view" in prompt for prompt in prompts)
+    assert all("same scale as other views" in prompt for prompt in prompts)
+    assert all("plain light gray background" in prompt for prompt in prompts)
     assert Path(tmp_path / "林安" / "turnaround_front_quality.json").is_file()
     assert result["quality_reports"]["front"]["turnaround_gate"]["status"] == "needs_review"
+    assert result["quality_reports"]["front"]["turnaround_contract"]["layout"].startswith("single full-body")
+    assert result["quality_reports"]["front"]["candidates"][0]["request"]["turnaround_contract"]["expected_features"]["face_shape"] == "oval face"
     assert set(result["quality_reports"]["side"]["turnaround_gate"]["scores"]) == set(TURNAROUND_FEATURES["side"])
+
+
+def test_turnaround_review_payload_carries_model_sheet_contract():
+    character_data = FakeDescriptionGenerator().generate_character_description("林安")
+
+    payload = _turnaround_review_payload("林安", character_data, "side")
+
+    assert payload["turnaround_view"] == "side"
+    assert payload["turnaround_contract"]["camera"] == "strict 90 degree side profile camera, no three-quarter rotation"
+    assert payload["turnaround_contract"]["expected_features"]["nose_silhouette"] == "straight nose bridge"
+    assert "strict side profile, not three-quarter" in payload["reference_requirements"]

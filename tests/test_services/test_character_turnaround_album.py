@@ -36,6 +36,9 @@ def test_turnaround_album_freezes_front_side_back_views(tmp_path, monkeypatch):
     assert album["status"] == "frozen"
     assert album["required_views"] == ["front", "side", "back"]
     assert "strict side profile" in album["views"]["side"]["control_prompt"]
+    assert album["views"]["front"]["expected_features"]["face_shape"] == spec["face_shape"]
+    assert album["views"]["side"]["expected_features"]["nose_silhouette"] == spec["nose"]
+    assert album["views"]["back"]["expected_features"]["outfit_back_silhouette"] == spec["wardrobe"]
     assert service.validate_album(character)["status"] == "valid"
 
     Image.new("RGB", (32, 32), "black").save(views["side"])

@@ -13,7 +13,7 @@ from src.services.comfyui_service import ComfyUIService
 from src.services.generation_review import ReviewError, write_report
 from src.services.image_quality_service import ImageQualitySelector
 from src.services.llm_service import get_llm_service
-from src.services.turnaround_quality import attach_turnaround_quality_gate
+from src.services.turnaround_quality import attach_turnaround_quality_gate, turnaround_expected_features
 
 
 class CharacterReferenceAutoGenerator:
@@ -223,6 +223,7 @@ class CharacterReferenceAutoGenerator:
                     report_name=f"turnaround_{view}_quality.json",
                     review_payload=_turnaround_review_payload(character_name, character_data, view),
                     turnaround_view=view,
+                    generation_context={"turnaround_contract": prompt_data["turnaround_contract"]},
                 )
                 selected_views[view] = selected["reference_image_path"]
                 quality_reports[view] = selected["quality_report"]
@@ -260,6 +261,7 @@ class CharacterReferenceAutoGenerator:
         report_name: str = "reference_quality.json",
         review_payload: Optional[Dict] = None,
         turnaround_view: Optional[str] = None,
+        generation_context: Optional[Dict] = None,
     ) -> Dict:
         character_dir = Path(save_dir) / character_name.replace(" ", "_")
         character_dir.mkdir(parents=True, exist_ok=True)
@@ -300,7 +302,15 @@ class CharacterReferenceAutoGenerator:
                     settings.GENERATION_TURNAROUND_FEATURE_MIN_SCORE,
                 )
             report["path"] = result_path
-            report["request"] = {"seed": seed, "steps": min(max(settings.GENERATION_STEPS, 28) + index * 4, 48), "cfg_scale": settings.GENERATION_CFG}
+            report["request"] = {
+                "seed": seed,
+                "steps": min(max(settings.GENERATION_STEPS, 28) + index * 4, 48),
+                "cfg_scale": settings.GENERATION_CFG,
+            }
+            if turnaround_view:
+                report["request"]["turnaround_view"] = turnaround_view
+            if generation_context:
+                report["request"].update(generation_context)
             candidates.append(report)
         report_path = character_dir / report_name
         selection = selector.select_best(
@@ -317,6 +327,7 @@ class CharacterReferenceAutoGenerator:
             )
             selection["turnaround_view"] = turnaround_view
             selection["turnaround_gate"] = selected.get("turnaround_gate", {})
+            selection["turnaround_contract"] = selected.get("request", {}).get("turnaround_contract", {})
             write_report(report_path, selection)
             if (
                 settings.GENERATION_REQUIRE_IMAGE_REVIEW
@@ -352,29 +363,34 @@ class CharacterReferenceAutoGenerator:
         front_prompt = reference_prompts.get("front_closeup", {}).get("prompt")
         side_prompt = reference_prompts.get("side_profile", {}).get("prompt")
         back_prompt = reference_prompts.get("back_view", {}).get("prompt")
-        return {
+        prompts = {}
+        for view, prompt_data in {
             "front": {
                 "prompt": (
                     front_prompt
                     or f"{base}, front view, facing camera, readable face, shoulders square, arms relaxed"
-                ) + ", strict front turnaround view, no dramatic pose, no camera tilt",
+                ) + _turnaround_prompt_suffix("front"),
                 "negative": negative,
             },
             "side": {
                 "prompt": (
                     side_prompt
                     or f"{base}, strict side profile view, nose silhouette, hair outline, outfit side seam visible"
-                ) + ", 90 degree side view, full body, neutral pose, no three-quarter angle",
+                ) + _turnaround_prompt_suffix("side"),
                 "negative": negative,
             },
             "back": {
                 "prompt": (
                     back_prompt
                     or f"{base}, back view, hairstyle back shape, outfit back silhouette, shoulders and full body visible"
-                ) + ", strict rear turnaround view, no face visible, neutral pose",
+                ) + _turnaround_prompt_suffix("back"),
                 "negative": negative,
             },
-        }
+        }.items():
+            contract = _turnaround_sheet_contract(view, character_data)
+            prompt_data["turnaround_contract"] = contract
+            prompts[view] = prompt_data
+        return prompts
 
 
 def _reference_identity_anchor(character_name: str, character_data: Dict) -> str:
@@ -390,6 +406,36 @@ def _reference_identity_anchor(character_name: str, character_data: Dict) -> str
     ]
     details = ", ".join(str(field).strip() for field in fields if str(field or "").strip())
     return f"{character_name}: {details}" if details else character_name
+
+
+def _turnaround_sheet_contract(view: str, character_data: Dict) -> Dict:
+    view_camera = {
+        "front": "strict orthographic front camera, shoulders square to camera",
+        "side": "strict 90 degree side profile camera, no three-quarter rotation",
+        "back": "strict orthographic rear camera, no face visible",
+    }
+    return {
+        "view": view,
+        "layout": "single full-body character on a neutral production sheet, head-to-toe visible, centered on the same scale",
+        "camera": view_camera[view],
+        "pose": "neutral A-pose or relaxed straight pose, feet visible, no dramatic action",
+        "background": "plain light gray studio background, no props, no text, no watermark",
+        "scale": "match height, lens distance, and body proportions across front side back views",
+        "expected_features": turnaround_expected_features(view, character_data),
+    }
+
+
+def _turnaround_prompt_suffix(view: str) -> str:
+    suffix = {
+        "front": "strict front turnaround view, no dramatic pose, no camera tilt",
+        "side": "90 degree side view, full body, neutral pose, no three-quarter angle",
+        "back": "strict rear turnaround view, no face visible, neutral pose",
+    }[view]
+    return (
+        f", {suffix}, production model sheet, full body head-to-toe visible, "
+        "same scale as other views, centered neutral standing pose, plain light gray background, "
+        "no props, no text, no watermark"
+    )
 
 
 def _reference_review_payload(character_name: str, character_data: Dict) -> Dict:
@@ -430,6 +476,7 @@ def _turnaround_review_payload(character_name: str, character_data: Dict, view: 
     }
     payload["visual_description"] = f"{view} character turnaround reference"
     payload["turnaround_view"] = view
+    payload["turnaround_contract"] = _turnaround_sheet_contract(view, character_data)
     payload["reference_requirements"] = payload["reference_requirements"] + requirements[view]
     return payload
 
