@@ -21,6 +21,8 @@ from src.api.schemas import (
     CharacterAssetPackResponse,
     CharacterTurnaroundAlbumFreezeRequest,
     CharacterTurnaroundAlbumResponse,
+    CharacterTurnaroundGenerateRequest,
+    CharacterTurnaroundGenerateResponse,
     CharacterResponse,
     CharacterReferenceGenerateRequest,
     CharacterReferenceGenerateResponse,
@@ -301,6 +303,58 @@ async def generate_reference_image(
     except Exception as e:
         logger.error(f"自动生成角色参考图失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"自动生成角色参考图失败: {e}")
+
+
+@router.post("/{character_id}/generate-turnaround-album", response_model=CharacterTurnaroundGenerateResponse)
+async def generate_turnaround_album(
+    project_id: int,
+    character_id: int,
+    request: CharacterTurnaroundGenerateRequest,
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    自动生成角色正面、侧面、背面三视图候选，并可直接冻结为立体画册。
+    """
+    try:
+        character = db_session.query(Character).filter(
+            Character.id == character_id,
+            Character.project_id == project_id
+        ).first()
+        if not character:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"角色不存在: {character_id}")
+        from src.utils.storage import storage_manager
+        save_dir = storage_manager.base_path / "characters" / str(project_id) / str(character_id) / "turnaround_generated"
+        result = CharacterReferenceAutoGenerator().generate_turnaround_album(
+            character_name=character.name,
+            role=character.description or "short-drama character",
+            personality=character.personality or "",
+            count_per_view=request.count_per_view,
+            save_dir=str(save_dir),
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("message", "三视图生成失败"))
+        album = None
+        if request.freeze_album:
+            try:
+                album = CharacterTurnaroundAlbumService().freeze_album(
+                    character=character,
+                    view_paths=result["selected_views"],
+                    notes="auto generated turnaround album",
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc))
+        return CharacterTurnaroundGenerateResponse(
+            character_id=character_id,
+            selected_views=result["selected_views"],
+            candidate_images=result["candidate_images"],
+            quality_reports=result["quality_reports"],
+            album=album,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"自动生成角色三视图失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"自动生成角色三视图失败: {e}")
 
 
 @router.post("/{character_id}/freeze-asset-pack", response_model=CharacterAssetPackResponse)

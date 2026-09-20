@@ -162,7 +162,9 @@ Already implemented or partially implemented:
      character bible before production.
    - Needed: face/body/outfit/voice/personality assets, per-character negative
      prompts, approved reference sets, and per-shot visible-character mapping.
-   - Current implementation can freeze a front/side/back turnaround album with
+   - Current implementation can generate front/side/back candidates with
+     `POST /api/projects/{project_id}/characters/{character_id}/generate-turnaround-album`
+     and freeze the approved album with
      `POST /api/projects/{project_id}/characters/{character_id}/freeze-turnaround-album`.
      Production readiness blocks final generation when a visible character does
      not have a valid three-view album or when one of the view images or the

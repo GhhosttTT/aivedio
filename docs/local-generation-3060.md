@@ -136,7 +136,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 
 关键帧审核：每个候选图保存独立评分。基础技术评分可以离线运行，本地 VLM 评分需要 `llama-server` 的 OpenAI 兼容接口可用。
 图片 VLM 评分包含剧情匹配、构图、美观、画面完整性、脸部身份、整体身份一致性。`facial_identity` 会单独比较脸型、眼睛、鼻子、嘴、发型、年龄感和角色独特特征；多人镜头会把每个可见角色的 name/appearance 作为结构化证据送入审核，避免只凭提示词里一段长文本判断。
-角色定妆应先做三视图立体画册：准备正面、侧面、背面三张参考图后调用 `POST /api/projects/{project_id}/characters/{character_id}/freeze-turnaround-album`。系统会保存每个视图的路径、hash 和控制提示，用来锁定脸部、发型轮廓、身体比例、服装正侧背细节。任一视图或身份档案变化后，生产就绪检查会要求重新冻结。
+角色定妆应先做三视图立体画册：可调用 `POST /api/projects/{project_id}/characters/{character_id}/generate-turnaround-album` 为正面、侧面、背面分别生成多张候选并择优；也可手工准备三张参考图后调用 `POST /api/projects/{project_id}/characters/{character_id}/freeze-turnaround-album`。系统会保存每个视图的路径、hash 和控制提示，用来锁定脸部、发型轮廓、身体比例、服装正侧背细节。任一视图或身份档案变化后，生产就绪检查会要求重新冻结。
 生产前应先冻结角色定妆包：先生成或上传角色参考图，再生成身份方案，最后调用 `POST /api/projects/{project_id}/characters/{character_id}/freeze-asset-pack`。冻结包会保存身份档案 hash、参考图路径和参考图 hash。后续只要修改身份方案或替换参考图，生产就绪检查会要求重新冻结，避免未审批的新脸进入成片生成。
 角色定妆后还应冻结项目空间计划：调用 `POST /api/projects/{project_id}/freeze-spatial-plan`，把每个分镜的景别、机位、轴线、人物站位、道具焦点和 pose/depth/camera 控制提示写入 `spatial_asset_pack.json`。如果分镜、对白、可见角色或空间计划变化，生产就绪检查会要求重新冻结，避免前后镜头站位和机位漂移。
 本机 ComfyUI 工作流也需要冻结：配置 `COMFYUI_WORKFLOW_PATH`、`COMFYUI_VIDEO_WORKFLOW_PATH` 后调用 `POST /api/projects/workflow-profile/freeze`。生产 profile 会记录 image/video workflow 路径、文件 hash、能力声明和质量阈值。后续如果 workflow 文件被替换，或缺少 identity、spatial control、pose/depth、first-last-frame video、motion control、face repair、upscale、candidate review 等能力，生产就绪检查会阻断最终生成。

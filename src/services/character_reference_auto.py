@@ -182,6 +182,68 @@ class CharacterReferenceAutoGenerator:
                 "message": f"生成失败: {str(e)}"
             }
 
+    def generate_turnaround_album(
+        self,
+        character_name: str,
+        role: str = "主角",
+        personality: str = "自信、专业",
+        count_per_view: int = 3,
+        save_dir: str = "./storage/characters",
+    ) -> Dict:
+        """
+        Generate front/side/back candidates and select the best image per view.
+
+        The selected views are meant to be frozen by CharacterTurnaroundAlbumService
+        before final production.
+        """
+        try:
+            logger.info(f"开始为角色 '{character_name}' 生成三视图立体画册")
+            character_data = self.generator.generate_character_description(
+                character_name=character_name,
+                role=role,
+                personality=personality,
+            )
+            reference_prompts = self.generator.generate_reference_prompts(character_data)
+            view_prompts = self._turnaround_view_prompts(reference_prompts, character_data)
+            selected_views = {}
+            quality_reports = {}
+            candidate_images = {}
+            for view, prompt_data in view_prompts.items():
+                selected = self._generate_and_select_reference(
+                    character_name=character_name,
+                    character_data=character_data,
+                    prompt=prompt_data["prompt"],
+                    negative_prompt=prompt_data["negative"],
+                    count=count_per_view,
+                    save_dir=save_dir,
+                    final_name=f"turnaround_{view}_selected.png",
+                    candidate_prefix=f"turnaround_{view}_candidate",
+                    report_name=f"turnaround_{view}_quality.json",
+                    review_payload=_turnaround_review_payload(character_name, character_data, view),
+                )
+                selected_views[view] = selected["reference_image_path"]
+                quality_reports[view] = selected["quality_report"]
+                candidate_images[view] = selected["candidate_images"]
+            return {
+                "success": True,
+                "character_data": character_data,
+                "selected_views": selected_views,
+                "candidate_images": candidate_images,
+                "quality_reports": quality_reports,
+                "reference_prompts": reference_prompts,
+                "message": f"角色 '{character_name}' 三视图立体画册生成成功",
+            }
+        except Exception as e:
+            logger.error(f"生成三视图立体画册失败: {e}", exc_info=True)
+            return {
+                "success": False,
+                "character_data": {},
+                "selected_views": {},
+                "candidate_images": {},
+                "quality_reports": {},
+                "message": f"生成失败: {str(e)}",
+            }
+
     def _generate_and_select_reference(
         self,
         character_name: str,
@@ -190,17 +252,23 @@ class CharacterReferenceAutoGenerator:
         negative_prompt: str,
         count: int,
         save_dir: str,
+        final_name: str = "reference_selected.png",
+        candidate_prefix: str = "reference_candidate",
+        report_name: str = "reference_quality.json",
+        review_payload: Optional[Dict] = None,
     ) -> Dict:
         character_dir = Path(save_dir) / character_name.replace(" ", "_")
         character_dir.mkdir(parents=True, exist_ok=True)
-        final_path = character_dir / "reference_selected.png"
+        final_path = character_dir / final_name
         selector = ImageQualitySelector()
         candidates = []
         count = max(1, min(count, 8))
         import hashlib
         for index in range(count):
-            output_path = character_dir / f"reference_candidate_{index + 1:02d}.png"
-            seed = int(hashlib.sha256(f"{character_name}:{index}:{json.dumps(character_data, ensure_ascii=False, sort_keys=True)}".encode()).hexdigest()[:8], 16)
+            output_path = character_dir / f"{candidate_prefix}_{index + 1:02d}.png"
+            seed = int(hashlib.sha256(
+                f"{character_name}:{candidate_prefix}:{index}:{json.dumps(character_data, ensure_ascii=False, sort_keys=True)}".encode()
+            ).hexdigest()[:8], 16)
             result_path = self.comfyui.generate_image(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
@@ -216,7 +284,7 @@ class CharacterReferenceAutoGenerator:
             report = selector.review_candidate(
                 index + 1,
                 result_path,
-                _reference_review_payload(character_name, character_data),
+                review_payload or _reference_review_payload(character_name, character_data),
                 prompt,
                 None,
             )
@@ -226,7 +294,7 @@ class CharacterReferenceAutoGenerator:
         selection = selector.select_best(
             candidates,
             final_path,
-            character_dir / "reference_quality.json",
+            character_dir / report_name,
             min_average=settings.GENERATION_IMAGE_MIN_SCORE,
             require_vlm=settings.GENERATION_REQUIRE_IMAGE_REVIEW,
         )
@@ -234,6 +302,50 @@ class CharacterReferenceAutoGenerator:
             "reference_image_path": str(final_path),
             "candidate_images": [candidate["path"] for candidate in candidates],
             "quality_report": selection,
+        }
+
+    def _turnaround_view_prompts(self, reference_prompts: Dict, character_data: Dict) -> Dict[str, Dict[str, str]]:
+        negative = next(
+            (item.get("negative") for item in reference_prompts.values() if isinstance(item, dict) and item.get("negative")),
+            "blurry, deformed, bad anatomy, text, watermark, extra limbs, changed outfit",
+        )
+        appearance = (
+            f"{character_data.get('age', 25)} year old {character_data.get('ethnicity', 'East Asian')} "
+            f"{character_data.get('gender', 'person')}, {character_data.get('face_shape', 'oval face')}, "
+            f"{character_data.get('hair', 'neat hair')}, {character_data.get('body_type', 'average build')}, "
+            f"{character_data.get('outfit_details', 'consistent outfit')}"
+        )
+        identity = _reference_identity_anchor(str(character_data.get("name") or ""), character_data)
+        base = (
+            "production character turnaround sheet, photorealistic short-drama character reference, "
+            "plain neutral background, full outfit visible, consistent hairstyle and wardrobe, "
+            f"{appearance}, identity anchor: {identity}"
+        )
+        front_prompt = reference_prompts.get("front_closeup", {}).get("prompt")
+        side_prompt = reference_prompts.get("side_profile", {}).get("prompt")
+        back_prompt = reference_prompts.get("back_view", {}).get("prompt")
+        return {
+            "front": {
+                "prompt": (
+                    front_prompt
+                    or f"{base}, front view, facing camera, readable face, shoulders square, arms relaxed"
+                ) + ", strict front turnaround view, no dramatic pose, no camera tilt",
+                "negative": negative,
+            },
+            "side": {
+                "prompt": (
+                    side_prompt
+                    or f"{base}, strict side profile view, nose silhouette, hair outline, outfit side seam visible"
+                ) + ", 90 degree side view, full body, neutral pose, no three-quarter angle",
+                "negative": negative,
+            },
+            "back": {
+                "prompt": (
+                    back_prompt
+                    or f"{base}, back view, hairstyle back shape, outfit back silhouette, shoulders and full body visible"
+                ) + ", strict rear turnaround view, no face visible, neutral pose",
+                "negative": negative,
+            },
         }
 
 
@@ -267,6 +379,31 @@ def _reference_review_payload(character_name: str, character_data: Dict) -> Dict
             "mobile short-drama commercial portrait quality",
         ],
     }
+
+
+def _turnaround_review_payload(character_name: str, character_data: Dict, view: str) -> Dict:
+    payload = _reference_review_payload(character_name, character_data)
+    requirements = {
+        "front": [
+            "strict front view",
+            "face and outfit front readable",
+            "neutral pose suitable for identity reference",
+        ],
+        "side": [
+            "strict side profile, not three-quarter",
+            "nose silhouette and hair outline readable",
+            "body proportion and outfit side seam visible",
+        ],
+        "back": [
+            "strict back view",
+            "hairstyle back shape and outfit back silhouette readable",
+            "no face or accidental front-facing pose",
+        ],
+    }
+    payload["visual_description"] = f"{view} character turnaround reference"
+    payload["turnaround_view"] = view
+    payload["reference_requirements"] = payload["reference_requirements"] + requirements[view]
+    return payload
 
 
 # 测试

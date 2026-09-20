@@ -449,6 +449,48 @@ def test_character_turnaround_album_freeze_clears_readiness_blocker(setup):
     assert not any(item["code"] == "missing_character_turnaround_album" for item in after["blockers"])
 
 
+def test_generate_turnaround_album_can_freeze_generated_views(setup, monkeypatch):
+    client, db, path = setup
+    from src.services.character_identity_service import CharacterIdentityService
+
+    class FakeTurnaroundGenerator:
+        def generate_turnaround_album(self, **kwargs):
+            selected = {}
+            for view, color in {"front": "red", "side": "green", "back": "blue"}.items():
+                image_path = path / f"generated_{view}.png"
+                Image.new("RGB", (64, 64), color).save(image_path)
+                selected[view] = str(image_path)
+            return {
+                "success": True,
+                "selected_views": selected,
+                "candidate_images": {view: [image] for view, image in selected.items()},
+                "quality_reports": {view: {"status": "passed"} for view in selected},
+            }
+
+    monkeypatch.setattr("src.api.routes.characters.CharacterReferenceAutoGenerator", FakeTurnaroundGenerator)
+    spec = CharacterIdentityService().build_identity_spec("Alice", "lead", project_id=1)
+    character = Character(
+        project_id=1,
+        name="Alice",
+        appearance=spec["identity_anchor"],
+        visual_description=json.dumps(spec),
+    )
+    db.add(character)
+    db.commit()
+    db.refresh(character)
+
+    response = client.post(
+        f"/api/projects/1/characters/{character.id}/generate-turnaround-album",
+        json={"count_per_view": 2, "freeze_album": True},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert set(payload["selected_views"]) == {"front", "side", "back"}
+    assert payload["album"]["status"] == "frozen"
+    assert payload["album"]["views"]["side"]["path"].endswith("generated_side.png")
+
+
 def test_production_readiness_reports_spatial_continuity_plan(setup):
     client, db, _ = setup
     from src.services.character_identity_service import CharacterIdentityService

@@ -190,6 +190,25 @@ class CharacterTurnaroundAlbumResponse(BaseModel):
     album: dict
 
 
+class CharacterTurnaroundGenerateRequest(BaseModel):
+    """
+    自动生成角色三视图/立体画册
+    """
+    count_per_view: int = Field(3, ge=1, le=8, description="每个视图生成的候选数量")
+    freeze_album: bool = Field(False, description="生成后是否直接冻结三视图画册")
+
+
+class CharacterTurnaroundGenerateResponse(BaseModel):
+    """
+    自动生成角色三视图响应
+    """
+    character_id: int
+    selected_views: dict
+    candidate_images: dict
+    quality_reports: dict
+    album: Optional[dict] = None
+
+
 class SpatialAssetFreezeRequest(BaseModel):
     """
     冻结项目空间连续性资产包

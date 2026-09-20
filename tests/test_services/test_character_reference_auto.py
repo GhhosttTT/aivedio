@@ -53,6 +53,16 @@ class FakeDescriptionGenerator:
                 "prompt": "front portrait, clear face",
                 "negative": "blurry, deformed",
                 "description": "front",
+            },
+            "side_profile": {
+                "prompt": "strict side profile, full body",
+                "negative": "blurry, deformed",
+                "description": "side",
+            },
+            "back_view": {
+                "prompt": "strict back view, outfit silhouette",
+                "negative": "blurry, deformed",
+                "description": "back",
             }
         }
 
@@ -92,3 +102,29 @@ def test_reference_review_payload_carries_identity_anchor():
     assert "small mole under left eye" in appearance
     assert "green jacket" in appearance
     assert "mobile short-drama commercial portrait quality" in payload["reference_requirements"]
+
+
+def test_turnaround_album_generation_selects_each_required_view(tmp_path, monkeypatch):
+    fake_comfy = FakeComfyUI()
+    generator = CharacterReferenceAutoGenerator(comfyui_service=fake_comfy, generator=FakeDescriptionGenerator())
+    monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_IMAGE_MIN_SCORE", 0.0)
+    monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+
+    result = generator.generate_turnaround_album(
+        character_name="林安",
+        role="女主",
+        personality="克制",
+        count_per_view=2,
+        save_dir=str(tmp_path),
+    )
+
+    assert result["success"] is True
+    assert set(result["selected_views"]) == {"front", "side", "back"}
+    assert set(result["quality_reports"]) == {"front", "side", "back"}
+    assert all(Path(path).is_file() for path in result["selected_views"].values())
+    assert len(fake_comfy.calls) == 6
+    prompts = [call["prompt"] for call in fake_comfy.calls]
+    assert any("strict front turnaround view" in prompt for prompt in prompts)
+    assert any("90 degree side view" in prompt for prompt in prompts)
+    assert any("strict rear turnaround view" in prompt for prompt in prompts)
+    assert Path(tmp_path / "林安" / "turnaround_front_quality.json").is_file()
