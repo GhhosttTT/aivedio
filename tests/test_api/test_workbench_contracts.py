@@ -190,6 +190,30 @@ def test_production_readiness_reports_scene_and_review_gaps(setup, monkeypatch):
     assert "video_engine" not in payload["checks"]
 
 
+def test_production_readiness_reports_weak_story_rhythm(setup):
+    client, db, _ = setup
+    project = db.query(Project).filter(Project.id == 1).one()
+    db.query(Scene).filter(Scene.project_id == 1).delete()
+    for index in range(1, 5):
+        db.add(Scene(
+            project_id=1,
+            scene_number=index,
+            visual_description=f"A calm room with people standing quietly scene {index}",
+            dialogue="" if index % 2 else "They talk calmly.",
+        ))
+    project.script = json.dumps({"scenes": [{"scene_number": index, "characters": []} for index in range(1, 5)]})
+    db.commit()
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    rhythm = payload["checks"]["story_rhythm"]
+    assert rhythm["status"] in {"warn", "weak"}
+    assert {"hook", "escalation", "reversal", "ending_hook"}.issubset(set(rhythm["missing"]))
+    assert any(item["code"] == "weak_story_rhythm" for item in payload["warnings"])
+
+
 def test_production_readiness_reports_missing_character_references(setup):
     client, db, _ = setup
     project = db.query(Project).filter(Project.id == 1).one()

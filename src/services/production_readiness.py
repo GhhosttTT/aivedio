@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
@@ -58,6 +59,7 @@ class ProductionReadinessService:
         warnings: list[ReadinessIssue] = []
         checks = {
             "script": self._script_check(project, scenes, blockers),
+            "story_rhythm": self._story_rhythm_check(project, scenes, warnings),
             "characters": self._character_check(project, scenes, characters, blockers, warnings),
             "shot_complexity": self._shot_complexity_check(project, scenes, blockers, warnings),
             "spatial_continuity": self._spatial_continuity_check(project, scenes, warnings),
@@ -100,6 +102,99 @@ class ProductionReadinessService:
             "contiguous_scene_numbers": numbers == expected,
             "draft_fallback_enabled": settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK,
             "has_script_json": bool(project.script),
+        }
+
+    def _story_rhythm_check(
+        self,
+        project: Project,
+        scenes: list[Scene],
+        warnings: list[ReadinessIssue],
+    ) -> dict:
+        if len(scenes) < 4:
+            return {
+                "status": "insufficient_material",
+                "score": 0,
+                "summary": "Need at least 4 scenes to inspect short-drama rhythm.",
+                "signals": {},
+                "missing": ["hook", "escalation", "reversal", "ending_hook"],
+            }
+
+        ordered = sorted(scenes, key=lambda scene: scene.scene_number)
+        scene_texts = [
+            " ".join(filter(None, [scene.visual_description or "", scene.dialogue or ""]))
+            for scene in ordered
+        ]
+        full_text = " ".join(scene_texts)
+        early_text = " ".join(scene_texts[:2])
+        ending_text = " ".join(scene_texts[-2:])
+
+        hook_terms = [
+            "秘密", "背叛", "离婚", "复仇", "重生", "陷害", "真相", "危机", "威胁", "怀孕",
+            "betray", "secret", "revenge", "divorce", "truth", "threat", "crisis",
+        ]
+        conflict_terms = [
+            "争吵", "质问", "拒绝", "威胁", "冲突", "崩溃", "揭穿", "逼迫", "哭", "怒",
+            "argue", "confront", "refuse", "threaten", "fight", "breakdown", "expose",
+        ]
+        reversal_terms = [
+            "反转", "突然", "没想到", "竟然", "原来", "发现", "揭露", "身份", "证据",
+            "suddenly", "reveals", "discovers", "evidence", "identity", "twist",
+        ]
+        ending_terms = [
+            "未完", "待续", "门被推开", "电话响", "真相", "证据", "出现", "转身",
+            "cliffhanger", "to be continued", "phone rings", "truth", "evidence", "appears",
+        ]
+
+        def count_terms(text: str, terms: list[str]) -> int:
+            lowered = text.lower()
+            return sum(lowered.count(term.lower()) for term in terms)
+
+        dialogue_scenes = sum(1 for scene in ordered if (scene.dialogue or "").strip())
+        hook_score = count_terms(early_text, hook_terms) + len(re.findall(r"[!?！？]", early_text))
+        conflict_count = count_terms(full_text, conflict_terms)
+        reversal_count = count_terms(full_text, reversal_terms)
+        ending_hook_score = count_terms(ending_text, ending_terms) + len(re.findall(r"[!?！？]", ending_text))
+        conflict_density = round(conflict_count / max(len(ordered), 1), 3)
+        dialogue_density = round(dialogue_scenes / max(len(ordered), 1), 3)
+
+        signals = {
+            "early_hook": hook_score > 0,
+            "conflict_density": conflict_density,
+            "has_reversal": reversal_count > 0,
+            "ending_hook": ending_hook_score > 0,
+            "dialogue_density": dialogue_density,
+        }
+        missing = []
+        if not signals["early_hook"]:
+            missing.append("hook")
+        if conflict_density < 0.25:
+            missing.append("escalation")
+        if not signals["has_reversal"]:
+            missing.append("reversal")
+        if not signals["ending_hook"]:
+            missing.append("ending_hook")
+        if dialogue_density < 0.5:
+            missing.append("dialogue_drive")
+
+        score = 5 - min(len(missing), 5)
+        status = "passed" if score >= 4 else ("warn" if score >= 2 else "weak")
+        if status != "passed":
+            warnings.append(ReadinessIssue(
+                "weak_story_rhythm",
+                "Improve short-drama rhythm before final production: " + ", ".join(missing),
+                severity="warning",
+            ))
+        return {
+            "status": status,
+            "score": score,
+            "signals": signals,
+            "missing": missing,
+            "term_hits": {
+                "hook": hook_score,
+                "conflict": conflict_count,
+                "reversal": reversal_count,
+                "ending_hook": ending_hook_score,
+            },
         }
 
     def _character_check(
