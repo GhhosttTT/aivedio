@@ -251,6 +251,8 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
             "video_identity_gate_passed": True,
             "video_temporal_gate_passed": True,
             "baseline_comparison_passed": True,
+            "manual_review_covers_rendered_cases": True,
+            "manual_review_missing_case_ids": [],
             "manual_review_passed": True,
         },
         "action_items": [],
@@ -263,6 +265,8 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
     validation = payload["checks"]["sample_validation"]
     assert validation["status"] == "ready_for_seed_dance_candidate"
     assert validation["checks"]["video_identity_gate_passed"] is True
+    assert validation["checks"]["manual_review_covers_rendered_cases"] is True
+    assert validation["checks"]["manual_review_missing_case_ids"] == []
     assert not any(item["code"] == "missing_sample_validation" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_not_ready" for item in payload["warnings"])
 

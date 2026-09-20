@@ -262,13 +262,27 @@ def summarize_validation(output: Path):
         baseline_comparison_report and baseline_comparison_report.get("status") == "passed"
     )
     manual_cases = manual_review.get("cases", []) if isinstance(manual_review, dict) else []
+    rendered_cases = render_report.get("cases", []) if isinstance(render_report, dict) else []
+    rendered_case_ids = {
+        str(case.get("id"))
+        for case in rendered_cases
+        if case.get("id") is not None
+    }
+    manual_case_ids = {
+        str(case.get("id"))
+        for case in manual_cases
+        if case.get("id") is not None
+    }
+    missing_manual_case_ids = sorted(rendered_case_ids - manual_case_ids)
     checks["manual_review_present"] = bool(manual_cases)
+    checks["manual_review_covers_rendered_cases"] = bool(rendered_case_ids) and not missing_manual_case_ids
+    checks["manual_review_missing_case_ids"] = missing_manual_case_ids
     if manual_cases:
         scores = [case.get("score", 0) for case in manual_cases]
         checks["manual_average_score"] = round(sum(scores) / len(scores), 2)
         checks["manual_min_score"] = min(scores)
         failed_manual = [case for case in manual_cases if case.get("score", 0) < 4 or case.get("decision") == "reject"]
-        checks["manual_review_passed"] = not failed_manual
+        checks["manual_review_passed"] = not failed_manual and checks["manual_review_covers_rendered_cases"]
         report["manual_failures"] = failed_manual
     else:
         checks["manual_average_score"] = None
@@ -292,6 +306,11 @@ def summarize_validation(output: Path):
         report["action_items"].append("Improve video engine/settings until Seed Dance baseline comparison passes measurable gates.")
     if not checks["manual_review_present"]:
         report["action_items"].append("Create manual_review.json with 0-5 human scores for each rendered case and clip.")
+    elif not checks["manual_review_covers_rendered_cases"]:
+        report["action_items"].append(
+            "Add manual_review.json scores for every rendered validation case: "
+            + ", ".join(missing_manual_case_ids)
+        )
     elif not checks["manual_review_passed"]:
         report["action_items"].append("Improve prompts/workflow/model settings for manual cases below 4 before scaling up.")
     report["calibration_recommendations"] = _calibration_recommendations(manual_cases, video_review_report)

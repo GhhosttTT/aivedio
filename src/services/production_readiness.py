@@ -504,6 +504,8 @@ class ProductionReadinessService:
                 "video_identity_gate_passed": checks.get("video_identity_gate_passed"),
                 "video_temporal_gate_passed": checks.get("video_temporal_gate_passed"),
                 "baseline_comparison_passed": checks.get("baseline_comparison_passed"),
+                "manual_review_covers_rendered_cases": checks.get("manual_review_covers_rendered_cases"),
+                "manual_review_missing_case_ids": checks.get("manual_review_missing_case_ids"),
                 "manual_review_passed": checks.get("manual_review_passed"),
             },
             "action_items": summary.get("action_items", []) if isinstance(summary.get("action_items"), list) else [],

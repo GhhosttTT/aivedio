@@ -71,6 +71,48 @@ the same production pattern:
     - Feed winning patterns back into prompt templates, scene splitting, and
       generation settings.
 
+## Practical Platform Production Chain
+
+A production short-drama platform usually behaves like a small content factory:
+
+1. Topic and market selection
+   - Pick genre, audience, region, platform ratio, runtime, risk words, and
+     commercial style before writing the first script.
+   - Strong teams track which hooks, identities, conflicts, and endings convert.
+
+2. Story room
+   - Produce logline, episode arc, character conflict, beat sheet, scene list,
+     dialogue draft, rewrite notes, and final locked script.
+   - Weak scripts are rejected before visual generation to avoid wasting GPU
+     time.
+
+3. Asset bible
+   - Lock character faces, body shape, wardrobe, props, locations, voice tone,
+     negative identity constraints, and sample references.
+   - Reuse these assets across every shot and episode.
+
+4. Director plan
+   - Convert script into atomic shots with shot scale, camera angle, action,
+     expression, emotional beat, visible characters, prop focus, and continuity
+     notes.
+   - Generate pose, depth, camera, and first/last-frame references when needed.
+
+5. Batch candidate generation
+   - Generate multiple first-frame candidates per shot, score all candidates,
+     keep evidence, and only send approved frames into video generation.
+   - Video generation repeats the same pattern: multiple candidates, review,
+     repair, then acceptance.
+
+6. Post-production
+   - Assemble accepted clips, align dialogue, normalize loudness, add BGM,
+     render subtitles, add cover/title cards, export vertical presets, and keep
+     source packages for reuse.
+
+7. QA and publishing
+   - Review story rhythm, identity, motion, image defects, audio sync, subtitle
+     readability, platform rules, and final watchability.
+   - Store human decisions and audience feedback as data for the next batch.
+
 ## Current System Coverage
 
 Already implemented or partially implemented:
@@ -87,6 +129,9 @@ Already implemented or partially implemented:
 - ASR, local translation, subtitle rendering, localization quality checks, and
   source-video localization modules.
 - Seed Dance baseline comparison script and production validation summary.
+- Production readiness reports surface script, rhythm, visual format,
+  character, shot complexity, spatial continuity, reviewer, video-engine, and
+  sample-validation status.
 
 ## Major Gaps
 
@@ -96,41 +141,83 @@ Already implemented or partially implemented:
    - Needed: a structured story-review contract with short-drama-specific
      metrics and automatic rewrite attempts.
 
-2. Character bible is not strong enough
+2. Market and topic selection are missing
+   - The current system starts from a user idea, but strong platforms treat
+     topic, audience, genre, region, hook type, and platform policy as inputs.
+   - Needed: a topic brief, comparable-hit library, risk checklist, and scoring
+     model before script generation.
+
+3. Character bible is not strong enough
    - Character references exist, but the platform still needs a required
      character bible before production.
    - Needed: face/body/outfit/voice/personality assets, per-character negative
      prompts, approved reference sets, and per-shot visible-character mapping.
 
-3. Spatial continuity is weak
+4. Spatial continuity is weak
    - The current planner does not maintain a reusable stage map, character
      positions, prop positions, camera axis, pose/depth references, or room
      layout.
    - Needed: a `spatial_plan` per scene and shot, plus reference retrieval or
      generated control images for depth, pose, and camera composition.
 
-4. Generation workflow depends on installed ComfyUI graph quality
+5. Generation workflow depends on installed ComfyUI graph quality
    - The backend supports prompt-aware ComfyUI workflows, but production quality
      still depends on the actual graph and models installed on the machine.
    - Needed: pinned workflow profiles for high-quality portrait image,
      first-last-frame video, face consistency, hand repair, upscale, and
      flicker reduction.
 
-5. Review is evidence-bearing but not yet full repair automation
+6. Review is evidence-bearing but not yet full repair automation
    - The reviewer can score outputs, but rejected clips need a more complete
      retry planner that chooses whether to rewrite prompt, regenerate reference,
      lower motion, split shot, or change camera.
+   - Manual review must cover every rendered validation case. The validation
+     summary now blocks readiness when only a subset of generated cases has
+     human scores.
 
-6. Final editing intelligence is basic
+7. Final editing intelligence is basic
    - Composition exists, but there is limited logic for short-drama rhythm,
      reaction shots, transitions, beat timing, audio ducking, BGM matching, and
      cliffhanger packaging.
 
-7. Platform UI should expose production readiness
+8. Platform UI should expose production readiness
    - The backend can block some invalid production attempts, but the UI should
      show a readiness checklist before users click production.
    - Needed: script readiness, character readiness, engine readiness, review
      readiness, localization readiness, and missing-action buttons.
+
+## Gap To Strong Short-Drama Platforms
+
+The biggest gap is the amount of controlled evidence before each render. Strong
+platforms do not rely on one prompt to produce a finished shot. They lock a
+story decision, character assets, spatial plan, camera intent, first frame,
+motion candidate, review result, and repair history for every shot.
+
+Current system advantages:
+
+- Local-first architecture already fits the user's hardware and privacy
+  requirement.
+- The generation provider abstraction can swap ComfyUI workflows without
+  replacing the business pipeline.
+- Readiness and sample validation prevent unit tests from being mistaken for
+  visual quality proof.
+
+Current system gaps before it can be treated as a production platform:
+
+- No topic library or market scoring loop.
+- No required story-room approval gate before generation.
+- Character bible exists technically, but still needs a UI workflow for
+  approving and freezing character packs.
+- Spatial planning is generated on demand, but not yet persisted as a first
+  class production asset with pose/depth/control references.
+- ComfyUI workflow quality is still external to the repo and must be pinned on
+  the target GPU.
+- Repair automation is partial; failed clips need automatic retry decisions and
+  budget limits.
+- Final edit intelligence is still basic compared with human editors or mature
+  platforms.
+- Real sample acceptance remains required. Passing tests prove contract
+  behavior, not Seed Dance-level visual quality.
 
 ## Immediate Implementation Direction
 
