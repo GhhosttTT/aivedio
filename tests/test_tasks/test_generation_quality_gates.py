@@ -10,10 +10,10 @@ from src.database.models import Base, Character, Project, Scene, Task, TaskStatu
 from src.services.generation_review import fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName, GenerationResult
 from src.services.shot_prompt_service import ShotPromptService
-from src.tasks.image_tasks import _append_terms, _complexity_report, _composition_constraint, _generate_quality_candidates, _project_complexity_report, _review_feedback, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
+from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _complexity_report, _composition_constraint, _generate_quality_candidates, _project_complexity_report, _review_feedback, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
-from src.tasks.video_tasks import _ComfyVideoGenerator, _build_video_generator, _generate_quality_video_candidates, _scene_review_payload
+from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _build_video_generator, _generate_quality_video_candidates, _scene_review_payload
 
 
 @pytest.fixture
@@ -619,3 +619,44 @@ def test_review_feedback_deduplicates_low_score_evidence():
 
 def test_append_terms_does_not_duplicate_terms():
     assert _append_terms("blurry, bad crop", "bad crop, watermark") == "blurry, bad crop, watermark"
+
+
+def test_image_repair_action_adds_targeted_generation_constraints():
+    prompt, negative = _apply_image_repair_action(
+        "short drama close-up",
+        "blurry",
+        "regenerate_keyframe_with_prop_constraints",
+    )
+
+    assert "readable hands" in prompt
+    assert "stable prop color" in prompt
+    assert "broken fingers" in negative
+    assert "disappearing prop" in negative
+
+
+def test_image_composition_repair_adds_commercial_framing_constraints():
+    prompt, negative = _apply_image_repair_action(
+        "short drama still",
+        "blurry",
+        "refine_prompt_composition",
+    )
+
+    assert "balanced composition" in prompt
+    assert "cinematic lighting" in prompt
+    assert "bad crop" in negative
+    assert "low production value" in negative
+
+
+def test_unknown_image_repair_action_keeps_prompt_unchanged():
+    assert _apply_image_repair_action("prompt", "negative", "unknown_action") == ("prompt", "negative")
+
+
+def test_video_repair_action_lowers_motion_and_noise():
+    motion, noise = _apply_video_repair_action(150, 0.08, "lower_motion_and_regenerate_video")
+
+    assert motion == 87
+    assert noise == 0.036
+
+
+def test_unknown_video_repair_action_keeps_parameters_unchanged():
+    assert _apply_video_repair_action(150, 0.08, "manual_review") == (150, 0.08)

@@ -385,6 +385,43 @@ def _append_terms(text: str | None, addition: str | None) -> str:
     return ", ".join(parts)
 
 
+IMAGE_REPAIR_PROMPTS = {
+    "refine_prompt_composition": (
+        "repair pass: improve short-drama framing, balanced composition, clean crop, readable face, "
+        "cinematic lighting, clear foreground-background separation, polished commercial still"
+    ),
+    "regenerate_keyframe_with_prop_constraints": (
+        "repair pass: preserve important props, readable hands, natural fingers, clear hand-object contact, "
+        "stable prop color and position, no disappearing objects"
+    ),
+}
+
+IMAGE_REPAIR_NEGATIVES = {
+    "refine_prompt_composition": (
+        "bad crop, cropped face, awkward framing, flat lighting, muddy lighting, cluttered composition, "
+        "unclear subject, low production value"
+    ),
+    "regenerate_keyframe_with_prop_constraints": (
+        "broken fingers, fused fingers, missing fingers, deformed hands, disappearing prop, changed prop, "
+        "floating object, unclear hand-object contact"
+    ),
+}
+
+
+def _apply_image_repair_action(
+    prompt: str,
+    negative_prompt: str,
+    repair_action: str | None,
+) -> tuple[str, str]:
+    """Translate a targeted repair action into generator-facing constraints."""
+    if not repair_action:
+        return prompt, negative_prompt
+    return (
+        _append_terms(prompt, IMAGE_REPAIR_PROMPTS.get(repair_action)),
+        _append_terms(negative_prompt, IMAGE_REPAIR_NEGATIVES.get(repair_action)),
+    )
+
+
 def _review_feedback(reports: list[dict]) -> str:
     feedback = []
     for report in sorted(reports, key=lambda item: item.get("average", 0))[:3]:
@@ -517,12 +554,18 @@ def generate_image_task(
             cleanup_llm_service()
         reference_image = _get_reference_image(character, project_id)
         enhanced_prompt = compiled.prompt
+        repair_action = kwargs.get("repair_action")
+        enhanced_prompt, negative_prompt = _apply_image_repair_action(
+            enhanced_prompt,
+            compiled.negative_prompt,
+            repair_action,
+        )
 
         image_path = get_scene_image_path(project_id, scene_id)
         provider = get_generation_provider(kwargs.get("provider"))
         seed = kwargs.get("seed", int(hashlib.sha256(f"{project_id}:{scene_id}".encode()).hexdigest()[:8], 16))
         request = ImageGenerationRequest(
-            prompt=enhanced_prompt, negative_prompt=compiled.negative_prompt,
+            prompt=enhanced_prompt, negative_prompt=negative_prompt,
             output_path=image_path, seed=seed,
             width=kwargs.get("width", settings.GENERATION_WIDTH),
             height=kwargs.get("height", settings.GENERATION_HEIGHT),
@@ -541,6 +584,7 @@ def generate_image_task(
                 "dialogue": scene.dialogue,
                 "character_name": scene.character_name,
                 "visible_characters": _visible_character_payload(scene, project_id, db),
+                "repair_action": repair_action,
             }
             final_image_path, quality_report = _generate_quality_candidates(provider, request, scene_payload, reference_image)
             provider_name = getattr(getattr(provider, "name", None), "value", str(getattr(provider, "name", "unknown")))
@@ -571,6 +615,7 @@ def generate_image_task(
             "provider": result.provider, "request": asdict(request),
             "status": "draft" if result.provider == "draft_fallback" else "generated",
             "complexity": _complexity_report(scene, project_id, db),
+            "repair_action": repair_action,
             "quality": getattr(result, "metadata", {}).get("quality") if hasattr(result, "metadata") else None,
         })
         scene.image_path = result.output_path

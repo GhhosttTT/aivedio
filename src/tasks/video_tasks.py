@@ -108,6 +108,19 @@ def _refined_video_base_params(motion: int, noise: float) -> tuple[int, float]:
     return max(1, int(motion * 0.72)), max(0.0, round(noise * 0.6, 4))
 
 
+def _apply_video_repair_action(
+    motion_bucket_id: int,
+    noise_aug_strength: float,
+    repair_action: str | None,
+) -> tuple[int, float]:
+    if repair_action != "lower_motion_and_regenerate_video":
+        return motion_bucket_id, noise_aug_strength
+    return (
+        max(1, min(255, int(motion_bucket_id * 0.58))),
+        max(0.0, min(1.0, round(noise_aug_strength * 0.45, 4))),
+    )
+
+
 def _scene_review_payload(scene: Scene, project_id: int | None = None, db=None) -> dict:
     visible_characters = []
     if project_id is not None and db is not None:
@@ -201,6 +214,7 @@ def _generate_quality_video_candidates(
     motion_bucket_id: int,
     noise_aug_strength: float,
     shot_plan: VideoShotPlan | None = None,
+    repair_action: str | None = None,
 ) -> tuple[str, dict]:
     candidate_count = max(1, min(settings.GENERATION_VIDEO_CANDIDATES, 6))
     refinement_passes = max(0, min(settings.GENERATION_VIDEO_REFINEMENT_PASSES, 3))
@@ -233,6 +247,7 @@ def _generate_quality_video_candidates(
                     "motion_bucket_id": motion,
                     "noise_aug_strength": noise,
                     "shot_plan": shot_plan_payload,
+                    "repair_action": repair_action,
                 })
         finally:
             cleanup_svd_service()
@@ -251,6 +266,7 @@ def _generate_quality_video_candidates(
                     "refinement_pass": generated_candidate["pass"],
                     "motion_bucket_id": generated_candidate["motion_bucket_id"],
                     "noise_aug_strength": generated_candidate["noise_aug_strength"],
+                    "repair_action": repair_action,
                 },
                 review_path,
                 reference,
@@ -265,6 +281,8 @@ def _generate_quality_video_candidates(
                 "motion_bucket_id": generated_candidate["motion_bucket_id"],
                 "noise_aug_strength": generated_candidate["noise_aug_strength"],
             }
+            if repair_action:
+                candidate["repair_action"] = repair_action
             if shot_plan_payload:
                 candidate["shot_plan"] = shot_plan_payload
             if review.get("error"):
@@ -332,6 +350,12 @@ def generate_video_task(
             fps = kwargs.get("fps", shot_plan.fps)
             motion_bucket_id = kwargs.get("motion_bucket_id", shot_plan.motion_bucket_id)
             noise_aug_strength = kwargs.get("noise_aug_strength", shot_plan.noise_aug_strength)
+            repair_action = kwargs.get("repair_action")
+            motion_bucket_id, noise_aug_strength = _apply_video_repair_action(
+                motion_bucket_id,
+                noise_aug_strength,
+                repair_action,
+            )
             provider_name = _configured_video_provider_name(kwargs)
             end_image = None
             if settings.GENERATION_VIDEO_END_FRAME_ENABLED and _uses_configured_video_provider(provider_name):
@@ -348,6 +372,7 @@ def generate_video_task(
                 motion_bucket_id=motion_bucket_id,
                 noise_aug_strength=noise_aug_strength,
                 shot_plan=shot_plan,
+                repair_action=repair_action,
             )
             normalized_path = str(Path(video_path).with_name(f"{Path(video_path).stem}.normalized.mp4"))
             normalized = get_video_director_service().normalize_clip(
