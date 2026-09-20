@@ -9,6 +9,7 @@ from src.database.models import Scene
 from src.services.subtitle_generator import get_subtitle_generator
 from src.utils.storage import get_scene_subtitle_path
 from src.utils.logger import get_logger
+from src.tasks.audio_tasks import has_spoken_dialogue
 
 logger = get_logger(__name__)
 
@@ -49,7 +50,7 @@ def generate_subtitle_task(
             raise ValueError(f"分镜不存在: {scene_id}")
         
         # 如果没有对话或音频，跳过
-        if not scene.dialogue or not scene.audio_path:
+        if not has_spoken_dialogue(scene.dialogue) or not scene.audio_path:
             logger.info(f"分镜没有对话或音频，跳过字幕生成: scene_id={scene_id}")
             return {
                 "scene_id": scene_id,

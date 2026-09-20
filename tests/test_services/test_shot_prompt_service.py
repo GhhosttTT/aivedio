@@ -4,6 +4,7 @@ from unittest.mock import Mock
 import pytest
 
 from src.services.shot_prompt_service import ShotPromptService, ShotPlanningError
+from src.config import settings
 
 
 def frame(**changes):
@@ -18,7 +19,7 @@ def test_concise_prompt_is_not_rewritten():
     llm = Mock()
     prompt = "An empty railway platform, wide shot, overcast daylight, watercolor illustration"
     result = ShotPromptService(llm).compile(prompt)
-    assert result.prompt == prompt
+    assert result.prompt.startswith(prompt)
     llm.generate.assert_not_called()
     assert "cartoon" not in result.negative_prompt
 
@@ -29,7 +30,7 @@ def test_identity_is_prepended_verbatim_and_style_preserved():
     anchor = "young woman, short black hair, green jacket"
     result = ShotPromptService(llm).compile("女孩在办公室门口拿着信", anchor)
     assert result.prompt.startswith(anchor)
-    assert result.prompt.endswith("anime")
+    assert "anime" in result.prompt
     assert result.word_count <= 75
     llm.generate.assert_called_once()
 
@@ -50,11 +51,12 @@ def test_invalid_json_gets_one_bounded_correction():
     assert llm.generate.call_count == 2
 
 
-def test_invalid_second_response_fails_instead_of_generating_garbage():
+def test_invalid_second_response_uses_deterministic_english_fallback():
     llm = Mock()
     llm.generate.return_value = "not JSON"
-    with pytest.raises(ShotPlanningError):
-        ShotPromptService(llm).compile("中文场景")
+    result = ShotPromptService(llm).compile("\u5496\u5561\u5e97\u9760\u7a97\u684c\uff0c\u6797\u8587\u72ec\u81ea\u5750\u5728\u684c\u8fb9\u7b49\u5f85\uff0c\u5168\u666f")
+    assert "window-side cafe table" in result.prompt
+    assert "\u6797\u8587" not in result.prompt
     assert llm.generate.call_count == 2
 
 
@@ -68,3 +70,10 @@ def test_prompt_hash_changes_on_identity_or_scene_edit():
 def test_invalid_prompt_rejected(prompt):
     with pytest.raises(ShotPlanningError):
         ShotPromptService.validate_prompt(prompt)
+
+
+def test_cached_prompt_allows_configured_quality_suffix(monkeypatch):
+    monkeypatch.setattr(settings, "POSITIVE_PROMPT_SUFFIX", "natural symmetrical eyes, matching iris size, aligned pupils, consistent gaze direction")
+    base = " ".join(f"word{i}" for i in range(75))
+    prompt = f"{base}, {settings.POSITIVE_PROMPT_SUFFIX}"
+    assert ShotPromptService.validate_cached_prompt(prompt) == prompt

@@ -204,6 +204,23 @@ def test_prepare_generation_writes_project_complexity_report(project_data, monke
     db.expire_all()
 
 
+def test_prepare_generation_allows_single_shot_without_story_reviewer(project_data, monkeypatch):
+    db, project, scene, _, Session = project_data
+    import src.tasks.image_tasks as tasks
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(tasks, "get_db", lambda: iter([Session()]))
+    monkeypatch.setattr(tasks.prepare_generation_task, "update_state", Mock())
+
+    result = tasks.prepare_generation_task.run(project.id, 1, compile_images=False)
+
+    report = json.loads((storage_manager.get_project_path(project.id) / "reviews" / "production_story.json").read_text())
+    assert result["prepared"] == 1
+    assert report["status"] == "passed"
+    assert report["mode"] == "single_shot_smoke_test"
+    assert report["review"]["reviewed_scenes"] == [scene.scene_number]
+    db.expire_all()
+
+
 def test_prepare_generation_blocks_complex_project_when_required(project_data, monkeypatch):
     db, project, scene, _, Session = project_data
     import src.tasks.image_tasks as tasks

@@ -35,6 +35,28 @@ def test_selected_checkpoint_and_parameters_are_not_overwritten(service, monkeyp
     assert json.loads((tmp_path / "out.workflow.json").read_text()) == graph
 
 
+def test_service_uses_configured_workflow_path(monkeypatch, tmp_path):
+    workflow = {
+        "workflow": {"name": "Configured Workflow", "version": "1.0.0"},
+        "nodes": {
+            "checkpoint_loader": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": {"ckpt_name": "configured.safetensors"},
+            },
+        },
+    }
+    path = tmp_path / "configured_workflow.json"
+    path.write_text(json.dumps(workflow), encoding="utf-8")
+    monkeypatch.setattr(settings, "COMFYUI_WORKFLOW_PATH", str(path))
+
+    configured = ComfyUIService()
+    try:
+        assert configured.workflow_path == str(path)
+        assert configured.workflow_manager.get_current_workflow().workflow.name == "Configured Workflow"
+    finally:
+        configured.client.close()
+
+
 def test_conditioning_uses_graph_edges_not_node_order(service):
     cfg = service.workflow_manager.get_current_workflow()
     items = list(cfg.nodes.items())

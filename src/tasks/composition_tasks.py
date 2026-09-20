@@ -139,7 +139,15 @@ def compose_final_video_task(
         else:
             # 如果没有字幕，直接重命名为最终视频
             import shutil
-            shutil.move(temp_video_path, final_video_path)
+            import os
+
+            # concat_videos returns the source path directly when there is only one scene.
+            # Keep scene assets intact; only move files that are composition temp outputs.
+            if os.path.abspath(temp_video_path) != os.path.abspath(final_video_path):
+                if temp_video_path in video_paths:
+                    shutil.copy2(temp_video_path, final_video_path)
+                else:
+                    shutil.move(temp_video_path, final_video_path)
         
         # 更新项目状态
         project.final_video_path = final_video_path

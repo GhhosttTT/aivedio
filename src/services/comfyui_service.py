@@ -45,7 +45,7 @@ class ComfyUIService:
         self,
         base_url: Optional[str] = None,
         workflow_path: Optional[str] = None,
-        timeout: int = 300,
+        timeout: Optional[int] = None,
         max_retries: int = 3
     ):
         """
@@ -58,16 +58,16 @@ class ComfyUIService:
             max_retries: 最大重试次数（默认 3）
         """
         self.base_url = (base_url or settings.COMFYUI_BASE_URL).rstrip("/")
-        self.timeout = timeout
+        self.timeout = timeout if timeout is not None else settings.COMFYUI_TIMEOUT
         self.max_retries = max_retries
         
         # HTTP 客户端（禁用代理，直接连接本地服务）
         # httpx 0.24+ 版本使用 trust_env=False 来忽略环境变量中的代理设置
-        self.client = httpx.Client(timeout=timeout, trust_env=False)
+        self.client = httpx.Client(timeout=self.timeout, trust_env=False)
         
         # 使用 WorkflowManager 管理工作流配置
         self.workflow_manager = WorkflowManager()
-        self.workflow_path = workflow_path
+        self.workflow_path = workflow_path or settings.COMFYUI_WORKFLOW_PATH
         self.default_workflow_type = WorkflowType(settings.COMFYUI_DEFAULT_WORKFLOW_TYPE)
         
         # 初始化参数优化器
@@ -82,11 +82,11 @@ class ComfyUIService:
         # 加载默认工作流配置
         try:
             self.workflow_manager.load_workflow(
-                workflow_path=workflow_path,
-                workflow_type=None if workflow_path else self.default_workflow_type,
+                workflow_path=self.workflow_path,
+                workflow_type=None if self.workflow_path else self.default_workflow_type,
                 allow_fallback=False,
             )
-            self.current_workflow_type = None if workflow_path else self.default_workflow_type
+            self.current_workflow_type = None if self.workflow_path else self.default_workflow_type
             logger.info(f"ComfyUI 服务初始化完成: {self.base_url}")
         except Exception as e:
             raise ComfyUIError(f"加载工作流配置失败: {e}") from e

@@ -148,8 +148,24 @@ def test_llama_cpp_reviewer_sends_openai_compatible_images(tmp_path, monkeypatch
     assert client.post.call_args.args[0] == "http://127.0.0.1:8080/v1/chat/completions"
     body = client.post.call_args.kwargs["json"]
     assert body["stream"] is False
-    assert body["response_format"]["type"] == "json_schema"
+    assert body["response_format"]["type"] == "json_object"
+    assert "JSON must satisfy this schema" in body["messages"][0]["content"]
     image_url = body["messages"][1]["content"][1]["image_url"]["url"]
     assert image_url.startswith("data:image/jpeg;base64,")
     with Image.open(io.BytesIO(base64.b64decode(image_url.split(",", 1)[1]))) as decoded:
         assert decoded.size == (768, 768)
+
+
+def test_llama_cpp_reviewer_sends_plain_text_for_text_only(monkeypatch):
+    client = Mock()
+    client.__enter__ = Mock(return_value=client)
+    client.__exit__ = Mock(return_value=False)
+    client.post.return_value.json.return_value = {
+        "choices": [{"finish_reason": "stop", "message": {"content": story_review().model_dump_json()}}]
+    }
+    monkeypatch.setattr("src.services.generation_review.httpx.Client", Mock(return_value=client))
+    monkeypatch.setattr("src.services.generation_review.settings.LOCAL_REVIEW_BASE_URL", "http://127.0.0.1:8080/v1")
+    monkeypatch.setattr("src.services.generation_review.settings.LOCAL_REVIEW_MODEL", "local-vlm")
+    LlamaCppReviewer().evaluate("review", script(), StoryReview)
+    body = client.post.call_args.kwargs["json"]
+    assert isinstance(body["messages"][1]["content"], str)

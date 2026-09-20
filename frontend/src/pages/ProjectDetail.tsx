@@ -16,7 +16,7 @@ export function ProjectDetail() {
     const [busy, setBusy] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(true);
-    const [options, setOptions] = useState({num_scenes: 5, num_characters: 2, style: '现代都市'});
+    const [options, setOptions] = useState({num_scenes: 16, num_characters: 2, style: '现代都市'});
     const reload = useCallback(async () => {
         try {
             const [data, latest] = await Promise.all([projectApi.getProject(Number(id)), projectApi.latestTask(Number(id))]);
@@ -35,7 +35,10 @@ export function ProjectDetail() {
         setBusy(operation); setError('');
         try {
             if (operation === '剧本生成与情节复审') {
-                await projectApi.generateScript(Number(id), {...options, theme: project.theme || undefined, outline: project.outline || undefined});
+                // 确保空字符串转为undefined
+                const theme = project.theme?.trim() || undefined;
+                const outline = project.outline?.trim() || undefined;
+                await projectApi.generateScript(Number(id), {...options, theme, outline});
             } else {
                 await projectApi.startProduction(Number(id));
                 setTab('production');
@@ -68,6 +71,7 @@ export function ProjectDetail() {
                 <label>角色数量<input type="number" min={1} max={4} disabled={locked} value={options.num_characters} onChange={e => setOptions({...options, num_characters: Number(e.target.value)})}/></label>
                 <label>画面风格<select value={options.style} disabled={locked} onChange={e => setOptions({...options, style: e.target.value})}><option>现代都市</option><option>二维动画</option><option>三维动画</option><option>古装写实</option></select></label>
             </div>
+            {/* LLM功能已配置，显示生成剧本按钮 */}
             <button className="wb-button" disabled={locked || options.num_scenes < 5 || options.num_scenes > 20 || options.num_characters < 1 || options.num_characters > 4} onClick={() => {
                 if (!project.scenes?.length || window.confirm('重新生成会替换现有分镜，继续吗？')) run('剧本生成与情节复审');
             }}><FileText size={16}/>{project.scenes?.length ? '重新生成剧本' : '生成剧本'}</button>

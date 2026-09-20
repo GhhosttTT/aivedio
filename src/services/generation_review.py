@@ -127,12 +127,23 @@ class LlamaCppReviewer:
     def evaluate(self, instruction: str, payload: dict, schema, images=()):
         if "cloud" in settings.LOCAL_REVIEW_MODEL.lower():
             raise ReviewError("Configure a local llama.cpp model, not a cloud model")
-        content = [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]
-        for encoded in _encoded_images(images):
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{encoded}"},
-            })
+        schema_json = json.dumps(schema.model_json_schema(), ensure_ascii=False)
+        instruction = (
+            instruction
+            + "\nReturn only one valid JSON object. Do not include markdown or commentary."
+            + "\nThe JSON must satisfy this schema:\n"
+            + schema_json
+        )
+        payload_text = json.dumps(payload, ensure_ascii=False)
+        if images:
+            content = [{"type": "text", "text": payload_text}]
+            for encoded in _encoded_images(images):
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{encoded}"},
+                })
+        else:
+            content = payload_text
         body = {
             "model": settings.LOCAL_REVIEW_MODEL,
             "messages": [
@@ -141,14 +152,8 @@ class LlamaCppReviewer:
             ],
             "temperature": 0,
             "stream": False,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": schema.__name__,
-                    "schema": schema.model_json_schema(),
-                    "strict": True,
-                },
-            },
+            "max_tokens": 2000,
+            "response_format": {"type": "json_object"},
         }
         endpoint = settings.LOCAL_REVIEW_BASE_URL.rstrip("/")
         if not endpoint.endswith("/v1"):

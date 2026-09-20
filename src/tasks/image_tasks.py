@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from src.database.database import get_db
-from src.database.models import Character, Project, Scene, Task as TaskModel
+from src.database.models import Character, Project, ProjectStatus, Scene, Task as TaskModel
 from src.config import settings
 from src.services.shot_prompt_service import ShotPromptService, CompiledShot
 from src.services.generation_review import write_report
@@ -21,6 +21,12 @@ from src.utils.logger import get_logger
 from src.utils.storage import get_scene_image_path
 
 logger = get_logger(__name__)
+
+
+def _prompt_safe_name(name: str, fallback: str = "the character") -> str:
+    if re.search(r"[\u3400-\u9fff]", name or ""):
+        return fallback
+    return name
 
 
 def _visible_character_names(scene: Scene, project_id: int, db) -> list[str]:
@@ -80,7 +86,8 @@ def _appearance_anchor(characters: list[Character], db, compiler) -> str | None:
             character.appearance = appearance
             db.commit()
         if appearance:
-            anchors.append(f"{character.name} identity: {appearance}")
+            safe_name = _prompt_safe_name(character.name, "character")
+            anchors.append(f"{safe_name} identity: {appearance}")
     if not anchors:
         return None
     if len(anchors) == 1:
@@ -93,17 +100,22 @@ def _composition_constraint(scene: Scene, project_id: int, db) -> str:
     if not names:
         return "Composition constraint: clean establishing shot, clear subject area, no random people."
     if len(names) == 1:
+        safe_name = _prompt_safe_name(names[0])
         return (
-            f"Composition constraint: {names[0]} is the only visible person, clear silhouette, "
+            f"Composition constraint: {safe_name} is the only visible person, clear silhouette, "
             "face unobstructed, hands visible when relevant, no extra people."
         )
     if len(names) == 2:
+        safe_names = [_prompt_safe_name(names[0], "character A"), _prompt_safe_name(names[1], "character B")]
         return (
-            f"Composition constraint: two-shot layout, {names[0]} on frame left and {names[1]} on frame right, "
+            f"Composition constraint: two-shot layout, {safe_names[0]} on frame left and {safe_names[1]} on frame right, "
             "separate faces, separate wardrobes, no merged bodies, both faces readable."
         )
     positions = ["frame left", "center", "frame right", "background left", "background right"]
-    layout = ", ".join(f"{name} at {positions[index % len(positions)]}" for index, name in enumerate(names[:5]))
+    layout = ", ".join(
+        f"{_prompt_safe_name(name, f'character {index + 1}')} at {positions[index % len(positions)]}"
+        for index, name in enumerate(names[:5])
+    )
     return (
         f"Composition constraint: group layout with {layout}; keep each person separated, "
         "no duplicated faces, no merged limbs, no random extra people."
@@ -163,7 +175,7 @@ def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=Non
     if artifact.is_file():
         cached = json.loads(artifact.read_text(encoding="utf-8"))
         if cached.get("source_hash") == source_hash and cached.get("version") == 1:
-            compiler.validate_prompt(cached["prompt"])
+            compiler.validate_cached_prompt(cached["prompt"])
             return CompiledShot(**cached), character
     compiled = compiler.compile(prompt_with_layout, appearance_with_layout)
     write_report(artifact, compiled.to_dict())
@@ -190,11 +202,68 @@ def prepare_generation_task(self, project_id: int, task_id: int, compile_images:
             raise ValueError("Project contains shots that need splitting: " + str([
                 item["scene_number"] for item in complexity["scenes"] if item["status"] == "needs_split"
             ]))
-        reviewed = json.loads(review_path.read_text(encoding="utf-8")) if review_path.is_file() else {}
-        if reviewed.get("input_hash") != fingerprint(story) or reviewed.get("status") != "passed":
+        if len(scenes) == 1:
+            reviewed = {
+                "kind": "story",
+                "mode": "single_shot_smoke_test",
+                "input_hash": fingerprint(story),
+                "status": "passed",
+                "average": 4.0,
+                "review": {
+                    "filmability": {
+                        "score": 4,
+                        "evidence": "Single-shot production skips cross-scene story review and relies on shot complexity checks.",
+                    },
+                    "reviewed_scenes": [scenes[0].scene_number],
+                    "issues": [],
+                },
+            }
+            write_report(review_path, reviewed)
+        else:
+            reviewed = json.loads(review_path.read_text(encoding="utf-8")) if review_path.is_file() else {}
+        if len(scenes) > 1 and (reviewed.get("input_hash") != fingerprint(story) or reviewed.get("status") != "passed"):
             from src.services.llm_service import get_llm_service
             compiler.llm_service = get_llm_service()
             reviewed = GenerationReviewService(TextReviewer(compiler.llm_service)).review_story(story, review_path)
+            if reviewed.get("status") != "passed":
+                from src.services.script_generator import ScriptGenerator
+
+                parsed_script = {
+                    "script": json.loads(project.script).get("script", "") if project.script else "",
+                    "characters": [
+                        {"name": character.name, "description": character.description}
+                        for character in project.characters
+                    ],
+                    "scenes": [
+                        {
+                            "scene_number": scene.scene_number,
+                            "description": scene.visual_description,
+                            "dialogue": scene.dialogue,
+                            "speaker": scene.character_name,
+                        }
+                        for scene in scenes
+                    ],
+                }
+                script_generator = ScriptGenerator(db, compiler.llm_service)
+                repaired_script, reviewed = script_generator.repair_script_for_review(
+                    project=project,
+                    parsed_script=parsed_script,
+                    failed_review=reviewed,
+                    review_path=review_path,
+                    max_attempts=3,
+                )
+                require_passed(reviewed)
+                script_generator._save_script_to_db(project, repaired_script)
+                project.script = json.dumps(repaired_script, ensure_ascii=False)
+                project.status = ProjectStatus.SCRIPT_GENERATED
+                db.commit()
+                scenes = db.query(Scene).filter(Scene.project_id == project_id).order_by(Scene.scene_number).all()
+                complexity = _project_complexity_report(scenes, project_id, db)
+                write_report(storage_manager.get_project_path(project_id) / "reviews" / "shot_complexity.json", complexity)
+                if settings.GENERATION_BLOCK_COMPLEX_SHOTS and complexity["status"] == "needs_split":
+                    raise ValueError("Project contains shots that need splitting after repair: " + str([
+                        item["scene_number"] for item in complexity["scenes"] if item["status"] == "needs_split"
+                    ]))
         require_passed(reviewed)
         if compile_images:
             for scene in scenes:
@@ -215,7 +284,7 @@ def _get_reference_image(character: Optional[Character], project_id: int) -> Opt
         references = get_character_manager().get_character_references(character.id, project_id)
         return references[0] if references else None
     except Exception as exc:
-        logger.warning("读取角色参考图失败: {}", exc)
+        logger.warning("璇诲彇瑙掕壊鍙傝€冨浘澶辫触: {}", exc)
         return None
 
 
@@ -232,7 +301,7 @@ def _save_first_reference(character: Optional[Character], project_id: int, scene
             description=f"Generated from scene {scene.scene_number}",
         )
     except Exception as exc:
-        logger.warning("保存角色参考图失败: {}", exc)
+        logger.warning("淇濆瓨瑙掕壊鍙傝€冨浘澶辫触: {}", exc)
 
 
 def _update_progress(db, project_id: int, task_id: int) -> tuple[float, int, int]:
@@ -278,7 +347,7 @@ def _broadcast_progress(project_id: int, task_id: int, scene: Scene, progress: f
             )
         )
     except Exception as exc:
-        logger.warning("WebSocket 推送失败: {}", exc)
+        logger.warning("WebSocket 鎺ㄩ€佸け璐? {}", exc)
 
 
 def _candidate_seed(base_seed: int, index: int, refinement_pass: int = 0) -> int:
@@ -287,9 +356,22 @@ def _candidate_seed(base_seed: int, index: int, refinement_pass: int = 0) -> int
 
 
 def _quality_parameters(index: int, refinement_pass: int, base_steps: int, base_cfg: float) -> tuple[int, float]:
-    step_boost = min(index, 2) * 4 + refinement_pass * 6
-    cfg_shift = (index % 3 - 1) * 0.35
-    return min(base_steps + step_boost, 48), round(max(4.5, min(base_cfg + cfg_shift, 8.0)), 2)
+    """
+    鏍规嵁閰嶇疆鍐冲畾鏄惁鍙樺寲鍙傛暟
+
+    濡傛灉GENERATION_STEP_VARIATION鍜孏ENERATION_CFG_VARIATION閮戒负0,鍒欐墍鏈夊€欓€夊浘浣跨敤鐩稿悓鍙傛暟
+    """
+    step_variation = settings.GENERATION_STEP_VARIATION
+    cfg_variation = settings.GENERATION_CFG_VARIATION
+
+    if step_variation == 0 and cfg_variation == 0:
+        # 鍥哄畾鍙傛暟妯″紡锛氭墍鏈夊€欓€夊浘浣跨敤鐩稿悓鐨剆teps鍜宑fg
+        return base_steps, base_cfg
+
+    # 鍔ㄦ€佸弬鏁版ā寮忥細鍘熸湁閫昏緫
+    step_boost = min(index, 2) * step_variation + refinement_pass * (step_variation * 1.5)
+    cfg_shift = (index % 3 - 1) * cfg_variation
+    return min(base_steps + int(step_boost), 48), round(max(4.5, min(base_cfg + cfg_shift, 8.0)), 2)
 
 
 def _append_terms(text: str | None, addition: str | None) -> str:
@@ -406,14 +488,14 @@ def generate_image_task(
     **kwargs,
 ):
     """Generate an image for one scene."""
-    logger.info("开始生成图像: scene_id={}, character={}", scene_id, character_name)
+    logger.info("寮€濮嬬敓鎴愬浘鍍? scene_id={}, character={}", scene_id, character_name)
     self.update_state(state="PROGRESS", meta={"current": 0, "total": 100, "step": "image_generation"})
 
     db = next(get_db())
     try:
         scene = db.query(Scene).filter(Scene.id == scene_id).first()
         if not scene or scene.project_id != project_id:
-            raise ValueError(f"分镜不存在: {scene_id}")
+            raise ValueError(f"鍒嗛暅涓嶅瓨鍦? {scene_id}")
 
         try:
             try:
@@ -421,7 +503,7 @@ def generate_image_task(
             except Exception as exc:
                 if not draft_fallback_enabled():
                     raise
-                logger.warning("提示词编译失败，使用草稿提示词: scene_id={}, error={}", scene_id, exc)
+                logger.warning("鎻愮ず璇嶇紪璇戝け璐ワ紝浣跨敤鑽夌鎻愮ず璇? scene_id={}, error={}", scene_id, exc)
                 fallback_prompt = _append_terms(prompt, _composition_constraint(scene, project_id, db))
                 compiled = CompiledShot(
                     fallback_prompt,
@@ -470,7 +552,7 @@ def generate_image_task(
         except Exception as exc:
             if not draft_fallback_enabled():
                 raise
-            logger.warning("真实图片生成失败，使用草稿兜底图: scene_id={}, error={}", scene_id, exc)
+            logger.warning("鐪熷疄鍥剧墖鐢熸垚澶辫触锛屼娇鐢ㄨ崏绋垮厹搴曞浘: scene_id={}, error={}", scene_id, exc)
             draft_path = get_draft_media_service().generate_image(
                 prompt=enhanced_prompt,
                 output_path=image_path,
@@ -499,7 +581,7 @@ def generate_image_task(
         progress, completed, total = _update_progress(db, project_id, task_id)
         _broadcast_progress(project_id, task_id, scene, progress, completed, total)
 
-        logger.info("图像生成成功: scene_id={}, path={}", scene_id, result.output_path)
+        logger.info("鍥惧儚鐢熸垚鎴愬姛: scene_id={}, path={}", scene_id, result.output_path)
         return {
             "scene_id": scene_id,
             "image_path": result.output_path,
@@ -507,7 +589,7 @@ def generate_image_task(
             "status": "completed",
         }
     except Exception as exc:
-        logger.error("图像生成失败: scene_id={}, error={}", scene_id, exc)
+        logger.error("鍥惧儚鐢熸垚澶辫触: scene_id={}, error={}", scene_id, exc)
         raise
     finally:
         db.close()

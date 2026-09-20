@@ -20,6 +20,9 @@ from src.utils.storage import storage_manager
 import asyncio
 
 
+MIN_PRODUCTION_SCENES = 16
+
+
 def _send_websocket_message(project_id: int, message: dict):
     """
     发送 WebSocket 消息（兼容同步和异步环境）
@@ -336,6 +339,289 @@ class ScriptGenerator:
             logger.error(f"剧本解析异常: {e}")
             raise ScriptParseError(f"剧本解析失败: {e}") from e
     
+    def repair_script_for_review(
+        self,
+        project: Project,
+        parsed_script: Dict,
+        failed_review: Dict,
+        review_path,
+        max_attempts: int = 2,
+    ) -> Tuple[Dict, Dict]:
+        """Rewrite a generated script using quality-gate evidence, then re-review it."""
+        from src.services.generation_review import write_report
+
+        expected_scenes = max(len(parsed_script.get("scenes", [])), MIN_PRODUCTION_SCENES)
+        if expected_scenes < 1:
+            raise ScriptParseError("Cannot repair a script without scenes")
+
+        review_payload = failed_review.get("review") or failed_review.get("error") or failed_review
+        current_script = parsed_script
+        current_text = json.dumps(current_script, ensure_ascii=False, indent=2)
+
+        reviewer = GenerationReviewService(TextReviewer(self.llm_service))
+        review = failed_review
+        for attempt in range(max_attempts):
+            correction_prompt = self._build_quality_repair_prompt(
+                project=project,
+                parsed_script=current_script,
+                review_payload=review_payload,
+                expected_scenes=expected_scenes,
+            )
+            source_text = current_text
+            if attempt == max_attempts - 1:
+                correction_prompt += """
+
+Final repair attempt:
+Discard the broken scene logic instead of preserving it. Write a simpler new story from the project theme and outline.
+Avoid mistaken prop movement, surprise identity reveals, spills, cleanup jumps, and multi-action shots unless each cause is visible.
+Prefer a clean 5-beat structure: setup, misunderstanding, clarification, small emotional turn, resolution.
+"""
+                source_text = json.dumps({
+                    "theme": project.theme,
+                    "outline": project.outline,
+                    "characters": current_script.get("characters", []),
+                    "failed_review": review_payload,
+                }, ensure_ascii=False, indent=2)
+            repaired_text = self.llm_service.generate(
+                prompt=correction_prompt + "\n\nSource material:\n" + source_text,
+                max_tokens=8192,
+                temperature=0.25,
+            )
+            current_script = self.parse_script(repaired_text)
+            if len(current_script.get("scenes", [])) != expected_scenes:
+                raise ScriptParseError(
+                    f"修订剧本分镜数量不符，期望 {expected_scenes}，实际 {len(current_script.get('scenes', []))}"
+                )
+            review = reviewer.review_story(
+                current_script,
+                review_path.with_name(f"{review_path.stem}_repair_attempt_{attempt + 1}.json"),
+            )
+            write_report(review_path, review)
+            if review.get("status") == "passed":
+                return current_script, review
+            review_payload = review.get("review") or review.get("error") or review
+            current_text = repaired_text
+
+        fallback_script = self._build_safe_fallback_script(project, current_script, expected_scenes)
+        review = reviewer.review_story(
+            fallback_script,
+            review_path.with_name(f"{review_path.stem}_repair_fallback.json"),
+        )
+        write_report(review_path, review)
+        if review.get("status") == "passed":
+            return fallback_script, review
+        return current_script, review
+
+    def _build_safe_fallback_script(
+        self,
+        project: Project,
+        parsed_script: Dict,
+        expected_scenes: int,
+    ) -> Dict:
+        """Build a conservative script that avoids prop jumps and multi-action shots."""
+        characters = parsed_script.get("characters") or []
+        if not characters:
+            characters = [{"name": "主角", "description": "25岁、性别不限、简洁都市服装；安静细腻，故事视角人物。"}]
+        protagonist = characters[0]["name"]
+        characters = [characters[0]]
+
+        beats = [
+            {
+                "story_beat": "建立等待环境",
+                "environment": "咖啡店靠窗桌，桌上有水杯和手机",
+                "character_description": f"{protagonist}坐在桌边等待",
+                "camera": "全景，平视，人物与靠窗桌",
+                "lighting": "窗外自然光",
+                "atmosphere": "现代都市，安静",
+                "characters": [protagonist],
+                "dialogue": "无",
+                "speaker": None,
+                "emotion": "等待",
+            },
+            {
+                "story_beat": f"{protagonist}等待约会对象",
+                "environment": "同一张靠窗桌，水杯和手机在桌上",
+                "character_description": f"{protagonist}坐在桌边看门口",
+                "camera": "中景，平视，侧脸与门口",
+                "lighting": "窗外自然光",
+                "atmosphere": "现代都市，安静",
+                "characters": [protagonist],
+                "dialogue": "无",
+                "speaker": None,
+                "emotion": "期待",
+            },
+            {
+                "story_beat": "手机收到消息",
+                "environment": "同一张靠窗桌，手机在水杯旁亮起",
+                "character_description": "手机显示相亲对象消息",
+                "camera": "特写，俯拍，手机屏幕",
+                "lighting": "手机屏幕光",
+                "atmosphere": "现代都市，安静",
+                "characters": [],
+                "dialogue": "无",
+                "speaker": None,
+                "emotion": "转折",
+            },
+            {
+                "story_beat": f"{protagonist}看见爽约消息",
+                "environment": "同一张靠窗桌，水杯和亮屏手机在桌上",
+                "character_description": "手机屏幕显示“陈先生：临时有事，抱歉”",
+                "camera": "特写，俯拍，爽约消息文字",
+                "lighting": "手机屏幕光",
+                "atmosphere": "现代都市，失落",
+                "characters": [],
+                "dialogue": "无",
+                "speaker": None,
+                "emotion": "失落",
+            },
+            {
+                "story_beat": f"{protagonist}压住情绪",
+                "environment": "同一张靠窗桌，水杯和亮屏手机在桌上",
+                "character_description": f"{protagonist}垂眼沉默",
+                "camera": "近景，平视，脸部表情",
+                "lighting": "窗外自然光",
+                "atmosphere": "现代都市，安静",
+                "characters": [protagonist],
+                "dialogue": "无",
+                "speaker": None,
+                "emotion": "克制",
+            },
+            {
+                "story_beat": "桌面陷入安静",
+                "environment": "同一张靠窗桌，水杯和亮屏手机在桌上",
+                "character_description": "水杯静置在手机旁",
+                "camera": "特写，俯拍，水杯与手机",
+                "lighting": "手机屏幕光",
+                "atmosphere": "现代都市，克制",
+                "characters": [],
+                "dialogue": "无",
+                "speaker": None,
+                "emotion": "克制",
+            },
+            {
+                "story_beat": "窗外开始下雨",
+                "environment": "咖啡店窗边，雨点落在玻璃上",
+                "character_description": "窗玻璃出现细小雨点",
+                "camera": "空镜，近景，窗上雨点",
+                "lighting": "窗外自然光",
+                "atmosphere": "现代都市，微雨",
+                "characters": [],
+                "dialogue": "无",
+                "speaker": None,
+                "emotion": "停顿",
+            },
+            {
+                "story_beat": "窗外街景继续流动",
+                "environment": "咖啡店窗边，雨中行人虚化",
+                "character_description": "窗外行人在雨中走过",
+                "camera": "空镜，中景，雨中街景",
+                "lighting": "窗外自然光",
+                "atmosphere": "现代都市，微雨",
+                "characters": [],
+                "dialogue": "无",
+                "speaker": None,
+                "emotion": "停顿",
+            },
+            {
+                "story_beat": f"{protagonist}看向窗外",
+                "environment": "同一张靠窗桌，水杯和亮屏手机在桌上",
+                "character_description": f"{protagonist}看向雨中的窗外",
+                "camera": "中景，平视，侧脸与窗光",
+                "lighting": "窗外自然光",
+                "atmosphere": "现代都市，微雨",
+                "characters": [protagonist],
+                "dialogue": "无",
+                "speaker": None,
+                "emotion": "犹豫",
+            },
+            {
+                "story_beat": f"{protagonist}因雨暂时留下",
+                "environment": "同一张靠窗桌，水杯和亮屏手机在桌上",
+                "character_description": f"{protagonist}安静坐在窗边",
+                "camera": "近景，平视，脸部表情",
+                "lighting": "窗外自然光",
+                "atmosphere": "现代都市，微雨",
+                "characters": [protagonist],
+                "dialogue": "无",
+                "speaker": None,
+                "emotion": "平静",
+            },
+        ]
+        while len(beats) < expected_scenes:
+            beats.insert(-1, {
+                "story_beat": f"{protagonist}安静等待情绪缓和",
+                "environment": "同一张靠窗桌，水杯和亮屏手机在桌上",
+                "character_description": f"{protagonist}安静看向窗外",
+                "camera": "近景，平视，侧脸与窗光",
+                "lighting": "窗外自然光",
+                "atmosphere": "现代都市，安静",
+                "characters": [protagonist],
+                "dialogue": "无",
+                "speaker": None,
+                "emotion": "平静",
+            })
+        beats = beats[:expected_scenes]
+        scenes = []
+        for index, beat in enumerate(beats, start=1):
+            scene = dict(beat)
+            scene["scene_number"] = index
+            scene["description"] = "，".join(
+                scene[key] for key in ("environment", "character_description", "camera", "lighting", "atmosphere")
+            )
+            scenes.append(scene)
+        return {
+            "script": f"{protagonist}在咖啡店等待约会却收到爽约消息。窗外忽然下雨，她没有立刻离开，而是在靠窗座位上安静停留。",
+            "characters": characters,
+            "scenes": scenes,
+        }
+
+    def _build_quality_repair_prompt(
+        self,
+        project: Project,
+        parsed_script: Dict,
+        review_payload,
+        expected_scenes: int,
+    ) -> str:
+        return f"""You are revising a short-drama shooting script so it can pass production quality gates.
+Keep the same theme, characters, style, and exactly {expected_scenes} scenes.
+
+Project theme: {project.theme or ''}
+Project outline: {project.outline or ''}
+
+Quality-gate failures to fix:
+{json.dumps(review_payload, ensure_ascii=False, indent=2)}
+
+Mandatory fixes:
+1. Add visible causes for every prop state change.
+2. Add visible motivation before any identity reveal, apology, object handoff, departure, or return.
+3. Add bridge beats for location changes.
+4. Make every scene one filmable moment only: one location, one main action, one visual focus.
+5. If there are too few scenes for the old plot, simplify the plot rather than compressing actions.
+6. Remove contradictions such as a dirty counter becoming clean without a cleanup beat.
+
+Output only this parser-compatible format:
+【剧本】
+100字以内的故事摘要，包含冲突和结局。
+
+【角色】
+- 实际姓名：年龄、性别、发型、一件标识服装；性格和故事定位。
+
+【分镜】
+分镜1：
+- 故事节点：本镜头推进什么情节，20字以内
+- 环境描述：一个地点，必要道具，30字以内
+- 人物描述：可见人物和一个动作或静态表情，30字以内
+- 镜头描述：一个景别、一个角度、视觉焦点，20字以内
+- 光线描述：一个主要光源，15字以内
+- 氛围描述：延续指定风格，15字以内
+- 出现角色：[实际姓名]（空镜填 []）
+- 对话：一句简短对白，无对白填 无
+- 说话人：实际姓名，无对白填 无
+- 情感：一个情绪
+
+Continue through 分镜{expected_scenes}. Do not include markdown fences or commentary.
+"""
+
     def _parse_characters(self, script_text: str) -> List[Dict]:
         """
         解析角色信息

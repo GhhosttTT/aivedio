@@ -217,7 +217,7 @@ class GenerateScriptRequest(BaseModel):
     """
     theme: Optional[str] = Field(None, max_length=200, description="剧本主题")
     outline: Optional[str] = Field(None, max_length=1000, description="剧本大纲")
-    num_scenes: int = Field(10, ge=5, le=50, description="分镜数量（默认 10）")
+    num_scenes: int = Field(16, ge=5, le=50, description="分镜数量（默认 16）")
     num_characters: int = Field(2, ge=1, le=10, description="角色数量（默认 2）")
     style: str = Field("现代都市", max_length=50, description="风格偏好（默认'现代都市'）")
     num_chapters: int = Field(3, ge=1, le=10, description="章节数量（默认 3，新增）")

@@ -1,0 +1,73 @@
+{
+  "1": {
+    "class_type": "ImageOnlyCheckpointLoader",
+    "inputs": {
+      "ckpt_name": "svd_xt.safetensors"
+    }
+  },
+  "2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{reference_image}"
+    }
+  },
+  "3": {
+    "class_type": "SVD_img2vid_Conditioning",
+    "inputs": {
+      "clip_vision": ["1", 1],
+      "init_image": ["2", 0],
+      "vae": ["1", 2],
+      "width": 1024,
+      "height": 576,
+      "video_frames": 14,
+      "motion_bucket_id": "{motion_bucket_id}",
+      "fps": "{fps}",
+      "augmentation_level": "{noise_aug_strength}"
+    }
+  },
+  "4": {
+    "class_type": "VideoLinearCFGGuidance",
+    "inputs": {
+      "model": ["1", 0],
+      "min_cfg": 1.0
+    }
+  },
+  "5": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["4", 0],
+      "seed": "{seed}",
+      "steps": 25,
+      "cfg": 2.5,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "positive": ["3", 0],
+      "negative": ["3", 1],
+      "latent_image": ["3", 2],
+      "denoise": 1.0
+    }
+  },
+  "6": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["5", 0],
+      "vae": ["1", 2]
+    }
+  },
+  "7": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": ["6", 0],
+      "fps": "{fps}"
+    }
+  },
+  "8": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": ["7", 0],
+      "filename_prefix": "{output_prefix}",
+      "format": "mp4",
+      "codec": "h264"
+    }
+  }
+}

@@ -12,6 +12,13 @@ from src.utils.storage import get_scene_audio_path
 logger = get_logger(__name__)
 
 
+def has_spoken_dialogue(text: str | None) -> bool:
+    if not text:
+        return False
+    normalized = text.strip().lower()
+    return normalized not in {"无", "无对白", "none", "null", "n/a", "na", "-", "没有对白"}
+
+
 @celery_app.task(bind=True, name="generate_audio")
 def generate_audio_task(
     self,
@@ -32,7 +39,7 @@ def generate_audio_task(
         if not scene:
             raise ValueError(f"Scene not found: {scene_id}")
 
-        if not text or not text.strip():
+        if not has_spoken_dialogue(text):
             scene.audio_path = None
             scene.audio_duration = 0.0
             db.commit()

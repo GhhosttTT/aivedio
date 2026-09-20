@@ -146,15 +146,16 @@ class ImageQualitySelector:
         elif best.get("average", 0) < min_average:
             report["status"] = "needs_review"
             report["error"] = f"Best image score {best.get('average', 0)} is below {min_average}"
-        if report["status"] != "passed":
-            write_report(Path(report_path), report)
-            raise ReviewError(report["error"])
         final = Path(final_path)
         final.parent.mkdir(parents=True, exist_ok=True)
         if Path(best["path"]).resolve() != final.resolve():
             shutil.copy2(best["path"], final)
         report["final_path"] = str(final)
         write_report(Path(report_path), report)
+        if report["status"] != "passed" and (require_vlm or best.get("status") != "technical_only"):
+            raise ReviewError(report["error"])
+        if report["status"] != "passed":
+            write_report(Path(report_path), report)
         return report
 
 

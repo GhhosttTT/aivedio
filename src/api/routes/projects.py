@@ -110,21 +110,21 @@ async def create_project(
 ):
     """
     创建新项目
-    
+
     Args:
         project: 项目创建请求
         current_user: 当前用户
         db_session: 数据库会话
-    
+
     Returns:
         创建的项目信息
-    
+
     Raises:
         HTTPException: 创建失败时抛出
     """
     try:
         logger.info(f"创建项目: {project.name}")
-        
+
         project_manager = ProjectManager(db_session)
         db_project = project_manager.create_project(
             name=project.name,
@@ -133,10 +133,10 @@ async def create_project(
             outline=project.outline,
             user_id=current_user.id
         )
-        
+
         logger.info(f"项目创建成功: id={db_project.id}, name={db_project.name}")
         return db_project
-    
+
     except ValueError as e:
         logger.warning(f"项目创建失败（输入验证）: {e}")
         raise HTTPException(
@@ -155,31 +155,31 @@ async def create_project(
 async def get_project(project_id: int, db_session: Session = Depends(get_db_session)):
     """
     获取项目详情
-    
+
     Args:
         project_id: 项目 ID
-    
+
     Returns:
         项目详细信息
-    
+
     Raises:
         HTTPException: 项目不存在时抛出 404
     """
     try:
         logger.info(f"获取项目详情: project_id={project_id}")
-        
+
         project_manager = ProjectManager(db_session)
         db_project = project_manager.get_project(project_id)
-        
+
         if db_project is None:
             logger.warning(f"项目不存在: project_id={project_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"项目不存在: {project_id}"
             )
-        
+
         return db_project
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -194,22 +194,22 @@ async def get_project(project_id: int, db_session: Session = Depends(get_db_sess
 async def update_project(project_id: int, project: ProjectUpdate, db_session: Session = Depends(get_db_session)):
     """
     更新项目信息
-    
+
     Args:
         project_id: 项目 ID
         project: 项目更新请求
-    
+
     Returns:
         更新后的项目信息
-    
+
     Raises:
         HTTPException: 项目不存在或更新失败时抛出
     """
     try:
         logger.info(f"更新项目: project_id={project_id}")
-        
+
         project_manager = ProjectManager(db_session)
-        
+
         # 构建更新数据（只包含非 None 的字段）
         update_data = {}
         if project.name is not None:
@@ -222,19 +222,19 @@ async def update_project(project_id: int, project: ProjectUpdate, db_session: Se
             update_data["outline"] = project.outline
         if project.status is not None:
             raise ValueError("生产状态由任务系统管理")
-        
+
         db_project = project_manager.update_project(project_id, **update_data)
-        
+
         if db_project is None:
             logger.warning(f"项目不存在: project_id={project_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"项目不存在: {project_id}"
             )
-        
+
         logger.info(f"项目更新成功: project_id={project_id}")
         return db_project
-    
+
     except HTTPException:
         raise
     except ValueError as e:
@@ -255,35 +255,35 @@ async def update_project(project_id: int, project: ProjectUpdate, db_session: Se
 async def delete_project(project_id: int, db_session: Session = Depends(get_db_session)):
     """
     删除项目
-    
+
     Args:
         project_id: 项目 ID
-    
+
     Returns:
         删除成功消息
-    
+
     Raises:
         HTTPException: 项目不存在或删除失败时抛出
     """
     try:
         logger.info(f"删除项目: project_id={project_id}")
-        
+
         project_manager = ProjectManager(db_session)
         success = project_manager.delete_project(project_id)
-        
+
         if not success:
             logger.warning(f"项目不存在: project_id={project_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"项目不存在: {project_id}"
             )
-        
+
         logger.info(f"项目删除成功: project_id={project_id}")
         return MessageResponse(
             message="项目删除成功",
             detail=f"项目 {project_id} 及其关联文件已删除"
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -304,20 +304,20 @@ async def list_projects(
 ):
     """
     列出项目
-    
+
     Args:
         status_filter: 状态过滤（可选）
         page: 页码（从 1 开始）
         page_size: 每页数量
-    
+
     Returns:
         项目列表和分页信息
     """
     try:
         logger.info(f"列出项目: status={status_filter}, page={page}, page_size={page_size}")
-        
+
         project_manager = ProjectManager(db_session)
-        
+
         from src.database.models import Project
         query = db_session.query(Project).filter(Project.user_id == current_user.id)
         if status_filter:
@@ -331,7 +331,7 @@ async def list_projects(
             page_size=page_size,
             projects=projects
         )
-    
+
     except Exception as e:
         logger.error(f"列出项目失败: {e}", exc_info=True)
         raise HTTPException(
@@ -344,23 +344,23 @@ async def list_projects(
 def generate_script(project_id: int, request: GenerateScriptRequest, db_session: Session = Depends(get_db_session)):
     """
     生成剧本
-    
+
     Args:
         project_id: 项目 ID
         request: 剧本生成请求
-    
+
     Returns:
         更新后的项目信息（包含角色和分镜）
-    
+
     Raises:
         HTTPException: 项目不存在或生成失败时抛出
     """
     try:
         logger.info(f"生成剧本: project_id={project_id}")
-        
+
         project_manager = ProjectManager(db_session)
         script_generator = ScriptGenerator(db_session)
-        
+
         # 检查项目是否存在
         db_project = project_manager.get_project(project_id)
         if db_project is None:
@@ -369,11 +369,18 @@ def generate_script(project_id: int, request: GenerateScriptRequest, db_session:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"项目不存在: {project_id}"
             )
-        
-        # 使用请求中的主题和大纲，如果没有提供则使用项目中的
-        theme = request.theme if request.theme else db_project.theme
-        outline = request.outline if request.outline else db_project.outline
-        
+
+        # 使用请求中的主题和大纲，如果没有提供或为空字符串则使用项目中的
+        theme = request.theme.strip() if request.theme and request.theme.strip() else db_project.theme
+        outline = request.outline.strip() if request.outline and request.outline.strip() else db_project.outline
+
+        # 如果仍然没有theme和outline，抛出错误
+        if not theme and not outline:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="主题(theme)和大纲(outline)至少需要提供一个。请在项目设置中添加主题或大纲。"
+            )
+
         # 生成剧本（使用增强版参数）
         logger.info(f"开始生成剧本: project_id={project_id}")
         script_generator.generate_script(
@@ -387,16 +394,16 @@ def generate_script(project_id: int, request: GenerateScriptRequest, db_session:
             temperature=request.temperature,
             max_tokens=request.max_tokens
         )
-        
+
         # 更新项目状态
         project_manager.update_project(project_id, status="script_generated")
-        
+
         # 返回更新后的项目信息
         db_project = project_manager.get_project(project_id)
         logger.info(f"剧本生成成功: project_id={project_id}, characters={len(db_project.characters)}, scenes={len(db_project.scenes)}")
-        
+
         return db_project
-    
+
     except HTTPException:
         raise
     except ValueError as e:
@@ -406,10 +413,20 @@ def generate_script(project_id: int, request: GenerateScriptRequest, db_session:
             detail=str(e)
         )
     except Exception as e:
-        logger.error(f"剧本生成失败: {e}", exc_info=True)
+        error_msg = str(e)
+        # 使用%s而不是f-string避免JSON中的花括号导致KeyError
+        logger.error("剧本生成失败: %s", error_msg, exc_info=True)
+
+        # 检查是否是LLM服务相关错误
+        if "llama-cpp-python" in error_msg or "LLM 服务初始化失败" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="剧本生成功能需要LLM服务,但当前未配置。请手动创建剧本或联系管理员配置LLM服务。"
+            )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"剧本生成与情节复审失败: {e}"
+            detail=f"剧本生成失败: {error_msg}"
         )
 
 
@@ -417,23 +434,23 @@ def generate_script(project_id: int, request: GenerateScriptRequest, db_session:
 def regenerate_scene(project_id: int, request: RegenerateSceneRequest, db_session: Session = Depends(get_db_session)):
     """
     重新生成指定分镜
-    
+
     Args:
         project_id: 项目 ID
         request: 重新生成分镜请求
-    
+
     Returns:
         更新后的项目信息
-    
+
     Raises:
         HTTPException: 项目不存在或分镜不存在时抛出
     """
     try:
         logger.info(f"重新生成分镜: project_id={project_id}, scene_number={request.scene_number}")
-        
+
         project_manager = ProjectManager(db_session)
         script_generator = ScriptGenerator(db_session)
-        
+
         # 检查项目是否存在
         db_project = project_manager.get_project(project_id)
         if db_project is None:
@@ -442,16 +459,16 @@ def regenerate_scene(project_id: int, request: RegenerateSceneRequest, db_sessio
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"项目不存在: {project_id}"
             )
-        
+
         # 重新生成分镜
         script_generator.regenerate_scene(project_id, request.scene_number, request.new_description)
-        
+
         # 返回更新后的项目信息
         db_project = project_manager.get_project(project_id)
         logger.info(f"分镜重新生成成功: project_id={project_id}, scene_number={request.scene_number}")
-        
+
         return db_project
-    
+
     except HTTPException:
         raise
     except ValueError as e:
@@ -475,22 +492,22 @@ async def produce_video(
 ):
     """
     提交视频生产任务
-    
+
     Args:
         project_id: 项目 ID
-    
+
     Returns:
         生产任务信息
-    
+
     Raises:
         HTTPException: 项目不存在或提交失败时抛出
     """
     try:
         logger.info(f"提交生产任务: project_id={project_id}")
-        
+
         project_manager = ProjectManager(db_session)
         task_orchestrator = TaskOrchestrator(db_session)
-        
+
         # 检查项目是否存在
         db_project = project_manager.get_project(project_id)
         if db_project is None:
@@ -499,7 +516,7 @@ async def produce_video(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"项目不存在: {project_id}"
             )
-        
+
         # 检查项目是否有分镜
         if not db_project.scenes:
             logger.warning(f"项目没有分镜: project_id={project_id}")
@@ -507,26 +524,26 @@ async def produce_video(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="项目没有分镜，请先生成剧本"
             )
-        
+
         # 创建生产任务
         celery_task_id = task_orchestrator.create_production_task(project_id)
-        
+
         # 更新项目状态
-        
+
         # 查询任务记录
         from src.database.models import Task as TaskModel
         task_record = db_session.query(TaskModel).filter(
             TaskModel.celery_task_id == celery_task_id
         ).first()
-        
+
         if not task_record:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="任务记录创建失败"
             )
-        
+
         logger.info(f"生产任务创建成功: task_id={task_record.id}, project_id={project_id}")
-        
+
         return ProductionTaskResponse(
             task_id=task_record.celery_task_id,
             project_id=task_record.project_id,
@@ -538,7 +555,7 @@ async def produce_video(
             updated_at=task_record.updated_at,
             error_message=task_record.error_message
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -556,25 +573,25 @@ async def regenerate_images(
 ):
     """
     重新生成图像（不重新生成剧本）
-    
+
     当图像生成出错时，可以只重新生成图像而不需要重新生成剧本。
     此操作会清除所有已生成的图像，然后根据现有的剧本和分镜重新生成。
-    
+
     Args:
         project_id: 项目 ID
-    
+
     Returns:
         生产任务信息
-    
+
     Raises:
         HTTPException: 项目不存在或提交失败时抛出
     """
     try:
         logger.info(f"重新生成图像: project_id={project_id}")
-        
+
         project_manager = ProjectManager(db_session)
         task_orchestrator = TaskOrchestrator(db_session)
-        
+
         # 检查项目是否存在
         db_project = project_manager.get_project(project_id)
         if db_project is None:
@@ -583,7 +600,7 @@ async def regenerate_images(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"项目不存在: {project_id}"
             )
-        
+
         # 检查项目是否有分镜
         if not db_project.scenes:
             logger.warning(f"项目没有分镜: project_id={project_id}")
@@ -591,26 +608,26 @@ async def regenerate_images(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="项目没有分镜，请先生成剧本"
             )
-        
+
         # 创建生产任务（只生成图像和视频）
         celery_task_id = task_orchestrator.create_production_task(project_id)
-        
+
         # 更新项目状态
-        
+
         # 查询任务记录
         from src.database.models import Task as TaskModel
         task_record = db_session.query(TaskModel).filter(
             TaskModel.celery_task_id == celery_task_id
         ).first()
-        
+
         if not task_record:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="任务记录创建失败"
             )
-        
+
         logger.info(f"重新生成图像任务创建成功: task_id={task_record.id}, project_id={project_id}")
-        
+
         return ProductionTaskResponse(
             task_id=task_record.celery_task_id,
             project_id=task_record.project_id,
@@ -622,7 +639,7 @@ async def regenerate_images(
             updated_at=task_record.updated_at,
             error_message=task_record.error_message
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:
