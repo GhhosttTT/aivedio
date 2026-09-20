@@ -228,6 +228,39 @@ class CharacterIdentityService:
         status = "passed" if all(pair["status"] == "passed" for pair in pairs) else "needs_revision"
         return {"status": status, "pairs": pairs}
 
+    def identity_contrast_prompt(self, specs: list[dict[str, Any]], max_pairs: int = 4) -> str:
+        specs = [spec for spec in specs if isinstance(spec, dict) and spec.get("name")]
+        if len(specs) < 2:
+            return ""
+        contrasts = []
+        for left_index, left in enumerate(specs):
+            for right in specs[left_index + 1:]:
+                differences = [
+                    field for field in FACIAL_FIELDS + ["wardrobe"]
+                    if left.get(field) and right.get(field) and left.get(field) != right.get(field)
+                ][:2]
+                if not differences:
+                    contrasts.append(
+                        f"{left.get('name')} and {right.get('name')} are at risk of same-face casting; regenerate one identity bible."
+                    )
+                    continue
+                detail = ", ".join(
+                    f"{field} differs"
+                    for field in differences
+                )
+                contrasts.append(
+                    f"{left.get('name')} must not look like {right.get('name')}: {detail}"
+                )
+                if len(contrasts) >= max_pairs:
+                    break
+            if len(contrasts) >= max_pairs:
+                break
+        return (
+            "Identity contrast contract: distinct faces; "
+            + " | ".join(contrasts)
+            + ". No same-face cast."
+        )
+
     def score_observed_spec(self, expected: dict[str, Any], observed: dict[str, Any]) -> dict[str, Any]:
         scores = {}
         total = 0

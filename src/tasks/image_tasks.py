@@ -10,6 +10,7 @@ from typing import Optional
 from src.database.database import get_db
 from src.database.models import Character, Project, ProjectStatus, Scene, Task as TaskModel
 from src.config import settings
+from src.services.character_identity_service import CharacterIdentityService, load_identity_spec
 from src.services.shot_prompt_service import ShotPromptService, CompiledShot
 from src.services.generation_review import write_report
 from src.services.image_quality_service import ImageQualitySelector, candidate_output_path
@@ -62,12 +63,18 @@ def _visual_character(scene: Scene, project_id: int, db) -> Optional[Character]:
     return characters[0]
 
 
-def _visible_character_payload(scene: Scene, project_id: int, db) -> list[dict[str, str]]:
+def _visible_character_payload(scene: Scene, project_id: int, db) -> list[dict]:
     payload = []
     for character in _visual_characters(scene, project_id, db):
-        payload.append({
+        identity_spec = load_identity_spec(character.visual_description)
+        item = {
             "name": character.name,
             "appearance": character.appearance or "",
+        }
+        if identity_spec:
+            item["identity_spec"] = identity_spec
+        payload.append({
+            **item,
         })
     return payload
 
@@ -91,9 +98,14 @@ def _appearance_anchor(characters: list[Character], db, compiler) -> str | None:
             anchors.append(f"{safe_name} identity: {appearance}")
     if not anchors:
         return None
+    specs = [
+        spec for character in characters
+        if (spec := load_identity_spec(character.visual_description))
+    ]
+    contrast = CharacterIdentityService().identity_contrast_prompt(specs)
     if len(anchors) == 1:
         return anchors[0].split(" identity: ", 1)[1]
-    return "Keep every visible character distinct. " + " | ".join(anchors)
+    return "Keep every visible character distinct. " + " | ".join(anchors) + (f" {contrast}" if contrast else "")
 
 
 def _composition_constraint(scene: Scene, project_id: int, db) -> str:

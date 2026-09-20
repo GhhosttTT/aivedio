@@ -98,6 +98,8 @@ class CharacterManager:
             raise ValueError("character identity bible is required before freezing")
         if not references:
             raise ValueError("at least one character reference image is required before freezing")
+        if distinctiveness.get("status") != "passed":
+            raise ValueError("character distinctiveness must pass before freezing")
         char_dir = self.base_dir / str(project_id) / str(character_id)
         manifest = {
             "version": 1,
@@ -139,6 +141,9 @@ class CharacterManager:
             return {"status": "invalid", "missing": ["frozen_status"], "manifest": manifest}
         missing = []
         stale = []
+        distinctiveness = manifest.get("distinctiveness") if isinstance(manifest.get("distinctiveness"), dict) else {}
+        if distinctiveness.get("status") != "passed":
+            stale.append("distinctiveness")
         if manifest.get("identity_spec_hash") != self._json_hash(identity_spec):
             stale.append("identity_spec")
         manifest_paths = manifest.get("reference_paths") if isinstance(manifest.get("reference_paths"), list) else []

@@ -51,7 +51,17 @@ def test_visible_actor_is_distinct_from_speaker(project_data):
 
 def test_multiple_visible_characters_are_preserved_in_prompt(project_data):
     db, project, scene, character, _ = project_data
-    bob = Character(project_id=project.id, name="Bob", appearance="man, square jaw, navy coat")
+    from src.services.character_identity_service import CharacterIdentityService
+    identity_service = CharacterIdentityService()
+    alice_spec = identity_service.build_identity_spec("Alice", "lead", project_id=project.id)
+    bob_spec = identity_service.build_identity_spec("Bob", "rival", project_id=project.id, existing_specs=[alice_spec])
+    character.visual_description = json.dumps(alice_spec)
+    bob = Character(
+        project_id=project.id,
+        name="Bob",
+        appearance="man, square jaw, navy coat",
+        visual_description=json.dumps(bob_spec),
+    )
     db.add(bob)
     project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice", "Bob"]}]})
     db.commit()
@@ -68,6 +78,8 @@ def test_multiple_visible_characters_are_preserved_in_prompt(project_data):
     assert "Alice identity: woman, short black hair, green jacket" in compiled.prompt
     assert "Bob identity: man, square jaw, navy coat" in compiled.prompt
     assert "Keep every visible character distinct" in compiled.prompt
+    assert "Identity contrast contract" in compiled.prompt
+    assert "Alice must not look like Bob" in compiled.prompt
     assert "Alice on frame left and Bob on frame right" in compiled.prompt
 
 
@@ -126,6 +138,27 @@ def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_dat
     }
     assert "End frame:" in plan.end_frame_prompt
     assert "identity drift" in plan.negative_prompt
+
+
+def test_video_director_prompt_includes_identity_contrast(project_data):
+    _, project, scene, _, _ = project_data
+    from src.services.character_identity_service import CharacterIdentityService
+    identity_service = CharacterIdentityService()
+    alice_spec = identity_service.build_identity_spec("Alice", "lead", project_id=project.id)
+    bob_spec = identity_service.build_identity_spec("Bob", "rival", project_id=project.id, existing_specs=[alice_spec])
+
+    plan = get_video_director_service().plan_scene(
+        scene,
+        project.id,
+        [
+            {"name": "Alice", "appearance": alice_spec["identity_anchor"], "identity_spec": alice_spec},
+            {"name": "Bob", "appearance": bob_spec["identity_anchor"], "identity_spec": bob_spec},
+        ],
+    )
+
+    assert "Identity contrast contract" in plan.director_prompt
+    assert "Alice must not look like Bob" in plan.director_prompt
+    assert "No same-face cast" in plan.end_frame_prompt
 
 
 def test_composition_constraint_tracks_visible_actor_count(project_data):

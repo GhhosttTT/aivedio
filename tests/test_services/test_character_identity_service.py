@@ -24,6 +24,18 @@ def test_prompt_pack_contains_requested_languages_and_negative_identity():
     assert "no changed eye shape" in pack["languages"]["zh"]["negative"]
 
 
+def test_identity_contrast_prompt_lists_pairwise_facial_differences():
+    service = CharacterIdentityService()
+    first = service.build_identity_spec("林安", "女主", project_id=7)
+    second = service.build_identity_spec("顾沉", "男主", project_id=7, existing_specs=[first])
+
+    prompt = service.identity_contrast_prompt([first, second])
+
+    assert "Identity contrast contract" in prompt
+    assert "林安 must not look like 顾沉" in prompt
+    assert "same-face" in prompt
+
+
 def test_score_observed_spec_quantifies_feature_mismatch():
     service = CharacterIdentityService()
     expected = service.build_identity_spec("宁夏", project_id=3)

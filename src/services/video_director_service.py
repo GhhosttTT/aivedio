@@ -256,13 +256,7 @@ class VideoDirectorService:
         return ""
 
     def _director_prompt(self, prompt: str, shot_role: str, action_intensity: str, visible_characters: list[dict], spatial_plan: dict) -> str:
-        identity = ""
-        if visible_characters:
-            identity = "; ".join(
-                f"{item.get('name', 'character')}: {item.get('appearance', '')}"
-                for item in visible_characters
-            )
-            identity = f" Visible character identity anchors: {identity}."
+        identity = self._identity_prompt(visible_characters)
         role_guidance = {
             "action": "Make the action readable as one continuous movement with clear start, middle, and end.",
             "prop_interaction": "Keep hands and the important prop visible; do not change the prop type, color, or position abruptly.",
@@ -277,13 +271,7 @@ class VideoDirectorService:
         )
 
     def _end_frame_prompt(self, prompt: str, shot_role: str, action_intensity: str, visible_characters: list[dict], spatial_plan: dict) -> str:
-        identity = ""
-        if visible_characters:
-            identity = "; ".join(
-                f"{item.get('name', 'character')}: {item.get('appearance', '')}"
-                for item in visible_characters
-            )
-            identity = f" Keep identity anchors unchanged: {identity}."
+        identity = self._identity_prompt(visible_characters, prefix=" Keep identity anchors unchanged")
         ending = {
             "action": "the action has just completed, body pose naturally settled, readable result of the movement",
             "prop_interaction": "the important prop remains visible after the hand interaction, hands separated clearly",
@@ -305,6 +293,23 @@ class VideoDirectorService:
             "random camera jump, slideshow, still image only"
         )
         return f"{base}, {video_terms}" if base else video_terms
+
+    def _identity_prompt(self, visible_characters: list[dict], prefix: str = " Visible character identity anchors") -> str:
+        if not visible_characters:
+            return ""
+        anchors = "; ".join(
+            f"{item.get('name', 'character')}: {item.get('appearance', '')}"
+            for item in visible_characters
+        )
+        specs = [
+            item.get("identity_spec") for item in visible_characters
+            if isinstance(item.get("identity_spec"), dict)
+        ]
+        contrast = ""
+        if len(specs) >= 2:
+            from src.services.character_identity_service import CharacterIdentityService
+            contrast = CharacterIdentityService().identity_contrast_prompt(specs)
+        return f"{prefix}: {anchors}." + (f" {contrast}" if contrast else "")
 
     @staticmethod
     def _probe_duration(path: Path) -> float:
