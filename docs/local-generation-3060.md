@@ -126,6 +126,8 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 
 视频阶段同样支持候选择优。`GENERATION_VIDEO_CANDIDATES` 会让同一关键帧串行生成多个视频候选，并轻微扰动运动强度和噪声增强参数；每个候选都会保存独立的 `.review.json` 抽帧审核报告，最终视频旁边保存 `.quality.json` 候选排序。若第一轮候选都低于门槛，`GENERATION_VIDEO_REFINEMENT_PASSES` 会追加稳定性优先的精修轮，自动降低运动强度和噪声，优先压制身份漂移、闪烁和动作断裂。正式跑片建议打开 `GENERATION_REQUIRE_VIDEO_REVIEW=true`，避免 llama.cpp 视觉模型离线时把未审核视频当成高质量结果。
 
+视频候选选择除了平均分，还会单独检查身份和时间稳定性。`GENERATION_VIDEO_IDENTITY_MIN_SCORE=4.0` 要求 `facial_identity` 和 `identity_consistency` 都达到 4 分；`GENERATION_VIDEO_TEMPORAL_MIN_SCORE=4.0` 要求 `temporal_consistency` 达到 4 分。若一个候选平均分更高但脸漂或同脸，它会排在身份稳定候选之后；若正式审核开启且所有候选身份/时间门槛都失败，任务会进入失败并写入返修队列。
+
 若配置 `COMFYUI_VIDEO_WORKFLOW_PATH`，视频阶段会改用本地 ComfyUI 图生视频 API workflow，适合接入 Wan、AnimateDiff、VideoHelperSuite 或其他本地视频节点。工作流 JSON 可使用 `{prompt}`、`{negative_prompt}`、`{reference_image}`、`{width}`、`{height}`、`{duration_seconds}`、`{fps}`、`{seed}`、`{output_prefix}`、`{motion_bucket_id}`、`{noise_aug_strength}` 占位符；执行时系统会上传当前关键帧并替换这些值。低分精修轮会把 motion/noise 下调，因此工作流应把这两个占位符接到对应的视频采样节点。留空时继续使用内置 SVD 服务。
 
 ## 5. 审核与抽帧评分
@@ -140,7 +142,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 每批最多 3 个采样帧，可另附 1 张参考图。按剧情匹配、构图、可见瑕疵、脸部身份、整体身份一致性、时间连续性分别给 0 至 5 分，并写明证据。
 视频 `facial_identity` 会在抽帧之间比较脸型、五官、发型和角色外貌锚点，专门暴露脸在运动中变人、同脸化或五官漂移的问题。
 时间连续性会检查同一人物的脸、发型、服装、体型和相对站位是否稳定，动作推进是否合理，是否出现闪烁、变形、突然多出或消失的人，以及无关镜头跳变。
-目前门槛为平均分至少 4、各项至少 3、无 major/critical 问题。任一批失败，整个镜头不能通过。
+基础 VLM 决策门槛为平均分至少 4、各项至少 3、无 major/critical 问题。生产候选选择在此基础上加严：图片候选的 `facial_identity` 和 `identity_consistency` 默认必须达到 4 分；视频候选的 `facial_identity`、`identity_consistency` 和 `temporal_consistency` 默认必须达到 4 分。任一批失败，整个镜头不能通过。
 文件损坏、模型离线、JSON 无效、漏审或重复帧号会记录 `error`，不会生成默认高分。
 
 报告保存于 `storage/projects/<项目ID>/reviews/`：
@@ -182,7 +184,7 @@ python -m scripts.validate_local_generation summarize
 可通过 `--base-url http://GPU主机地址:8188` 连接同一局域网的 ComfyUI。
 固定用例为 `examples/local_generation_cases.json`；可用 `--cases` 指向自己的镜头集。
 输出默认保存于 `storage/validation`。`preflight-video-workflow` 会检查视频 workflow 文件、占位符、可能的视频输出节点和 ComfyUI 节点/模型可用性；通过后仍需要真实跑片确认运动质量。`render-images` 没有占位回退，成功也只标记为待人工检查，不能等同于质量达标。
-人工复核可写入 `storage/validation/manual_review.json`，格式为 `{"cases":[{"id":"discovery","score":4.5,"decision":"accept","note":"身份稳定"}]}`。`summarize` 会汇总预检、渲染、视频抽帧审核和人工评分，生成 `validation_summary.json`，只有环境、workflow、关键帧、视频审核和人工评分都通过时才标记为可校准生成。
+人工复核可写入 `storage/validation/manual_review.json`，格式为 `{"cases":[{"id":"discovery","score":4.5,"decision":"accept","note":"身份稳定"}]}`。`summarize` 会汇总预检、渲染、视频抽帧审核、Seed Dance 基准对比和人工评分，生成 `validation_summary.json`。只有环境、workflow、关键帧、视频审核、视频身份/时间门槛、基准对比和人工评分都通过时，才会标记为 `ready_for_seed_dance_candidate`。
 `validation_summary.json` 还会生成 `calibration_recommendations`：身份漂移会建议重做角色参考或加严参考权重，闪烁/动作断裂会建议降低运动强度和增加视频精修轮，构图/裁切会建议拆镜头或加 Control/Depth/Pose 约束。
 命令行单独执行视觉审核前，应先结束其他 GPU 作业并卸载其模型。
 
