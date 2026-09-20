@@ -125,6 +125,8 @@ def test_turnaround_album_drives_scene_reference_view(project_data, tmp_path, mo
     assert payload[0]["turnaround_reference"]["view"] == "side"
     assert payload[0]["turnaround_reference"]["path"] == views["side"]
     assert "strict side profile" in payload[0]["turnaround_reference"]["control_prompt"]
+    assert payload[0]["turnaround_reference"]["expected_features"]["nose_silhouette"] == spec["nose"]
+    assert payload[0]["turnaround_reference"]["expected_features"]["wardrobe_side"] == spec["wardrobe"]
 
 
 def test_video_review_payload_carries_visible_character_anchors(project_data):
@@ -1088,6 +1090,68 @@ def test_quality_refinement_uses_previous_review_feedback(tmp_path, monkeypatch)
     assert "balanced lighting" in review_calls[0][1]
     assert "bad crop on the main actor" in review_calls[1][1]
     assert "face is cropped" in review_calls[1][1]
+
+
+def test_image_candidate_report_records_reference_contract(tmp_path, monkeypatch):
+    from PIL import Image
+    from src.services.generation_provider import ImageGenerationRequest, GenerationResult
+
+    class FakeProvider:
+        name = GenerationProviderName.LOCAL_COMFYUI
+
+        def generate_image(self, request):
+            Image.new("RGB", (request.width, request.height), (120, 120, 120)).save(request.output_path)
+            return GenerationResult("local_comfyui", request.output_path, "image", {"workflow": {"steps": request.steps}})
+
+    def fake_review(self, index, image_path, scene, prompt, reference_image=None):
+        return {
+            "index": index,
+            "path": image_path,
+            "status": "passed",
+            "average": 4.6,
+            "review": {},
+            "metrics": {"technical_score": 4.6},
+        }
+
+    monkeypatch.setattr("src.tasks.image_tasks.ImageQualitySelector.review_candidate", fake_review)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_CANDIDATES", 1)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 0)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+    reference = str(tmp_path / "side.png")
+    Image.new("RGB", (32, 32), (20, 120, 20)).save(reference)
+    request = ImageGenerationRequest(
+        prompt="short drama side profile keyframe",
+        negative_prompt="blurry",
+        output_path=str(tmp_path / "scene.png"),
+        width=512,
+        height=512,
+        steps=28,
+        cfg_scale=6.0,
+        seed=123,
+        reference_image=reference,
+        use_ipadapter=True,
+    )
+    scene_payload = {
+        "scene_number": 1,
+        "visible_characters": [{
+            "name": "Alice",
+            "appearance": "Alice identity",
+            "turnaround_reference": {
+                "view": "side",
+                "path": reference,
+                "expected_features": {"nose_silhouette": "straight nose bridge"},
+            },
+        }],
+    }
+
+    _, report = _generate_quality_candidates(FakeProvider(), request, scene_payload, reference)
+
+    candidate = report["candidates"][0]
+    assert candidate["request"]["reference_image"] == reference
+    assert candidate["request"]["use_ipadapter"] is True
+    assert candidate["scene"]["visible_characters"][0]["turnaround_reference"]["view"] == "side"
+    assert candidate["scene"]["visible_characters"][0]["turnaround_reference"]["expected_features"]["nose_silhouette"] == "straight nose bridge"
 
 
 def test_review_feedback_deduplicates_low_score_evidence():

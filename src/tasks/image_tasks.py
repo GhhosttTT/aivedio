@@ -59,6 +59,7 @@ def _turnaround_control_for_character(character: Character, project_id: int, vie
         "path": item.get("path"),
         "sha256": item.get("sha256"),
         "control_prompt": item.get("control_prompt", ""),
+        "expected_features": item.get("expected_features", {}),
         "identity_spec_hash": manifest.get("identity_spec_hash"),
         "project_id": project_id,
     }
@@ -620,6 +621,7 @@ def _generate_quality_candidates(
                 "scene_number": scene_payload.get("scene_number"),
                 "visual_description": scene_payload.get("visual_description") or scene_payload.get("description"),
                 "repair_action": scene_payload.get("repair_action"),
+                "visible_characters": scene_payload.get("visible_characters", []),
             }
             report["request"] = {
                 "seed": candidate_request.seed,
@@ -627,6 +629,8 @@ def _generate_quality_candidates(
                 "cfg_scale": candidate_request.cfg_scale,
                 "width": candidate_request.width,
                 "height": candidate_request.height,
+                "reference_image": candidate_request.reference_image,
+                "use_ipadapter": candidate_request.use_ipadapter,
                 "refinement_pass": pass_index,
                 "feedback": feedback,
                 "repair_action": repair_action,
