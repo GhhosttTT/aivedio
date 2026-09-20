@@ -77,13 +77,14 @@ def test_frame_coverage_and_video_hash(tmp_path, monkeypatch):
     frames = [{"index": i, "timestamp": i, "path": str(tmp_path / f"{i}.jpg")} for i in range(3)]
     monkeypatch.setattr(GenerationReviewService, "sample_frames", lambda *args: frames)
     data = {key: {"score": 4, "evidence": "visible subject matches the keyframe"} for key in (
-        "story_match", "composition", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
+        "story_match", "composition", "aesthetic_quality", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
     reviewer = Mock()
     reviewer.evaluate.return_value = FrameReview(**data, reviewed_frames=[0, 1, 2], issues=[])
     service = GenerationReviewService(reviewer)
     result = service.review_video(str(video), {"scene_number": 1}, tmp_path / "frames.json")
     assert result["status"] == "passed"
     assert len(result["video_sha256"]) == 64
+    assert result["batches"][0]["platform_score"] == 4.0
     reviewer.evaluate.return_value = FrameReview(**data, reviewed_frames=[0, 2], issues=[])
     result = service.review_video(str(video), {"scene_number": 1}, tmp_path / "frames.json")
     assert result["status"] == "error"
@@ -95,7 +96,7 @@ def test_temporal_inconsistency_blocks_video_review(tmp_path, monkeypatch):
     frames = [{"index": i, "timestamp": i, "path": str(tmp_path / f"{i}.jpg")} for i in range(3)]
     monkeypatch.setattr(GenerationReviewService, "sample_frames", lambda *args: frames)
     data = {key: {"score": 4, "evidence": "visible subject matches the keyframe"} for key in (
-        "story_match", "composition", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
+        "story_match", "composition", "aesthetic_quality", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
     data["temporal_consistency"] = {
         "score": 2,
         "evidence": "the lead character face and wardrobe drift between sampled frames",
@@ -115,7 +116,7 @@ def test_facial_identity_blocks_video_review(tmp_path, monkeypatch):
     frames = [{"index": i, "timestamp": i, "path": str(tmp_path / f"{i}.jpg")} for i in range(3)]
     monkeypatch.setattr(GenerationReviewService, "sample_frames", lambda *args: frames)
     data = {key: {"score": 4, "evidence": "visible subject matches the keyframe"} for key in (
-        "story_match", "composition", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
+        "story_match", "composition", "aesthetic_quality", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
     data["facial_identity"] = {
         "score": 2,
         "evidence": "the nose, mouth, and hairstyle drift from the Alice identity anchor",

@@ -49,6 +49,7 @@ class FrameReview(BaseModel):
     model_config = ConfigDict(extra="forbid")
     story_match: Score
     composition: Score
+    aesthetic_quality: Score
     visual_integrity: Score
     facial_identity: Score
     identity_consistency: Score
@@ -94,6 +95,31 @@ def decision(review: BaseModel) -> tuple[str, float]:
         issue.severity in {"major", "critical"} for issue in review.issues
     )
     return ("passed" if passed else "needs_review"), round(average, 2)
+
+
+def weighted_review_score(review: dict, weights: dict[str, float]) -> float | None:
+    weighted_total = 0.0
+    weight_total = 0.0
+    for key, weight in weights.items():
+        value = review.get(key)
+        if isinstance(value, dict) and isinstance(value.get("score"), (int, float)):
+            weighted_total += float(value["score"]) * weight
+            weight_total += weight
+    if weight_total == 0:
+        return None
+    return round(max(0.0, min(5.0, weighted_total / weight_total)), 2)
+
+
+def platform_video_score(review: dict) -> float | None:
+    return weighted_review_score(review, {
+        "story_match": 0.12,
+        "composition": 0.12,
+        "aesthetic_quality": 0.18,
+        "visual_integrity": 0.16,
+        "facial_identity": 0.18,
+        "identity_consistency": 0.14,
+        "temporal_consistency": 0.10,
+    })
 
 
 def _encoded_images(images) -> list[str]:
@@ -291,11 +317,14 @@ class GenerationReviewService:
                 batch = frames[start:start + 3]
                 images = ([reference] if reference else []) + [frame["path"] for frame in batch]
                 review = self.reviewer.evaluate(
-                    RUBRIC + "Review actual images for story match, composition, visible anatomy/rendering "
-                    "defects, facial identity, identity consistency between sampled frames and reference when provided, "
+                    RUBRIC + "Review actual images for story match, composition, mobile short-drama aesthetic quality, "
+                    "visible anatomy/rendering defects, facial identity, identity consistency between sampled frames and reference when provided, "
                     "and temporal consistency across sampled frames. Facial identity must compare visible face shape, "
                     "eyes, nose, mouth, hair, apparent age, and distinctive facial traits against each expected "
                     "character identity anchor across every sampled frame; penalize same-face characters and face drift. "
+                    "Aesthetic quality must judge whether the clip looks publishable for a commercial short-drama platform: "
+                    "attractive face rendering, clean lighting, readable expression on a phone screen, tasteful color, "
+                    "production polish, and no cheap filter look, random text, logo, watermark, or repair scars. "
                     "Temporal consistency must check whether the same characters keep stable faces, hair, wardrobe, body shape, and relative positions; "
                     "whether motion progresses plausibly without flicker, warping, sudden missing or extra "
                     "people, or unrelated camera jumps; and whether action continuity matches the scene. "
@@ -306,7 +335,12 @@ class GenerationReviewService:
                 if sorted(review.reviewed_frames) != [frame["index"] for frame in batch]:
                     raise ReviewError("Frame review omitted or duplicated samples")
                 status, average = decision(review)
-                batches.append({"status": status, "average": average, "review": review.model_dump()})
+                dumped = review.model_dump()
+                batch = {"status": status, "average": average, "review": dumped}
+                score = platform_video_score(dumped)
+                if score is not None:
+                    batch["platform_score"] = score
+                batches.append(batch)
             report["batches"] = batches
             report["status"] = "passed" if all(b["status"] == "passed" for b in batches) else "needs_review"
             report["average"] = round(sum(b["average"] for b in batches) / len(batches), 2)

@@ -415,6 +415,10 @@ def test_video_selection_prefers_identity_safe_candidate(project_data, tmp_path,
                     "average": 4.9,
                     "batches": [{
                         "review": {
+                            "story_match": {"score": 5, "evidence": "scene matches"},
+                            "composition": {"score": 5, "evidence": "strong framing"},
+                            "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+                            "visual_integrity": {"score": 5, "evidence": "clean render"},
                             "facial_identity": {"score": 2, "evidence": "face drift"},
                             "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
                             "temporal_consistency": {"score": 5, "evidence": "motion stable"},
@@ -425,10 +429,14 @@ def test_video_selection_prefers_identity_safe_candidate(project_data, tmp_path,
                 "status": "passed",
                 "average": 4.3,
                 "batches": [{
-                    "review": {
-                        "facial_identity": {"score": 4, "evidence": "face matches"},
-                        "identity_consistency": {"score": 4, "evidence": "identity stable"},
-                        "temporal_consistency": {"score": 4, "evidence": "motion stable"},
+                        "review": {
+                            "story_match": {"score": 5, "evidence": "scene matches"},
+                            "composition": {"score": 5, "evidence": "strong framing"},
+                            "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+                            "visual_integrity": {"score": 5, "evidence": "clean render"},
+                            "facial_identity": {"score": 4, "evidence": "face matches"},
+                            "identity_consistency": {"score": 4, "evidence": "identity stable"},
+                            "temporal_consistency": {"score": 4, "evidence": "motion stable"},
                     }
                 }],
             }
@@ -498,6 +506,55 @@ def test_required_video_review_blocks_low_identity_scores(project_data, tmp_path
     report = json.loads(output.with_suffix(".quality.json").read_text(encoding="utf-8"))
     assert report["status"] == "needs_review"
     assert report["selected_gate_scores"]["facial_identity"] == 2.0
+
+
+def test_required_video_review_blocks_low_platform_score(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    Path(scene.image_path).write_bytes(b"image")
+    db.commit()
+
+    class FakeSVD:
+        def generate_video(self, **kwargs):
+            Path(kwargs["output_path"]).write_bytes(b"cheap-filter-video")
+            return kwargs["output_path"]
+
+    class FakeReviewService:
+        def review_video(self, *_args, **_kwargs):
+            return {
+                "status": "passed",
+                "average": 4.6,
+                "batches": [{
+                    "review": {
+                        "story_match": {"score": 5, "evidence": "scene matches"},
+                        "composition": {"score": 4, "evidence": "framing is usable"},
+                        "aesthetic_quality": {"score": 0, "evidence": "cheap filter look and plastic skin"},
+                        "visual_integrity": {"score": 3, "evidence": "visible repair scar"},
+                        "facial_identity": {"score": 5, "evidence": "face matches"},
+                        "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                        "temporal_consistency": {"score": 5, "evidence": "motion stable"},
+                    }
+                }],
+            }
+
+    output = tmp_path / "scene.mp4"
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_CANDIDATES", 1)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE", 4.1)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    with pytest.raises(ReviewError, match="platform score"):
+        _generate_quality_video_candidates(
+            FakeSVD(), scene, project.id, str(output), db,
+            num_frames=16, fps=8, motion_bucket_id=127, noise_aug_strength=0.02,
+        )
+
+    report = json.loads(output.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert report["status"] == "needs_review"
+    assert report["selected_platform_score"] < 4.1
+    assert report["repair_queue"][0]["action"] == "refine_prompt_composition"
 
 
 def test_required_video_review_blocks_low_scoring_candidates(project_data, tmp_path, monkeypatch):
@@ -689,7 +746,11 @@ def test_quality_refinement_uses_previous_review_feedback(tmp_path, monkeypatch)
             "status": "needs_review" if index == 1 else "passed",
             "average": score,
             "review": {
-                "composition": {"score": 2, "evidence": "face is cropped and lighting is muddy"},
+                "composition": {"score": 2 if index == 1 else 5, "evidence": "face is cropped and lighting is muddy" if index == 1 else "strong framing"},
+                "aesthetic_quality": {"score": 2 if index == 1 else 5, "evidence": "cheap filter look" if index == 1 else "commercial lighting"},
+                "visual_integrity": {"score": 2 if index == 1 else 5, "evidence": "broken rendering" if index == 1 else "clean render"},
+                "facial_identity": {"score": 4, "evidence": "face matches"},
+                "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
                 "issues": [{"severity": "major", "reason": "bad crop on the main actor", "scene_number": 1}],
             },
             "metrics": {"technical_score": score},

@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     GENERATION_IMAGE_REFINEMENT_PASSES: int = 1
     GENERATION_IMAGE_MIN_SCORE: float = 4.0
     GENERATION_IMAGE_IDENTITY_MIN_SCORE: float = 4.0
+    GENERATION_IMAGE_PLATFORM_MIN_SCORE: float = 4.1
     GENERATION_REQUIRE_IMAGE_REVIEW: bool = False
     GENERATION_BLOCK_COMPLEX_SHOTS: bool = False
     GENERATION_QUALITY_PROMPT_APPEND: str = "clean cinematic composition, coherent anatomy, readable main action, balanced lighting, polished short-drama keyframe"
@@ -90,6 +91,7 @@ class Settings(BaseSettings):
     GENERATION_VIDEO_MIN_SCORE: float = 4.0
     GENERATION_VIDEO_IDENTITY_MIN_SCORE: float = 4.0
     GENERATION_VIDEO_TEMPORAL_MIN_SCORE: float = 4.0
+    GENERATION_VIDEO_PLATFORM_MIN_SCORE: float = 4.1
     GENERATION_REQUIRE_VIDEO_REVIEW: bool = False
     GENERATION_VIDEO_TARGET_SECONDS: float = 3.6
     GENERATION_VIDEO_MAX_SECONDS: float = 6.0

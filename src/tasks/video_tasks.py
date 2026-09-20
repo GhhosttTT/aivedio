@@ -9,7 +9,7 @@ from src.database.database import get_db
 from src.database.models import Scene
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, VideoGenerationRequest, get_generation_provider
-from src.services.generation_review import GenerationReviewService, ReviewError, write_report
+from src.services.generation_review import GenerationReviewService, ReviewError, platform_video_score, write_report
 from src.services.repair_queue import attach_repair_queue
 from src.services.svd_service import get_svd_service
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
@@ -206,6 +206,21 @@ def _video_gate_scores(review_report: dict) -> dict[str, float]:
     return {key: min(values) for key, values in scores.items() if values}
 
 
+def _video_platform_score(review_report: dict) -> float | None:
+    scores = []
+    for batch in review_report.get("batches") or []:
+        if isinstance(batch.get("platform_score"), (int, float)):
+            scores.append(float(batch["platform_score"]))
+            continue
+        review = batch.get("review") if isinstance(batch.get("review"), dict) else {}
+        score = platform_video_score(review)
+        if score is not None:
+            scores.append(score)
+    if not scores:
+        return None
+    return round(min(scores), 2)
+
+
 def _video_gate_passes(candidate: dict) -> tuple[bool, dict[str, float]]:
     scores = candidate.get("gate_scores") or {}
     if not scores:
@@ -225,29 +240,39 @@ def _select_best_video_candidate(candidates: list[dict], final_path: str, report
         candidates,
         key=lambda item: (
             1 if _video_gate_passes(item)[0] else 0,
+            item.get("platform_score", item.get("average", 0)),
             item.get("average", 0),
         ),
         reverse=True,
     )
     best = ranked[0]
     gate_ok, gate_scores = _video_gate_passes(best)
+    platform_score = best.get("platform_score")
     report = {
         "kind": "video_candidate_selection",
         "status": "passed" if (
             best.get("status") == "passed"
             and best.get("average", 0) >= settings.GENERATION_VIDEO_MIN_SCORE
+            and (platform_score is None or platform_score >= settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE)
             and gate_ok
         ) else "needs_review",
         "selected_path": best["path"],
         "selected_average": best.get("average", 0),
+        "selected_platform_score": platform_score,
         "min_average": settings.GENERATION_VIDEO_MIN_SCORE,
         "min_identity_score": settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE,
         "min_temporal_score": settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE,
+        "min_platform_score": settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE,
         "selected_gate_scores": gate_scores,
         "candidates": ranked,
     }
     if not gate_ok:
         report["error"] = f"Selected video gate scores are below threshold: {gate_scores}"
+    elif platform_score is not None and platform_score < settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE:
+        report["error"] = (
+            f"Best video platform score {platform_score} is below "
+            f"{settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE}"
+        )
     elif best.get("average", 0) < settings.GENERATION_VIDEO_MIN_SCORE:
         report["error"] = (
             f"Best video score {best.get('average', 0)} is below "
@@ -258,7 +283,8 @@ def _select_best_video_candidate(candidates: list[dict], final_path: str, report
         write_report(report_path, report)
         raise ReviewError(
             f"Video candidates failed quality gate: average={best.get('average', 0)}, "
-            f"required={settings.GENERATION_VIDEO_MIN_SCORE}, gates={gate_scores}, report={report_path}"
+            f"required={settings.GENERATION_VIDEO_MIN_SCORE}, gates={gate_scores}, "
+            f"reason={report.get('error')}, report={report_path}"
         )
     Path(final_path).parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(best["path"], final_path)
@@ -351,6 +377,9 @@ def _generate_quality_video_candidates(
             gate_scores = _video_gate_scores(review)
             if gate_scores:
                 candidate["gate_scores"] = gate_scores
+            platform_score = _video_platform_score(review)
+            if platform_score is not None:
+                candidate["platform_score"] = platform_score
             if repair_action:
                 candidate["repair_action"] = repair_action
             if shot_plan_payload:

@@ -59,6 +59,30 @@ def _review_score(candidate: dict[str, Any], key: str) -> float | None:
     return None
 
 
+def _weighted_score(candidate: dict[str, Any], weights: dict[str, float]) -> float | None:
+    weighted_total = 0.0
+    weight_total = 0.0
+    for key, weight in weights.items():
+        score = _review_score(candidate, key)
+        if score is None:
+            continue
+        weighted_total += score * weight
+        weight_total += weight
+    if weight_total == 0:
+        return None
+    return _clamp_score(weighted_total / weight_total)
+
+
+def platform_image_score(candidate: dict[str, Any]) -> float | None:
+    return _weighted_score(candidate, {
+        "aesthetic_quality": 0.24,
+        "composition": 0.18,
+        "visual_integrity": 0.20,
+        "facial_identity": 0.20,
+        "identity_consistency": 0.18,
+    })
+
+
 def _identity_gate(candidate: dict[str, Any], min_score: float) -> tuple[bool, dict[str, float]]:
     scores = {
         key: score
@@ -130,6 +154,9 @@ class ImageQualitySelector:
                 raise ReviewError("Image review did not include the candidate index")
             status, average = decision(review)
             report.update({"status": status, "average": average, "review": review.model_dump()})
+            platform_score = platform_image_score(report)
+            if platform_score is not None:
+                report["platform_score"] = platform_score
         except Exception as exc:
             fallback = report["metrics"]["technical_score"]
             report.update({
@@ -158,23 +185,33 @@ class ImageQualitySelector:
             if min_identity_score is None
             else min_identity_score
         )
+        min_platform_score = settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE
+        for candidate in candidates:
+            if "platform_score" not in candidate:
+                platform_score = platform_image_score(candidate)
+                if platform_score is not None:
+                    candidate["platform_score"] = platform_score
         ranked = sorted(
             candidates,
             key=lambda item: (
                 1 if _identity_gate(item, min_identity_score)[0] else 0,
+                item.get("platform_score", item.get("average", 0)),
                 item.get("average", 0),
             ),
             reverse=True,
         )
         best = ranked[0]
         identity_ok, identity_scores = _identity_gate(best, min_identity_score)
+        platform_score = best.get("platform_score")
         report = {
             "kind": "image_candidate_selection",
             "status": "passed",
             "best_index": best["index"],
             "best_average": best.get("average", 0),
+            "best_platform_score": platform_score,
             "min_average": min_average,
             "min_identity_score": min_identity_score,
+            "min_platform_score": min_platform_score,
             "best_identity_scores": identity_scores,
             "require_vlm": require_vlm,
             "candidates": ranked,
@@ -185,6 +222,9 @@ class ImageQualitySelector:
         elif not identity_ok:
             report["status"] = "needs_review"
             report["error"] = f"Best image identity score is below {min_identity_score}: {identity_scores}"
+        elif platform_score is not None and platform_score < min_platform_score:
+            report["status"] = "needs_review"
+            report["error"] = f"Best image platform score {platform_score} is below {min_platform_score}"
         elif best.get("average", 0) < min_average:
             report["status"] = "needs_review"
             report["error"] = f"Best image score {best.get('average', 0)} is below {min_average}"

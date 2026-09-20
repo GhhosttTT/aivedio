@@ -19,7 +19,12 @@ def passed_video_review():
     return {
         "status": "passed",
         "batches": [{
+            "platform_score": 4.2,
             "review": {
+                "story_match": {"score": 4, "evidence": "scene matches"},
+                "composition": {"score": 4, "evidence": "framing is usable"},
+                "aesthetic_quality": {"score": 4, "evidence": "commercial short-drama look"},
+                "visual_integrity": {"score": 4, "evidence": "no broken anatomy"},
                 "facial_identity": {"score": 4, "evidence": "face matches"},
                 "identity_consistency": {"score": 4, "evidence": "identity stable"},
                 "temporal_consistency": {"score": 4, "evidence": "motion stable"},
@@ -201,6 +206,7 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     assert report["checks"]["baseline_comparison_passed"] is True
     assert report["checks"]["video_identity_gate_passed"] is True
     assert report["checks"]["video_temporal_gate_passed"] is True
+    assert report["checks"]["video_platform_gate_passed"] is True
     assert report["checks"]["manual_review_covers_rendered_cases"] is True
     assert report["action_items"] == []
 
@@ -280,7 +286,7 @@ def test_validation_summary_blocks_low_video_identity_gate(tmp_path):
     assert report["status"] == "partial_needs_review"
     assert report["checks"]["video_review_passed"] is False
     assert report["checks"]["video_identity_gate_passed"] is False
-    assert any("identity/temporal gates" in item for item in report["action_items"])
+    assert any("identity/temporal/platform gates" in item for item in report["action_items"])
 
 
 def test_validation_summary_recommends_targeted_calibration(tmp_path):

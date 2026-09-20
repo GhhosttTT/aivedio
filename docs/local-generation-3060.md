@@ -62,11 +62,13 @@ GENERATION_CFG=6.0
 GENERATION_IMAGE_CANDIDATES=5
 GENERATION_IMAGE_REFINEMENT_PASSES=2
 GENERATION_IMAGE_MIN_SCORE=4.0
+GENERATION_IMAGE_PLATFORM_MIN_SCORE=4.1
 GENERATION_REQUIRE_IMAGE_REVIEW=true
 GENERATION_BLOCK_COMPLEX_SHOTS=true
 GENERATION_VIDEO_CANDIDATES=4
 GENERATION_VIDEO_REFINEMENT_PASSES=2
 GENERATION_VIDEO_MIN_SCORE=4.0
+GENERATION_VIDEO_PLATFORM_MIN_SCORE=4.1
 GENERATION_REQUIRE_VIDEO_REVIEW=true
 ENABLE_DRAFT_MEDIA_FALLBACK=false
 CELERY_WORKER_CONCURRENCY=1
@@ -116,6 +118,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 `GENERATION_IMAGE_CANDIDATES` 是每轮候选数量。质量优先建议从 5 开始；3060 12GB 扛不住时降到 3。超过 8 目前会被代码限制，避免单镜头排队过久。
 `GENERATION_IMAGE_REFINEMENT_PASSES` 是额外精修轮数。设为 2 表示最多生成三轮候选；第一轮已经有 VLM 高分图时会提前停止。
 `GENERATION_IMAGE_MIN_SCORE` 是晋级门槛。建议先用 4.0，人工校准后再提高。
+`GENERATION_IMAGE_PLATFORM_MIN_SCORE` 是图片短剧平台观感门槛，会对商业美观、构图、画面完整性、脸部身份和整体身份加权；平均分够但塑料感、廉价滤镜、脏光或平台观感差的候选不会晋级。
 `GENERATION_REQUIRE_IMAGE_REVIEW=true` 时，本地 VLM 不可用会直接拦截图片，不会只靠技术指标放行。正式跑片建议打开；开发调试可以先保持 false。
 `GENERATION_QUALITY_PROMPT_APPEND` 会追加到每张候选图的正向提示词，用来稳定构图、人体和主动作可读性。
 `GENERATION_QUALITY_NEGATIVE_APPEND` 会追加到负向提示词，用来压制截断、脏光、畸形手脸、随机文字和水印。
@@ -127,6 +130,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 视频阶段同样支持候选择优。`GENERATION_VIDEO_CANDIDATES` 会让同一关键帧串行生成多个视频候选，并轻微扰动运动强度和噪声增强参数；每个候选都会保存独立的 `.review.json` 抽帧审核报告，最终视频旁边保存 `.quality.json` 候选排序。若第一轮候选都低于门槛，`GENERATION_VIDEO_REFINEMENT_PASSES` 会追加稳定性优先的精修轮，自动降低运动强度和噪声，优先压制身份漂移、闪烁和动作断裂。正式跑片建议打开 `GENERATION_REQUIRE_VIDEO_REVIEW=true`，避免 llama.cpp 视觉模型离线时把未审核视频当成高质量结果。
 
 视频候选选择除了平均分，还会单独检查身份和时间稳定性。`GENERATION_VIDEO_IDENTITY_MIN_SCORE=4.0` 要求 `facial_identity` 和 `identity_consistency` 都达到 4 分；`GENERATION_VIDEO_TEMPORAL_MIN_SCORE=4.0` 要求 `temporal_consistency` 达到 4 分。若一个候选平均分更高但脸漂或同脸，它会排在身份稳定候选之后；若正式审核开启且所有候选身份/时间门槛都失败，任务会进入失败并写入返修队列。
+视频还会计算 `GENERATION_VIDEO_PLATFORM_MIN_SCORE`，把剧情匹配、构图、商业美观、画面完整性、脸部身份、整体身份和时间连续性合成短剧平台分。这个分数用于拦截“技术上可用但不像红果/短剧平台成片”的候选，例如塑料皮肤、廉价滤镜、脏光、随机文字/水印、修复痕迹或手机屏幕上表情不可读。
 
 若配置 `COMFYUI_VIDEO_WORKFLOW_PATH`，视频阶段会改用本地 ComfyUI 图生视频 API workflow，适合接入 Wan、AnimateDiff、VideoHelperSuite 或其他本地视频节点。工作流 JSON 可使用 `{prompt}`、`{negative_prompt}`、`{reference_image}`、`{width}`、`{height}`、`{duration_seconds}`、`{fps}`、`{seed}`、`{output_prefix}`、`{motion_bucket_id}`、`{noise_aug_strength}` 占位符；执行时系统会上传当前关键帧并替换这些值。低分精修轮会把 motion/noise 下调，因此工作流应把这两个占位符接到对应的视频采样节点。留空时继续使用内置 SVD 服务。
 

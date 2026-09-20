@@ -54,6 +54,9 @@ def test_select_best_prefers_identity_safe_candidate_over_higher_average(tmp_pat
             "average": 4.8,
             "status": "passed",
             "review": {
+                "composition": {"score": 4, "evidence": "usable framing"},
+                "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+                "visual_integrity": {"score": 4, "evidence": "no broken anatomy"},
                 "facial_identity": {"score": 2, "evidence": "face drift"},
                 "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
             },
@@ -64,6 +67,9 @@ def test_select_best_prefers_identity_safe_candidate_over_higher_average(tmp_pat
             "average": 4.2,
             "status": "passed",
             "review": {
+                "composition": {"score": 5, "evidence": "strong framing"},
+                "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+                "visual_integrity": {"score": 5, "evidence": "clean render"},
                 "facial_identity": {"score": 4, "evidence": "face matches"},
                 "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
             },
@@ -93,6 +99,33 @@ def test_select_best_rejects_when_identity_scores_are_low(tmp_path):
                 },
             },
         ], tmp_path / "final.png", tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0)
+
+
+def test_select_best_rejects_low_platform_score(tmp_path, monkeypatch):
+    image = tmp_path / "candidate.png"
+    make_image(image, (120, 120, 120))
+    selector = ImageQualitySelector(reviewer=object())
+    monkeypatch.setattr("src.services.image_quality_service.settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE", 4.1)
+
+    with pytest.raises(ReviewError, match="platform score"):
+        selector.select_best([
+            {
+                "index": 1,
+                "path": str(image),
+                "average": 4.5,
+                "status": "passed",
+                "review": {
+                    "composition": {"score": 4, "evidence": "usable framing"},
+                    "aesthetic_quality": {"score": 2, "evidence": "cheap filter look and dull lighting"},
+                    "visual_integrity": {"score": 4, "evidence": "no broken anatomy"},
+                    "facial_identity": {"score": 5, "evidence": "face matches"},
+                    "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                },
+            },
+        ], tmp_path / "final.png", tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0)
+
+    report = (tmp_path / "quality.json").read_text(encoding="utf-8")
+    assert "refine_prompt_composition" in report
 
 
 def test_select_best_rejects_when_vlm_is_required_but_missing(tmp_path):
@@ -154,3 +187,4 @@ def test_review_candidate_records_facial_identity_score(tmp_path):
 
     assert report["status"] == "passed"
     assert report["review"]["facial_identity"]["score"] == 5
+    assert report["platform_score"] >= 4.0

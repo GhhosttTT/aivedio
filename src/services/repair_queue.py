@@ -37,9 +37,15 @@ ACTION_RULES = [
         "image",
     ),
     (
-        ("crop", "composition", "lighting", "muddy", "blur", "sharpness", "exposure"),
+        ("crop", "composition", "lighting", "muddy", "blur", "sharpness", "exposure", "aesthetic", "platform score", "production value", "cheap filter", "plastic skin", "commercial"),
         "refine_prompt_composition",
         "Tighten composition, lighting, crop, and visual clarity before regenerating candidates.",
+        "image",
+    ),
+    (
+        ("random text", "logo", "watermark", "repair scar", "inpaint scar", "artifact", "dirty background"),
+        "refine_prompt_composition",
+        "Regenerate with stronger negative prompts and cleaner background/retouch constraints.",
         "image",
     ),
     (
