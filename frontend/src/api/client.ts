@@ -394,6 +394,19 @@ export interface ProductionReadinessReport {
             image_review_required: boolean;
             video_review_required: boolean;
         };
+        sample_validation?: {
+            status: string;
+            path: string;
+            required_status: string;
+            checks?: {
+                video_review_passed?: boolean;
+                video_identity_gate_passed?: boolean;
+                video_temporal_gate_passed?: boolean;
+                baseline_comparison_passed?: boolean;
+                manual_review_passed?: boolean;
+            };
+            action_items?: string[];
+        };
         video_engine?: VideoEnginePreflight;
         [key: string]: any;
     };

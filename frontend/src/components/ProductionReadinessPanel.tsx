@@ -23,6 +23,7 @@ export function ProductionReadinessPanel({
     const complexity = report?.checks.shot_complexity;
     const spatial = report?.checks.spatial_continuity;
     const reviewer = report?.checks.reviewer;
+    const sampleValidation = report?.checks.sample_validation;
     return (
         <section className={`wb-panel wb-readiness ${blocked ? 'blocked' : warning ? 'needs_review' : 'ready'}`}>
             <div className="wb-row wb-between">
@@ -46,6 +47,7 @@ export function ProductionReadinessPanel({
                 <Metric label="复杂镜头" value={complexity ? `${complexity.summary.needs_split} 阻断 / ${complexity.summary.warn} 警告` : '未检查'}/>
                 <Metric label="空间计划" value={spatial ? `${spatial.summary.total - spatial.summary.weak}/${spatial.summary.total}` : '未检查'}/>
                 <Metric label="审核门槛" value={reviewer ? `${reviewer.image_review_required && reviewer.video_review_required ? '已开启' : '未完全开启'}` : '未检查'}/>
+                <Metric label="样片验证" value={sampleValidation ? sampleValidation.status : '未检查'}/>
                 <Metric label="视频引擎" value={report?.checks.video_engine?.status || '未预检'}/>
             </div>
             {issues.length > 0 && (

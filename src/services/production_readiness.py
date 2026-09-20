@@ -16,6 +16,7 @@ from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.shot_complexity_service import ShotComplexityService
 from src.services.video_director_service import get_video_director_service
 from src.services.video_engine_preflight import preflight_production_video_engine
+from src.utils.storage import storage_manager
 
 
 @dataclass
@@ -65,6 +66,7 @@ class ProductionReadinessService:
             "shot_complexity": self._shot_complexity_check(project, scenes, blockers, warnings),
             "spatial_continuity": self._spatial_continuity_check(project, scenes, warnings),
             "reviewer": self._reviewer_check(warnings),
+            "sample_validation": self._sample_validation_check(warnings),
         }
         if include_engine_preflight:
             checks["video_engine"] = self._video_engine_check(blockers)
@@ -450,6 +452,61 @@ class ProductionReadinessService:
             "configured": configured,
             "image_review_required": settings.GENERATION_REQUIRE_IMAGE_REVIEW,
             "video_review_required": settings.GENERATION_REQUIRE_VIDEO_REVIEW,
+        }
+
+    def _sample_validation_check(self, warnings: list[ReadinessIssue]) -> dict:
+        path = storage_manager.base_path / "validation" / "validation_summary.json"
+        if not path.is_file():
+            warnings.append(ReadinessIssue(
+                "missing_sample_validation",
+                (
+                    "Run python -m scripts.validate_local_generation summarize after real GPU samples; "
+                    "do not claim short-drama production quality from code tests alone."
+                ),
+                severity="warning",
+            ))
+            return {
+                "status": "missing",
+                "path": str(path),
+                "required_status": "ready_for_seed_dance_candidate",
+            }
+        try:
+            summary = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            warnings.append(ReadinessIssue(
+                "invalid_sample_validation",
+                f"Fix validation_summary.json before final production: {exc}",
+                severity="warning",
+            ))
+            return {
+                "status": "invalid",
+                "path": str(path),
+                "error": str(exc),
+                "required_status": "ready_for_seed_dance_candidate",
+            }
+        status = summary.get("status")
+        checks = summary.get("checks") if isinstance(summary.get("checks"), dict) else {}
+        if status != "ready_for_seed_dance_candidate":
+            warnings.append(ReadinessIssue(
+                "sample_validation_not_ready",
+                (
+                    "Real GPU sample validation has not passed Seed Dance candidate gates; "
+                    f"current status is {status or 'unknown'}."
+                ),
+                severity="warning",
+            ))
+        return {
+            "status": status or "unknown",
+            "path": str(path),
+            "required_status": "ready_for_seed_dance_candidate",
+            "checks": {
+                "video_review_passed": checks.get("video_review_passed"),
+                "video_identity_gate_passed": checks.get("video_identity_gate_passed"),
+                "video_temporal_gate_passed": checks.get("video_temporal_gate_passed"),
+                "baseline_comparison_passed": checks.get("baseline_comparison_passed"),
+                "manual_review_passed": checks.get("manual_review_passed"),
+            },
+            "action_items": summary.get("action_items", []) if isinstance(summary.get("action_items"), list) else [],
         }
 
     def _script_scene_map(self, project: Project) -> dict[int, dict]:

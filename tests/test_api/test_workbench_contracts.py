@@ -229,6 +229,44 @@ def test_production_readiness_reports_weak_story_rhythm(setup):
     assert any(item["code"] == "weak_story_rhythm" for item in payload["warnings"])
 
 
+def test_production_readiness_requires_real_sample_validation_summary(setup):
+    client, _, _ = setup
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["checks"]["sample_validation"]["status"] == "missing"
+    assert any(item["code"] == "missing_sample_validation" for item in payload["warnings"])
+
+
+def test_production_readiness_accepts_passing_sample_validation_summary(setup):
+    client, _, path = setup
+    validation_dir = path / "storage" / "validation"
+    validation_dir.mkdir(parents=True, exist_ok=True)
+    (validation_dir / "validation_summary.json").write_text(json.dumps({
+        "status": "ready_for_seed_dance_candidate",
+        "checks": {
+            "video_review_passed": True,
+            "video_identity_gate_passed": True,
+            "video_temporal_gate_passed": True,
+            "baseline_comparison_passed": True,
+            "manual_review_passed": True,
+        },
+        "action_items": [],
+    }), encoding="utf-8")
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    validation = payload["checks"]["sample_validation"]
+    assert validation["status"] == "ready_for_seed_dance_candidate"
+    assert validation["checks"]["video_identity_gate_passed"] is True
+    assert not any(item["code"] == "missing_sample_validation" for item in payload["warnings"])
+    assert not any(item["code"] == "sample_validation_not_ready" for item in payload["warnings"])
+
+
 def test_production_readiness_reports_missing_character_references(setup):
     client, db, _ = setup
     project = db.query(Project).filter(Project.id == 1).one()
