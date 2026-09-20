@@ -422,6 +422,24 @@ class TestScriptGenerator:
         assert scenes[0].scene_number == 1
         assert scenes[0].visual_description == "场景1"
         assert scenes[1].scene_number == 2
+
+    def test_quality_repair_prompt_preserves_short_drama_pacing_contract(
+        self,
+        script_generator,
+        sample_project,
+    ):
+        prompt = script_generator._build_quality_repair_prompt(
+            project=sample_project,
+            parsed_script={"characters": [], "scenes": []},
+            review_payload={"issues": [{"reason": "weak hook"}]},
+            expected_scenes=16,
+        )
+
+        assert "Scenes 1-2 must contain a visible hook" in prompt
+        assert "Every 3-4 scenes must escalate conflict" in prompt
+        assert "one clear reversal" in prompt
+        assert "final two scenes" in prompt
+        assert "exactly 16 scenes" in prompt
     
     def test_parse_script_with_colon_variants(self, script_generator):
         """测试：解析使用不同冒号的剧本"""

@@ -30,8 +30,16 @@ Production story contract. These rules are mandatory:
 5. For short projects with only a few scenes, simplify the story instead of compressing multiple actions into one shot.
 6. Keep exactly {num_scenes} scenes. Before final output, silently check: causal logic >= 4, character motivation >= 4, continuity >= 4, filmability >= 4.
 
+Short-drama pacing contract. These rules are mandatory:
+1. Scenes 1-2 must contain a visible hook: secret, betrayal, threat, crisis, shocking evidence, identity clue, or irreversible choice.
+2. Every 3-4 scenes must escalate conflict through confrontation, refusal, exposed evidence, emotional breakdown, or a higher-stakes decision.
+3. The middle or final third must include one clear reversal: a hidden identity, misunderstood fact, new evidence, changed allegiance, or unexpected consequence.
+4. The final two scenes must deliver either a strong payoff or an ending hook that makes the next episode necessary.
+5. At least half of the scenes should be dialogue-driven or reaction-driven, because short drama relies on readable conflict and emotional response.
+
 写作要求：
 - 先安排冲突和转折，再把故事拆成能单独出图/出视频的镜头。
+- 把钩子、冲突升级、反转、结尾悬念写进“故事节点”和画面行动，不要只写在摘要里。
 - 一个分镜只表现一个时间点、一个主要动作、一个视觉焦点。
 - 递物拆成“物品特写”和“接收者反应”；进入房间再坐下拆成两个分镜。
 - 环境只写地点与必要道具。服装、发型、道具和人物位置保持连续。

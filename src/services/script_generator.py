@@ -598,6 +598,10 @@ Mandatory fixes:
 4. Make every scene one filmable moment only: one location, one main action, one visual focus.
 5. If there are too few scenes for the old plot, simplify the plot rather than compressing actions.
 6. Remove contradictions such as a dirty counter becoming clean without a cleanup beat.
+7. Scenes 1-2 must contain a visible hook: secret, betrayal, threat, crisis, shocking evidence, identity clue, or irreversible choice.
+8. Every 3-4 scenes must escalate conflict through confrontation, refusal, exposed evidence, emotional breakdown, or a higher-stakes decision.
+9. The middle or final third must include one clear reversal, and the final two scenes must deliver a payoff or next-episode hook.
+10. Put hook, escalation, reversal, and ending hook into story beats and visible actions, not only into the summary.
 
 Output only this parser-compatible format:
 【剧本】

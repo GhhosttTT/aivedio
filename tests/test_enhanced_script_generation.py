@@ -34,20 +34,22 @@ def test_enhanced_prompt_generation():
     print("-" * 80)
     
     # 验证 Prompt 包含关键元素
-    assert "【故事大纲】" in prompt, "Prompt 应包含故事大纲部分"
+    assert "【剧本】" in prompt, "Prompt 应包含剧本部分"
     assert "【角色】" in prompt, "Prompt 应包含角色部分"
-    assert "【第一章" in prompt, "Prompt 应包含第一章"
-    assert "章节概述" in prompt, "Prompt 应包含章节概述"
     assert "故事节点" in prompt, "Prompt 应包含故事节点"
     assert "环境描述" in prompt, "Prompt 应包含环境描述"
-    assert "至少50字" in prompt, "Prompt 应包含字数要求"
+    assert "Short-drama pacing contract" in prompt, "Prompt 应包含短剧节奏合同"
+    assert "Scenes 1-2 must contain a visible hook" in prompt, "Prompt 应包含开头钩子要求"
+    assert "Every 3-4 scenes must escalate conflict" in prompt, "Prompt 应包含冲突升级要求"
+    assert "one clear reversal" in prompt, "Prompt 应包含反转要求"
+    assert "ending hook" in prompt, "Prompt 应包含结尾悬念要求"
     
     print("\n✅ 所有验证通过！")
     print("\n增强版 Prompt 包含以下关键元素：")
-    print("  - 故事大纲（200-300字）")
-    print("  - 角色详细设定（每个角色100+字）")
-    print("  - 章节结构（3章）")
-    print("  - 详细分镜描述（每个分镜200+字）")
+    print("  - 剧本摘要")
+    print("  - 角色设定")
+    print("  - 短剧节奏合同")
+    print("  - 可拍摄分镜字段")
     print("  - 多维度描述要求（环境、人物、镜头、光线、氛围）")
 
 
@@ -65,10 +67,6 @@ def test_prompt_structure():
         style="科幻未来",
         num_chapters=5
     )
-    
-    # 检查章节数量
-    chapter_count = prompt.count("【第")
-    print(f"\n检测到章节数量: {chapter_count}")
     
     # 检查关键字段
     required_fields = [
