@@ -44,8 +44,10 @@ def _production_error_status(message: str) -> int:
         return status.HTTP_409_CONFLICT
     if (
         "Production video engine is not ready" in message
+        or "Short-drama production requires" in message
         or "项目不存在" in message
         or "项目没有分镜" in message
+        or "短剧" in message
         or "not ready" in message
     ):
         return status.HTTP_400_BAD_REQUEST

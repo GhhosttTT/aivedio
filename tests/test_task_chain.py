@@ -216,6 +216,26 @@ class TestTaskChain:
         preflight.assert_not_called()
         task_chain.apply_async.assert_called_once()
 
+    def test_create_production_task_blocks_short_drama_with_too_few_scenes(
+        self,
+        mock_db_session,
+        mock_project,
+        mock_scenes,
+        monkeypatch,
+    ):
+        mock_db_session.query.return_value.filter.return_value.first.return_value = mock_project
+        mock_db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = mock_scenes
+        monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)
+        monkeypatch.setattr(
+            "src.services.task_orchestrator.preflight_production_video_engine",
+            lambda: {"status": "ready_for_production_video_test", "action_items": []},
+        )
+
+        orchestrator = TaskOrchestrator(mock_db_session)
+
+        with pytest.raises(ValueError, match="at least 16 atomic scenes"):
+            orchestrator.create_production_task(project_id=1)
+
 
 class TestTaskSignatures:
     """测试任务签名"""

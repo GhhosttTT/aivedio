@@ -130,6 +130,21 @@ def test_production_engine_block_returns_actionable_400(setup, monkeypatch):
     assert "configure ComfyUI video workflow" in response.json()["detail"]
 
 
+def test_short_drama_scene_count_block_returns_actionable_400(setup, monkeypatch):
+    client, db, _ = setup
+    monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)
+    monkeypatch.setattr(
+        "src.services.task_orchestrator.preflight_production_video_engine",
+        lambda: {"status": "ready_for_production_video_test", "action_items": []},
+    )
+
+    response = client.post("/api/projects/1/produce")
+
+    assert response.status_code == 400
+    assert "at least 16 atomic scenes" in response.json()["detail"]
+    assert "current project has 1" in response.json()["detail"]
+
+
 def test_reference_upload_and_signed_media_access(setup):
     client, db, path = setup
     c = client.post("/api/projects/1/characters", json={"name": "Actor"}).json()

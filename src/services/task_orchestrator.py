@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from src.config import settings
 from src.database.models import Project, Scene, Task as TaskModel, TaskStatus, ProjectStatus
+from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.video_engine_preflight import preflight_production_video_engine
 from src.tasks.celery_app import celery_app
 from src.tasks.image_tasks import generate_image_task, prepare_generation_task
@@ -94,6 +95,12 @@ class TaskOrchestrator:
                     "Configure a prompt-aware ComfyUI video workflow or set "
                     "GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK=true for draft-only runs. "
                     f"{detail}"
+                )
+            if len(scenes) < MIN_PRODUCTION_SCENES:
+                raise ValueError(
+                    "Short-drama production requires at least "
+                    f"{MIN_PRODUCTION_SCENES} atomic scenes; current project has {len(scenes)}. "
+                    "Expand the script or split multi-action scenes before production."
                 )
         # Persist the real task ID before a worker can consume the first step.
         task_model = TaskModel(
