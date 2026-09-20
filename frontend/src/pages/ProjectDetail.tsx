@@ -7,7 +7,9 @@ import { ScriptPreview } from '../components/ScriptPreview';
 import { ProductionProgress } from '../components/ProductionProgress';
 import { ReviewPanel } from '../components/ReviewPanel';
 import { VideoEngineStatus } from '../components/VideoEngineStatus';
+import { ProductionReadinessPanel } from '../components/ProductionReadinessPanel';
 import CharacterManager from './CharacterManager';
+import type { ProductionReadinessReport } from '../api/client';
 
 export function ProjectDetail() {
     const {id} = useParams();
@@ -17,11 +19,18 @@ export function ProjectDetail() {
     const [busy, setBusy] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(true);
+    const [readiness, setReadiness] = useState<ProductionReadinessReport | null>(null);
+    const [readinessLoading, setReadinessLoading] = useState(false);
     const [options, setOptions] = useState({num_scenes: 16, num_characters: 2, style: '现代都市'});
     const reload = useCallback(async () => {
         try {
-            const [data, latest] = await Promise.all([projectApi.getProject(Number(id)), projectApi.latestTask(Number(id))]);
-            setProject(data); setTask(latest); setError('');
+            const projectId = Number(id);
+            const [data, latest, ready] = await Promise.all([
+                projectApi.getProject(projectId),
+                projectApi.latestTask(projectId),
+                projectApi.productionReadiness(projectId, false),
+            ]);
+            setProject(data); setTask(latest); setReadiness(ready); setError('');
         } catch(e) { setError(errorText(e)); }
         finally { setLoading(false); }
     }, [id]);
@@ -48,8 +57,17 @@ export function ProjectDetail() {
         } catch(e) { setError(errorText(e)); }
         finally { setBusy(''); }
     };
+    const refreshReadiness = useCallback(async () => {
+        if (!id) return;
+        setReadinessLoading(true);
+        try {
+            setReadiness(await projectApi.productionReadiness(Number(id), true));
+        } catch(e) { setError(errorText(e)); }
+        finally { setReadinessLoading(false); }
+    }, [id]);
     if (loading) return <main className="workbench" role="status">项目加载中</main>;
     if (!project) return <main className="workbench"><Link to="/projects">返回项目</Link><p role="alert" className="wb-alert">{error || '项目不存在'}</p><button className="wb-button" onClick={reload}>重试</button></main>;
+    const productionBlocked = Boolean(readiness?.blockers?.length);
     const locked = Boolean(busy) || project.status === 'in_production';
     return <main className="workbench">
         <Link to="/projects" className="wb-row wb-muted"><ArrowLeft size={16}/>项目列表</Link>
@@ -58,12 +76,13 @@ export function ProjectDetail() {
             <div className="wb-row">
                 <button className="wb-icon" title="刷新项目" aria-label="刷新项目" onClick={reload}><RefreshCw size={17}/></button>
                 {project.final_video_path && <Link className="wb-button" to={`/projects/${id}/video`}><Film size={17}/>查看成片</Link>}
-                <button className="wb-button primary" disabled={locked || !project.scenes?.length} onClick={() => run('提交制作')}><Play size={17}/>开始制作</button>
+                <button className="wb-button primary" disabled={locked || !project.scenes?.length || productionBlocked} title={productionBlocked ? '先处理生产就绪阻断项' : '开始制作'} onClick={() => run('提交制作')}><Play size={17}/>开始制作</button>
             </div>
         </header>
         {error && <p role="alert" className="wb-alert">{error}</p>}
         {busy && <p role="status" className="wb-alert"><RefreshCw size={15} className="inline animate-spin"/> {busy}进行中</p>}
         <VideoEngineStatus/>
+        <ProductionReadinessPanel report={readiness} loading={readinessLoading} onRefresh={refreshReadiness}/>
         <nav className="wb-tabs" role="tablist" aria-label="项目工作区">
             {[['script', '剧本分镜', FileText], ['characters', '角色参考', Users], ['production', '制作进度', Activity], ['review', '质量审核', ShieldCheck]].map(([key, label, Icon]) => <button key={String(key)} role="tab" aria-selected={tab === key} onClick={() => setTab(String(key))}><Icon size={17}/>{String(label)}</button>)}
         </nav>

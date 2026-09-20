@@ -71,6 +71,7 @@ export const projectApi = {
     videoEnginePreflight: () => apiClient.get<any, VideoEnginePreflight>('/projects/video-engine/preflight'),
     latestTask: (id: number) => apiClient.get<any, ProductionTask | null>(`/projects/${id}/production-task`),
     reviews: (id: number) => apiClient.get<any, GenerationReviewResponse>(`/projects/${id}/generation-review`),
+    productionReadiness: (id: number, includeEnginePreflight = true) => apiClient.get<any, ProductionReadinessReport>(`/projects/${id}/production-readiness`, {params: {include_engine_preflight: includeEnginePreflight}}),
     compareSeedDanceBaseline: (id: number, data: {baseline_path: string; candidate_path?: string}) => apiClient.post(`/projects/${id}/seed-dance-baseline`, data, {timeout: 300000}),
     uploadSeedDanceBaseline: (id: number, file: File) => {
         const formData = new FormData();
@@ -296,5 +297,48 @@ export interface VideoEnginePreflight {
         error?: string;
     };
     requirements: string[];
+    action_items: string[];
+}
+
+export interface ProductionReadinessIssue {
+    code: string;
+    severity: 'blocker' | 'warning' | string;
+    message: string;
+}
+
+export interface ProductionReadinessReport {
+    project_id: number;
+    status: 'ready' | 'needs_review' | 'blocked' | string;
+    blockers: ProductionReadinessIssue[];
+    warnings: ProductionReadinessIssue[];
+    checks: {
+        script?: {
+            scene_count: number;
+            minimum_production_scenes: number;
+            contiguous_scene_numbers: boolean;
+            draft_fallback_enabled: boolean;
+            has_script_json: boolean;
+        };
+        characters?: {
+            total_characters: number;
+            visible_character_names: string[];
+            missing_records: string[];
+            missing_references: string[];
+            missing_appearance: string[];
+            characters: Array<{id: number; name: string; has_appearance: boolean; reference_count: number}>;
+        };
+        shot_complexity?: {
+            status: string;
+            summary: {total: number; needs_split: number; warn: number};
+        };
+        reviewer?: {
+            backend: string;
+            configured: boolean;
+            image_review_required: boolean;
+            video_review_required: boolean;
+        };
+        video_engine?: VideoEnginePreflight;
+        [key: string]: any;
+    };
     action_items: string[];
 }
