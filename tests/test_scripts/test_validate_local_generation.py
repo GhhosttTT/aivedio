@@ -8,9 +8,15 @@ def write_json(path, payload):
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def rendered_cases(*ids):
+def rendered_cases(*ids, render_profile=None):
     return {
         "status": "rendered_pending_human_review",
+        "render_profile": render_profile or {
+            "quality_mode": "ultra",
+            "optimization_mode": "quality",
+            "prompt_optimization": True,
+            "parameter_optimization": True,
+        },
         "cases": [{"id": item, "image": f"{item}.png"} for item in ids],
     }
 
@@ -241,8 +247,34 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     assert report["checks"]["video_identity_gate_passed"] is True
     assert report["checks"]["video_temporal_gate_passed"] is True
     assert report["checks"]["video_platform_gate_passed"] is True
+    assert report["checks"]["render_profile_passed"] is True
     assert report["checks"]["manual_review_covers_rendered_cases"] is True
     assert report["action_items"] == []
+
+
+def test_validation_summary_blocks_non_production_render_profile(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases(
+        "discovery",
+        render_profile={
+            "quality_mode": "normal",
+            "optimization_mode": "balanced",
+            "prompt_optimization": False,
+            "parameter_optimization": False,
+        },
+    ))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "manual_review.json", {
+        "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["render_profile_passed"] is False
+    assert any("--quality-mode ultra" in item for item in report["action_items"])
 
 
 def test_validation_summary_requires_manual_review_for_every_rendered_case(tmp_path):

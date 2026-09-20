@@ -298,6 +298,15 @@ def summarize_validation(output: Path):
         and video_workflow_report.get("status") in {"ready_for_live_test", "skipped"}
     )
     checks["images_rendered"] = bool(render_report and render_report.get("status") == "rendered_pending_human_review")
+    render_profile = render_report.get("render_profile", {}) if isinstance(render_report, dict) else {}
+    checks["render_profile"] = render_profile
+    checks["render_profile_passed"] = bool(
+        render_profile
+        and render_profile.get("quality_mode") in {"high_quality", "ultra"}
+        and render_profile.get("optimization_mode") in {"quality", "realism"}
+        and render_profile.get("prompt_optimization") is True
+        and render_profile.get("parameter_optimization") is True
+    )
     video_gate_scores = _video_review_gate_scores(video_review_report)
     checks["video_gate_scores"] = video_gate_scores
     checks["video_identity_gate_passed"] = bool(
@@ -360,6 +369,8 @@ def summarize_validation(output: Path):
         report["action_items"].append("Run preflight-video-workflow and fix workflow placeholders, nodes, models, or output nodes.")
     if not checks["images_rendered"]:
         report["action_items"].append("Run render-images on the fixed validation cases and inspect generated keyframes.")
+    elif not checks["render_profile_passed"]:
+        report["action_items"].append("Rerun render-images with --quality-mode ultra --optimization-mode quality before accepting sample quality.")
     if not checks["video_review_passed"]:
         report["action_items"].append(
             "Run review-video on a generated clip and pass identity/temporal/platform gates; "
@@ -382,7 +393,7 @@ def summarize_validation(output: Path):
 
     if all(checks[key] for key in (
         "environment_ready", "video_workflow_ready", "images_rendered",
-        "video_review_passed", "baseline_comparison_passed", "manual_review_passed",
+        "render_profile_passed", "video_review_passed", "baseline_comparison_passed", "manual_review_passed",
     )):
         report["status"] = "ready_for_seed_dance_candidate"
     elif (
