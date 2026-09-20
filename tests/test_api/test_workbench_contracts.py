@@ -179,6 +179,51 @@ def test_production_readiness_reports_missing_character_references(setup):
     assert payload["checks"]["characters"]["missing_references"] == ["Alice"]
 
 
+def test_production_readiness_requires_character_identity_bible(setup):
+    client, db, _ = setup
+    project = db.query(Project).filter(Project.id == 1).one()
+    scene = db.query(Scene).filter(Scene.project_id == 1).one()
+    scene.character_name = "Alice"
+    scene.visual_description = "Alice stands by the table and opens the sealed letter."
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice"]}]})
+    db.add(Character(project_id=1, name="Alice", appearance="woman, black hair, red coat"))
+    db.commit()
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert any(item["code"] == "missing_character_identity_bible" for item in payload["blockers"])
+    assert payload["checks"]["characters"]["missing_identity_specs"] == ["Alice"]
+
+
+def test_production_readiness_accepts_complete_identity_bible_but_requires_reference(setup):
+    client, db, _ = setup
+    from src.services.character_identity_service import CharacterIdentityService
+
+    project = db.query(Project).filter(Project.id == 1).one()
+    scene = db.query(Scene).filter(Scene.project_id == 1).one()
+    scene.character_name = "Alice"
+    scene.visual_description = "Alice stands by the table and opens the sealed letter."
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice"]}]})
+    spec = CharacterIdentityService().build_identity_spec("Alice", "lead", project_id=1)
+    db.add(Character(
+        project_id=1,
+        name="Alice",
+        appearance=spec["identity_anchor"],
+        visual_description=json.dumps(spec),
+    ))
+    db.commit()
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert not payload["checks"]["characters"]["missing_identity_specs"]
+    assert payload["checks"]["characters"]["characters"][0]["has_identity_spec"] is True
+    assert any(item["code"] == "missing_character_references" for item in payload["blockers"])
+
+
 def test_reference_upload_and_signed_media_access(setup):
     client, db, path = setup
     c = client.post("/api/projects/1/characters", json={"name": "Actor"}).json()

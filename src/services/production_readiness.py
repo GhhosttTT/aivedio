@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from src.config import settings
 from src.database.models import Character, Project, Scene
 from src.services.character_service import get_character_manager
+from src.services.character_identity_service import CharacterIdentityService, FACIAL_FIELDS, load_identity_spec
 from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.shot_complexity_service import ShotComplexityService
 from src.services.video_engine_preflight import preflight_production_video_engine
@@ -125,12 +126,23 @@ class ProductionReadinessService:
 
         manager = get_character_manager()
         character_payload = []
+        identity_specs = []
+        missing_identity_specs = []
+        incomplete_identity_specs = []
         missing_references = []
         missing_appearance = []
         for name in required_names:
             character = by_name.get(name)
             if not character:
                 continue
+            identity_spec = load_identity_spec(character.visual_description)
+            missing_fields = self._missing_identity_fields(identity_spec)
+            if not identity_spec:
+                missing_identity_specs.append(name)
+            elif missing_fields:
+                incomplete_identity_specs.append({"name": name, "missing_fields": missing_fields})
+            else:
+                identity_specs.append(identity_spec)
             references = manager.get_character_references(character.id, project.id)
             if not references:
                 missing_references.append(name)
@@ -140,8 +152,24 @@ class ProductionReadinessService:
                 "id": character.id,
                 "name": character.name,
                 "has_appearance": bool((character.appearance or "").strip()),
+                "has_identity_spec": bool(identity_spec),
+                "missing_identity_fields": missing_fields,
                 "reference_count": len(references),
             })
+        if missing_identity_specs:
+            blockers.append(ReadinessIssue(
+                "missing_character_identity_bible",
+                "Generate a structured identity bible for visible characters: " + ", ".join(missing_identity_specs),
+            ))
+        if incomplete_identity_specs:
+            details = "; ".join(
+                f"{item['name']} missing {', '.join(item['missing_fields'])}"
+                for item in incomplete_identity_specs
+            )
+            blockers.append(ReadinessIssue(
+                "incomplete_character_identity_bible",
+                "Complete character identity bible fields: " + details,
+            ))
         if missing_references:
             blockers.append(ReadinessIssue(
                 "missing_character_references",
@@ -153,12 +181,21 @@ class ProductionReadinessService:
                 "Add detailed face/body/outfit anchors for characters: " + ", ".join(missing_appearance),
                 severity="warning",
             ))
+        distinctiveness = CharacterIdentityService().distinctiveness_report(identity_specs)
+        if distinctiveness.get("status") == "needs_revision":
+            blockers.append(ReadinessIssue(
+                "character_identities_too_similar",
+                "Revise character identity bibles; at least one visible character pair is too similar.",
+            ))
         return {
             "total_characters": len(characters),
             "visible_character_names": required_names,
             "missing_records": missing_records,
+            "missing_identity_specs": missing_identity_specs,
+            "incomplete_identity_specs": incomplete_identity_specs,
             "missing_references": missing_references,
             "missing_appearance": missing_appearance,
+            "distinctiveness": distinctiveness,
             "characters": character_payload,
             "scenes": scene_payload,
         }
@@ -275,3 +312,9 @@ class ProductionReadinessService:
             if isinstance(name, str) and name.strip() and name.strip() not in names:
                 names.append(name.strip())
         return names
+
+    def _missing_identity_fields(self, identity_spec: dict | None) -> list[str]:
+        required = FACIAL_FIELDS + ["wardrobe", "identity_anchor", "negative_identity"]
+        if not identity_spec:
+            return required
+        return [field for field in required if not str(identity_spec.get(field) or "").strip()]
