@@ -184,23 +184,81 @@ def _reference_for_scene(scene: Scene, project_id: int, db) -> str | None:
     return _get_reference_image(character, project_id) or scene.image_path
 
 
+def _review_score_from_batch(batch: dict, key: str) -> float | None:
+    value = (batch.get("review") or {}).get(key)
+    if isinstance(value, dict) and isinstance(value.get("score"), (int, float)):
+        return float(value["score"])
+    return None
+
+
+def _video_gate_scores(review_report: dict) -> dict[str, float]:
+    batches = review_report.get("batches") or []
+    scores: dict[str, list[float]] = {
+        "facial_identity": [],
+        "identity_consistency": [],
+        "temporal_consistency": [],
+    }
+    for batch in batches:
+        for key in scores:
+            score = _review_score_from_batch(batch, key)
+            if score is not None:
+                scores[key].append(score)
+    return {key: min(values) for key, values in scores.items() if values}
+
+
+def _video_gate_passes(candidate: dict) -> tuple[bool, dict[str, float]]:
+    scores = candidate.get("gate_scores") or {}
+    if not scores:
+        return True, {}
+    identity_min = settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE
+    temporal_min = settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE
+    identity_ok = all(
+        scores.get(key, identity_min) >= identity_min
+        for key in ("facial_identity", "identity_consistency")
+    )
+    temporal_ok = scores.get("temporal_consistency", temporal_min) >= temporal_min
+    return identity_ok and temporal_ok, scores
+
+
 def _select_best_video_candidate(candidates: list[dict], final_path: str, report_path: Path) -> tuple[str, dict]:
-    ranked = sorted(candidates, key=lambda item: item.get("average", 0), reverse=True)
+    ranked = sorted(
+        candidates,
+        key=lambda item: (
+            1 if _video_gate_passes(item)[0] else 0,
+            item.get("average", 0),
+        ),
+        reverse=True,
+    )
     best = ranked[0]
+    gate_ok, gate_scores = _video_gate_passes(best)
     report = {
         "kind": "video_candidate_selection",
-        "status": "passed" if best.get("status") == "passed" and best.get("average", 0) >= settings.GENERATION_VIDEO_MIN_SCORE else "needs_review",
+        "status": "passed" if (
+            best.get("status") == "passed"
+            and best.get("average", 0) >= settings.GENERATION_VIDEO_MIN_SCORE
+            and gate_ok
+        ) else "needs_review",
         "selected_path": best["path"],
         "selected_average": best.get("average", 0),
         "min_average": settings.GENERATION_VIDEO_MIN_SCORE,
+        "min_identity_score": settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE,
+        "min_temporal_score": settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE,
+        "selected_gate_scores": gate_scores,
         "candidates": ranked,
     }
+    if not gate_ok:
+        report["error"] = f"Selected video gate scores are below threshold: {gate_scores}"
+    elif best.get("average", 0) < settings.GENERATION_VIDEO_MIN_SCORE:
+        report["error"] = (
+            f"Best video score {best.get('average', 0)} is below "
+            f"{settings.GENERATION_VIDEO_MIN_SCORE}"
+        )
     if report["status"] != "passed" and settings.GENERATION_REQUIRE_VIDEO_REVIEW:
         attach_repair_queue(report, "video")
         write_report(report_path, report)
         raise ReviewError(
             f"Video candidates failed quality gate: average={best.get('average', 0)}, "
-            f"required={settings.GENERATION_VIDEO_MIN_SCORE}, report={report_path}"
+            f"required={settings.GENERATION_VIDEO_MIN_SCORE}, gates={gate_scores}, report={report_path}"
         )
     Path(final_path).parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(best["path"], final_path)
@@ -290,6 +348,9 @@ def _generate_quality_video_candidates(
                 "motion_bucket_id": generated_candidate["motion_bucket_id"],
                 "noise_aug_strength": generated_candidate["noise_aug_strength"],
             }
+            gate_scores = _video_gate_scores(review)
+            if gate_scores:
+                candidate["gate_scores"] = gate_scores
             if repair_action:
                 candidate["repair_action"] = repair_action
             if shot_plan_payload:
@@ -301,6 +362,7 @@ def _generate_quality_video_candidates(
         if any(
             candidate.get("status") == "passed"
             and candidate.get("average", 0) >= settings.GENERATION_VIDEO_MIN_SCORE
+            and _video_gate_passes(candidate)[0]
             for candidate in candidates
         ):
             break

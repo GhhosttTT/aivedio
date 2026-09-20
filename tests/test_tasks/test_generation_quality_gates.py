@@ -391,6 +391,110 @@ def test_video_generation_selects_best_reviewed_candidate(project_data, tmp_path
     assert fake_svd.requests[0]["motion_bucket_id"] != fake_svd.requests[1]["motion_bucket_id"]
 
 
+def test_video_selection_prefers_identity_safe_candidate(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    Path(scene.image_path).write_bytes(b"image")
+    db.commit()
+
+    class FakeSVD:
+        def generate_video(self, **kwargs):
+            Path(kwargs["output_path"]).write_bytes(f"video-{kwargs['output_path']}".encode())
+            return kwargs["output_path"]
+
+    class FakeReviewService:
+        def review_video(self, _video, payload, _report_path, _reference=None):
+            if payload["candidate_index"] == 1:
+                return {
+                    "status": "passed",
+                    "average": 4.9,
+                    "batches": [{
+                        "review": {
+                            "facial_identity": {"score": 2, "evidence": "face drift"},
+                            "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                            "temporal_consistency": {"score": 5, "evidence": "motion stable"},
+                        }
+                    }],
+                }
+            return {
+                "status": "passed",
+                "average": 4.3,
+                "batches": [{
+                    "review": {
+                        "facial_identity": {"score": 4, "evidence": "face matches"},
+                        "identity_consistency": {"score": 4, "evidence": "identity stable"},
+                        "temporal_consistency": {"score": 4, "evidence": "motion stable"},
+                    }
+                }],
+            }
+
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_CANDIDATES", 2)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    final_path, report = _generate_quality_video_candidates(
+        FakeSVD(), scene, project.id, str(tmp_path / "scene.mp4"), db,
+        num_frames=16, fps=8, motion_bucket_id=127, noise_aug_strength=0.02,
+    )
+
+    assert report["status"] == "passed"
+    assert report["candidates"][0]["index"] == 2
+    assert report["selected_gate_scores"] == {
+        "facial_identity": 4.0,
+        "identity_consistency": 4.0,
+        "temporal_consistency": 4.0,
+    }
+    assert Path(final_path).read_bytes() == Path(report["selected_path"]).read_bytes()
+
+
+def test_required_video_review_blocks_low_identity_scores(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    Path(scene.image_path).write_bytes(b"image")
+    db.commit()
+
+    class FakeSVD:
+        def generate_video(self, **kwargs):
+            Path(kwargs["output_path"]).write_bytes(b"identity-drift")
+            return kwargs["output_path"]
+
+    class FakeReviewService:
+        def review_video(self, *_args, **_kwargs):
+            return {
+                "status": "passed",
+                "average": 4.8,
+                "batches": [{
+                    "review": {
+                        "facial_identity": {"score": 2, "evidence": "face drift"},
+                        "identity_consistency": {"score": 3, "evidence": "same-face issue"},
+                        "temporal_consistency": {"score": 4, "evidence": "motion stable"},
+                    }
+                }],
+            }
+
+    output = tmp_path / "scene.mp4"
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_CANDIDATES", 1)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    with pytest.raises(ReviewError, match="failed quality gate"):
+        _generate_quality_video_candidates(
+            FakeSVD(), scene, project.id, str(output), db,
+            num_frames=16, fps=8, motion_bucket_id=127, noise_aug_strength=0.02,
+        )
+
+    report = json.loads(output.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert report["status"] == "needs_review"
+    assert report["selected_gate_scores"]["facial_identity"] == 2.0
+
+
 def test_required_video_review_blocks_low_scoring_candidates(project_data, tmp_path, monkeypatch):
     db, project, scene, _, _ = project_data
     scene.image_path = str(tmp_path / "source.png")
