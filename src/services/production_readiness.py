@@ -640,6 +640,12 @@ class ProductionReadinessService:
                 "Rerun local validation samples with production render settings: quality_mode=ultra and optimization_mode=quality.",
                 severity="warning",
             ))
+        if checks.get("render_workflow_parameters_passed") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_workflow_parameters_missing",
+                "Rerun local validation samples and verify actual ComfyUI workflow parameters are recorded for every rendered case.",
+                severity="warning",
+            ))
         return {
             "status": status or "unknown",
             "path": str(path),
@@ -647,6 +653,7 @@ class ProductionReadinessService:
             "checks": {
                 "render_profile": checks.get("render_profile"),
                 "render_profile_passed": checks.get("render_profile_passed"),
+                "render_workflow_parameters_passed": checks.get("render_workflow_parameters_passed"),
                 "video_review_passed": checks.get("video_review_passed"),
                 "video_identity_gate_passed": checks.get("video_identity_gate_passed"),
                 "video_temporal_gate_passed": checks.get("video_temporal_gate_passed"),

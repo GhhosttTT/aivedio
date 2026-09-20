@@ -17,7 +17,14 @@ def rendered_cases(*ids, render_profile=None):
             "prompt_optimization": True,
             "parameter_optimization": True,
         },
-        "cases": [{"id": item, "image": f"{item}.png"} for item in ids],
+        "cases": [
+            {
+                "id": item,
+                "image": f"{item}.png",
+                "actual_workflow": {"steps": 45, "cfg": 7.0, "sampler_name": "dpmpp_2m"},
+            }
+            for item in ids
+        ],
     }
 
 
@@ -193,6 +200,10 @@ def test_render_images_uses_production_quality_profile(tmp_path, monkeypatch):
             calls.append(kwargs)
             path = tmp_path / "rendered.png"
             path.write_bytes(b"image")
+            (tmp_path / "rendered.workflow.json").write_text(json.dumps({
+                "8": {"class_type": "KSampler", "inputs": {"steps": 45, "cfg": 7.0, "seed": 123}},
+                "7": {"class_type": "EmptyLatentImage", "inputs": {"width": 1344, "height": 768}},
+            }), encoding="utf-8")
             return str(path)
 
     monkeypatch.setattr(validator, "ComfyUIService", FakeComfyUIService)
@@ -208,6 +219,7 @@ def test_render_images_uses_production_quality_profile(tmp_path, monkeypatch):
     assert calls[0]["enable_prompt_optimization"] is True
     assert calls[0]["enable_parameter_optimization"] is True
     assert report["render_profile"]["quality_mode"] == "ultra"
+    assert report["cases"][0]["actual_workflow"]["steps"] == 45
     assert report["cases"][0]["request"]["quality_mode"] == "ultra"
     assert report["cases"][0]["request"]["enable_parameter_optimization"] is True
 
@@ -248,6 +260,7 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     assert report["checks"]["video_temporal_gate_passed"] is True
     assert report["checks"]["video_platform_gate_passed"] is True
     assert report["checks"]["render_profile_passed"] is True
+    assert report["checks"]["render_workflow_parameters_passed"] is True
     assert report["checks"]["manual_review_covers_rendered_cases"] is True
     assert report["action_items"] == []
 
@@ -275,6 +288,25 @@ def test_validation_summary_blocks_non_production_render_profile(tmp_path):
     assert report["status"] == "partial_needs_review"
     assert report["checks"]["render_profile_passed"] is False
     assert any("--quality-mode ultra" in item for item in report["action_items"])
+
+
+def test_validation_summary_blocks_missing_actual_workflow_parameters(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    render = rendered_cases("discovery")
+    render["cases"][0].pop("actual_workflow")
+    write_json(tmp_path / "render.json", render)
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "manual_review.json", {
+        "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["render_workflow_parameters_passed"] is False
+    assert any("actual ComfyUI workflow steps" in item for item in report["action_items"])
 
 
 def test_validation_summary_requires_manual_review_for_every_rendered_case(tmp_path):
