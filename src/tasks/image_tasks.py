@@ -615,6 +615,7 @@ def _generate_quality_candidates(
                 reference_image,
             )
             report["provider"] = result.provider
+            report["provider_metadata"] = result.metadata
             report["request"] = {
                 "seed": candidate_request.seed,
                 "steps": candidate_request.steps,

@@ -1,5 +1,7 @@
 """Tests for generation provider abstraction."""
 
+import json
+
 import pytest
 
 from src.services.generation_provider import (
@@ -43,12 +45,13 @@ def test_local_comfyui_provider_delegates_image_generation():
         )
     )
 
-    assert result == GenerationResult(
-        provider=GenerationProviderName.LOCAL_COMFYUI.value,
-        output_path="storage/project_1/images/scene_1.png",
-        asset_type="image",
-        metadata={"width": 1024, "height": 576},
-    )
+    assert result.provider == GenerationProviderName.LOCAL_COMFYUI.value
+    assert result.output_path == "storage/project_1/images/scene_1.png"
+    assert result.asset_type == "image"
+    assert result.metadata["width"] == 1024
+    assert result.metadata["height"] == 576
+    assert result.metadata["prompt_optimization"] is False
+    assert result.metadata["parameter_optimization"] is False
     assert service.last_kwargs["prompt"] == "raw photo, short drama shot"
     assert service.last_kwargs["enable_realism"] is False
     assert service.last_kwargs["enable_prompt_optimization"] is False
@@ -74,6 +77,48 @@ def test_local_comfyui_provider_enables_optimizers_for_ultra_quality(monkeypatch
     assert service.last_kwargs["optimization_mode"] == "quality"
     assert service.last_kwargs["enable_prompt_optimization"] is True
     assert service.last_kwargs["enable_parameter_optimization"] is True
+
+
+def test_local_comfyui_provider_reports_actual_workflow_parameters(tmp_path):
+    class WorkflowWritingComfyUIService(FakeComfyUIService):
+        def generate_image(self, **kwargs):
+            self.last_kwargs = kwargs
+            workflow = {
+                "8": {
+                    "class_type": "KSampler",
+                    "inputs": {
+                        "steps": 45,
+                        "cfg": 7.0,
+                        "seed": 123,
+                        "sampler_name": "dpmpp_2m",
+                        "scheduler": "karras",
+                    },
+                },
+                "7": {
+                    "class_type": "EmptyLatentImage",
+                    "inputs": {"width": 1344, "height": 768, "batch_size": 1},
+                },
+            }
+            workflow_path = tmp_path / "scene.workflow.json"
+            workflow_path.write_text(json.dumps(workflow), encoding="utf-8")
+            return str(tmp_path / "scene.png")
+
+    provider = LocalComfyUIProvider(comfyui_service=WorkflowWritingComfyUIService())
+
+    result = provider.generate_image(
+        ImageGenerationRequest(
+            prompt="raw photo, short drama shot",
+            output_path=str(tmp_path / "scene.png"),
+            quality_mode="ultra",
+            optimization_mode="quality",
+        )
+    )
+
+    assert result.metadata["workflow"]["steps"] == 45
+    assert result.metadata["workflow"]["cfg"] == 7.0
+    assert result.metadata["workflow"]["sampler_name"] == "dpmpp_2m"
+    assert result.metadata["workflow"]["latent_width"] == 1344
+    assert result.metadata["workflow"]["latent_height"] == 768
 
 
 @pytest.mark.parametrize(

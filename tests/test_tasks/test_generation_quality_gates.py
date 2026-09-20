@@ -530,7 +530,12 @@ def test_image_repair_action_is_recorded_in_candidate_request(tmp_path, monkeypa
         def generate_image(self, request):
             self.requests.append(request)
             Image.new("RGB", (request.width, request.height), (130, 130, 130)).save(request.output_path)
-            return GenerationResult("local_comfyui", request.output_path, "image", {})
+            return GenerationResult(
+                "local_comfyui",
+                request.output_path,
+                "image",
+                {"workflow": {"steps": 45, "cfg": 7.0, "sampler_name": "dpmpp_2m"}},
+            )
 
     def fake_review(self, index, image_path, scene, prompt, reference_image=None):
         return {
@@ -573,6 +578,8 @@ def test_image_repair_action_is_recorded_in_candidate_request(tmp_path, monkeypa
     candidate_request = report["candidates"][0]["request"]
     assert candidate_request["repair_action"] == "refine_prompt_composition"
     assert candidate_request["repair_parameter_profile"]["reason"] == "composition_aesthetic_repair"
+    assert report["candidates"][0]["provider_metadata"]["workflow"]["steps"] == 45
+    assert report["candidates"][0]["provider_metadata"]["workflow"]["sampler_name"] == "dpmpp_2m"
 
 
 def test_video_generation_selects_best_reviewed_candidate(project_data, tmp_path, monkeypatch):

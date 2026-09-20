@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import base64
+import json
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -21,6 +22,34 @@ from src.config import settings
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _extract_workflow_image_metadata(output_path: str) -> dict[str, object]:
+    workflow_path = Path(output_path).with_suffix(".workflow.json")
+    if not workflow_path.is_file():
+        return {}
+    try:
+        workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {"workflow_path": str(workflow_path), "workflow_error": str(exc)}
+    sampler = next(
+        (node for node in workflow.values() if isinstance(node, dict) and node.get("class_type") == "KSampler"),
+        {},
+    )
+    latent = next(
+        (node for node in workflow.values() if isinstance(node, dict) and node.get("class_type") == "EmptyLatentImage"),
+        {},
+    )
+    sampler_inputs = sampler.get("inputs") if isinstance(sampler.get("inputs"), dict) else {}
+    latent_inputs = latent.get("inputs") if isinstance(latent.get("inputs"), dict) else {}
+    metadata: dict[str, object] = {"workflow_path": str(workflow_path)}
+    for key in ("steps", "cfg", "seed", "sampler_name", "scheduler"):
+        if key in sampler_inputs:
+            metadata[key] = sampler_inputs[key]
+    for key in ("width", "height", "batch_size"):
+        if key in latent_inputs:
+            metadata[f"latent_{key}"] = latent_inputs[key]
+    return metadata
 
 
 class GenerationProviderError(Exception):
@@ -134,7 +163,15 @@ class LocalComfyUIProvider:
             provider=self.name.value,
             output_path=output_path,
             asset_type="image",
-            metadata={"width": request.width, "height": request.height},
+            metadata={
+                "width": request.width,
+                "height": request.height,
+                "quality_mode": request.quality_mode,
+                "optimization_mode": request.optimization_mode,
+                "prompt_optimization": enable_prompt_optimization,
+                "parameter_optimization": enable_parameter_optimization,
+                "workflow": _extract_workflow_image_metadata(output_path),
+            },
         )
 
     def generate_video(self, request: VideoGenerationRequest) -> GenerationResult:
