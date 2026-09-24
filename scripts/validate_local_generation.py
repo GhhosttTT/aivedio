@@ -282,6 +282,19 @@ def _video_review_platform_score(video_review_report: dict | None) -> float | No
     return round(min(scores), 2) if scores else None
 
 
+def _video_aesthetic_gates_passed(video_review_report: dict | None) -> bool:
+    if not isinstance(video_review_report, dict):
+        return False
+    batches = video_review_report.get("batches", [])
+    if not batches:
+        return False
+    for batch in batches:
+        gate = batch.get("video_aesthetic_gate") if isinstance(batch, dict) else None
+        if not isinstance(gate, dict) or gate.get("status") != "passed":
+            return False
+    return True
+
+
 def _image_review_cases_passed(image_review_report: dict | None) -> bool:
     if not isinstance(image_review_report, dict):
         return False
@@ -332,6 +345,18 @@ def _render_workflow_parameters_passed(render_report: dict | None) -> bool:
         if not isinstance(steps, (int, float)) or steps < min_steps:
             return False
     return True
+
+
+def _baseline_contact_sheet_present(baseline_report: dict | None, output: Path) -> bool:
+    if not isinstance(baseline_report, dict):
+        return False
+    path_value = baseline_report.get("contact_sheet_path")
+    if not path_value:
+        return False
+    path = Path(str(path_value))
+    if not path.is_absolute():
+        path = output / path
+    return path.is_file()
 
 
 def _calibration_recommendations(manual_cases: list[dict], video_review_report: dict | None) -> list[dict]:
@@ -455,16 +480,21 @@ def summarize_validation(output: Path):
         video_platform_score is not None
         and video_platform_score >= settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE
     )
+    checks["video_aesthetic_gate_passed"] = _video_aesthetic_gates_passed(video_review_report)
     checks["video_review_passed"] = bool(
         video_review_report
         and video_review_report.get("status") == "passed"
         and checks["video_identity_gate_passed"]
         and checks["video_temporal_gate_passed"]
         and checks["video_platform_gate_passed"]
+        and checks["video_aesthetic_gate_passed"]
     )
     checks["baseline_comparison_present"] = bool(baseline_comparison_report)
+    checks["baseline_contact_sheet_present"] = _baseline_contact_sheet_present(baseline_comparison_report, output)
     checks["baseline_comparison_passed"] = bool(
-        baseline_comparison_report and baseline_comparison_report.get("status") == "passed"
+        baseline_comparison_report
+        and baseline_comparison_report.get("status") == "passed"
+        and checks["baseline_contact_sheet_present"]
     )
     manual_cases = manual_review.get("cases", []) if isinstance(manual_review, dict) else []
     manual_case_ids = _case_ids(manual_cases)
@@ -506,12 +536,14 @@ def summarize_validation(output: Path):
     if not checks["video_review_passed"]:
         report["action_items"].append(
             "Run review-video on a generated clip and pass identity/temporal/platform gates; "
-            "fix identity drift, same-face characters, flicker, temporal breaks, low commercial appeal, or VLM setup."
+            "fix identity drift, same-face characters, flicker, temporal breaks, low commercial appeal, missing video aesthetic gates, or VLM setup."
         )
     if not checks["baseline_comparison_present"]:
         report["action_items"].append("Run compare-baseline against a Seed Dance reference clip before claiming replacement quality.")
-    elif not checks["baseline_comparison_passed"]:
+    elif not isinstance(baseline_comparison_report, dict) or baseline_comparison_report.get("status") != "passed":
         report["action_items"].append("Improve video engine/settings until Seed Dance baseline comparison passes measurable gates.")
+    elif not checks["baseline_contact_sheet_present"]:
+        report["action_items"].append("Rerun compare-baseline with an output path so seed_dance_contact_sheet.png is generated for visual evidence.")
     if not checks["manual_review_present"]:
         report["action_items"].append("Create manual_review.json with 0-5 human scores for each rendered case and clip.")
     elif not checks["manual_review_covers_rendered_cases"]:
@@ -651,6 +683,8 @@ def _build_acceptance_markdown(package: dict) -> str:
         "video_identity_gate_passed",
         "video_temporal_gate_passed",
         "video_platform_gate_passed",
+        "video_aesthetic_gate_passed",
+        "baseline_contact_sheet_present",
         "baseline_comparison_passed",
         "manual_review_passed",
     ):

@@ -409,6 +409,8 @@ export interface ProductionReadinessReport {
                 video_review_passed?: boolean;
                 video_identity_gate_passed?: boolean;
                 video_temporal_gate_passed?: boolean;
+                video_aesthetic_gate_passed?: boolean;
+                baseline_contact_sheet_present?: boolean;
                 baseline_comparison_passed?: boolean;
                 manual_review_covers_rendered_cases?: boolean;
                 manual_review_missing_case_ids?: string[];

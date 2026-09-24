@@ -661,6 +661,12 @@ class ProductionReadinessService:
                 ),
                 severity="warning",
             ))
+        if checks.get("baseline_contact_sheet_present") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_baseline_contact_sheet_missing",
+                "Rerun compare-baseline with an output path so a Seed Dance contact sheet is available for visual review.",
+                severity="warning",
+            ))
         return {
             "status": status or "unknown",
             "path": str(path),
@@ -676,6 +682,8 @@ class ProductionReadinessService:
                 "video_review_passed": checks.get("video_review_passed"),
                 "video_identity_gate_passed": checks.get("video_identity_gate_passed"),
                 "video_temporal_gate_passed": checks.get("video_temporal_gate_passed"),
+                "video_aesthetic_gate_passed": checks.get("video_aesthetic_gate_passed"),
+                "baseline_contact_sheet_present": checks.get("baseline_contact_sheet_present"),
                 "baseline_comparison_passed": checks.get("baseline_comparison_passed"),
                 "manual_review_covers_rendered_cases": checks.get("manual_review_covers_rendered_cases"),
                 "manual_review_missing_case_ids": checks.get("manual_review_missing_case_ids"),

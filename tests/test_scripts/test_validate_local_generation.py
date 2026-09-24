@@ -33,6 +33,12 @@ def passed_video_review():
         "status": "passed",
         "batches": [{
             "platform_score": 4.2,
+            "video_aesthetic_gate": {
+                "status": "passed",
+                "average": 4.2,
+                "missing": [],
+                "low": {},
+            },
             "review": {
                 "story_match": {"score": 4, "evidence": "scene matches"},
                 "composition": {"score": 4, "evidence": "framing is usable"},
@@ -44,6 +50,12 @@ def passed_video_review():
             }
         }],
     }
+
+
+def passed_seed_dance_baseline(tmp_path):
+    contact_sheet = tmp_path / "seed_dance_contact_sheet.png"
+    contact_sheet.write_bytes(b"visual comparison evidence")
+    return {"status": "passed", "score": 4.2, "contact_sheet_path": str(contact_sheet)}
 
 
 def passed_image_review(*ids):
@@ -370,7 +382,7 @@ def test_validation_summary_requires_manual_scores(tmp_path):
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "render.json", rendered_cases("discovery"))
     write_json(tmp_path / "video_review.json", passed_video_review())
-    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
 
     report = validator.summarize_validation(tmp_path)
 
@@ -385,7 +397,7 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     write_json(tmp_path / "render.json", rendered_cases("discovery", "reaction"))
     write_json(tmp_path / "image_review.json", passed_image_review("discovery", "reaction"))
     write_json(tmp_path / "video_review.json", passed_video_review())
-    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
     write_json(tmp_path / "manual_review.json", {
         "cases": [
             {"id": "discovery", "score": 4.5, "decision": "accept"},
@@ -398,9 +410,11 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     assert report["status"] == "ready_for_seed_dance_candidate"
     assert report["checks"]["manual_average_score"] == 4.25
     assert report["checks"]["baseline_comparison_passed"] is True
+    assert report["checks"]["baseline_contact_sheet_present"] is True
     assert report["checks"]["video_identity_gate_passed"] is True
     assert report["checks"]["video_temporal_gate_passed"] is True
     assert report["checks"]["video_platform_gate_passed"] is True
+    assert report["checks"]["video_aesthetic_gate_passed"] is True
     assert report["checks"]["render_profile_passed"] is True
     assert report["checks"]["render_workflow_parameters_passed"] is True
     assert report["checks"]["image_review_passed"] is True
@@ -415,7 +429,7 @@ def test_validation_summary_requires_image_review(tmp_path):
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "render.json", rendered_cases("discovery"))
     write_json(tmp_path / "video_review.json", passed_video_review())
-    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
     write_json(tmp_path / "manual_review.json", {
         "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
     })
@@ -449,7 +463,7 @@ def test_validation_summary_blocks_failed_image_review(tmp_path):
         }],
     })
     write_json(tmp_path / "video_review.json", passed_video_review())
-    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
     write_json(tmp_path / "manual_review.json", {
         "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
     })
@@ -467,7 +481,7 @@ def test_validation_summary_requires_image_review_for_every_rendered_case(tmp_pa
     write_json(tmp_path / "render.json", rendered_cases("discovery", "reaction"))
     write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
     write_json(tmp_path / "video_review.json", passed_video_review())
-    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
     write_json(tmp_path / "manual_review.json", {
         "cases": [
             {"id": "discovery", "score": 4.5, "decision": "accept"},
@@ -498,7 +512,7 @@ def test_validation_summary_blocks_non_production_render_profile(tmp_path):
     ))
     write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
     write_json(tmp_path / "video_review.json", passed_video_review())
-    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
     write_json(tmp_path / "manual_review.json", {
         "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
     })
@@ -518,7 +532,7 @@ def test_validation_summary_blocks_missing_actual_workflow_parameters(tmp_path):
     write_json(tmp_path / "render.json", render)
     write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
     write_json(tmp_path / "video_review.json", passed_video_review())
-    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
     write_json(tmp_path / "manual_review.json", {
         "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
     })
@@ -536,7 +550,7 @@ def test_validation_summary_requires_manual_review_for_every_rendered_case(tmp_p
     write_json(tmp_path / "render.json", rendered_cases("discovery", "reaction"))
     write_json(tmp_path / "image_review.json", passed_image_review("discovery", "reaction"))
     write_json(tmp_path / "video_review.json", passed_video_review())
-    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
     write_json(tmp_path / "manual_review.json", {
         "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
     })
@@ -584,12 +598,55 @@ def test_validation_summary_blocks_failed_seed_dance_comparison(tmp_path):
     assert any("Seed Dance baseline comparison passes" in item for item in report["action_items"])
 
 
+def test_validation_summary_requires_seed_dance_contact_sheet(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", {
+        "status": "passed",
+        "contact_sheet_path": str(tmp_path / "missing_contact_sheet.png"),
+    })
+    write_json(tmp_path / "manual_review.json", {
+        "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["baseline_contact_sheet_present"] is False
+    assert report["checks"]["baseline_comparison_passed"] is False
+    assert any("seed_dance_contact_sheet.png" in item for item in report["action_items"])
+
+
+def test_validation_summary_requires_video_aesthetic_gate(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    video_review = passed_video_review()
+    video_review["batches"][0].pop("video_aesthetic_gate")
+    write_json(tmp_path / "video_review.json", video_review)
+    write_json(tmp_path / "manual_review.json", {
+        "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["video_aesthetic_gate_passed"] is False
+    assert report["checks"]["video_review_passed"] is False
+    assert any("video aesthetic gates" in item for item in report["action_items"])
+
+
 def test_validation_summary_blocks_low_video_identity_gate(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "render.json", rendered_cases("discovery"))
     write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
-    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
     write_json(tmp_path / "video_review.json", {
         "status": "passed",
         "batches": [{
@@ -617,7 +674,7 @@ def test_validation_summary_recommends_targeted_calibration(tmp_path):
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "render.json", rendered_cases("discovery"))
     write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
-    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
     write_json(tmp_path / "video_review.json", {
         "status": "needs_review",
         "batches": [{
@@ -651,7 +708,7 @@ def test_acceptance_package_writes_json_and_markdown(tmp_path):
     write_json(tmp_path / "render.json", rendered_cases("discovery", "reaction"))
     write_json(tmp_path / "image_review.json", passed_image_review("discovery", "reaction"))
     write_json(tmp_path / "video_review.json", passed_video_review())
-    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed", "score": 4.2})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
     write_json(tmp_path / "manual_review.json", {
         "cases": [
             {"id": "discovery", "score": 4.5, "decision": "accept", "note": "face stable"},
@@ -685,7 +742,7 @@ def test_acceptance_package_surfaces_missing_manual_review_and_setup_actions(tmp
             {"action": "regenerate_turnaround_album", "execution": "setup_required", "reason": "identity drift"}
         ],
     })
-    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
     write_json(tmp_path / "manual_review.json", {
         "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}]
     })
