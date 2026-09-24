@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import pytest
 from unittest.mock import Mock
 
@@ -19,12 +20,52 @@ class FailingImageProvider:
         raise RuntimeError("image provider unavailable")
 
 
+class FakeDraftMediaService:
+    def generate_video_from_image(self, image_path: str, output_path: str, duration: float = 4.0, fps: int = 24) -> str:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"draft video")
+        return output_path
+
+    def generate_silent_audio(self, output_path: str, duration: float = 1.0, **_kwargs):
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"draft audio")
+        return output_path, duration
+
+    def estimate_dialogue_duration(self, text: str) -> float:
+        return 1.0
+
+
+def test_composition_requires_passed_video_quality_report(tmp_path):
+    video = tmp_path / "scene_001.mp4"
+    video.write_bytes(b"fake video")
+    video.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "needs_review",
+        "repair_queue": [{"action": "lower_motion_and_regenerate_video"}],
+    }), encoding="utf-8")
+    scene = Mock(scene_number=1, video_path=str(video))
+
+    with pytest.raises(ValueError, match="video quality status=needs_review"):
+        composition_tasks._require_passed_scene_videos([scene])
+
+
+def test_composition_accepts_passed_video_quality_report(tmp_path):
+    video = tmp_path / "scene_001.mp4"
+    video.write_bytes(b"fake video")
+    video.with_suffix(".quality.json").write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+    scene = Mock(scene_number=1, video_path=str(video))
+
+    composition_tasks._require_passed_scene_videos([scene])
+
+
 def test_draft_tasks_cannot_publish_an_unreviewed_final_video(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("ENABLE_DRAFT_MEDIA_FALLBACK", "true")
     monkeypatch.setattr(image_tasks, "get_generation_provider", lambda _provider=None: FailingImageProvider())
     monkeypatch.setattr(video_tasks, "get_svd_service", lambda: (_ for _ in ()).throw(RuntimeError("svd unavailable")))
     monkeypatch.setattr(audio_tasks, "get_tts_service", lambda: (_ for _ in ()).throw(RuntimeError("tts unavailable")))
+    fake_draft = FakeDraftMediaService()
+    monkeypatch.setattr(video_tasks, "get_draft_media_service", lambda: fake_draft)
+    monkeypatch.setattr(audio_tasks, "get_draft_media_service", lambda: fake_draft)
 
     engine = create_engine(
         "sqlite:///:memory:",

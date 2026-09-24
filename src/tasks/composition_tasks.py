@@ -3,6 +3,8 @@
 使用 Celery 异步执行视频合成任务
 """
 
+import json
+from pathlib import Path
 from typing import Optional
 from src.tasks.celery_app import celery_app
 from src.database.database import get_db
@@ -66,6 +68,8 @@ def compose_final_video_task(
         video_composer = get_video_composer()
         subtitle_generator = get_subtitle_generator()
         
+        _require_passed_scene_videos(scenes)
+
         # 收集所有分镜的视频和音频路径
         video_paths = []
         audio_paths = []
@@ -249,6 +253,34 @@ def _merge_subtitles(subtitle_paths: list, output_path: str, scenes: list) -> No
     # 写入合并后的字幕文件
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n\n".join(merged_subtitles))
+
+
+def _require_passed_scene_videos(scenes: list[Scene]) -> None:
+    missing = []
+    failed = []
+    for scene in scenes:
+        if not scene.video_path:
+            missing.append(str(scene.scene_number))
+            continue
+        video_path = Path(scene.video_path)
+        if not video_path.is_file():
+            missing.append(str(scene.scene_number))
+            continue
+        quality_path = video_path.with_suffix(".quality.json")
+        if not quality_path.is_file():
+            failed.append(f"{scene.scene_number}: missing video quality report")
+            continue
+        try:
+            report = json.loads(quality_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            failed.append(f"{scene.scene_number}: invalid video quality report: {exc}")
+            continue
+        if report.get("status") != "passed":
+            failed.append(f"{scene.scene_number}: video quality status={report.get('status') or 'unknown'}")
+    if missing:
+        raise ValueError("Missing generated video for scenes: " + ", ".join(missing))
+    if failed:
+        raise ValueError("Scene videos are not production-ready: " + "; ".join(failed))
 
 
 def _parse_srt_time(time_str: str) -> float:
