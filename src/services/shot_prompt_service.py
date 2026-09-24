@@ -45,6 +45,18 @@ class CompiledShot:
 class ShotPromptService:
     MAX_WORDS = 75
     NEGATIVE_PROMPT = "text, watermark, duplicate people, extra limbs, malformed hands, blurry"
+    AI_QUALITY_TAGS = {
+        "masterpiece",
+        "best quality",
+        "ultra-detailed",
+        "ultra detailed",
+        "8k",
+        "8k uhd",
+        "flawless",
+        "perfect anatomy",
+        "beautiful face",
+        "award winning",
+    }
     PRODUCTION_STYLE_PROMPT = (
         "mobile short-drama composition, readable face, clear main subject, commercial lighting, "
         "natural skin texture, clean background separation"
@@ -185,7 +197,22 @@ class ShotPromptService:
         return ", ".join(parts)
 
     @classmethod
+    def _strip_ai_quality_tags(cls, prompt: str) -> str:
+        kept = []
+        for raw in (prompt or "").split(","):
+            term = raw.strip()
+            term = re.sub(r"^\((.*)\)$", r"\1", term).strip()
+            normalized = re.sub(r":[\d.]+", "", term.lower()).strip()
+            normalized = re.sub(r"\s+", " ", normalized)
+            if normalized in cls.AI_QUALITY_TAGS:
+                continue
+            if term:
+                kept.append(term)
+        return ", ".join(kept)
+
+    @classmethod
     def _apply_production_style(cls, prompt: str, negative: str) -> tuple[str, str]:
+        prompt = cls._strip_ai_quality_tags(prompt)
         prompt = cls._append_terms(prompt, cls.PRODUCTION_STYLE_PROMPT)
         negative = cls._append_terms(negative, cls.PRODUCTION_NEGATIVE_PROMPT)
         if settings.POSITIVE_PROMPT_SUFFIX:

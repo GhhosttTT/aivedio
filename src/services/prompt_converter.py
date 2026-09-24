@@ -12,11 +12,11 @@ class PromptConverter:
     
     def __init__(self):
         self.quality_tags = {
-            "masterpiece": "(masterpiece, best quality:1.3)",
-            "photorealistic": "(photorealistic, realistic:1.4)",
-            "cinematic": "(cinematic lighting, professional photography:1.3)",
-            "detailed": "(ultra-detailed, highly detailed:1.2)",
-            "8k": "(8k uhd, high resolution:1.2)"
+            "production": "short-drama production frame, phone-readable composition",
+            "photorealistic": "photorealistic short-drama frame, natural skin texture",
+            "cinematic": "commercial lighting, controlled contrast, clean background separation",
+            "detailed": "specific facial features, wardrobe detail, face and outfit clarity",
+            "resolution": "clean image detail, stable composition"
         }
         
     def convert_json_to_prompt(self, json_data: Dict) -> str:
@@ -83,7 +83,7 @@ class PromptConverter:
         except Exception as e:
             logger.error(f"JSON 提示词转换失败: {e}")
             # 返回默认提示词
-            return "(masterpiece, best quality, photorealistic:1.3), handsome man, professional photography, cinematic lighting"
+            return "photorealistic short-drama frame, distinct character identity, readable face, commercial lighting"
     
     def convert_with_llm(self, json_data: Dict, llm_service=None) -> str:
         """
@@ -106,7 +106,7 @@ class PromptConverter:
 
 要求：
 1. 使用英文
-2. 包含质量标签（masterpiece, best quality, photorealistic等）
+2. 使用可审核的短剧生产描述，如 phone-readable composition, natural skin texture, clean subject separation
 3. 详细描述外貌、表情、姿势、光线、镜头
 4. 使用权重语法 (tag:1.2) 强调重要特征
 5. 控制在 150-200 个单词以内
@@ -123,7 +123,7 @@ class PromptConverter:
 }
 
 示例输出：
-(masterpiece, best quality, photorealistic:1.4), (25 year old asian male:1.2), short black hair, white shirt, (serious and focused expression:1.1), standing pose with hands in pockets, soft side lighting, medium shot, professional photography, cinematic lighting, ultra-detailed, 8k uhd"""
+photorealistic short-drama frame, (25 year old asian male:1.2), short black hair, white shirt, (serious and focused expression:1.1), standing pose with hands in pockets, soft side lighting, medium shot, phone-readable composition, natural skin texture, clean subject separation"""
             
             user_prompt = f"请转换以下 JSON 为 SD 提示词：\n{json.dumps(json_data, ensure_ascii=False)}"
             

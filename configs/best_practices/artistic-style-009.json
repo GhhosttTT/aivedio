@@ -26,7 +26,7 @@
   "scheduler": "karras",
   "resolution": "1024x1024",
   "ipadapter_weight": null,
-  "prompt_template": "{subject}, artistic style, vibrant colors, creative composition, masterpiece, award winning",
+  "prompt_template": "{subject}, artistic style, vibrant colors, creative composition, clean subject separation, controlled contrast",
   "negative_prompt": "realistic, photorealistic, plain, boring, dull colors, amateur",
   "additional_params": {
     "denoise": 0.85,

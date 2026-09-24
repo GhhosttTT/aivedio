@@ -27,6 +27,28 @@ def test_concise_prompt_is_not_rewritten():
     assert "cartoon" not in result.negative_prompt
 
 
+def test_production_style_strips_generic_ai_quality_tags():
+    llm = Mock()
+    prompt = (
+        "(masterpiece:1.2), best quality, 8k uhd, flawless, perfect anatomy, "
+        "beautiful face, office doorway, medium shot, overcast daylight, watercolor illustration"
+    )
+
+    result = ShotPromptService(llm).compile(prompt)
+
+    lowered = result.prompt.lower()
+    assert "masterpiece" not in lowered
+    assert "best quality" not in lowered
+    assert "8k uhd" not in lowered
+    assert "flawless" not in lowered
+    assert "perfect anatomy" not in lowered
+    assert "beautiful face" not in lowered
+    assert "office doorway" in result.prompt
+    assert "watercolor illustration" in result.prompt
+    assert "mobile short-drama composition" in result.prompt
+    llm.generate.assert_not_called()
+
+
 def test_identity_is_prepended_verbatim_and_style_preserved():
     llm = Mock()
     llm.generate.return_value = frame()

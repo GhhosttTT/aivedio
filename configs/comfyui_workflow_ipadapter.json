@@ -50,7 +50,7 @@
     "clip_text_encode_positive": {
       "class_type": "CLIPTextEncode",
       "inputs": {
-        "text": "(masterpiece, best quality, ultra-detailed:1.2), (handsome man:1.3), beautiful face, perfect anatomy, sharp focus, professional photography, cinematic lighting, 8k uhd, highly detailed",
+        "text": "photorealistic short-drama frame, distinct character identity, readable face, natural skin texture, commercial lighting, clean background separation, practical wardrobe detail, phone-readable composition",
         "clip": ["checkpoint_loader", 1]
       }
     },

@@ -102,34 +102,34 @@ class TestPromptOptimizer:
         """测试质量模式的质量标签选择"""
         tags = optimizer._select_quality_tags(OptimizationMode.QUALITY)
         assert len(tags) == 5
-        assert "masterpiece" in tags or "best quality" in tags
+        assert "short-drama production frame" in tags
     
     def test_select_quality_tags_realism_mode(self, optimizer):
         """测试真实感模式的质量标签选择"""
         tags = optimizer._select_quality_tags(OptimizationMode.REALISM)
         assert len(tags) == 3
-        assert "best quality" in tags
-        assert "high resolution" in tags
+        assert "phone-readable composition" in tags
+        assert "natural skin texture" in tags
     
     def test_select_quality_tags_artistic_mode(self, optimizer):
         """测试艺术模式的质量标签选择"""
         tags = optimizer._select_quality_tags(OptimizationMode.ARTISTIC)
         assert len(tags) == 3
-        assert "masterpiece" in tags or "best quality" in tags
+        assert "controlled contrast" in tags
     
     def test_select_quality_tags_balanced_mode(self, optimizer):
         """测试平衡模式的质量标签选择"""
         tags = optimizer._select_quality_tags(OptimizationMode.BALANCED)
         assert len(tags) == 3
-        assert "best quality" in tags
+        assert "clean subject separation" in tags
     
     # ==================== 测试模式关键词选择 ====================
     
     def test_select_mode_keywords_quality(self, optimizer):
         """测试质量模式的关键词选择"""
         keywords = optimizer._select_mode_keywords(OptimizationMode.QUALITY)
-        assert "ultra-detailed" in keywords
-        assert "sharp focus" in keywords
+        assert "wardrobe detail" in keywords
+        assert "sharp face focus" in keywords
     
     def test_select_mode_keywords_realism(self, optimizer):
         """测试真实感模式的关键词选择"""
@@ -161,6 +161,7 @@ class TestPromptOptimizer:
         """测试艺术模式的光影术语选择"""
         terms = optimizer._select_lighting_terms(OptimizationMode.ARTISTIC)
         assert "dramatic lighting" in terms
+        assert "motivated practical light" in terms
     
     def test_select_lighting_terms_other(self, optimizer):
         """测试其他模式的光影术语选择"""
@@ -172,36 +173,36 @@ class TestPromptOptimizer:
     def test_select_photography_terms_realism(self, optimizer):
         """测试真实感模式的摄影术语选择"""
         terms = optimizer._select_photography_terms(OptimizationMode.REALISM)
-        assert "professional photography" in terms
-        assert "DSLR" in terms
+        assert "short-drama coverage" in terms
+        assert "35mm perspective" in terms
     
     def test_select_photography_terms_artistic(self, optimizer):
         """测试艺术模式的摄影术语选择"""
         terms = optimizer._select_photography_terms(OptimizationMode.ARTISTIC)
-        assert "shallow depth of field" in terms or "bokeh" in terms
+        assert "moderate depth of field" in terms or "background separation" in terms
     
     def test_select_photography_terms_other(self, optimizer):
         """测试其他模式的摄影术语选择"""
         terms = optimizer._select_photography_terms(OptimizationMode.QUALITY)
-        assert "professional photography" in terms
+        assert "short-drama coverage" in terms
     
     # ==================== 测试正面提示词构建 ====================
     
     def test_build_positive_prompt_basic(self, optimizer):
         """测试基本正面提示词构建"""
         base_prompt = "a beautiful woman"
-        keywords = ["best quality", "high resolution"]
+        keywords = ["phone-readable composition", "wardrobe detail"]
         
         result = optimizer._build_positive_prompt(base_prompt, keywords, 100)
         
-        assert "best quality" in result
-        assert "high resolution" in result
+        assert "phone-readable composition" in result
+        assert "wardrobe detail" in result
         assert "a beautiful woman" in result
     
     def test_build_positive_prompt_word_limit(self, optimizer):
         """测试单词数量限制"""
         base_prompt = "a beautiful woman"
-        keywords = ["best quality", "high resolution", "ultra-detailed", "sharp focus"]
+        keywords = ["phone-readable composition", "wardrobe detail", "controlled contrast", "sharp face focus"]
         
         # 目标单词数量较小，应该只添加部分关键词
         result = optimizer._build_positive_prompt(base_prompt, keywords, 10)
@@ -269,8 +270,8 @@ class TestPromptOptimizer:
         assert len(result.added_keywords) > 0
         assert result.word_count > 0
         
-        # 验证包含质量标签
-        assert any(tag in result.positive_prompt for tag in ["quality", "detailed"])
+        # 验证包含可审核的短剧生产标签
+        assert any(tag in result.positive_prompt for tag in ["short-drama", "wardrobe detail", "phone-readable"])
     
     def test_optimize_realism_mode(self, optimizer):
         """测试真实感模式优化"""

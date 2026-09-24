@@ -33,15 +33,15 @@ class OptimizedPrompt:
 class PromptOptimizer:
     """提示词优化引擎"""
     
-    # 质量标签
+    # 生产质量标签：避免空泛榜单词，改为可被审核的短剧画面要求。
     QUALITY_TAGS = [
-        "masterpiece",
-        "best quality",
-        "ultra-detailed",
-        "high resolution",
-        "professional",
-        "8k uhd",
-        "sharp focus"
+        "short-drama production frame",
+        "phone-readable composition",
+        "clean subject separation",
+        "natural skin texture",
+        "wardrobe detail",
+        "controlled contrast",
+        "sharp face focus"
     ]
     
     # 真实感关键词
@@ -62,8 +62,8 @@ class PromptOptimizer:
     ARTISTIC_KEYWORDS = [
         "cinematic",
         "dramatic lighting",
-        "depth of field",
-        "bokeh",
+        "background separation",
+        "motivated practical light",
         "artistic composition",
         "color grading",
         "aesthetic",
@@ -79,19 +79,18 @@ class PromptOptimizer:
         "ambient light",
         "diffused light",
         "studio lighting",
-        "volumetric lighting"
+        "motivated practical light"
     ]
     
     # 摄影术语
     PHOTOGRAPHY_TERMS = [
-        "shallow depth of field",
-        "wide aperture",
-        "35mm lens",
-        "50mm lens",
-        "portrait lens",
-        "professional photography",
-        "DSLR",
-        "full frame"
+        "moderate depth of field",
+        "35mm perspective",
+        "50mm perspective",
+        "casting reference framing",
+        "short-drama coverage",
+        "medium shot coverage",
+        "face and wardrobe clarity"
     ]
     
     # 负面提示词（通用）
@@ -268,13 +267,13 @@ class PromptOptimizer:
             return self.QUALITY_TAGS[:5]
         elif mode == OptimizationMode.REALISM:
             # 真实感模式：使用部分质量标签
-            return ["best quality", "high resolution", "sharp focus"]
+            return ["phone-readable composition", "natural skin texture", "sharp face focus"]
         elif mode == OptimizationMode.ARTISTIC:
             # 艺术模式：使用艺术相关的质量标签
-            return ["masterpiece", "best quality", "professional"]
+            return ["short-drama production frame", "controlled contrast", "clean subject separation"]
         else:
             # 平衡模式：使用核心质量标签
-            return ["best quality", "high resolution", "professional"]
+            return ["phone-readable composition", "clean subject separation", "natural skin texture"]
     
     def _select_mode_keywords(self, mode: OptimizationMode) -> List[str]:
         """
@@ -288,7 +287,7 @@ class PromptOptimizer:
         """
         if mode == OptimizationMode.QUALITY:
             # 质量模式：强调细节和清晰度
-            return ["ultra-detailed", "sharp focus", "8k uhd"]
+            return ["sharp face focus", "wardrobe detail", "controlled contrast"]
         elif mode == OptimizationMode.REALISM:
             # 真实感模式：强调真实感
             return self.REALISM_KEYWORDS[:6]
@@ -319,7 +318,7 @@ class PromptOptimizer:
             return ["natural light", "soft lighting", "ambient light"]
         elif mode == OptimizationMode.ARTISTIC:
             # 艺术模式：戏剧性光影
-            return ["dramatic lighting", "rim lighting", "volumetric lighting"]
+            return ["dramatic lighting", "rim lighting", "motivated practical light"]
         else:
             # 其他模式：平衡光影
             return ["natural lighting", "soft lighting"]
@@ -336,13 +335,13 @@ class PromptOptimizer:
         """
         if mode == OptimizationMode.REALISM:
             # 真实感模式：专业摄影术语
-            return ["professional photography", "DSLR", "35mm lens"]
+            return ["short-drama coverage", "casting reference framing", "35mm perspective"]
         elif mode == OptimizationMode.ARTISTIC:
             # 艺术模式：艺术摄影术语
-            return ["shallow depth of field", "bokeh", "cinematic composition"]
+            return ["moderate depth of field", "background separation", "cinematic composition"]
         else:
             # 其他模式：基础摄影术语
-            return ["professional photography", "sharp focus"]
+            return ["short-drama coverage", "sharp face focus"]
     
     def _build_positive_prompt(
         self,

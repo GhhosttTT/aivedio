@@ -131,24 +131,24 @@ class CharacterReferenceGenerator:
         Returns:
             包含不同角度提示词的字典
         """
-        # 高质量基础标签 - 电影级人像摄影风格
-        base_quality = "masterpiece, best quality, ultra-detailed, 8k uhd, RAW photo, photorealistic, realistic, cinematic, professional photography"
+        # 参考图需要服务角色一致性，优先描述可复用的真人短剧选角特征。
+        base_quality = "photorealistic short-drama casting reference, commercial but believable lighting, natural skin texture, phone-readable face, clean wardrobe detail"
         
-        # 精致面部关键词
-        face_details = "beautiful detailed face, delicate facial features, flawless skin, soft natural makeup, expressive eyes with catchlights, perfect symmetry, natural skin texture"
+        # 面部关键词保留五官可辨识度，避免过度磨皮和同质化审美。
+        face_details = "specific facial features, asymmetrical natural details, visible skin texture, subtle natural makeup, expressive eyes with catchlights, believable facial proportions"
         
-        # 专业摄影参数
-        camera_specs = "shot on professional DSLR, 85mm f/1.4 lens, shallow depth of field, sharp focus on face, bokeh background"
+        # 参考图要清楚稳定，减少虚化和镜头炫技。
+        camera_specs = "straight-on casting photo, moderate depth of field, sharp focus on face and outfit, neutral background"
         
-        # 电影级光线
-        lighting = "cinematic lighting, soft diffused light, warm golden tones, volumetric lighting, rim light, lens flare, professional color grading"
+        # 短剧生产更依赖可复现的商业光线，而非夸张特效光。
+        lighting = "soft commercial key light, clean fill light, controlled contrast, natural color grade"
         
         # 构建基础描述
         appearance = f"{character_data.get('age', 25)} year old {character_data.get('ethnicity', 'Asian')} {character_data.get('gender', 'male')}"
         face = f"{character_data.get('face_shape', 'oval face')}, {character_data.get('eyes', 'brown eyes')}, {character_data.get('nose', 'straight nose')}, {character_data.get('mouth', 'natural lips')}"
         hair = f"{character_data.get('hair', 'black hair')}, detailed hair strands, realistic hair texture"
         body = f"{character_data.get('body_type', 'athletic build')}, {character_data.get('height', 'average height')}"
-        outfit = f"{character_data.get('outfit_details', 'elegant clothing')}, highly detailed clothing, intricate patterns, rich textures"
+        outfit = f"{character_data.get('outfit_details', 'clean contemporary clothing')}, readable fabric texture, practical styling, clear silhouette"
         skin = character_data.get('skin_tone', 'natural skin tone')
         
         # 强力负面提示词
