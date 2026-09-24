@@ -83,6 +83,22 @@ def passed_image_review(*ids):
     }
 
 
+def passed_manual_review(*ids):
+    return {
+        "cases": [
+            {"id": item, "score": 4.5 if index == 0 else 4.0, "decision": "accept", "note": "case passes human review"}
+            for index, item in enumerate(ids)
+        ],
+        "clip": {
+            "score": 4.3,
+            "decision": "accept",
+            "watched_full_clip": True,
+            "watched_seed_dance_contact_sheet": True,
+            "note": "full clip is stable enough for candidate review",
+        },
+    }
+
+
 def test_review_models_endpoint_uses_llama_cpp_openai_contract(monkeypatch):
     monkeypatch.setattr(validator.settings, "LOCAL_REVIEW_BASE_URL", "http://127.0.0.1:8080")
 
@@ -398,12 +414,7 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     write_json(tmp_path / "image_review.json", passed_image_review("discovery", "reaction"))
     write_json(tmp_path / "video_review.json", passed_video_review())
     write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
-    write_json(tmp_path / "manual_review.json", {
-        "cases": [
-            {"id": "discovery", "score": 4.5, "decision": "accept"},
-            {"id": "reaction", "score": 4.0, "decision": "accept"},
-        ]
-    })
+    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery", "reaction"))
 
     report = validator.summarize_validation(tmp_path)
 
@@ -421,6 +432,7 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     assert report["checks"]["image_review_covers_rendered_cases"] is True
     assert report["checks"]["image_review_missing_case_ids"] == []
     assert report["checks"]["manual_review_covers_rendered_cases"] is True
+    assert report["checks"]["manual_clip_review_passed"] is True
     assert report["action_items"] == []
 
 
@@ -561,6 +573,30 @@ def test_validation_summary_requires_manual_review_for_every_rendered_case(tmp_p
     assert report["checks"]["manual_review_covers_rendered_cases"] is False
     assert report["checks"]["manual_review_missing_case_ids"] == ["reaction"]
     assert any("reaction" in item for item in report["action_items"])
+
+
+def test_validation_summary_requires_manual_clip_review(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery", "reaction"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery", "reaction"))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", {
+        "cases": [
+            {"id": "discovery", "score": 4.5, "decision": "accept"},
+            {"id": "reaction", "score": 4.0, "decision": "accept"},
+        ]
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["manual_review_covers_rendered_cases"] is True
+    assert report["checks"]["manual_clip_review_present"] is False
+    assert report["checks"]["manual_clip_review_passed"] is False
+    assert report["checks"]["manual_review_passed"] is False
+    assert any("full generated clip" in item for item in report["action_items"])
 
 
 def test_validation_summary_requires_seed_dance_baseline_comparison(tmp_path):
@@ -709,24 +745,21 @@ def test_acceptance_package_writes_json_and_markdown(tmp_path):
     write_json(tmp_path / "image_review.json", passed_image_review("discovery", "reaction"))
     write_json(tmp_path / "video_review.json", passed_video_review())
     write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
-    write_json(tmp_path / "manual_review.json", {
-        "cases": [
-            {"id": "discovery", "score": 4.5, "decision": "accept", "note": "face stable"},
-            {"id": "reaction", "score": 4.0, "decision": "accept", "note": "composition OK"},
-        ]
-    })
+    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery", "reaction"))
 
     package = validator.build_acceptance_package(tmp_path)
 
     assert package["status"] == "ready_for_seed_dance_candidate"
     assert package["required_status"] == "ready_for_seed_dance_candidate"
     assert package["manual_review"]["missing_case_ids"] == []
+    assert package["manual_review"]["clip"]["passed"] is True
     assert [case["id"] for case in package["manual_review"]["cases"]] == ["discovery", "reaction"]
     assert package["evidence_files"]["render"]["present"] is True
     assert package["evidence_files"]["image_review"]["present"] is True
     assert (tmp_path / "acceptance_package.json").is_file()
     markdown = (tmp_path / "acceptance_package.md").read_text(encoding="utf-8")
     assert "Local Generation Acceptance Package" in markdown
+    assert "Full Clip Review" in markdown
     assert "discovery" in markdown
     assert "ready_for_seed_dance_candidate" in markdown
 

@@ -359,6 +359,13 @@ def _baseline_contact_sheet_present(baseline_report: dict | None, output: Path) 
     return path.is_file()
 
 
+def _manual_clip_review(manual_review: dict | None) -> dict:
+    if not isinstance(manual_review, dict):
+        return {}
+    clip = manual_review.get("clip") or manual_review.get("video")
+    return clip if isinstance(clip, dict) else {}
+
+
 def _calibration_recommendations(manual_cases: list[dict], video_review_report: dict | None) -> list[dict]:
     recommendations = []
     low_dimensions = _review_low_dimensions(video_review_report)
@@ -497,17 +504,32 @@ def summarize_validation(output: Path):
         and checks["baseline_contact_sheet_present"]
     )
     manual_cases = manual_review.get("cases", []) if isinstance(manual_review, dict) else []
+    manual_clip = _manual_clip_review(manual_review)
     manual_case_ids = _case_ids(manual_cases)
     missing_manual_case_ids = sorted(rendered_case_ids - manual_case_ids)
     checks["manual_review_present"] = bool(manual_cases)
     checks["manual_review_covers_rendered_cases"] = bool(rendered_case_ids) and not missing_manual_case_ids
     checks["manual_review_missing_case_ids"] = missing_manual_case_ids
+    checks["manual_clip_review_present"] = bool(manual_clip)
+    checks["manual_clip_score"] = manual_clip.get("score") if manual_clip else None
+    checks["manual_clip_review_passed"] = bool(
+        manual_clip
+        and manual_clip.get("decision") == "accept"
+        and isinstance(manual_clip.get("score"), (int, float))
+        and manual_clip.get("score") >= 4
+        and manual_clip.get("watched_full_clip") is True
+        and manual_clip.get("watched_seed_dance_contact_sheet") is True
+    )
     if manual_cases:
         scores = [case.get("score", 0) for case in manual_cases]
         checks["manual_average_score"] = round(sum(scores) / len(scores), 2)
         checks["manual_min_score"] = min(scores)
         failed_manual = [case for case in manual_cases if case.get("score", 0) < 4 or case.get("decision") == "reject"]
-        checks["manual_review_passed"] = not failed_manual and checks["manual_review_covers_rendered_cases"]
+        checks["manual_review_passed"] = (
+            not failed_manual
+            and checks["manual_review_covers_rendered_cases"]
+            and checks["manual_clip_review_passed"]
+        )
         report["manual_failures"] = failed_manual
     else:
         checks["manual_average_score"] = None
@@ -551,8 +573,12 @@ def summarize_validation(output: Path):
             "Add manual_review.json scores for every rendered validation case: "
             + ", ".join(missing_manual_case_ids)
         )
-    elif not checks["manual_review_passed"]:
+    elif report.get("manual_failures"):
         report["action_items"].append("Improve prompts/workflow/model settings for manual cases below 4 before scaling up.")
+    if checks["manual_review_present"] and not checks["manual_clip_review_present"]:
+        report["action_items"].append("Add manual_review.json clip review after watching the full generated clip and Seed Dance contact sheet.")
+    elif checks["manual_clip_review_present"] and not checks["manual_clip_review_passed"]:
+        report["action_items"].append("Improve the generated clip until human clip review score is at least 4 and decision is accept.")
     report["calibration_recommendations"] = _calibration_recommendations(manual_cases, video_review_report)
 
     if all(checks[key] for key in (
@@ -611,6 +637,7 @@ def _manual_review_section(summary: dict, render_report: dict | None, manual_rev
     checks = summary.get("checks", {})
     rendered_cases = render_report.get("cases", []) if isinstance(render_report, dict) else []
     manual_cases = manual_review.get("cases", []) if isinstance(manual_review, dict) else []
+    manual_clip = _manual_clip_review(manual_review)
     manual_by_id = {str(case.get("id")): case for case in manual_cases if case.get("id") is not None}
     rendered_case_ids = [str(case.get("id")) for case in rendered_cases if case.get("id") is not None]
     return {
@@ -620,6 +647,15 @@ def _manual_review_section(summary: dict, render_report: dict | None, manual_rev
         "average_score": checks.get("manual_average_score"),
         "min_score": checks.get("manual_min_score"),
         "failures": summary.get("manual_failures", []),
+        "clip": {
+            "present": bool(manual_clip),
+            "score": checks.get("manual_clip_score"),
+            "decision": manual_clip.get("decision"),
+            "watched_full_clip": manual_clip.get("watched_full_clip"),
+            "watched_seed_dance_contact_sheet": manual_clip.get("watched_seed_dance_contact_sheet"),
+            "note": manual_clip.get("note"),
+            "passed": checks.get("manual_clip_review_passed"),
+        },
         "cases": [
             {
                 "id": case_id,
@@ -637,6 +673,8 @@ def _acceptance_action_items(summary: dict, manual_section: dict, repair_queue: 
     items = list(summary.get("action_items", []))
     if manual_section["missing_case_ids"]:
         items.append("Finish human review for missing rendered cases before scaling production.")
+    if not manual_section.get("clip", {}).get("passed"):
+        items.append("Finish full-clip human review against the Seed Dance contact sheet before accepting production quality.")
     setup_required = [item for item in repair_queue if item.get("execution") == "setup_required"]
     if setup_required:
         items.append("Resolve setup-required repair actions before rerunning automatic generation.")
@@ -686,6 +724,7 @@ def _build_acceptance_markdown(package: dict) -> str:
         "video_aesthetic_gate_passed",
         "baseline_contact_sheet_present",
         "baseline_comparison_passed",
+        "manual_clip_review_passed",
         "manual_review_passed",
     ):
         lines.append(f"| {key} | {_markdown_bool(checks.get(key))} |")
@@ -706,6 +745,21 @@ def _build_acceptance_markdown(package: dict) -> str:
                 note=(case.get("note") or "").replace("|", "/"),
             )
         )
+    clip = manual.get("clip", {})
+    lines.extend([
+        "",
+        "## Full Clip Review",
+        "",
+        "| Score | Decision | Watched Clip | Watched Contact Sheet | Note |",
+        "| --- | --- | --- | --- | --- |",
+        "| {score} | {decision} | {clip_seen} | {sheet_seen} | {note} |".format(
+            score=clip.get("score", ""),
+            decision=clip.get("decision") or "",
+            clip_seen=_markdown_bool(clip.get("watched_full_clip")),
+            sheet_seen=_markdown_bool(clip.get("watched_seed_dance_contact_sheet")),
+            note=(clip.get("note") or "").replace("|", "/"),
+        ),
+    ])
     lines.extend([
         "",
         "## Human Checklist",
@@ -759,7 +813,7 @@ def build_acceptance_package(output: Path) -> dict:
             "Reject same-face characters, face drift, broken hands, unreadable expressions, bad crops, and random text/watermarks.",
             "Watch the generated clip at normal speed and half speed for flicker, warping, identity drift, and broken motion.",
             "Compare against the Seed Dance reference clip for composition, lighting, facial consistency, motion stability, and overall appeal.",
-            "Update manual_review.json with scores for every rendered case; do not score only the best-looking outputs.",
+            "Update manual_review.json with scores for every rendered case and a clip review; do not score only the best-looking outputs.",
         ],
     }
     package["blocking_action_items"] = _acceptance_action_items(summary, manual_section, repair_queue)

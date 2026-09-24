@@ -414,6 +414,9 @@ export interface ProductionReadinessReport {
                 baseline_comparison_passed?: boolean;
                 manual_review_covers_rendered_cases?: boolean;
                 manual_review_missing_case_ids?: string[];
+                manual_clip_review_present?: boolean;
+                manual_clip_score?: number | null;
+                manual_clip_review_passed?: boolean;
                 manual_review_passed?: boolean;
             };
             action_items?: string[];

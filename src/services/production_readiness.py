@@ -667,6 +667,12 @@ class ProductionReadinessService:
                 "Rerun compare-baseline with an output path so a Seed Dance contact sheet is available for visual review.",
                 severity="warning",
             ))
+        if checks.get("manual_clip_review_passed") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_manual_clip_review_not_passed",
+                "Add a human full-clip review in manual_review.json after watching the generated clip and Seed Dance contact sheet.",
+                severity="warning",
+            ))
         return {
             "status": status or "unknown",
             "path": str(path),
@@ -687,6 +693,9 @@ class ProductionReadinessService:
                 "baseline_comparison_passed": checks.get("baseline_comparison_passed"),
                 "manual_review_covers_rendered_cases": checks.get("manual_review_covers_rendered_cases"),
                 "manual_review_missing_case_ids": checks.get("manual_review_missing_case_ids"),
+                "manual_clip_review_present": checks.get("manual_clip_review_present"),
+                "manual_clip_score": checks.get("manual_clip_score"),
+                "manual_clip_review_passed": checks.get("manual_clip_review_passed"),
                 "manual_review_passed": checks.get("manual_review_passed"),
             },
             "action_items": summary.get("action_items", []) if isinstance(summary.get("action_items"), list) else [],
