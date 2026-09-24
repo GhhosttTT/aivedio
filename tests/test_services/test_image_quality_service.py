@@ -19,6 +19,13 @@ def make_image(path: Path, color: tuple[int, int, int]) -> None:
     Image.new("RGB", (512, 512), color).save(path)
 
 
+def passed_platform_aesthetic_scores(score: int = 5) -> dict:
+    return {
+        feature: {"score": score, "evidence": "passes short-drama still-image aesthetic gate"}
+        for feature in PLATFORM_AESTHETIC_FEATURES
+    }
+
+
 def test_candidate_output_path_keeps_final_extension():
     assert candidate_output_path("scene.png", 3) == "scene.candidate_03.png"
 
@@ -90,6 +97,7 @@ def test_select_best_prefers_identity_safe_candidate_over_higher_average(tmp_pat
                 "visual_integrity": {"score": 4, "evidence": "no broken anatomy"},
                 "facial_identity": {"score": 2, "evidence": "face drift"},
                 "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                "platform_aesthetic_scores": passed_platform_aesthetic_scores(),
             },
         },
         {
@@ -103,6 +111,7 @@ def test_select_best_prefers_identity_safe_candidate_over_higher_average(tmp_pat
                 "visual_integrity": {"score": 5, "evidence": "clean render"},
                 "facial_identity": {"score": 4, "evidence": "face matches"},
                 "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
+                "platform_aesthetic_scores": passed_platform_aesthetic_scores(),
             },
         },
     ], final, tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0)

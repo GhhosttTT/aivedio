@@ -213,8 +213,8 @@ def test_production_readiness_reports_scene_and_review_gaps(setup, monkeypatch):
     assert payload["checks"]["script"]["scene_count"] == 1
     assert payload["checks"]["visual_format"]["status"] == "mobile_short_drama"
     assert any(item["code"] == "too_few_atomic_scenes" for item in payload["blockers"])
-    assert any(item["code"] == "image_review_not_required" for item in payload["blockers"])
-    assert any(item["code"] == "video_review_not_required" for item in payload["blockers"])
+    assert not any(item["code"] == "image_review_not_required" for item in payload["blockers"])
+    assert not any(item["code"] == "video_review_not_required" for item in payload["blockers"])
     assert not any(item["code"] == "non_mobile_short_drama_format" for item in payload["blockers"])
     assert any(item["code"] == "workflow_profile_not_ready" for item in payload["blockers"])
     assert any(item["code"] == "missing_visual_style_asset_pack" for item in payload["blockers"])
@@ -297,6 +297,19 @@ def test_production_readiness_blocks_non_mobile_format(setup, monkeypatch):
     payload = response.json()
     assert payload["checks"]["visual_format"]["status"] == "not_vertical"
     assert any(item["code"] == "non_mobile_short_drama_format" for item in payload["blockers"])
+
+
+def test_production_readiness_blocks_disabled_local_review_requirements(setup, monkeypatch):
+    client, _, _ = setup
+    monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+    monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_REQUIRE_VIDEO_REVIEW", False)
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert any(item["code"] == "image_review_not_required" for item in payload["blockers"])
+    assert any(item["code"] == "video_review_not_required" for item in payload["blockers"])
 
 
 def test_production_readiness_reports_weak_story_rhythm(setup):
