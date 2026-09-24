@@ -661,10 +661,52 @@ class ProductionReadinessService:
                 ),
                 severity="warning",
             ))
+        if checks.get("video_review_passed") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_video_review_not_passed",
+                "Run review-video and pass local VLM video identity, temporal, platform, and aesthetic gates.",
+                severity="warning",
+            ))
+        if checks.get("video_identity_gate_passed") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_video_identity_gate_not_passed",
+                "Fix face drift, same-face casting, or identity inconsistency in generated clips.",
+                severity="warning",
+            ))
+        if checks.get("video_temporal_gate_passed") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_video_temporal_gate_not_passed",
+                "Fix flicker, warping, broken motion, or unstable character positions in generated clips.",
+                severity="warning",
+            ))
+        if checks.get("video_aesthetic_gate_passed") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_video_aesthetic_gate_not_passed",
+                "Improve generated clip lighting, skin texture, phone readability, polish, and repair-artifact quality.",
+                severity="warning",
+            ))
         if checks.get("baseline_contact_sheet_present") is not True:
             warnings.append(ReadinessIssue(
                 "sample_validation_baseline_contact_sheet_missing",
                 "Rerun compare-baseline with an output path so a Seed Dance contact sheet is available for visual review.",
+                severity="warning",
+            ))
+        if checks.get("baseline_comparison_passed") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_baseline_comparison_not_passed",
+                "Improve the generated clip until Seed Dance baseline comparison passes measurable gates.",
+                severity="warning",
+            ))
+        if checks.get("manual_review_covers_rendered_cases") is not True:
+            missing_manual_cases = checks.get("manual_review_missing_case_ids")
+            missing_note = (
+                f" Missing manual review case ids: {', '.join(missing_manual_cases)}."
+                if isinstance(missing_manual_cases, list) and missing_manual_cases
+                else ""
+            )
+            warnings.append(ReadinessIssue(
+                "sample_validation_manual_review_incomplete",
+                "Complete manual_review.json for every rendered validation case." + missing_note,
                 severity="warning",
             ))
         if checks.get("manual_clip_review_passed") is not True:
@@ -677,6 +719,12 @@ class ProductionReadinessService:
             warnings.append(ReadinessIssue(
                 "sample_validation_manual_blocking_issues",
                 "Resolve manual review blocking issues before accepting production quality.",
+                severity="warning",
+            ))
+        if checks.get("manual_review_passed") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_manual_review_not_passed",
+                "Resolve manual review failures before accepting production quality.",
                 severity="warning",
             ))
         if checks.get("repair_queue_empty") is not True:
