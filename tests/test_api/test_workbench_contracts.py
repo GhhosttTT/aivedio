@@ -221,13 +221,15 @@ def test_visual_style_freeze_clears_readiness_visual_style_blocker(setup):
 def test_workflow_profile_freeze_clears_readiness_workflow_profile_blocker(setup, monkeypatch):
     client, _, path = setup
     image = path / "image_workflow.json"
+    reference = path / "reference_workflow.json"
     video = path / "video_workflow.json"
     profile = path / "production_workflow_profile.json"
     image.write_text('{"1":{"class_type":"KSampler"}}', encoding="utf-8")
+    reference.write_text('{"1":{"class_type":"IPAdapterFaceID"}}', encoding="utf-8")
     video.write_text('{"1":{"class_type":"VHS_VideoCombine"}}', encoding="utf-8")
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
-    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", "")
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_PRODUCTION_PROFILE_PATH", str(profile))
 
     before = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
@@ -237,6 +239,7 @@ def test_workflow_profile_freeze_clears_readiness_workflow_profile_blocker(setup
     frozen = client.post("/api/projects/workflow-profile/freeze", json={"notes": "approved"})
     assert frozen.status_code == 200, frozen.text
     assert frozen.json()["status"] == "approved"
+    assert "reference" in frozen.json()["profile"]["required_workflows"]
 
     after = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
     assert after["checks"]["workflow_profile"]["status"] == "valid"

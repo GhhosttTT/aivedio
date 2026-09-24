@@ -21,7 +21,7 @@ REQUIRED_CAPABILITIES = {
     "upscale",
     "candidate_review",
 }
-REQUIRED_WORKFLOWS = {"image", "video"}
+REQUIRED_WORKFLOWS = {"image", "reference", "video"}
 
 
 class ProductionWorkflowProfileService:
