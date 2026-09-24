@@ -216,6 +216,14 @@ def test_production_readiness_reports_scene_and_review_gaps(setup, monkeypatch):
     assert not any(item["code"] == "image_review_not_required" for item in payload["blockers"])
     assert not any(item["code"] == "video_review_not_required" for item in payload["blockers"])
     assert not any(item["code"] == "non_mobile_short_drama_format" for item in payload["blockers"])
+    assert payload["checks"]["image_postprocess"] == {
+        "required": False,
+        "configured": False,
+        "timeout_seconds": 1800,
+        "command_sha256": "",
+    }
+    assert any(item["code"] == "image_postprocess_not_required" for item in payload["blockers"])
+    assert any(item["code"] == "image_postprocess_not_configured" for item in payload["blockers"])
     assert any(item["code"] == "workflow_profile_not_ready" for item in payload["blockers"])
     assert any(item["code"] == "missing_visual_style_asset_pack" for item in payload["blockers"])
     assert "video_engine" not in payload["checks"]
@@ -310,6 +318,25 @@ def test_production_readiness_blocks_disabled_local_review_requirements(setup, m
     payload = response.json()
     assert any(item["code"] == "image_review_not_required" for item in payload["blockers"])
     assert any(item["code"] == "video_review_not_required" for item in payload["blockers"])
+
+
+def test_production_readiness_accepts_required_image_postprocess(setup, monkeypatch):
+    client, _, _ = setup
+    monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_REQUIRE_IMAGE_POSTPROCESS", True)
+    monkeypatch.setattr(
+        "src.services.production_readiness.settings.GENERATION_IMAGE_POSTPROCESS_COMMAND",
+        "python C:/models/facefix/refine.py --input {input} --output {output}",
+    )
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["checks"]["image_postprocess"]["required"] is True
+    assert payload["checks"]["image_postprocess"]["configured"] is True
+    assert len(payload["checks"]["image_postprocess"]["command_sha256"]) == 64
+    assert not any(item["code"] == "image_postprocess_not_required" for item in payload["blockers"])
+    assert not any(item["code"] == "image_postprocess_not_configured" for item in payload["blockers"])
 
 
 def test_production_readiness_reports_weak_story_rhythm(setup):

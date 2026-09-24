@@ -67,8 +67,8 @@ GENERATION_IMAGE_PLATFORM_MIN_SCORE=4.1
 GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE=4.0
 GENERATION_TURNAROUND_FEATURE_MIN_SCORE=4.0
 GENERATION_REQUIRE_IMAGE_REVIEW=true
-GENERATION_IMAGE_POSTPROCESS_COMMAND=
-GENERATION_REQUIRE_IMAGE_POSTPROCESS=false
+GENERATION_IMAGE_POSTPROCESS_COMMAND=python C:/models/facefix/refine.py --input {input} --output {output} --prompt {prompt} --negative {negative_prompt} --reference {reference}
+GENERATION_REQUIRE_IMAGE_POSTPROCESS=true
 GENERATION_IMAGE_POSTPROCESS_TIMEOUT_SECONDS=1800
 GENERATION_BLOCK_COMPLEX_SHOTS=true
 GENERATION_VIDEO_CANDIDATES=4
@@ -128,7 +128,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 `GENERATION_IMAGE_PLATFORM_MIN_SCORE` 是图片短剧平台观感门槛，会对商业美观、构图、画面完整性、脸部身份和整体身份加权；平均分够但塑料感、廉价滤镜、脏光或平台观感差的候选不会晋级。
 `GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE` 是平台美学子项门槛。VLM 返回 `platform_aesthetic_scores` 时，系统会分别检查肤质、灯光、色彩、手机可读性、背景分离、制作质感和修复痕迹；任一关键项低分会拉低候选平台分，避免“总分看起来够但画面廉价”的图被选中。
 `GENERATION_TURNAROUND_FEATURE_MIN_SCORE` 是角色三视图立体画册的五官/轮廓门槛。正面会检查脸型、眼睛、鼻子、嘴、发型、独特标记、体型和正面服装；侧面会检查 90 度侧脸、鼻梁剪影、发型轮廓、体型和侧面服装；背面会检查背面角度、发型后轮廓、服装背影和不能露正脸。
-`GENERATION_IMAGE_POSTPROCESS_COMMAND` 是入选关键帧后的本地精修命令，可接 FaceDetailer、CodeFormer/GFPGAN、高清化、超分或 ComfyUI 二段工作流。命令支持 `{input}`、`{output}`、`{prompt}`、`{negative_prompt}`、`{reference}` 占位符。开启 `GENERATION_REQUIRE_IMAGE_POSTPROCESS=true` 后，精修命令未配置、失败、未产出图像或输出与输入完全一致都会阻断该镜头，避免“生产 profile 写了 face_repair/upscale，但实际没有跑精修”。
+`GENERATION_IMAGE_POSTPROCESS_COMMAND` 是入选关键帧后的本地精修命令，可接 FaceDetailer、CodeFormer/GFPGAN、高清化、超分或 ComfyUI 二段工作流。示例命令只是占位，需要替换为目标机器实际存在的脚本、ComfyUI API 包装器或批处理命令。命令支持 `{input}`、`{output}`、`{prompt}`、`{negative_prompt}`、`{reference}` 占位符。开启 `GENERATION_REQUIRE_IMAGE_POSTPROCESS=true` 后，精修命令未配置、失败、未产出图像或输出与输入完全一致都会阻断该镜头，避免“生产 profile 写了 face_repair/upscale，但实际没有跑精修”。生产就绪检查也会阻断 `GENERATION_REQUIRE_IMAGE_POSTPROCESS=false` 或命令为空的配置。
 `GENERATION_REQUIRE_IMAGE_REVIEW=true` 时，本地 VLM 不可用会直接拦截图片，不会只靠技术指标放行。开发调试可以临时设为 false；最终生产就绪检查会把 false 作为 blocker，不允许声称达到生产视觉质量。
 `GENERATION_QUALITY_PROMPT_APPEND` 会追加到每张候选图的正向提示词，用来稳定构图、人体和主动作可读性。
 `GENERATION_QUALITY_NEGATIVE_APPEND` 会追加到负向提示词，用来压制截断、脏光、畸形手脸、随机文字和水印。

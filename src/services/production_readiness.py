@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -68,6 +69,7 @@ class ProductionReadinessService:
             "story_rhythm": self._story_rhythm_check(project, scenes, warnings),
             "story_room": self._story_room_check(project, scenes, warnings),
             "visual_format": self._visual_format_check(blockers),
+            "image_postprocess": self._image_postprocess_check(blockers),
             "characters": self._character_check(project, scenes, characters, blockers, warnings),
             "shot_complexity": self._shot_complexity_check(project, scenes, blockers, warnings),
             "spatial_continuity": self._spatial_continuity_check(project, scenes, characters, blockers, warnings),
@@ -139,6 +141,33 @@ class ProductionReadinessService:
             "ratio": ratio,
             "target": "9:16 vertical mobile short drama",
             "recommended": {"width": 768, "height": 1344},
+        }
+
+    def _image_postprocess_check(self, blockers: list[ReadinessIssue]) -> dict:
+        command = settings.GENERATION_IMAGE_POSTPROCESS_COMMAND.strip()
+        configured = bool(command)
+        required = bool(settings.GENERATION_REQUIRE_IMAGE_POSTPROCESS)
+        if not required:
+            blockers.append(ReadinessIssue(
+                "image_postprocess_not_required",
+                (
+                    "Enable GENERATION_REQUIRE_IMAGE_POSTPROCESS=true before final production so local face, detail, "
+                    "and upscale refinement cannot be skipped."
+                ),
+            ))
+        if not configured:
+            blockers.append(ReadinessIssue(
+                "image_postprocess_not_configured",
+                (
+                    "Configure GENERATION_IMAGE_POSTPROCESS_COMMAND to run local face/detail/upscale refinement "
+                    "on accepted keyframes."
+                ),
+            ))
+        return {
+            "required": required,
+            "configured": configured,
+            "timeout_seconds": settings.GENERATION_IMAGE_POSTPROCESS_TIMEOUT_SECONDS,
+            "command_sha256": hashlib.sha256(command.encode("utf-8")).hexdigest() if configured else "",
         }
 
     def _story_rhythm_check(
