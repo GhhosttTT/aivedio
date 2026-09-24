@@ -27,6 +27,12 @@ class TestVideoComposerProperties:
         import shutil
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
+
+    def _touch_files(self, paths):
+        for path in paths:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as file:
+                file.write(b"test-media-placeholder")
     
     @given(
         num_videos=st.integers(min_value=2, max_value=10),
@@ -45,6 +51,7 @@ class TestVideoComposerProperties:
         # 创建测试视频路径
         video_paths = [os.path.join(self.temp_dir, f"video_{i}.mp4") for i in range(num_videos)]
         output_path = os.path.join(self.temp_dir, "output.mp4")
+        self._touch_files(video_paths)
         
         # Mock _get_duration 方法
         with patch.object(self.composer, '_get_duration', return_value=video_duration):
@@ -88,6 +95,7 @@ class TestVideoComposerProperties:
         video_path = os.path.join(self.temp_dir, "video.mp4")
         audio_path = os.path.join(self.temp_dir, "audio.mp3")
         output_path = os.path.join(self.temp_dir, "output.mp4")
+        self._touch_files([video_path, audio_path])
         
         # Mock _get_duration 方法
         def mock_get_duration(path):
@@ -149,6 +157,7 @@ class TestVideoComposerProperties:
         # 创建测试视频路径
         video_paths = [os.path.join(self.temp_dir, f"video_{i}.mp4") for i in range(num_videos)]
         output_path = os.path.join(self.temp_dir, "output.mp4")
+        self._touch_files(video_paths)
         
         # 找到最高分辨率
         max_width = max(w for w, h in resolutions)
@@ -187,6 +196,7 @@ class TestVideoComposerProperties:
         # 创建测试视频路径
         video_paths = [os.path.join(self.temp_dir, f"video_{i}.mp4") for i in range(num_videos)]
         output_path = os.path.join(self.temp_dir, "output.mp4")
+        self._touch_files(video_paths)
         
         # Mock FFmpeg 执行
         with patch('subprocess.run') as mock_run:
@@ -231,6 +241,7 @@ class TestVideoComposerProperties:
         video_path = os.path.join(self.temp_dir, "video.mp4")
         bgm_path = os.path.join(self.temp_dir, "bgm.mp3")
         output_path = os.path.join(self.temp_dir, "output.mp4")
+        self._touch_files([video_path, bgm_path])
         
         # Mock _get_duration 方法
         def mock_get_duration(path):
@@ -276,6 +287,7 @@ class TestVideoComposerProperties:
         # 创建测试音频路径
         audio_paths = [os.path.join(self.temp_dir, f"audio_{i}.mp3") for i in range(num_audios)]
         output_path = os.path.join(self.temp_dir, "output.mp3")
+        self._touch_files(audio_paths)
         
         # Mock _get_duration 方法
         with patch.object(self.composer, '_get_duration', return_value=audio_duration):

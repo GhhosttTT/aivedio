@@ -1,8 +1,16 @@
 from pathlib import Path
+import shutil
+
+import pytest
 
 from src.services.draft_media_service import get_draft_media_service
 from src.services.subtitle_generator import SubtitleGenerator
 from src.services.video_composer import VideoComposer
+
+pytestmark = pytest.mark.skipif(
+    not (shutil.which("ffmpeg") and shutil.which("ffprobe")),
+    reason="ffmpeg and ffprobe are required to verify playable draft video output",
+)
 
 
 def test_draft_media_pipeline_produces_playable_final_video(tmp_path):
