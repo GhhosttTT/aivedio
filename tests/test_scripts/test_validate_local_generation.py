@@ -249,6 +249,46 @@ def test_render_images_uses_production_quality_profile(tmp_path, monkeypatch):
     assert report["cases"][0]["request"]["enable_parameter_optimization"] is True
 
 
+def test_review_images_builds_repair_queue_for_failed_keyframes(tmp_path, monkeypatch):
+    write_json(tmp_path / "render.json", {
+        "status": "rendered_pending_human_review",
+        "cases": [{
+            "id": "discovery",
+            "image": "discovery.png",
+            "prompt": "Alice reacts in a premium office",
+            "scene": {"scene_number": 7, "visual_description": "Alice reacts in a premium office"},
+        }],
+    })
+
+    class FakeSelector:
+        def review_candidate(self, index, image_path, scene, prompt, reference=None):
+            return {
+                "index": index,
+                "path": str(image_path),
+                "status": "passed",
+                "average": 4.4,
+                "platform_score": 3.0,
+                "review": {
+                    "facial_identity": {"score": 4, "evidence": "face matches"},
+                    "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
+                },
+                "platform_aesthetic_gate": {
+                    "status": "needs_review",
+                    "low": {
+                        "skin_texture": {"score": 2, "evidence": "plastic skin"},
+                    },
+                },
+            }
+
+    monkeypatch.setattr(validator, "ImageQualitySelector", lambda: FakeSelector())
+
+    report = validator.review_images(tmp_path)
+
+    assert report["status"] == "needs_review"
+    assert report["repair_queue"][0]["action"] == "refine_prompt_composition"
+    assert report["repair_queue"][0]["scene_number"] == 7
+
+
 def test_validation_summary_requires_manual_scores(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})

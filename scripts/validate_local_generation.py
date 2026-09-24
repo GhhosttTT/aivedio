@@ -23,6 +23,7 @@ from src.services.video_engine_preflight import (
 )
 from src.services.generation_review import GenerationReviewService, platform_video_score, write_report
 from src.services.shot_prompt_service import ShotPromptService
+from src.services.repair_queue import attach_repair_queue
 from scripts.compare_video_baseline import compare as compare_video_baseline
 
 
@@ -200,11 +201,19 @@ def review_images(output: Path, reference=None):
             }
         case_report["id"] = case.get("id")
         case_report["image"] = str(image)
+        case_report["scene"] = {
+            "scene_number": payload["scene_number"],
+            "visual_description": payload["visual_description"],
+        }
         report["cases"].append(case_report)
     report["status"] = "passed" if _image_review_cases_passed(report) else "needs_review"
-    for case in report["cases"]:
-        if isinstance(case, dict) and isinstance(case.get("repair_queue"), list):
-            report["repair_queue"].extend(case["repair_queue"])
+    if report["status"] != "passed":
+        queue_report = {
+            "status": report["status"],
+            "candidates": report["cases"],
+        }
+        attach_repair_queue(queue_report, "image")
+        report["repair_queue"] = queue_report.get("repair_queue", [])
     write_report(output / "image_review.json", report)
     return report
 
