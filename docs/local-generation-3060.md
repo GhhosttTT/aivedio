@@ -129,7 +129,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 `GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE` 是平台美学子项门槛。VLM 返回 `platform_aesthetic_scores` 时，系统会分别检查肤质、灯光、色彩、手机可读性、背景分离、制作质感和修复痕迹；任一关键项低分会拉低候选平台分，避免“总分看起来够但画面廉价”的图被选中。
 `GENERATION_TURNAROUND_FEATURE_MIN_SCORE` 是角色三视图立体画册的五官/轮廓门槛。正面会检查脸型、眼睛、鼻子、嘴、发型、独特标记、体型和正面服装；侧面会检查 90 度侧脸、鼻梁剪影、发型轮廓、体型和侧面服装；背面会检查背面角度、发型后轮廓、服装背影和不能露正脸。
 `GENERATION_IMAGE_POSTPROCESS_COMMAND` 是入选关键帧后的本地精修命令，可接 FaceDetailer、CodeFormer/GFPGAN、高清化、超分或 ComfyUI 二段工作流。命令支持 `{input}`、`{output}`、`{prompt}`、`{negative_prompt}`、`{reference}` 占位符。开启 `GENERATION_REQUIRE_IMAGE_POSTPROCESS=true` 后，精修命令未配置、失败、未产出图像或输出与输入完全一致都会阻断该镜头，避免“生产 profile 写了 face_repair/upscale，但实际没有跑精修”。
-`GENERATION_REQUIRE_IMAGE_REVIEW=true` 时，本地 VLM 不可用会直接拦截图片，不会只靠技术指标放行。正式跑片建议打开；开发调试可以先保持 false。
+`GENERATION_REQUIRE_IMAGE_REVIEW=true` 时，本地 VLM 不可用会直接拦截图片，不会只靠技术指标放行。开发调试可以临时设为 false；最终生产就绪检查会把 false 作为 blocker，不允许声称达到生产视觉质量。
 `GENERATION_QUALITY_PROMPT_APPEND` 会追加到每张候选图的正向提示词，用来稳定构图、人体和主动作可读性。
 `GENERATION_QUALITY_NEGATIVE_APPEND` 会追加到负向提示词，用来压制截断、脏光、畸形手脸、随机文字和水印。
 
@@ -137,7 +137,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 
 这个机制提升的是命中率和可追溯性，仍依赖底层模型、checkpoint、LoRA、Control/IPAdapter 节点质量。低质模型生成 20 张也可能只能选出较差的一张；候选择优不能替代更强模型或人工定妆。
 
-视频阶段同样支持候选择优。`GENERATION_VIDEO_CANDIDATES` 会让同一关键帧串行生成多个视频候选，并轻微扰动运动强度和噪声增强参数；每个候选都会保存独立的 `.review.json` 抽帧审核报告，最终视频旁边保存 `.quality.json` 候选排序。若第一轮候选都低于门槛，`GENERATION_VIDEO_REFINEMENT_PASSES` 会追加稳定性优先的精修轮，自动降低运动强度和噪声，优先压制身份漂移、闪烁和动作断裂。正式跑片建议打开 `GENERATION_REQUIRE_VIDEO_REVIEW=true`，避免 llama.cpp 视觉模型离线时把未审核视频当成高质量结果。
+视频阶段同样支持候选择优。`GENERATION_VIDEO_CANDIDATES` 会让同一关键帧串行生成多个视频候选，并轻微扰动运动强度和噪声增强参数；每个候选都会保存独立的 `.review.json` 抽帧审核报告，最终视频旁边保存 `.quality.json` 候选排序。若第一轮候选都低于门槛，`GENERATION_VIDEO_REFINEMENT_PASSES` 会追加稳定性优先的精修轮，自动降低运动强度和噪声，优先压制身份漂移、闪烁和动作断裂。最终生产必须设置 `GENERATION_REQUIRE_VIDEO_REVIEW=true`，避免 llama.cpp 视觉模型离线时把未审核视频当成高质量结果；生产就绪检查会阻断 false。
 
 视频候选选择除了平均分，还会单独检查身份和时间稳定性。`GENERATION_VIDEO_IDENTITY_MIN_SCORE=4.0` 要求 `facial_identity` 和 `identity_consistency` 都达到 4 分；`GENERATION_VIDEO_TEMPORAL_MIN_SCORE=4.0` 要求 `temporal_consistency` 达到 4 分。若一个候选平均分更高但脸漂或同脸，它会排在身份稳定候选之后；若正式审核开启且所有候选身份/时间门槛都失败，任务会进入失败并写入返修队列。
 视频还会计算 `GENERATION_VIDEO_PLATFORM_MIN_SCORE`，把剧情匹配、构图、商业美观、画面完整性、脸部身份、整体身份和时间连续性合成短剧平台分。这个分数用于拦截“技术上可用但不像红果/短剧平台成片”的候选，例如塑料皮肤、廉价滤镜、脏光、随机文字/水印、修复痕迹或手机屏幕上表情不可读。

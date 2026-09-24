@@ -213,7 +213,8 @@ def test_production_readiness_reports_scene_and_review_gaps(setup, monkeypatch):
     assert payload["checks"]["script"]["scene_count"] == 1
     assert payload["checks"]["visual_format"]["status"] == "not_vertical"
     assert any(item["code"] == "too_few_atomic_scenes" for item in payload["blockers"])
-    assert any(item["code"] == "image_review_not_required" for item in payload["warnings"])
+    assert any(item["code"] == "image_review_not_required" for item in payload["blockers"])
+    assert any(item["code"] == "video_review_not_required" for item in payload["blockers"])
     assert any(item["code"] == "non_mobile_short_drama_format" for item in payload["warnings"])
     assert any(item["code"] == "workflow_profile_not_ready" for item in payload["blockers"])
     assert any(item["code"] == "missing_visual_style_asset_pack" for item in payload["blockers"])

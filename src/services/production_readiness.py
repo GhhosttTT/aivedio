@@ -73,7 +73,7 @@ class ProductionReadinessService:
             "spatial_continuity": self._spatial_continuity_check(project, scenes, characters, blockers, warnings),
             "visual_style": self._visual_style_check(project, scenes, blockers),
             "workflow_profile": self._workflow_profile_check(blockers),
-            "reviewer": self._reviewer_check(warnings),
+            "reviewer": self._reviewer_check(blockers),
             "sample_validation": self._sample_validation_check(warnings),
         }
         if include_engine_preflight:
@@ -557,32 +557,28 @@ class ProductionReadinessService:
             ))
         return report
 
-    def _reviewer_check(self, warnings: list[ReadinessIssue]) -> dict:
+    def _reviewer_check(self, blockers: list[ReadinessIssue]) -> dict:
         backend = settings.LOCAL_REVIEW_BACKEND.lower().strip()
         configured = backend == "llama_cpp" and bool(settings.LOCAL_REVIEW_BASE_URL and settings.LOCAL_REVIEW_MODEL)
         if backend != "llama_cpp":
-            warnings.append(ReadinessIssue(
+            blockers.append(ReadinessIssue(
                 "review_backend_not_llama_cpp",
                 "Use LOCAL_REVIEW_BACKEND=llama_cpp for the local review path requested for this platform.",
-                severity="warning",
             ))
         if not configured:
-            warnings.append(ReadinessIssue(
+            blockers.append(ReadinessIssue(
                 "reviewer_not_configured",
                 "Configure LOCAL_REVIEW_BASE_URL and LOCAL_REVIEW_MODEL for local VLM review.",
-                severity="warning",
             ))
         if not settings.GENERATION_REQUIRE_IMAGE_REVIEW:
-            warnings.append(ReadinessIssue(
+            blockers.append(ReadinessIssue(
                 "image_review_not_required",
                 "Enable GENERATION_REQUIRE_IMAGE_REVIEW=true before claiming production visual quality.",
-                severity="warning",
             ))
         if not settings.GENERATION_REQUIRE_VIDEO_REVIEW:
-            warnings.append(ReadinessIssue(
+            blockers.append(ReadinessIssue(
                 "video_review_not_required",
                 "Enable GENERATION_REQUIRE_VIDEO_REVIEW=true before claiming production video quality.",
-                severity="warning",
             ))
         return {
             "backend": settings.LOCAL_REVIEW_BACKEND,

@@ -75,7 +75,7 @@ GENERATION_VIDEO_POSTPROCESS=true
 GENERATION_VIDEO_END_FRAME_ENABLED=true
 GENERATION_VIDEO_CANDIDATES=2
 GENERATION_VIDEO_REFINEMENT_PASSES=1
-GENERATION_REQUIRE_VIDEO_REVIEW=false
+GENERATION_REQUIRE_VIDEO_REVIEW=true
 COMFYUI_VIDEO_WORKFLOW_PATH=
 GENERATION_PROVIDER=local_comfyui
 HTTP_VIDEO_ENDPOINT=
@@ -97,8 +97,8 @@ them:
 {output_prefix}
 ```
 
-For production review, set `GENERATION_REQUIRE_VIDEO_REVIEW=true` after a local
-VLM reviewer is running.
+Final production readiness requires `GENERATION_REQUIRE_VIDEO_REVIEW=true` and a
+running local llama.cpp VLM reviewer. Keep it false only for draft/debug runs.
 
 ## Seed Dance Replacement Gate
 
