@@ -67,7 +67,7 @@ class ProductionReadinessService:
             "script": self._script_check(project, scenes, blockers),
             "story_rhythm": self._story_rhythm_check(project, scenes, warnings),
             "story_room": self._story_room_check(project, scenes, warnings),
-            "visual_format": self._visual_format_check(warnings),
+            "visual_format": self._visual_format_check(blockers),
             "characters": self._character_check(project, scenes, characters, blockers, warnings),
             "shot_complexity": self._shot_complexity_check(project, scenes, blockers, warnings),
             "spatial_continuity": self._spatial_continuity_check(project, scenes, characters, blockers, warnings),
@@ -115,7 +115,7 @@ class ProductionReadinessService:
             "has_script_json": bool(project.script),
         }
 
-    def _visual_format_check(self, warnings: list[ReadinessIssue]) -> dict:
+    def _visual_format_check(self, blockers: list[ReadinessIssue]) -> dict:
         width = int(settings.GENERATION_WIDTH)
         height = int(settings.GENERATION_HEIGHT)
         ratio = round(width / height, 4) if height else 0
@@ -124,13 +124,12 @@ class ProductionReadinessService:
         is_mobile_short_drama = is_vertical and abs(ratio - target_ratio) <= 0.08
         status = "mobile_short_drama" if is_mobile_short_drama else ("vertical_non_9_16" if is_vertical else "not_vertical")
         if status != "mobile_short_drama":
-            warnings.append(ReadinessIssue(
+            blockers.append(ReadinessIssue(
                 "non_mobile_short_drama_format",
                 (
                     "Use a vertical 9:16 generation format such as 768x1344 before claiming "
                     "mobile short-drama production quality."
                 ),
-                severity="warning",
             ))
         return {
             "status": status,

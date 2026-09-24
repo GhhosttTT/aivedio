@@ -76,8 +76,8 @@
     "empty_latent_image": {
       "class_type": "EmptyLatentImage",
       "inputs": {
-        "width": 1344,
-        "height": 768,
+        "width": 768,
+        "height": 1344,
         "batch_size": 1
       }
     },
@@ -134,8 +134,8 @@
   },
   "parameters": {
     "default": {
-      "width": 1344,
-      "height": 768,
+      "width": 768,
+      "height": 1344,
       "steps": 28,
       "cfg_scale": 6,
       "ipadapter_weight": 0.75

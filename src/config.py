@@ -34,13 +34,13 @@ class Settings(BaseSettings):
 
     # ComfyUI 配置
     COMFYUI_BASE_URL: str = "http://127.0.0.1:8188"
-    COMFYUI_WORKFLOW_PATH: str = "./configs/comfyui_workflow.json"
-    COMFYUI_REFERENCE_WORKFLOW_PATH: str = ""
+    COMFYUI_WORKFLOW_PATH: str = "./configs/comfyui_workflow_juggernaut.json"
+    COMFYUI_REFERENCE_WORKFLOW_PATH: str = "./configs/comfyui_workflow_ipadapter_sdxl.json"
     COMFYUI_VIDEO_WORKFLOW_PATH: str = ""
     COMFYUI_PRODUCTION_PROFILE_PATH: str = "./configs/production_workflow_profile.json"
     COMFYUI_TIMEOUT: int = 900
-    GENERATION_WIDTH: int = 1344
-    GENERATION_HEIGHT: int = 768
+    GENERATION_WIDTH: int = 768
+    GENERATION_HEIGHT: int = 1344
     GENERATION_STEPS: int = 28
     GENERATION_CFG: float = 6.0
     GENERATION_STEP_VARIATION: int = 0  # 新增：Steps变化量，0表示固定
