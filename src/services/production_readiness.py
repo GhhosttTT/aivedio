@@ -673,6 +673,12 @@ class ProductionReadinessService:
                 "Add a human full-clip review in manual_review.json after watching the generated clip and Seed Dance contact sheet.",
                 severity="warning",
             ))
+        if checks.get("repair_queue_empty") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_repair_queue_not_empty",
+                "Resolve every repair_queue action from validation reports before accepting production quality.",
+                severity="warning",
+            ))
         return {
             "status": status or "unknown",
             "path": str(path),
@@ -696,6 +702,7 @@ class ProductionReadinessService:
                 "manual_clip_review_present": checks.get("manual_clip_review_present"),
                 "manual_clip_score": checks.get("manual_clip_score"),
                 "manual_clip_review_passed": checks.get("manual_clip_review_passed"),
+                "repair_queue_empty": checks.get("repair_queue_empty"),
                 "manual_review_passed": checks.get("manual_review_passed"),
             },
             "action_items": summary.get("action_items", []) if isinstance(summary.get("action_items"), list) else [],

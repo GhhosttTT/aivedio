@@ -580,11 +580,17 @@ def summarize_validation(output: Path):
     elif checks["manual_clip_review_present"] and not checks["manual_clip_review_passed"]:
         report["action_items"].append("Improve the generated clip until human clip review score is at least 4 and decision is accept.")
     report["calibration_recommendations"] = _calibration_recommendations(manual_cases, video_review_report)
+    repair_queue = _collect_repair_queue(render_report, image_review_report, video_review_report, baseline_comparison_report, manual_review)
+    report["repair_queue"] = repair_queue
+    checks["repair_queue_empty"] = not repair_queue
+    if repair_queue:
+        report["action_items"].append("Resolve all repair_queue actions before accepting the sample as production-quality.")
 
     if all(checks[key] for key in (
         "environment_ready", "video_workflow_ready", "images_rendered",
         "render_profile_passed", "render_workflow_parameters_passed",
         "image_review_passed", "video_review_passed", "baseline_comparison_passed", "manual_review_passed",
+        "repair_queue_empty",
     )):
         report["status"] = "ready_for_seed_dance_candidate"
     elif (
@@ -725,6 +731,7 @@ def _build_acceptance_markdown(package: dict) -> str:
         "baseline_contact_sheet_present",
         "baseline_comparison_passed",
         "manual_clip_review_passed",
+        "repair_queue_empty",
         "manual_review_passed",
     ):
         lines.append(f"| {key} | {_markdown_bool(checks.get(key))} |")

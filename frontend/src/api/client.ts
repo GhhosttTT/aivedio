@@ -417,6 +417,7 @@ export interface ProductionReadinessReport {
                 manual_clip_review_present?: boolean;
                 manual_clip_score?: number | null;
                 manual_clip_review_passed?: boolean;
+                repair_queue_empty?: boolean;
                 manual_review_passed?: boolean;
             };
             action_items?: string[];
