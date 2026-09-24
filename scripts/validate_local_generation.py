@@ -123,11 +123,12 @@ def render_images(
                 raise ValueError("Case ID must be alphanumeric")
             compiled = ShotPromptService().compile(case["prompt"])
             path = output / (case["id"] + ".png")
+            case_reference = case.get("reference_image") or case.get("reference") or reference
             started = time.monotonic()
             image = service.generate_image(
                 prompt=compiled.prompt, negative_prompt=compiled.negative_prompt,
-                output_path=str(path), seed=case["seed"], reference_image=reference,
-                use_ipadapter=bool(reference), width=settings.GENERATION_WIDTH,
+                output_path=str(path), seed=case["seed"], reference_image=case_reference,
+                use_ipadapter=bool(case_reference), width=settings.GENERATION_WIDTH,
                 height=settings.GENERATION_HEIGHT, steps=settings.GENERATION_STEPS,
                 cfg_scale=settings.GENERATION_CFG,
                 quality_mode=quality_mode,
@@ -139,7 +140,9 @@ def render_images(
                 "id": case["id"],
                 "image": image,
                 "seed": case["seed"],
+                "source_prompt": case["prompt"],
                 "prompt": compiled.prompt,
+                "scene": case.get("scene", {}),
                 "elapsed_seconds": round(time.monotonic() - started, 2),
                 "actual_workflow": _extract_workflow_image_metadata(image),
                 "request": {
@@ -149,8 +152,8 @@ def render_images(
                     "cfg_scale": settings.GENERATION_CFG,
                     "quality_mode": quality_mode,
                     "optimization_mode": optimization_mode,
-                    "reference_image": reference,
-                    "use_ipadapter": bool(reference),
+                    "reference_image": case_reference,
+                    "use_ipadapter": bool(case_reference),
                     "enable_prompt_optimization": True,
                     "enable_parameter_optimization": quality_mode in {"high_quality", "ultra"},
                 },
@@ -184,13 +187,17 @@ def review_images(output: Path, reference=None):
             "visible_characters": scene.get("visible_characters", []),
             "reference_requirements": scene.get("reference_requirements", []),
         }
+        for key in ("turnaround_view", "turnaround_expected_features", "turnaround_control_prompt"):
+            if key in scene:
+                payload[key] = scene[key]
+        case_reference = reference or (case.get("request") or {}).get("reference_image")
         try:
             case_report = selector.review_candidate(
                 index,
                 image,
                 payload,
                 str(case.get("prompt") or ""),
-                reference,
+                case_reference,
             )
         except Exception as exc:
             case_report = {

@@ -234,18 +234,34 @@ def test_render_images_uses_production_quality_profile(tmp_path, monkeypatch):
     monkeypatch.setattr(validator, "ComfyUIService", FakeComfyUIService)
 
     report = validator.render_images(
-        [{"id": "case_1", "prompt": "woman reads a letter in a cinematic office", "seed": 123}],
+        [{
+            "id": "case_1",
+            "prompt": "woman reads a letter in a cinematic office",
+            "seed": 123,
+            "reference_image": "alice_front.png",
+            "scene": {
+                "scene_number": 3,
+                "visual_description": "Alice reads a letter in a cinematic office",
+                "visible_characters": [{"name": "Alice", "appearance": "Alice identity"}],
+            },
+        }],
         tmp_path,
     )
 
     assert report["status"] == "rendered_pending_human_review"
+    assert calls[0]["reference_image"] == "alice_front.png"
+    assert calls[0]["use_ipadapter"] is True
     assert calls[0]["quality_mode"] == "ultra"
     assert calls[0]["optimization_mode"] == "quality"
     assert calls[0]["enable_prompt_optimization"] is True
     assert calls[0]["enable_parameter_optimization"] is True
     assert report["render_profile"]["quality_mode"] == "ultra"
+    assert report["cases"][0]["source_prompt"] == "woman reads a letter in a cinematic office"
+    assert report["cases"][0]["scene"]["scene_number"] == 3
+    assert report["cases"][0]["scene"]["visible_characters"][0]["name"] == "Alice"
     assert report["cases"][0]["actual_workflow"]["steps"] == 45
     assert report["cases"][0]["request"]["quality_mode"] == "ultra"
+    assert report["cases"][0]["request"]["reference_image"] == "alice_front.png"
     assert report["cases"][0]["request"]["enable_parameter_optimization"] is True
 
 
@@ -287,6 +303,51 @@ def test_review_images_builds_repair_queue_for_failed_keyframes(tmp_path, monkey
     assert report["status"] == "needs_review"
     assert report["repair_queue"][0]["action"] == "refine_prompt_composition"
     assert report["repair_queue"][0]["scene_number"] == 7
+
+
+def test_review_images_uses_per_case_reference_and_scene_contract(tmp_path, monkeypatch):
+    write_json(tmp_path / "render.json", {
+        "status": "rendered_pending_human_review",
+        "cases": [{
+            "id": "side_profile",
+            "image": "side_profile.png",
+            "prompt": "Alice side profile in a premium office",
+            "scene": {
+                "scene_number": 4,
+                "visual_description": "Alice side profile in a premium office",
+                "turnaround_view": "side",
+                "turnaround_expected_features": {"nose_silhouette": "straight nose bridge"},
+                "visible_characters": [{"name": "Alice", "appearance": "Alice identity"}],
+            },
+            "request": {"reference_image": "alice_side.png"},
+        }],
+    })
+
+    class FakeSelector:
+        def review_candidate(self, index, image_path, scene, prompt, reference=None):
+            assert reference == "alice_side.png"
+            assert scene["turnaround_view"] == "side"
+            assert scene["turnaround_expected_features"]["nose_silhouette"] == "straight nose bridge"
+            assert scene["visible_characters"][0]["name"] == "Alice"
+            return {
+                "index": index,
+                "path": str(image_path),
+                "status": "passed",
+                "average": 4.4,
+                "platform_score": 4.2,
+                "review": {
+                    "facial_identity": {"score": 4, "evidence": "profile matches"},
+                    "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
+                },
+                "platform_aesthetic_gate": {"status": "passed", "low": {}, "missing": []},
+            }
+
+    monkeypatch.setattr(validator, "ImageQualitySelector", lambda: FakeSelector())
+
+    report = validator.review_images(tmp_path)
+
+    assert report["status"] == "passed"
+    assert report["repair_queue"] == []
 
 
 def test_validation_summary_requires_manual_scores(tmp_path):
