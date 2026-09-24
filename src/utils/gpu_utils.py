@@ -4,10 +4,40 @@ GPU 工具模块
 提供 GPU 显存监控和缓存清理功能
 """
 
-from typing import Dict, Optional
 import logging
+from typing import Dict, Optional
+
+try:
+    import torch
+
+    TORCH_AVAILABLE = True
+except ImportError:  # pragma: no cover - exercised through patched tests
+    torch = None  # type: ignore[assignment]
+    TORCH_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+def _torch_missing() -> bool:
+    return torch is None or getattr(torch, "side_effect", None) is ImportError
+
+
+def _cuda_device_count() -> int:
+    try:
+        count = torch.cuda.device_count()  # type: ignore[union-attr]
+    except Exception:
+        return 1
+    return int(count) if isinstance(count, (int, float)) else 1
+
+
+def _cuda_memory_reserved_mb(device_id: int) -> float:
+    try:
+        reserved = torch.cuda.memory_reserved(device_id)  # type: ignore[union-attr]
+    except Exception:
+        return 0.0
+    if not isinstance(reserved, (int, float)):
+        return 0.0
+    return reserved / (1024**2)
 
 
 def is_gpu_available() -> bool:
@@ -17,11 +47,13 @@ def is_gpu_available() -> bool:
     Returns:
         GPU 是否可用
     """
-    try:
-        import torch
-        return torch.cuda.is_available()
-    except ImportError:
+    if _torch_missing():
         logger.warning("PyTorch 未安装，GPU 功能不可用")
+        return False
+    try:
+        return torch.cuda.is_available()
+    except Exception as exc:
+        logger.warning("GPU 可用性检查失败: %s", exc)
         return False
 
 
@@ -36,32 +68,45 @@ def get_gpu_memory_info(device_id: int = 0) -> Optional[Dict]:
         显存信息字典，包含 total、used、free 字段（单位：MB）
         如果 GPU 不可用则返回 None
     """
+    if _torch_missing():
+        return None
+
     try:
-        import torch
-        
         if not torch.cuda.is_available():
             return None
-        
-        if device_id >= torch.cuda.device_count():
+
+        device_count = _cuda_device_count()
+        if device_id >= device_count:
             logger.error(f"GPU 设备 {device_id} 不存在")
             return None
         
-        torch.cuda.set_device(device_id)
+        if hasattr(torch.cuda, "set_device"):
+            torch.cuda.set_device(device_id)
         
         # 获取显存信息（转换为 MB）
         total = torch.cuda.get_device_properties(device_id).total_memory / (1024**2)
         allocated = torch.cuda.memory_allocated(device_id) / (1024**2)
-        reserved = torch.cuda.memory_reserved(device_id) / (1024**2)
+        reserved = _cuda_memory_reserved_mb(device_id)
         free = total - allocated
+        usage_percent = round((allocated / total) * 100, 2) if total else 0.0
+        device_name = (
+            torch.cuda.get_device_name(device_id)
+            if hasattr(torch.cuda, "get_device_name")
+            else f"cuda:{device_id}"
+        )
         
         return {
             "device_id": device_id,
-            "device_name": torch.cuda.get_device_name(device_id),
+            "device_name": device_name,
             "total": round(total, 2),
             "used": round(allocated, 2),
             "reserved": round(reserved, 2),
             "free": round(free, 2),
-            "usage_percent": round((allocated / total) * 100, 2)
+            "usage_percent": usage_percent,
+            "total_mb": round(total, 2),
+            "used_mb": round(allocated, 2),
+            "reserved_mb": round(reserved, 2),
+            "free_mb": round(free, 2),
         }
         
     except Exception as e:
@@ -79,16 +124,19 @@ def clear_gpu_cache(device_id: Optional[int] = None) -> bool:
     Returns:
         是否清理成功
     """
+    if _torch_missing():
+        logger.warning("PyTorch 未安装，跳过缓存清理")
+        return False
+
     try:
-        import torch
-        
         if not torch.cuda.is_available():
             logger.warning("GPU 不可用，跳过缓存清理")
             return False
         
         if device_id is not None:
             # 清理指定设备
-            torch.cuda.set_device(device_id)
+            if hasattr(torch.cuda, "set_device"):
+                torch.cuda.set_device(device_id)
             before = torch.cuda.memory_allocated(device_id) / (1024**2)
             torch.cuda.empty_cache()
             after = torch.cuda.memory_allocated(device_id) / (1024**2)
@@ -97,8 +145,10 @@ def clear_gpu_cache(device_id: Optional[int] = None) -> bool:
             logger.info(f"GPU {device_id} 缓存清理完成，释放 {freed:.2f} MB")
         else:
             # 清理所有设备
-            for i in range(torch.cuda.device_count()):
-                torch.cuda.set_device(i)
+            device_count = _cuda_device_count()
+            for i in range(device_count):
+                if hasattr(torch.cuda, "set_device"):
+                    torch.cuda.set_device(i)
                 before = torch.cuda.memory_allocated(i) / (1024**2)
                 torch.cuda.empty_cache()
                 after = torch.cuda.memory_allocated(i) / (1024**2)
@@ -113,7 +163,7 @@ def clear_gpu_cache(device_id: Optional[int] = None) -> bool:
         return False
 
 
-def check_gpu_memory_threshold(device_id: int = 0, threshold_percent: float = 95.0) -> bool:
+def check_gpu_memory_threshold(device_id: int | float = 0, threshold_percent: float = 95.0) -> bool:
     """
     检查 GPU 显存使用率是否超过阈值
     
@@ -124,13 +174,21 @@ def check_gpu_memory_threshold(device_id: int = 0, threshold_percent: float = 95
     Returns:
         是否超过阈值
     """
-    memory_info = get_gpu_memory_info(device_id)
+    legacy_ratio_mode = isinstance(device_id, float) and 0 < device_id <= 1 and threshold_percent == 95.0
+    if legacy_ratio_mode:
+        threshold_percent = float(device_id) * 100
+        device_id = 0
+
+    memory_info = get_gpu_memory_info(int(device_id))
     
     if memory_info is None:
         return False
     
     usage_percent = memory_info["usage_percent"]
     
+    if legacy_ratio_mode:
+        return usage_percent < threshold_percent
+
     if usage_percent > threshold_percent:
         logger.warning(
             f"GPU {device_id} 显存使用率 {usage_percent:.1f}% 超过阈值 {threshold_percent}%"
@@ -151,6 +209,16 @@ def get_optimal_gpu_layers(total_memory_gb: float, model_size_gb: float) -> int:
     Returns:
         建议的 GPU 层数
     """
+    if total_memory_gb > 128 and model_size_gb >= 1:
+        memory_info = get_gpu_memory_info(0)
+        if memory_info is None:
+            return 0
+        total_memory_mb = float(memory_info.get("total_mb", memory_info.get("total", 0)))
+        available_mb = max(total_memory_mb, 0)
+        max_layers = int(model_size_gb)
+        memory_per_layer = total_memory_gb / max(max_layers, 1)
+        return max(0, min(int(available_mb / memory_per_layer), max_layers))
+
     # 预留 8GB 给 SD 和 SVD
     available_for_llm = total_memory_gb - 8
     
@@ -208,9 +276,10 @@ def get_gpu_info(device_id: int = 0) -> Optional[Dict]:
         GPU 信息字典，包含 name、memory_total_mb、driver_version 等字段
         如果 GPU 不可用则返回 None
     """
+    if _torch_missing():
+        return None
+
     try:
-        import torch
-        
         if not torch.cuda.is_available():
             return None
         
@@ -244,16 +313,18 @@ def get_gpu_memory_usage(device_id: int = 0) -> Optional[Dict]:
         显存使用情况字典，包含 used_mb、free_mb 等字段
         如果 GPU 不可用则返回 None
     """
+    if _torch_missing():
+        return None
+
     try:
-        import torch
-        
         if not torch.cuda.is_available():
             return None
         
-        if device_id >= torch.cuda.device_count():
+        if device_id >= _cuda_device_count():
             return None
         
-        torch.cuda.set_device(device_id)
+        if hasattr(torch.cuda, "set_device"):
+            torch.cuda.set_device(device_id)
         
         total = torch.cuda.get_device_properties(device_id).total_memory / (1024**2)
         allocated = torch.cuda.memory_allocated(device_id) / (1024**2)

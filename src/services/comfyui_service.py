@@ -86,7 +86,10 @@ class ComfyUIService:
                 workflow_type=None if self.workflow_path else self.default_workflow_type,
                 allow_fallback=False,
             )
-            self.current_workflow_type = None if self.workflow_path else self.default_workflow_type
+            self.current_workflow_type = (
+                self.workflow_manager.get_current_workflow_type()
+                or (self.default_workflow_type if workflow_path is None else None)
+            )
             logger.info(f"ComfyUI 服务初始化完成: {self.base_url}")
         except Exception as e:
             raise ComfyUIError(f"加载工作流配置失败: {e}") from e

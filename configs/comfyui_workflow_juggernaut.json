@@ -62,5 +62,10 @@
         "images": ["vae_decode", 0]
       }
     }
+  },
+  "negative_prompt": {
+    "default": "(worst quality, low quality:1.8), (ugly, deformed, distorted:1.6), disfigured, bad anatomy, bad hands, missing limbs, extra limbs, fused fingers, too many fingers, long neck, mutation, mutated, blurry, out of focus, jpeg artifacts, text, watermark, signature, logo, (cartoon:1.8), (anime:1.8), (illustration:1.8), (painting:1.8), (drawing:1.8), (sketch:1.8), (artwork:1.8), (digital art:1.8), (3d render:1.6), (cgi:1.6), plastic skin, doll-like, nsfw, nude, gross proportions, malformed limbs, bad proportions, extra arms, extra legs, poorly drawn face, flat color, vector art, comic book, manga, chibi",
+    "realism": "(cartoon:1.8), (anime:1.8), illustration, painting, drawing, sketch, 3d render, cgi, plastic skin, doll-like, airbrushed, over-smoothed skin",
+    "quality": "(worst quality, low quality:1.8), blurry, out of focus, jpeg artifacts, watermark, text, logo, bad anatomy, bad hands, missing limbs, extra limbs, fused fingers, too many fingers"
   }
 }
