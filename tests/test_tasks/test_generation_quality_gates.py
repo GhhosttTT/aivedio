@@ -472,6 +472,25 @@ def test_image_generation_uses_multiple_quality_candidates(tmp_path, monkeypatch
             return GenerationResult("local_comfyui", request.output_path, "image", {})
 
     provider = FakeProvider()
+
+    def fake_review(self, index, image_path, scene, prompt, reference_image=None):
+        score = 4.0 + (index * 0.1)
+        return {
+            "index": index,
+            "path": image_path,
+            "status": "passed",
+            "average": score,
+            "review": {
+                "composition": {"score": 5, "evidence": "strong framing"},
+                "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+                "visual_integrity": {"score": 5, "evidence": "clean render"},
+                "facial_identity": {"score": 5, "evidence": "face matches"},
+                "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+            },
+            "metrics": {"technical_score": score},
+        }
+
+    monkeypatch.setattr("src.tasks.image_tasks.ImageQualitySelector.review_candidate", fake_review)
     monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_CANDIDATES", 3)
     monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 0)
     monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_MIN_SCORE", 0.0)

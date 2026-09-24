@@ -341,8 +341,8 @@ class ImageQualitySelector:
             "require_vlm": require_vlm,
             "candidates": ranked,
         }
-        if require_vlm and best.get("status") == "technical_only":
-            report["status"] = "needs_review"
+        if best.get("status") == "technical_only":
+            report["status"] = "review_unavailable"
             report["error"] = "No local VLM image review was available"
         elif not identity_ok:
             report["status"] = "needs_review"
@@ -355,16 +355,14 @@ class ImageQualitySelector:
             report["error"] = f"Best image score {best.get('average', 0)} is below {min_average}"
         if report["status"] != "passed":
             attach_repair_queue(report, "image")
+            write_report(Path(report_path), report)
+            raise ReviewError(report["error"])
         final = Path(final_path)
         final.parent.mkdir(parents=True, exist_ok=True)
         if Path(best["path"]).resolve() != final.resolve():
             shutil.copy2(best["path"], final)
         report["final_path"] = str(final)
         write_report(Path(report_path), report)
-        if report["status"] != "passed" and (require_vlm or best.get("status") != "technical_only"):
-            raise ReviewError(report["error"])
-        if report["status"] != "passed":
-            write_report(Path(report_path), report)
         return report
 
 

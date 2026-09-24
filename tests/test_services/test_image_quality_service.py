@@ -225,18 +225,20 @@ def test_select_best_rejects_when_vlm_is_required_but_missing(tmp_path):
         ], tmp_path / "final.png", tmp_path / "quality.json", require_vlm=True)
 
 
-def test_select_best_promotes_technical_candidate_when_vlm_is_optional(tmp_path):
+def test_select_best_rejects_technical_candidate_even_when_vlm_is_optional(tmp_path):
     image = tmp_path / "candidate.png"
     final = tmp_path / "final.png"
     make_image(image, (120, 120, 120))
 
     selector = ImageQualitySelector(reviewer=object())
-    report = selector.select_best([
-        {"index": 1, "path": str(image), "average": 3.2, "status": "technical_only"},
-    ], final, tmp_path / "quality.json", min_average=4.0, require_vlm=False)
 
-    assert report["status"] == "needs_review"
-    assert final.read_bytes() == image.read_bytes()
+    with pytest.raises(ReviewError, match="No local VLM"):
+        selector.select_best([
+            {"index": 1, "path": str(image), "average": 3.2, "status": "technical_only"},
+        ], final, tmp_path / "quality.json", min_average=4.0, require_vlm=False)
+
+    assert not final.exists()
+    assert '"status": "review_unavailable"' in (tmp_path / "quality.json").read_text(encoding="utf-8")
 
 
 def test_review_candidate_records_facial_identity_score(tmp_path):
