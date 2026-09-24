@@ -441,19 +441,15 @@ def _generate_quality_video_candidates(
             break
         current_motion, current_noise = _refined_video_base_params(current_motion, current_noise)
     if all(candidate.get("status") == "error" for candidate in candidates):
-        if settings.GENERATION_REQUIRE_VIDEO_REVIEW:
-            raise ReviewError("All video candidate reviews failed")
-        shutil.copyfile(candidates[0]["path"], output_path)
         report = {
             "kind": "video_candidate_selection",
             "status": "review_unavailable",
             "selected_path": candidates[0]["path"],
-            "promoted_path": output_path,
             "candidates": candidates,
         }
         attach_repair_queue(report, "video")
         write_report(Path(output_path).with_suffix(".quality.json"), report)
-        return output_path, report
+        raise ReviewError("All video candidate reviews failed")
     return _select_best_video_candidate(candidates, output_path, Path(output_path).with_suffix(".quality.json"))
 
 

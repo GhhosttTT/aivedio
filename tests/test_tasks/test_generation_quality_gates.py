@@ -902,6 +902,39 @@ def test_required_video_review_blocks_low_scoring_candidates(project_data, tmp_p
     assert report["repair_queue"][0]["scene_number"] == scene.scene_number
 
 
+def test_video_generation_blocks_when_all_candidate_reviews_error_even_if_review_not_required(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    Path(scene.image_path).write_bytes(b"image")
+    db.commit()
+
+    class FakeSVD:
+        def generate_video(self, **kwargs):
+            Path(kwargs["output_path"]).write_bytes(b"unreviewed-video")
+            return kwargs["output_path"]
+
+    class FakeReviewService:
+        def review_video(self, *_args, **_kwargs):
+            return {"status": "error", "average": 0, "error": "review service unavailable"}
+
+    output = tmp_path / "scene.mp4"
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_CANDIDATES", 1)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", False)
+
+    with pytest.raises(ReviewError, match="All video candidate reviews failed"):
+        _generate_quality_video_candidates(
+            FakeSVD(), scene, project.id, str(output), db,
+            num_frames=16, fps=8, motion_bucket_id=127, noise_aug_strength=0.02,
+        )
+
+    assert not output.exists()
+    report = json.loads(output.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert report["status"] == "review_unavailable"
+    assert report["repair_queue"]
+    assert "promoted_path" not in report
+
+
 def test_video_refinement_pass_reduces_motion_after_low_score(project_data, tmp_path, monkeypatch):
     db, project, scene, _, _ = project_data
     scene.image_path = str(tmp_path / "source.png")
