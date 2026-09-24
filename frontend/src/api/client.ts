@@ -399,10 +399,19 @@ export interface ProductionReadinessReport {
             path: string;
             required_status: string;
             checks?: {
+                render_profile?: Record<string, unknown>;
+                render_profile_passed?: boolean;
+                render_workflow_parameters_passed?: boolean;
+                image_review_present?: boolean;
+                image_review_covers_rendered_cases?: boolean;
+                image_review_missing_case_ids?: string[];
+                image_review_passed?: boolean;
                 video_review_passed?: boolean;
                 video_identity_gate_passed?: boolean;
                 video_temporal_gate_passed?: boolean;
                 baseline_comparison_passed?: boolean;
+                manual_review_covers_rendered_cases?: boolean;
+                manual_review_missing_case_ids?: string[];
                 manual_review_passed?: boolean;
             };
             action_items?: string[];

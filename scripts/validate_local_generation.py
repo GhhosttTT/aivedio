@@ -308,6 +308,14 @@ def _image_review_cases_passed(image_review_report: dict | None) -> bool:
     return True
 
 
+def _case_ids(cases: list[dict]) -> set[str]:
+    return {
+        str(case.get("id"))
+        for case in cases
+        if isinstance(case, dict) and case.get("id") is not None
+    }
+
+
 def _render_workflow_parameters_passed(render_report: dict | None) -> bool:
     if not isinstance(render_report, dict):
         return False
@@ -408,6 +416,8 @@ def summarize_validation(output: Path):
         and video_workflow_report.get("status") in {"ready_for_live_test", "skipped"}
     )
     checks["images_rendered"] = bool(render_report and render_report.get("status") == "rendered_pending_human_review")
+    rendered_cases = render_report.get("cases", []) if isinstance(render_report, dict) else []
+    rendered_case_ids = _case_ids(rendered_cases)
     render_profile = render_report.get("render_profile", {}) if isinstance(render_report, dict) else {}
     checks["render_profile"] = render_profile
     checks["render_profile_passed"] = bool(
@@ -418,8 +428,16 @@ def summarize_validation(output: Path):
         and render_profile.get("parameter_optimization") is True
     )
     checks["render_workflow_parameters_passed"] = _render_workflow_parameters_passed(render_report)
+    image_review_cases = image_review_report.get("cases", []) if isinstance(image_review_report, dict) else []
+    image_review_case_ids = _case_ids(image_review_cases)
+    missing_image_review_case_ids = sorted(rendered_case_ids - image_review_case_ids)
     checks["image_review_present"] = bool(image_review_report)
-    checks["image_review_passed"] = _image_review_cases_passed(image_review_report)
+    checks["image_review_covers_rendered_cases"] = bool(rendered_case_ids) and not missing_image_review_case_ids
+    checks["image_review_missing_case_ids"] = missing_image_review_case_ids
+    checks["image_review_passed"] = (
+        _image_review_cases_passed(image_review_report)
+        and checks["image_review_covers_rendered_cases"]
+    )
     video_gate_scores = _video_review_gate_scores(video_review_report)
     checks["video_gate_scores"] = video_gate_scores
     checks["video_identity_gate_passed"] = bool(
@@ -449,17 +467,7 @@ def summarize_validation(output: Path):
         baseline_comparison_report and baseline_comparison_report.get("status") == "passed"
     )
     manual_cases = manual_review.get("cases", []) if isinstance(manual_review, dict) else []
-    rendered_cases = render_report.get("cases", []) if isinstance(render_report, dict) else []
-    rendered_case_ids = {
-        str(case.get("id"))
-        for case in rendered_cases
-        if case.get("id") is not None
-    }
-    manual_case_ids = {
-        str(case.get("id"))
-        for case in manual_cases
-        if case.get("id") is not None
-    }
+    manual_case_ids = _case_ids(manual_cases)
     missing_manual_case_ids = sorted(rendered_case_ids - manual_case_ids)
     checks["manual_review_present"] = bool(manual_cases)
     checks["manual_review_covers_rendered_cases"] = bool(rendered_case_ids) and not missing_manual_case_ids
@@ -488,6 +496,11 @@ def summarize_validation(output: Path):
         report["action_items"].append("Rerun render-images and verify every case records actual ComfyUI workflow steps for the production quality profile.")
     if not checks["image_review_present"]:
         report["action_items"].append("Run review-images so local llama.cpp VLM checks every rendered keyframe before accepting sample quality.")
+    elif not checks["image_review_covers_rendered_cases"]:
+        report["action_items"].append(
+            "Run review-images or add image_review.json entries for every rendered validation case: "
+            + ", ".join(missing_image_review_case_ids)
+        )
     elif not checks["image_review_passed"]:
         report["action_items"].append("Improve rendered keyframes until image VLM review passes platform aesthetic, identity, and turnaround gates.")
     if not checks["video_review_passed"]:
@@ -630,6 +643,10 @@ def _build_acceptance_markdown(package: dict) -> str:
         "environment_ready",
         "video_workflow_ready",
         "images_rendered",
+        "render_profile_passed",
+        "render_workflow_parameters_passed",
+        "image_review_passed",
+        "image_review_covers_rendered_cases",
         "video_review_passed",
         "video_identity_gate_passed",
         "video_temporal_gate_passed",

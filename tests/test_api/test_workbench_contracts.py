@@ -311,6 +311,8 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
             "manual_review_missing_case_ids": [],
             "manual_review_passed": True,
             "image_review_present": True,
+            "image_review_covers_rendered_cases": True,
+            "image_review_missing_case_ids": [],
             "image_review_passed": True,
             "render_profile": {
                 "quality_mode": "ultra",
@@ -334,6 +336,8 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
     assert validation["checks"]["render_profile_passed"] is True
     assert validation["checks"]["render_workflow_parameters_passed"] is True
     assert validation["checks"]["image_review_passed"] is True
+    assert validation["checks"]["image_review_covers_rendered_cases"] is True
+    assert validation["checks"]["image_review_missing_case_ids"] == []
     assert validation["checks"]["render_profile"]["quality_mode"] == "ultra"
     assert validation["checks"]["manual_review_covers_rendered_cases"] is True
     assert validation["checks"]["manual_review_missing_case_ids"] == []
@@ -367,6 +371,8 @@ def test_production_readiness_warns_when_sample_image_review_is_missing(setup):
             "render_profile_passed": True,
             "render_workflow_parameters_passed": True,
             "image_review_present": False,
+            "image_review_covers_rendered_cases": False,
+            "image_review_missing_case_ids": ["reaction"],
             "image_review_passed": False,
         },
         "action_items": ["Run review-images."],
@@ -378,7 +384,9 @@ def test_production_readiness_warns_when_sample_image_review_is_missing(setup):
     payload = response.json()
     validation = payload["checks"]["sample_validation"]
     assert validation["checks"]["image_review_passed"] is False
+    assert validation["checks"]["image_review_missing_case_ids"] == ["reaction"]
     assert any(item["code"] == "sample_validation_image_review_not_passed" for item in payload["warnings"])
+    assert any("reaction" in item["message"] for item in payload["warnings"])
 
 
 def test_production_readiness_warns_when_sample_render_profile_is_not_production(setup):

@@ -647,9 +647,18 @@ class ProductionReadinessService:
                 severity="warning",
             ))
         if checks.get("image_review_passed") is not True:
+            missing_image_cases = checks.get("image_review_missing_case_ids")
+            missing_note = (
+                f" Missing image review case ids: {', '.join(missing_image_cases)}."
+                if isinstance(missing_image_cases, list) and missing_image_cases
+                else ""
+            )
             warnings.append(ReadinessIssue(
                 "sample_validation_image_review_not_passed",
-                "Run review-images and pass local image VLM platform aesthetic, identity, and turnaround gates for every rendered keyframe.",
+                (
+                    "Run review-images and pass local image VLM platform aesthetic, identity, "
+                    f"and turnaround gates for every rendered keyframe.{missing_note}"
+                ),
                 severity="warning",
             ))
         return {
@@ -661,6 +670,8 @@ class ProductionReadinessService:
                 "render_profile_passed": checks.get("render_profile_passed"),
                 "render_workflow_parameters_passed": checks.get("render_workflow_parameters_passed"),
                 "image_review_present": checks.get("image_review_present"),
+                "image_review_covers_rendered_cases": checks.get("image_review_covers_rendered_cases"),
+                "image_review_missing_case_ids": checks.get("image_review_missing_case_ids"),
                 "image_review_passed": checks.get("image_review_passed"),
                 "video_review_passed": checks.get("video_review_passed"),
                 "video_identity_gate_passed": checks.get("video_identity_gate_passed"),

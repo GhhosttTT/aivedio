@@ -404,6 +404,8 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     assert report["checks"]["render_profile_passed"] is True
     assert report["checks"]["render_workflow_parameters_passed"] is True
     assert report["checks"]["image_review_passed"] is True
+    assert report["checks"]["image_review_covers_rendered_cases"] is True
+    assert report["checks"]["image_review_missing_case_ids"] == []
     assert report["checks"]["manual_review_covers_rendered_cases"] is True
     assert report["action_items"] == []
 
@@ -457,6 +459,29 @@ def test_validation_summary_blocks_failed_image_review(tmp_path):
     assert report["status"] == "partial_needs_review"
     assert report["checks"]["image_review_passed"] is False
     assert any("image VLM review passes" in item for item in report["action_items"])
+
+
+def test_validation_summary_requires_image_review_for_every_rendered_case(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery", "reaction"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", {"status": "passed"})
+    write_json(tmp_path / "manual_review.json", {
+        "cases": [
+            {"id": "discovery", "score": 4.5, "decision": "accept"},
+            {"id": "reaction", "score": 4.0, "decision": "accept"},
+        ]
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["image_review_passed"] is False
+    assert report["checks"]["image_review_covers_rendered_cases"] is False
+    assert report["checks"]["image_review_missing_case_ids"] == ["reaction"]
+    assert any("review-images" in item and "reaction" in item for item in report["action_items"])
 
 
 def test_validation_summary_blocks_non_production_render_profile(tmp_path):
