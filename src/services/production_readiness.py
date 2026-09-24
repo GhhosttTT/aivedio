@@ -673,6 +673,12 @@ class ProductionReadinessService:
                 "Add a human full-clip review in manual_review.json after watching the generated clip and Seed Dance contact sheet.",
                 severity="warning",
             ))
+        if checks.get("manual_blocking_issues_passed") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_manual_blocking_issues",
+                "Resolve manual review blocking issues before accepting production quality.",
+                severity="warning",
+            ))
         if checks.get("repair_queue_empty") is not True:
             warnings.append(ReadinessIssue(
                 "sample_validation_repair_queue_not_empty",
@@ -702,6 +708,8 @@ class ProductionReadinessService:
                 "manual_clip_review_present": checks.get("manual_clip_review_present"),
                 "manual_clip_score": checks.get("manual_clip_score"),
                 "manual_clip_review_passed": checks.get("manual_clip_review_passed"),
+                "manual_blocking_issues": checks.get("manual_blocking_issues"),
+                "manual_blocking_issues_passed": checks.get("manual_blocking_issues_passed"),
                 "repair_queue_empty": checks.get("repair_queue_empty"),
                 "manual_review_passed": checks.get("manual_review_passed"),
             },

@@ -238,6 +238,35 @@ def _issue_text(case: dict) -> str:
     return " ".join(str(item).lower() for item in tags + [case.get("note", ""), case.get("reason", "")])
 
 
+def _manual_blocking_issues(manual_cases: list[dict], manual_clip: dict) -> list[dict]:
+    blocking_tokens = (
+        "identity drift", "face drift", "same-face", "same face", "not same person",
+        "flicker", "warp", "warping", "temporal break", "broken motion",
+        "broken hand", "bad anatomy", "artifact", "random text", "watermark",
+        "身份漂移", "脸漂移", "不像", "同脸", "闪烁", "变形", "动作断", "坏手", "水印", "随机文字",
+    )
+    findings = []
+    review_items = list(manual_cases)
+    if manual_clip:
+        review_items.append({"id": "clip", **manual_clip})
+    for item in review_items:
+        tags = []
+        for key in ("blocking_issues", "issue_tags", "issues"):
+            value = item.get(key)
+            if isinstance(value, str):
+                tags.append(value)
+            elif isinstance(value, list):
+                tags.extend(str(tag) for tag in value)
+        text = " ".join(tags).lower()
+        matched = sorted({token for token in blocking_tokens if token in text})
+        if matched:
+            findings.append({
+                "id": str(item.get("id") or "clip"),
+                "blocking_issues": matched,
+            })
+    return findings
+
+
 def _review_low_dimensions(video_review_report: dict | None) -> list[str]:
     low = []
     if not isinstance(video_review_report, dict):
@@ -520,6 +549,9 @@ def summarize_validation(output: Path):
         and manual_clip.get("watched_full_clip") is True
         and manual_clip.get("watched_seed_dance_contact_sheet") is True
     )
+    manual_blocking_issues = _manual_blocking_issues(manual_cases, manual_clip)
+    checks["manual_blocking_issues"] = manual_blocking_issues
+    checks["manual_blocking_issues_passed"] = not manual_blocking_issues
     if manual_cases:
         scores = [case.get("score", 0) for case in manual_cases]
         checks["manual_average_score"] = round(sum(scores) / len(scores), 2)
@@ -529,6 +561,7 @@ def summarize_validation(output: Path):
             not failed_manual
             and checks["manual_review_covers_rendered_cases"]
             and checks["manual_clip_review_passed"]
+            and checks["manual_blocking_issues_passed"]
         )
         report["manual_failures"] = failed_manual
     else:
@@ -579,6 +612,8 @@ def summarize_validation(output: Path):
         report["action_items"].append("Add manual_review.json clip review after watching the full generated clip and Seed Dance contact sheet.")
     elif checks["manual_clip_review_present"] and not checks["manual_clip_review_passed"]:
         report["action_items"].append("Improve the generated clip until human clip review score is at least 4 and decision is accept.")
+    if not checks["manual_blocking_issues_passed"]:
+        report["action_items"].append("Resolve manual blocking issues before accepting production quality: " + json.dumps(manual_blocking_issues, ensure_ascii=False))
     report["calibration_recommendations"] = _calibration_recommendations(manual_cases, video_review_report)
     repair_queue = _collect_repair_queue(render_report, image_review_report, video_review_report, baseline_comparison_report, manual_review)
     report["repair_queue"] = repair_queue
@@ -653,6 +688,7 @@ def _manual_review_section(summary: dict, render_report: dict | None, manual_rev
         "average_score": checks.get("manual_average_score"),
         "min_score": checks.get("manual_min_score"),
         "failures": summary.get("manual_failures", []),
+        "blocking_issues": checks.get("manual_blocking_issues", []),
         "clip": {
             "present": bool(manual_clip),
             "score": checks.get("manual_clip_score"),
@@ -731,6 +767,7 @@ def _build_acceptance_markdown(package: dict) -> str:
         "baseline_contact_sheet_present",
         "baseline_comparison_passed",
         "manual_clip_review_passed",
+        "manual_blocking_issues_passed",
         "repair_queue_empty",
         "manual_review_passed",
     ):

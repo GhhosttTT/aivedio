@@ -417,6 +417,8 @@ export interface ProductionReadinessReport {
                 manual_clip_review_present?: boolean;
                 manual_clip_score?: number | null;
                 manual_clip_review_passed?: boolean;
+                manual_blocking_issues?: Array<Record<string, unknown>>;
+                manual_blocking_issues_passed?: boolean;
                 repair_queue_empty?: boolean;
                 manual_review_passed?: boolean;
             };

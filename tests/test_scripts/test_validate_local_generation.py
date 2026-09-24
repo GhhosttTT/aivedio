@@ -433,6 +433,7 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     assert report["checks"]["image_review_missing_case_ids"] == []
     assert report["checks"]["manual_review_covers_rendered_cases"] is True
     assert report["checks"]["manual_clip_review_passed"] is True
+    assert report["checks"]["manual_blocking_issues_passed"] is True
     assert report["checks"]["repair_queue_empty"] is True
     assert report["action_items"] == []
 
@@ -621,6 +622,29 @@ def test_validation_summary_blocks_unresolved_repair_queue(tmp_path):
     assert report["checks"]["repair_queue_empty"] is False
     assert report["repair_queue"][0]["action"] == "regenerate_character_identity"
     assert any("repair_queue" in item for item in report["action_items"])
+
+
+def test_validation_summary_blocks_manual_issue_tags_even_with_passing_scores(tmp_path):
+    manual_review = passed_manual_review("discovery")
+    manual_review["cases"][0]["issue_tags"] = ["identity drift"]
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", manual_review)
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["manual_blocking_issues_passed"] is False
+    assert report["checks"]["manual_review_passed"] is False
+    assert report["checks"]["manual_blocking_issues"] == [{
+        "id": "discovery",
+        "blocking_issues": ["identity drift"],
+    }]
+    assert any("manual blocking issues" in item for item in report["action_items"])
 
 
 def test_validation_summary_requires_seed_dance_baseline_comparison(tmp_path):
