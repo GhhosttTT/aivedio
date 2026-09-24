@@ -17,11 +17,11 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 # HTTP Bearer 认证方案
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db_session)
 ) -> User:
     """
@@ -37,6 +37,13 @@ async def get_current_user(
     Raises:
         HTTPException: 如果令牌无效或用户不存在
     """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未提供认证凭证",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     token = credentials.credentials
     
     # 解码令牌

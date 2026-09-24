@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from src.database.models import Base, Project, ProjectStatus, User
 from src.services.project_manager import ProjectManager
 from src.utils.storage import get_project_storage_path
+import src.utils.storage as storage_utils
 
 
 # 自定义策略：生成有效的项目名称
@@ -76,12 +77,21 @@ def optional_text(draw, max_length=500):
 def temp_storage_module():
     """创建临时存储目录（模块级别）"""
     temp_dir = tempfile.mkdtemp()
+    old_storage_path = os.environ.get("STORAGE_PATH")
+    old_storage_manager = storage_utils.storage_manager
     
     # 设置环境变量
     os.environ["STORAGE_PATH"] = temp_dir
-    
+    storage_utils.storage_manager = storage_utils.StorageManager(temp_dir)
+
     yield temp_dir
-    
+
+    if old_storage_path is None:
+        os.environ.pop("STORAGE_PATH", None)
+    else:
+        os.environ["STORAGE_PATH"] = old_storage_path
+    storage_utils.storage_manager = old_storage_manager
+
     # 清理
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)

@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Project, Character, Scene, ProjectStatus, User
 from src.services.project_manager import ProjectManager
+import src.utils.storage as storage_utils
 
 
 @pytest.fixture
@@ -55,12 +56,21 @@ def project_manager(db_session):
 def temp_storage():
     """创建临时存储目录"""
     temp_dir = tempfile.mkdtemp()
+    old_storage_path = os.environ.get("STORAGE_PATH")
+    old_storage_manager = storage_utils.storage_manager
     
     # 设置环境变量
     os.environ["STORAGE_PATH"] = temp_dir
-    
+    storage_utils.storage_manager = storage_utils.StorageManager(temp_dir)
+
     yield temp_dir
-    
+
+    if old_storage_path is None:
+        os.environ.pop("STORAGE_PATH", None)
+    else:
+        os.environ["STORAGE_PATH"] = old_storage_path
+    storage_utils.storage_manager = old_storage_manager
+
     # 清理
     import shutil
     if os.path.exists(temp_dir):

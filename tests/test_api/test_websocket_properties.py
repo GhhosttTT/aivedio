@@ -23,6 +23,12 @@ class TestWebSocketProperties:
         
         # 清理
         self.manager._connections.clear()
+
+    def _reset_manager(self):
+        for task in self.manager.heartbeat_tasks.values():
+            task.cancel()
+        self.manager.heartbeat_tasks.clear()
+        self.manager._connections.clear()
     
     @given(
         num_connections=st.integers(min_value=1, max_value=10),
@@ -39,6 +45,7 @@ class TestWebSocketProperties:
         2. 所有客户端都能收到相同的消息
         3. 消息推送不会丢失
         """
+        self._reset_manager()
         # 创建模拟的 WebSocket 连接
         mock_websockets = []
         for i in range(num_connections):
@@ -86,6 +93,7 @@ class TestWebSocketProperties:
         2. 断开连接后，连接从管理器中移除
         3. 不同项目的连接互不影响
         """
+        self._reset_manager()
         # 创建多个项目的连接
         project_connections = {}
         

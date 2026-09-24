@@ -230,7 +230,8 @@ class ProjectManager:
             # 删除项目文件
             storage_path = get_project_storage_path(project_id)
             if os.path.exists(storage_path):
-                cleanup_project_files(storage_path)
+                if not cleanup_project_files(storage_path):
+                    raise RuntimeError(f"项目文件清理失败: path={storage_path}")
                 logger.info(f"删除项目文件: path={storage_path}")
             
             # 删除数据库记录（级联删除关联的角色、分镜、任务）
@@ -252,7 +253,8 @@ class ProjectManager:
         limit: int = 20,
         offset: int = 0,
         order_by: str = "created_at",
-        order_desc: bool = True
+        order_desc: bool = True,
+        user_id: Optional[int] = None,
     ) -> List[Project]:
         """
         列出项目列表
@@ -269,6 +271,8 @@ class ProjectManager:
         """
         try:
             query = self.db.query(Project)
+            if user_id is not None:
+                query = query.filter(Project.user_id == user_id)
             
             # 状态过滤
             if status:
@@ -299,7 +303,7 @@ class ProjectManager:
             logger.error(f"列出项目失败: error={e}")
             raise
     
-    def count_projects(self, status: Optional[ProjectStatus] = None) -> int:
+    def count_projects(self, status: Optional[ProjectStatus] = None, user_id: Optional[int] = None) -> int:
         """
         统计项目数量
         
@@ -311,6 +315,8 @@ class ProjectManager:
         """
         try:
             query = self.db.query(Project)
+            if user_id is not None:
+                query = query.filter(Project.user_id == user_id)
             
             if status:
                 if isinstance(status, str):

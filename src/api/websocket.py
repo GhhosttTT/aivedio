@@ -24,6 +24,8 @@ class ConnectionManager:
         """初始化连接管理器"""
         # 存储所有活跃连接：{project_id: {websocket1, websocket2, ...}}
         self.active_connections: Dict[int, Set[WebSocket]] = {}
+        # Backward-compatible alias used by older property tests and debug tooling.
+        self._connections = self.active_connections
         # 心跳任务：{websocket: task}
         self.heartbeat_tasks: Dict[WebSocket, asyncio.Task] = {}
         # 心跳间隔（秒）

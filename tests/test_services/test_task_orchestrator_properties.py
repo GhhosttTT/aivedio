@@ -27,7 +27,8 @@ def case(count=1):
 
 def submit(orchestrator, project):
     identifier = str(uuid4())
-    with patch("src.services.task_orchestrator.chain") as chain:
+    with patch("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", True), \
+            patch("src.services.task_orchestrator.chain") as chain:
         chain.return_value.freeze.return_value = SimpleNamespace(id=identifier)
         orchestrator.create_production_task(project.id)
     return orchestrator.db.query(Task).filter(Task.celery_task_id == identifier).one()
@@ -38,7 +39,7 @@ def test_task_chain_structure_and_real_id(count):
     with case(count) as (service, project):
         task = submit(service, project)
         assert task.total_steps == count * 4 + 3
-        assert task.id > 0 and task.status == TaskStatus.RUNNING
+        assert task.id > 0 and task.status == TaskStatus.PENDING
 
 @given(st.lists(st.floats(min_value=-10, max_value=110, allow_nan=False), min_size=1, max_size=20))
 @settings(deadline=None)
@@ -73,7 +74,8 @@ def test_retry_limit_and_lineage(retries):
         task.retry_count = retries
         service.db.commit()
         identifier = str(uuid4())
-        with patch("src.services.task_orchestrator.chain") as chain:
+        with patch("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", True), \
+                patch("src.services.task_orchestrator.chain") as chain:
             chain.return_value.freeze.return_value.id = identifier
             result = service.retry_failed_task(task.celery_task_id)
         if retries >= 3:

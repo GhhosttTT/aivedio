@@ -583,12 +583,13 @@ async def list_projects(
 
         project_manager = ProjectManager(db_session)
 
-        from src.database.models import Project
-        query = db_session.query(Project).filter(Project.user_id == current_user.id)
-        if status_filter:
-            query = query.filter(Project.status == status_filter)
-        total = query.count()
-        projects = query.order_by(Project.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        total = project_manager.count_projects(status=status_filter, user_id=current_user.id)
+        projects = project_manager.list_projects(
+            status=status_filter,
+            limit=page_size,
+            offset=(page - 1) * page_size,
+            user_id=current_user.id,
+        )
 
         return ProjectListResponse(
             total=total,

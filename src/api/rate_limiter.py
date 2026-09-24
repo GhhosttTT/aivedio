@@ -4,6 +4,8 @@ API 速率限制中间件
 使用 Redis 实现基于令牌桶算法的速率限制
 """
 import time
+import weakref
+import math
 from typing import Callable, Optional
 
 from fastapi import Request, Response, HTTPException, status
@@ -41,6 +43,8 @@ class RateLimiter:
     使用令牌桶算法实现速率限制
     """
 
+    _instances: "weakref.WeakSet[RateLimiter]" = weakref.WeakSet()
+
     def __init__(
         self,
         rate: int = 10,
@@ -61,6 +65,17 @@ class RateLimiter:
         
         # 本地内存存储（用于单机限流）
         self._local_storage = {}
+        self._instances.add(self)
+
+    def reset(self) -> None:
+        """Clear local in-memory counters."""
+        self._local_storage.clear()
+
+    @classmethod
+    def reset_all(cls) -> None:
+        """Clear local counters for every in-process limiter instance."""
+        for limiter in list(cls._instances):
+            limiter.reset()
 
     def _get_key(self, identifier: str) -> str:
         """
@@ -101,7 +116,7 @@ class RateLimiter:
         if len(requests) >= self.rate:
             # 计算最早请求的剩余时间
             oldest_request = min(requests)
-            retry_after = int(self.period - (now - oldest_request)) + 1
+            retry_after = min(self.period, max(1, math.ceil(self.period - (now - oldest_request))))
             return False, retry_after
         
         # 记录当前请求
@@ -208,7 +223,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         # 特定路径的速率限制配置
         self.path_limiters = {
-            "/api/auth/login": RateLimiter(30, 60, redis_client),  # 登录：30次/分钟
+            "/api/auth/login": RateLimiter(5, 60, redis_client),  # 登录：5次/分钟
             "/api/auth/register": RateLimiter(3, 60, redis_client),  # 注册：3次/分钟
             "/api/projects": RateLimiter(30, 60, redis_client),  # 项目列表：30次/分钟
         }

@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
 from src.api.app import app
+from src.api.rate_limiter import RateLimiter
 from src.database.session import get_db_session
 from src.database import Base
 
@@ -28,6 +29,14 @@ def override_get_db():
 
 # 覆盖依赖
 app.dependency_overrides[get_db_session] = override_get_db
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiters():
+    """Keep in-memory rate limits isolated between API tests."""
+    RateLimiter.reset_all()
+    yield
+    RateLimiter.reset_all()
 
 
 @pytest.fixture(scope="function")

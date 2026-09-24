@@ -10,7 +10,9 @@ from unittest.mock import Mock, patch
 from datetime import datetime
 
 from src.api.app import create_app
-from src.database.models import Project, Character, Scene
+from src.api.dependencies import get_current_user, require_project_access
+from src.database.session import get_db_session
+from src.database.models import Project, Character, Scene, User, TaskStatus
 
 
 @pytest.fixture
@@ -22,6 +24,9 @@ def client():
         TestClient 实例
     """
     app = create_app()
+    user = User(id=1, username="testuser", email="test@example.com", hashed_password="x", is_active=True)
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[require_project_access] = lambda: None
     return TestClient(app)
 
 
@@ -42,6 +47,8 @@ def mock_project():
     project.status = "draft"
     project.created_at = datetime.now()
     project.updated_at = datetime.now()
+    project.script = None
+    project.final_video_path = None
     project.characters = []
     project.scenes = []
     return project
@@ -68,6 +75,8 @@ def test_create_project_success(client):
         mock_project.status = "draft"
         mock_project.created_at = datetime.now()
         mock_project.updated_at = datetime.now()
+        mock_project.script = None
+        mock_project.final_video_path = None
         mock_project.characters = []
         mock_project.scenes = []
         
@@ -123,7 +132,7 @@ def test_get_project_success(client, mock_project):
     """
     测试获取项目成功
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm:
+    with patch("src.api.routes.projects.ProjectManager") as mock_get_pm:
         mock_pm = Mock()
         mock_get_pm.return_value = mock_pm
         mock_pm.get_project.return_value = mock_project
@@ -140,7 +149,7 @@ def test_get_project_not_found(client):
     """
     测试获取不存在的项目
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm:
+    with patch("src.api.routes.projects.ProjectManager") as mock_get_pm:
         mock_pm = Mock()
         mock_get_pm.return_value = mock_pm
         mock_pm.get_project.return_value = None
@@ -154,7 +163,7 @@ def test_update_project_success(client, mock_project):
     """
     测试更新项目成功
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm:
+    with patch("src.api.routes.projects.ProjectManager") as mock_get_pm:
         mock_pm = Mock()
         mock_get_pm.return_value = mock_pm
         
@@ -168,6 +177,8 @@ def test_update_project_success(client, mock_project):
         updated_project.status = "draft"
         updated_project.created_at = datetime.now()
         updated_project.updated_at = datetime.now()
+        updated_project.script = None
+        updated_project.final_video_path = None
         updated_project.characters = []
         updated_project.scenes = []
         
@@ -190,7 +201,7 @@ def test_update_project_not_found(client):
     """
     测试更新不存在的项目
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm:
+    with patch("src.api.routes.projects.ProjectManager") as mock_get_pm:
         mock_pm = Mock()
         mock_get_pm.return_value = mock_pm
         mock_pm.update_project.return_value = None
@@ -207,7 +218,7 @@ def test_delete_project_success(client):
     """
     测试删除项目成功
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm:
+    with patch("src.api.routes.projects.ProjectManager") as mock_get_pm:
         mock_pm = Mock()
         mock_get_pm.return_value = mock_pm
         mock_pm.delete_project.return_value = True
@@ -223,7 +234,7 @@ def test_delete_project_not_found(client):
     """
     测试删除不存在的项目
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm:
+    with patch("src.api.routes.projects.ProjectManager") as mock_get_pm:
         mock_pm = Mock()
         mock_get_pm.return_value = mock_pm
         mock_pm.delete_project.return_value = False
@@ -237,7 +248,7 @@ def test_list_projects_success(client, mock_project):
     """
     测试列出项目成功
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm:
+    with patch("src.api.routes.projects.ProjectManager") as mock_get_pm:
         mock_pm = Mock()
         mock_get_pm.return_value = mock_pm
         mock_pm.list_projects.return_value = [mock_project]
@@ -257,7 +268,7 @@ def test_list_projects_with_status_filter(client, mock_project):
     """
     测试按状态过滤项目列表
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm:
+    with patch("src.api.routes.projects.ProjectManager") as mock_get_pm:
         mock_pm = Mock()
         mock_get_pm.return_value = mock_pm
         mock_pm.list_projects.return_value = [mock_project]
@@ -274,8 +285,8 @@ def test_generate_script_success(client, mock_project):
     """
     测试生成剧本成功
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm, \
-         patch("src.api.routes.projects.get_script_generator") as mock_get_sg:
+    with patch("src.api.routes.projects.ProjectManager") as mock_get_pm, \
+         patch("src.api.routes.projects.ScriptGenerator") as mock_get_sg:
         
         mock_pm = Mock()
         mock_sg = Mock()
@@ -298,12 +309,16 @@ def test_generate_script_success(client, mock_project):
         updated_project.status = "script_generated"
         updated_project.created_at = datetime.now()
         updated_project.updated_at = datetime.now()
+        updated_project.script = None
+        updated_project.final_video_path = None
         
         # 正确设置角色和分镜的属性
         mock_character = Mock(spec=Character)
         mock_character.id = 1
         mock_character.name = "角色1"
         mock_character.description = "角色描述"
+        mock_character.personality = ""
+        mock_character.appearance = ""
         
         mock_scene = Mock(spec=Scene)
         mock_scene.id = 1
@@ -311,12 +326,15 @@ def test_generate_script_success(client, mock_project):
         mock_scene.location = "地点"
         mock_scene.time_period = "时间"
         mock_scene.characters = "角色1"
+        mock_scene.character_name = "角色1"
         mock_scene.dialogue = "对话"
         mock_scene.visual_description = "视觉描述"
+        mock_scene.image_prompt = ""
         mock_scene.duration = 10.0
         mock_scene.image_path = None
         mock_scene.video_path = None
         mock_scene.audio_path = None
+        mock_scene.subtitle_path = None
         
         updated_project.characters = [mock_character]
         updated_project.scenes = [mock_scene]
@@ -340,8 +358,8 @@ def test_generate_script_project_not_found(client):
     """
     测试生成剧本时项目不存在
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm, \
-         patch("src.api.routes.projects.get_script_generator") as mock_get_sg:
+    with patch("src.api.routes.projects.ProjectManager") as mock_get_pm, \
+         patch("src.api.routes.projects.ScriptGenerator") as mock_get_sg:
         
         mock_pm = Mock()
         mock_sg = Mock()
@@ -363,8 +381,8 @@ def test_generate_script_missing_theme_and_outline(client):
     """
     测试生成剧本时主题和大纲都为空
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm, \
-         patch("src.api.routes.projects.get_script_generator") as mock_get_sg:
+    with patch("src.api.routes.projects.ProjectManager") as mock_get_pm, \
+         patch("src.api.routes.projects.ScriptGenerator") as mock_get_sg:
         
         mock_pm = Mock()
         mock_sg = Mock()
@@ -392,8 +410,8 @@ def test_regenerate_scene_success(client, mock_project):
     """
     测试重新生成分镜成功
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm, \
-         patch("src.api.routes.projects.get_script_generator") as mock_get_sg:
+    with patch("src.api.routes.projects.ProjectManager") as mock_get_pm, \
+         patch("src.api.routes.projects.ScriptGenerator") as mock_get_sg:
         
         mock_pm = Mock()
         mock_sg = Mock()
@@ -415,8 +433,8 @@ def test_produce_video_success(client, mock_project):
     """
     测试提交生产任务成功
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm, \
-         patch("src.api.routes.projects.get_task_orchestrator") as mock_get_to:
+    with patch("src.api.routes.projects.ProjectManager") as mock_get_pm, \
+         patch("src.api.routes.projects.TaskOrchestrator") as mock_get_to:
         
         mock_pm = Mock()
         mock_to = Mock()
@@ -429,9 +447,11 @@ def test_produce_video_success(client, mock_project):
         
         # 模拟创建任务
         mock_task = Mock()
+        mock_task.id = 1
         mock_task.task_id = "task-123"
+        mock_task.celery_task_id = "task-123"
         mock_task.project_id = 1
-        mock_task.status = "pending"
+        mock_task.status = TaskStatus.PENDING
         mock_task.progress = 0.0
         mock_task.current_step = "初始化"
         mock_task.total_steps = 10
@@ -439,7 +459,10 @@ def test_produce_video_success(client, mock_project):
         mock_task.updated_at = datetime.now()
         mock_task.error_message = None
         
-        mock_to.create_production_task.return_value = mock_task
+        fake_db = Mock()
+        fake_db.query.return_value.filter.return_value.first.return_value = mock_task
+        client.app.dependency_overrides[get_db_session] = lambda: fake_db
+        mock_to.create_production_task.return_value = "task-123"
         
         response = client.post("/api/projects/1/produce")
         
@@ -453,7 +476,7 @@ def test_produce_video_no_scenes(client, mock_project):
     """
     测试提交生产任务时项目没有分镜
     """
-    with patch("src.api.routes.projects.get_project_manager") as mock_get_pm:
+    with patch("src.api.routes.projects.ProjectManager") as mock_get_pm:
         mock_pm = Mock()
         mock_get_pm.return_value = mock_pm
         
