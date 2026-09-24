@@ -200,15 +200,18 @@ llama-server -m .\models\vlm\model.gguf --mmproj .\models\vlm\mmproj.gguf --host
 python -m scripts.validate_local_generation preflight
 python -m scripts.validate_local_generation preflight-video-workflow --video-workflow ".\configs\comfyui_video_workflow.json"
 python -m scripts.validate_local_generation render-images
+python -m scripts.validate_local_generation review-images
 python -m scripts.validate_local_generation review-video --video "path/to/scene.mp4" --description "女孩在办公室门口拿着红色信封"
+python -m scripts.validate_local_generation compare-baseline --candidate "path/to/scene.mp4" --baseline "path/to/seed-dance-reference.mp4"
 python -m scripts.validate_local_generation summarize
 python -m scripts.validate_local_generation acceptance-package
 ```
 
 可通过 `--base-url http://GPU主机地址:8188` 连接同一局域网的 ComfyUI。
 固定用例为 `examples/local_generation_cases.json`；可用 `--cases` 指向自己的镜头集。
-输出默认保存于 `storage/validation`。`preflight-video-workflow` 会检查视频 workflow 文件、占位符、可能的视频输出节点和 ComfyUI 节点/模型可用性；通过后仍需要真实跑片确认运动质量。`render-images` 没有占位回退，成功也只标记为待人工检查，不能等同于质量达标。
-人工复核可写入 `storage/validation/manual_review.json`，格式为 `{"cases":[{"id":"discovery","score":4.5,"decision":"accept","note":"身份稳定"}]}`。`manual_review.json` 必须覆盖 `render.json` 中的每个 case id，不能只挑好看的样片评分。`summarize` 会汇总预检、渲染、视频抽帧审核、Seed Dance 基准对比和人工评分，生成 `validation_summary.json`。只有环境、workflow、关键帧、视频审核、视频身份/时间门槛、基准对比和人工评分都通过时，才会标记为 `ready_for_seed_dance_candidate`。
+输出默认保存于 `storage/validation`。`preflight-video-workflow` 会检查视频 workflow 文件、占位符、可能的视频输出节点和 ComfyUI 节点/模型可用性；通过后仍需要真实跑片确认运动质量。`render-images` 没有占位回退，成功也只标记为待本地 VLM 与人工检查，不能等同于质量达标。
+默认用例已包含 `scene`、`visible_characters` 和 `reference_requirements`。如果自定义 `--cases`，也应为每个角色镜头写入这些字段；需要逐角色或逐视角参考图时，可在单个 case 上加入 `reference_image`，`review-images` 会沿用该参考图做本地 VLM 审核。
+人工复核可写入 `storage/validation/manual_review.json`，格式为 `{"cases":[{"id":"discovery","score":4.5,"decision":"accept","note":"身份稳定"}]}`。`manual_review.json` 必须覆盖 `render.json` 中的每个 case id，不能只挑好看的样片评分。`summarize` 会汇总预检、渲染、图片 VLM 审核、视频抽帧审核、Seed Dance 基准对比和人工评分，生成 `validation_summary.json`。只有环境、workflow、关键帧图片审核、视频审核、视频身份/时间门槛、基准对比和人工评分都通过时，才会标记为 `ready_for_seed_dance_candidate`。
 `acceptance-package` 会在 `storage/validation` 生成 `acceptance_package.json` 和 `acceptance_package.md`，把预检、渲染 case、人工评分缺口、视频身份/时间门槛、Seed Dance 基准对比、调参建议和返修队列合成一份人工验收包。真实 GPU 跑片后应优先看这份 Markdown：它会列出每个样片必须检查的角色身份、服装、构图、五官、动作连续性、闪烁变形、随机文字/水印和整体美观问题。
 `validation_summary.json` 还会生成 `calibration_recommendations`：身份漂移会建议重做角色参考或加严参考权重，闪烁/动作断裂会建议降低运动强度和增加视频精修轮，构图/裁切会建议拆镜头或加 Control/Depth/Pose 约束。
 项目生产就绪检查会读取 `storage/validation/validation_summary.json`。如果该文件缺失或状态不是 `ready_for_seed_dance_candidate`，前端“生产就绪”面板会显示样片验证警告。这个警告用于防止只凭单元测试、接口测试或未人工验收的样片宣称达到短剧成片质量。

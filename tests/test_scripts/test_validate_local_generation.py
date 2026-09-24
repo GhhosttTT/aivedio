@@ -77,6 +77,21 @@ def test_review_models_endpoint_uses_llama_cpp_openai_contract(monkeypatch):
     assert validator._review_models_endpoint() == "http://127.0.0.1:8080/v1/models"
 
 
+def test_default_validation_cases_carry_scene_review_context():
+    cases = json.loads((validator.Path("examples") / "local_generation_cases.json").read_text(encoding="utf-8"))
+
+    assert cases
+    assert all(case.get("scene", {}).get("scene_number") for case in cases)
+    assert all(case.get("scene", {}).get("visual_description") for case in cases)
+    assert all(case.get("scene", {}).get("reference_requirements") for case in cases)
+    character_cases = [
+        case for case in cases
+        if case["id"] in {"discovery", "reaction", "reverse_shot", "stylized"}
+    ]
+    assert all(case["scene"]["visible_characters"] for case in character_cases)
+    assert any(case["scene"]["visible_characters"][0]["name"] == "Victor" for case in character_cases)
+
+
 def test_installed_review_models_reads_openai_models(monkeypatch):
     calls = []
 
