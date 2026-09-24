@@ -7,13 +7,20 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Character, Project, Scene, Task, TaskStatus, User
-from src.services.generation_review import fingerprint, write_report, ReviewError
+from src.services.generation_review import VIDEO_AESTHETIC_FEATURES, fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName, GenerationResult
 from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _complexity_report, _composition_constraint, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
 from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _scene_review_payload
+
+
+def passed_video_aesthetic_scores(score: int = 5) -> dict:
+    return {
+        feature: {"score": score, "evidence": "passes short-drama aesthetic gate"}
+        for feature in VIDEO_AESTHETIC_FEATURES
+    }
 
 
 @pytest.fixture
@@ -624,7 +631,13 @@ def test_video_generation_selects_best_reviewed_candidate(project_data, tmp_path
         def review_video(self, _video, payload, _report_path, _reference=None):
             if payload["candidate_index"] == 1:
                 return {"status": "needs_review", "average": 2.8}
-            return {"status": "passed", "average": 4.7}
+            return {
+                "status": "passed",
+                "average": 4.7,
+                "batches": [{
+                    "review": {"video_aesthetic_scores": passed_video_aesthetic_scores()}
+                }],
+            }
 
     fake_svd = FakeSVD()
     monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
@@ -690,6 +703,7 @@ def test_video_selection_prefers_identity_safe_candidate(project_data, tmp_path,
                             "facial_identity": {"score": 2, "evidence": "face drift"},
                             "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
                             "temporal_consistency": {"score": 5, "evidence": "motion stable"},
+                            "video_aesthetic_scores": passed_video_aesthetic_scores(),
                         }
                     }],
                 }
@@ -705,6 +719,7 @@ def test_video_selection_prefers_identity_safe_candidate(project_data, tmp_path,
                             "facial_identity": {"score": 4, "evidence": "face matches"},
                             "identity_consistency": {"score": 4, "evidence": "identity stable"},
                             "temporal_consistency": {"score": 4, "evidence": "motion stable"},
+                            "video_aesthetic_scores": passed_video_aesthetic_scores(),
                     }
                 }],
             }
@@ -973,7 +988,13 @@ def test_video_refinement_pass_reduces_motion_after_low_score(project_data, tmp_
         def review_video(self, _video, payload, _report_path, _reference=None):
             if payload["refinement_pass"] == 0:
                 return {"status": "needs_review", "average": 2.5}
-            return {"status": "passed", "average": 4.5}
+            return {
+                "status": "passed",
+                "average": 4.5,
+                "batches": [{
+                    "review": {"video_aesthetic_scores": passed_video_aesthetic_scores()}
+                }],
+            }
 
     fake_svd = FakeSVD()
     monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)

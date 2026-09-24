@@ -241,6 +241,13 @@ def _video_aesthetic_gate_summary(review_report: dict) -> dict | None:
     }
 
 
+def _video_aesthetic_gate_passes(candidate: dict) -> bool:
+    gate = candidate.get("video_aesthetic_gate")
+    if not isinstance(gate, dict):
+        return not settings.GENERATION_REQUIRE_VIDEO_REVIEW
+    return gate.get("status") == "passed"
+
+
 def _video_gate_passes(candidate: dict) -> tuple[bool, dict[str, float]]:
     scores = candidate.get("gate_scores") or {}
     if not scores:
@@ -260,6 +267,7 @@ def _select_best_video_candidate(candidates: list[dict], final_path: str, report
         candidates,
         key=lambda item: (
             1 if _video_gate_passes(item)[0] else 0,
+            1 if _video_aesthetic_gate_passes(item) else 0,
             item.get("platform_score", item.get("average", 0)),
             item.get("average", 0),
         ),
@@ -267,6 +275,8 @@ def _select_best_video_candidate(candidates: list[dict], final_path: str, report
     )
     best = ranked[0]
     gate_ok, gate_scores = _video_gate_passes(best)
+    aesthetic_gate_ok = _video_aesthetic_gate_passes(best)
+    aesthetic_gate = best.get("video_aesthetic_gate")
     platform_score = best.get("platform_score")
     report = {
         "kind": "video_candidate_selection",
@@ -275,6 +285,7 @@ def _select_best_video_candidate(candidates: list[dict], final_path: str, report
             and best.get("average", 0) >= settings.GENERATION_VIDEO_MIN_SCORE
             and (platform_score is None or platform_score >= settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE)
             and gate_ok
+            and aesthetic_gate_ok
         ) else "needs_review",
         "selected_path": best["path"],
         "selected_average": best.get("average", 0),
@@ -284,6 +295,7 @@ def _select_best_video_candidate(candidates: list[dict], final_path: str, report
         "min_temporal_score": settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE,
         "min_platform_score": settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE,
         "selected_gate_scores": gate_scores,
+        "selected_video_aesthetic_gate": aesthetic_gate,
         "candidates": ranked,
     }
     if not gate_ok:
@@ -298,6 +310,10 @@ def _select_best_video_candidate(candidates: list[dict], final_path: str, report
             f"Best video score {best.get('average', 0)} is below "
             f"{settings.GENERATION_VIDEO_MIN_SCORE}"
         )
+    elif settings.GENERATION_REQUIRE_VIDEO_REVIEW and not isinstance(aesthetic_gate, dict):
+        report["error"] = "Selected video is missing video aesthetic feature scores from local VLM review"
+    elif isinstance(aesthetic_gate, dict) and aesthetic_gate.get("status") != "passed":
+        report["error"] = "Selected video aesthetic feature gate did not pass"
     if report["status"] != "passed" and settings.GENERATION_REQUIRE_VIDEO_REVIEW:
         attach_repair_queue(report, "video")
         write_report(report_path, report)
@@ -434,6 +450,7 @@ def _generate_quality_video_candidates(
             candidate.get("status") == "passed"
             and candidate.get("average", 0) >= settings.GENERATION_VIDEO_MIN_SCORE
             and _video_gate_passes(candidate)[0]
+            and _video_aesthetic_gate_passes(candidate)
             for candidate in candidates
         ):
             break

@@ -159,6 +159,29 @@ def test_select_best_rejects_low_platform_score(tmp_path, monkeypatch):
     assert "refine_prompt_composition" in report
 
 
+def test_select_best_requires_aesthetic_breakdown_when_vlm_required(tmp_path):
+    image = tmp_path / "candidate.png"
+    make_image(image, (120, 120, 120))
+    selector = ImageQualitySelector(reviewer=object())
+
+    with pytest.raises(ReviewError, match="platform aesthetic feature scores"):
+        selector.select_best([
+            {
+                "index": 1,
+                "path": str(image),
+                "average": 4.6,
+                "status": "passed",
+                "review": {
+                    "composition": {"score": 5, "evidence": "strong framing"},
+                    "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+                    "visual_integrity": {"score": 5, "evidence": "clean render"},
+                    "facial_identity": {"score": 5, "evidence": "face matches"},
+                    "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                },
+            },
+        ], tmp_path / "final.png", tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0, require_vlm=True)
+
+
 def test_select_best_uses_platform_aesthetic_breakdown(tmp_path, monkeypatch):
     first = tmp_path / "first.png"
     second = tmp_path / "second.png"

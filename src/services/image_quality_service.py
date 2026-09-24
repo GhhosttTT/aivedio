@@ -328,6 +328,7 @@ class ImageQualitySelector:
         best = ranked[0]
         identity_ok, identity_scores = _identity_gate(best, min_identity_score)
         platform_score = best.get("platform_score")
+        aesthetic_gate = best.get("platform_aesthetic_gate")
         report = {
             "kind": "image_candidate_selection",
             "status": "passed",
@@ -338,6 +339,7 @@ class ImageQualitySelector:
             "min_identity_score": min_identity_score,
             "min_platform_score": min_platform_score,
             "best_identity_scores": identity_scores,
+            "best_platform_aesthetic_gate": aesthetic_gate,
             "require_vlm": require_vlm,
             "candidates": ranked,
         }
@@ -350,6 +352,12 @@ class ImageQualitySelector:
         elif platform_score is not None and platform_score < min_platform_score:
             report["status"] = "needs_review"
             report["error"] = f"Best image platform score {platform_score} is below {min_platform_score}"
+        elif require_vlm and not isinstance(aesthetic_gate, dict):
+            report["status"] = "needs_review"
+            report["error"] = "Best image is missing platform aesthetic feature scores from local VLM review"
+        elif isinstance(aesthetic_gate, dict) and aesthetic_gate.get("status") != "passed":
+            report["status"] = "needs_review"
+            report["error"] = "Best image platform aesthetic feature gate did not pass"
         elif best.get("average", 0) < min_average:
             report["status"] = "needs_review"
             report["error"] = f"Best image score {best.get('average', 0)} is below {min_average}"
