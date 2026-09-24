@@ -329,10 +329,7 @@ class CharacterReferenceAutoGenerator:
             selection["turnaround_gate"] = selected.get("turnaround_gate", {})
             selection["turnaround_contract"] = selected.get("request", {}).get("turnaround_contract", {})
             write_report(report_path, selection)
-            if (
-                settings.GENERATION_REQUIRE_IMAGE_REVIEW
-                and selection["turnaround_gate"].get("status") != "passed"
-            ):
+            if selection["turnaround_gate"].get("status") != "passed":
                 raise ReviewError(
                     f"Turnaround {turnaround_view} feature gate failed: "
                     + ", ".join(selection["turnaround_gate"].get("missing") or selection["turnaround_gate"].get("low", {}).keys())

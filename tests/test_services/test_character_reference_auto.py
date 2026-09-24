@@ -69,10 +69,36 @@ class FakeDescriptionGenerator:
         }
 
 
+def _passed_review(index, image_path, scene, prompt, reference_image=None):
+    return {
+        "index": index,
+        "path": image_path,
+        "status": "passed",
+        "average": 4.6,
+        "review": {
+            "composition": {"score": 5, "evidence": "strong framing"},
+            "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+            "visual_integrity": {"score": 5, "evidence": "clean render"},
+            "facial_identity": {"score": 5, "evidence": "face matches"},
+            "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+            "turnaround_feature_scores": {
+                feature: {"score": 5, "evidence": f"{feature} matches"}
+                for feature in TURNAROUND_FEATURES.get(scene.get("turnaround_view", "front"), [])
+            },
+            "issues": [],
+        },
+        "metrics": {"technical_score": 4.6},
+    }
+
+
 def test_character_reference_generation_selects_best_candidate(tmp_path, monkeypatch):
     generator = CharacterReferenceAutoGenerator(comfyui_service=FakeComfyUI(), generator=FakeDescriptionGenerator())
     monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_IMAGE_MIN_SCORE", 0.0)
     monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+    monkeypatch.setattr(
+        "src.services.character_reference_auto.ImageQualitySelector.review_candidate",
+        lambda self, index, image_path, scene, prompt, reference_image=None: _passed_review(index, image_path, scene, prompt, reference_image),
+    )
 
     result = generator.generate_multiple_references(
         character_name="林安",
@@ -110,7 +136,12 @@ def test_turnaround_album_generation_selects_each_required_view(tmp_path, monkey
     fake_comfy = FakeComfyUI()
     generator = CharacterReferenceAutoGenerator(comfyui_service=fake_comfy, generator=FakeDescriptionGenerator())
     monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_IMAGE_MIN_SCORE", 0.0)
+    monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE", 0.0)
     monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+    monkeypatch.setattr(
+        "src.services.character_reference_auto.ImageQualitySelector.review_candidate",
+        lambda self, index, image_path, scene, prompt, reference_image=None: _passed_review(index, image_path, scene, prompt, reference_image),
+    )
 
     result = generator.generate_turnaround_album(
         character_name="林安",
@@ -132,10 +163,41 @@ def test_turnaround_album_generation_selects_each_required_view(tmp_path, monkey
     assert all("same scale as other views" in prompt for prompt in prompts)
     assert all("plain light gray background" in prompt for prompt in prompts)
     assert Path(tmp_path / "林安" / "turnaround_front_quality.json").is_file()
-    assert result["quality_reports"]["front"]["turnaround_gate"]["status"] == "needs_review"
+    assert result["quality_reports"]["front"]["turnaround_gate"]["status"] == "passed"
     assert result["quality_reports"]["front"]["turnaround_contract"]["layout"].startswith("single full-body")
     assert result["quality_reports"]["front"]["candidates"][0]["request"]["turnaround_contract"]["expected_features"]["face_shape"] == "oval face"
     assert set(result["quality_reports"]["side"]["turnaround_gate"]["scores"]) == set(TURNAROUND_FEATURES["side"])
+
+
+def test_turnaround_album_generation_blocks_failed_feature_gate(tmp_path, monkeypatch):
+    fake_comfy = FakeComfyUI()
+    generator = CharacterReferenceAutoGenerator(comfyui_service=fake_comfy, generator=FakeDescriptionGenerator())
+    monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_IMAGE_MIN_SCORE", 0.0)
+    monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE", 0.0)
+    monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+
+    def low_review(self, index, image_path, scene, prompt, reference_image=None):
+        report = _passed_review(index, image_path, scene, prompt, reference_image)
+        feature = TURNAROUND_FEATURES[scene["turnaround_view"]][0]
+        report["review"]["turnaround_feature_scores"][feature] = {
+            "score": 2,
+            "evidence": "wrong view angle",
+        }
+        return report
+
+    monkeypatch.setattr("src.services.character_reference_auto.ImageQualitySelector.review_candidate", low_review)
+
+    result = generator.generate_turnaround_album(
+        character_name="林安",
+        role="女主",
+        personality="克制",
+        count_per_view=1,
+        save_dir=str(tmp_path),
+    )
+
+    assert result["success"] is False
+    assert "Turnaround front feature gate failed" in result["message"]
+    assert result["selected_views"] == {}
 
 
 def test_turnaround_review_payload_carries_model_sheet_contract():
