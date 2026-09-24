@@ -101,9 +101,10 @@ class TestCreateProductionTask:
     
     @patch('src.services.task_orchestrator.chain')
     def test_create_production_task_success(
-        self, mock_chain, orchestrator, sample_project, sample_scenes
+        self, mock_chain, orchestrator, sample_project, sample_scenes, monkeypatch
     ):
         """测试成功创建生产任务"""
+        monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", True)
         # Mock Celery chain
         mock_result = Mock()
         mock_result.id = "test-celery-task-id"
@@ -125,7 +126,7 @@ class TestCreateProductionTask:
         
         assert task is not None
         assert task.project_id == sample_project.id
-        assert task.status == TaskStatus.RUNNING
+        assert task.status == TaskStatus.PENDING
     
     def test_create_production_task_project_not_found(self, orchestrator):
         """测试项目不存在时抛出异常"""
@@ -135,6 +136,26 @@ class TestCreateProductionTask:
     def test_create_production_task_no_scenes(self, orchestrator, sample_project):
         """测试项目没有分镜时抛出异常"""
         with pytest.raises(ValueError, match="项目没有分镜"):
+            orchestrator.create_production_task(project_id=sample_project.id)
+
+    def test_create_production_task_blocks_failed_readiness(
+        self, orchestrator, sample_project, sample_scenes, monkeypatch
+    ):
+        monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)
+
+        class FakeReadiness:
+            def __init__(self, _db):
+                pass
+
+            def build_report(self, project_id, include_engine_preflight=True):
+                return {
+                    "status": "needs_review",
+                    "action_items": ["Run real GPU validation samples."],
+                }
+
+        monkeypatch.setattr("src.services.task_orchestrator.ProductionReadinessService", FakeReadiness)
+
+        with pytest.raises(ValueError, match="Production readiness is not ready"):
             orchestrator.create_production_task(project_id=sample_project.id)
 
 

@@ -182,6 +182,10 @@ class TestTaskChain:
         mock_db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = mock_scenes
         monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)
         monkeypatch.setattr(
+            "src.services.task_orchestrator.ProductionReadinessService",
+            lambda _db: Mock(build_report=Mock(return_value={"status": "ready", "action_items": []})),
+        )
+        monkeypatch.setattr(
             "src.services.task_orchestrator.preflight_production_video_engine",
             lambda: {"status": "production_not_ready", "action_items": ["configure video workflow"]},
         )
@@ -227,6 +231,10 @@ class TestTaskChain:
         mock_db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = mock_scenes
         monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)
         monkeypatch.setattr(
+            "src.services.task_orchestrator.ProductionReadinessService",
+            lambda _db: Mock(build_report=Mock(return_value={"status": "ready", "action_items": []})),
+        )
+        monkeypatch.setattr(
             "src.services.task_orchestrator.preflight_production_video_engine",
             lambda: {"status": "ready_for_production_video_test", "action_items": []},
         )
@@ -234,6 +242,29 @@ class TestTaskChain:
         orchestrator = TaskOrchestrator(mock_db_session)
 
         with pytest.raises(ValueError, match="at least 16 atomic scenes"):
+            orchestrator.create_production_task(project_id=1)
+
+    def test_create_production_task_blocks_failed_production_readiness(
+        self,
+        mock_db_session,
+        mock_project,
+        mock_scenes,
+        monkeypatch,
+    ):
+        mock_db_session.query.return_value.filter.return_value.first.return_value = mock_project
+        mock_db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = mock_scenes
+        monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)
+        monkeypatch.setattr(
+            "src.services.task_orchestrator.ProductionReadinessService",
+            lambda _db: Mock(build_report=Mock(return_value={
+                "status": "needs_review",
+                "action_items": ["Run review-images and manual clip review."],
+            })),
+        )
+
+        orchestrator = TaskOrchestrator(mock_db_session)
+
+        with pytest.raises(ValueError, match="Production readiness is not ready"):
             orchestrator.create_production_task(project_id=1)
 
 

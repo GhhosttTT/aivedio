@@ -119,6 +119,10 @@ def test_production_engine_block_returns_actionable_400(setup, monkeypatch):
     client, db, _ = setup
     monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)
     monkeypatch.setattr(
+        "src.services.task_orchestrator.ProductionReadinessService",
+        lambda _db: Mock(build_report=Mock(return_value={"status": "ready", "action_items": []})),
+    )
+    monkeypatch.setattr(
         "src.services.task_orchestrator.preflight_production_video_engine",
         lambda: {"status": "production_not_ready", "action_items": ["configure ComfyUI video workflow"]},
     )
@@ -134,6 +138,10 @@ def test_short_drama_scene_count_block_returns_actionable_400(setup, monkeypatch
     client, db, _ = setup
     monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)
     monkeypatch.setattr(
+        "src.services.task_orchestrator.ProductionReadinessService",
+        lambda _db: Mock(build_report=Mock(return_value={"status": "ready", "action_items": []})),
+    )
+    monkeypatch.setattr(
         "src.services.task_orchestrator.preflight_production_video_engine",
         lambda: {"status": "ready_for_production_video_test", "action_items": []},
     )
@@ -143,6 +151,24 @@ def test_short_drama_scene_count_block_returns_actionable_400(setup, monkeypatch
     assert response.status_code == 400
     assert "at least 16 atomic scenes" in response.json()["detail"]
     assert "current project has 1" in response.json()["detail"]
+
+
+def test_produce_blocks_when_production_readiness_needs_review(setup, monkeypatch):
+    client, db, _ = setup
+    monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)
+    monkeypatch.setattr(
+        "src.services.task_orchestrator.ProductionReadinessService",
+        lambda _db: Mock(build_report=Mock(return_value={
+            "status": "needs_review",
+            "action_items": ["Run real GPU validation samples.", "Resolve manual clip review."],
+        })),
+    )
+
+    response = client.post("/api/projects/1/produce")
+
+    assert response.status_code == 400
+    assert "Production readiness is not ready" in response.json()["detail"]
+    assert "Run real GPU validation samples" in response.json()["detail"]
 
 
 def test_repair_scene_keyframe_creates_targeted_task(setup, monkeypatch):

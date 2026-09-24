@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from src.config import settings
 from src.database.models import Project, Scene, Task as TaskModel, TaskStatus, ProjectStatus
 from src.services.script_generator import MIN_PRODUCTION_SCENES
+from src.services.production_readiness import ProductionReadinessService
 from src.services.video_engine_preflight import preflight_production_video_engine
 from src.tasks.celery_app import celery_app
 from src.tasks.image_tasks import generate_image_task, prepare_generation_task
@@ -87,6 +88,16 @@ class TaskOrchestrator:
         if project.status == ProjectStatus.IN_PRODUCTION:
             raise ValueError("项目正在制作，请等待当前任务结束")
         if generate_videos and not settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK:
+            readiness = ProductionReadinessService(self.db).build_report(
+                project_id,
+                include_engine_preflight=True,
+            )
+            if readiness.get("status") != "ready":
+                details = "; ".join(readiness.get("action_items") or [])
+                raise ValueError(
+                    "Production readiness is not ready. Resolve blockers and warnings before final generation. "
+                    f"{details}"
+                )
             video_engine = preflight_production_video_engine()
             if video_engine.get("status") != "ready_for_production_video_test":
                 detail = "; ".join(video_engine.get("action_items") or [])
