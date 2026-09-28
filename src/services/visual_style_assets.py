@@ -14,6 +14,31 @@ from src.utils.storage import storage_manager
 
 class VisualStyleAssetService:
     VERSION = 1
+    PLATFORM_AESTHETIC_PROMPT = (
+        "Platform aesthetic contract: premium mobile drama, natural skin, clean light, phone-readable face."
+    )
+    PLATFORM_AESTHETIC_NEGATIVE = (
+        "cheap filter look, plastic skin, waxy face, muddy light, oversaturated color, crushed shadows, blown highlights, "
+        "tiny unreadable face, flat background, noisy upscale artifacts, visible face repair scar"
+    )
+    IMAGE_AESTHETIC_FEATURES = (
+        "skin_texture",
+        "lighting_quality",
+        "color_grade",
+        "phone_readability",
+        "background_separation",
+        "production_polish",
+        "repair_artifacts_absent",
+    )
+    VIDEO_AESTHETIC_FEATURES = (
+        "skin_texture_stability",
+        "lighting_consistency",
+        "color_grade_consistency",
+        "phone_readability",
+        "motion_smoothness",
+        "background_stability",
+        "artifact_absence",
+    )
 
     def freeze_project_style(
         self,
@@ -70,6 +95,29 @@ class VisualStyleAssetService:
     def negative_prompt_for_project(self, project_id: int) -> str:
         manifest = self._read_manifest(project_id)
         return str(manifest.get("negative_prompt") or "").strip()
+
+    def generation_prompt_for_project(self, project_id: int) -> str:
+        return self._append_sentence(self.style_prompt_for_project(project_id), self.PLATFORM_AESTHETIC_PROMPT)
+
+    def generation_negative_for_project(self, project_id: int) -> str:
+        return self._append_sentence(self.negative_prompt_for_project(project_id), self.PLATFORM_AESTHETIC_NEGATIVE)
+
+    def platform_aesthetic_contract(self, project_id: int | None = None) -> dict:
+        style_prompt = self.style_prompt_for_project(project_id) if project_id is not None else ""
+        negative_prompt = self.negative_prompt_for_project(project_id) if project_id is not None else ""
+        return {
+            "version": 1,
+            "style_prompt": style_prompt,
+            "prompt": self.generation_prompt_for_project(project_id) if project_id is not None else self.PLATFORM_AESTHETIC_PROMPT,
+            "negative_prompt": self.generation_negative_for_project(project_id) if project_id is not None else self.PLATFORM_AESTHETIC_NEGATIVE,
+            "image_features": list(self.IMAGE_AESTHETIC_FEATURES),
+            "video_features": list(self.VIDEO_AESTHETIC_FEATURES),
+            "review_instruction": (
+                "Score platform polish from concrete visual evidence: natural skin, commercial light, consistent color, "
+                "phone readability, background separation, motion stability, and absence of repair artifacts."
+            ),
+            "negative_style_prompt": negative_prompt,
+        }
 
     def build_current_manifest(self, project: Project, scenes: Iterable[Scene]) -> dict:
         scene_items = [
@@ -132,6 +180,18 @@ class VisualStyleAssetService:
         except (OSError, ValueError):
             return {}
         return data if isinstance(data, dict) and data.get("status") == "frozen" else {}
+
+    @staticmethod
+    def _append_sentence(base: str | None, addition: str | None) -> str:
+        base = str(base or "").strip()
+        addition = str(addition or "").strip()
+        if not addition:
+            return base
+        if not base:
+            return addition
+        if addition.lower() in base.lower():
+            return base
+        return base.rstrip(" .") + ". " + addition
 
     def _path(self, project_id: int) -> Path:
         return storage_manager.get_project_path(project_id) / "style" / "visual_style_asset_pack.json"

@@ -287,8 +287,9 @@ def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=Non
     appearance = _appearance_anchor(characters, db, compiler)
     character = characters[0] if len(characters) == 1 else None
     composition = _composition_constraint(scene, project_id, db)
-    visual_style = VisualStyleAssetService().style_prompt_for_project(project_id)
-    style_negative = VisualStyleAssetService().negative_prompt_for_project(project_id)
+    style_service = VisualStyleAssetService()
+    visual_style = style_service.generation_prompt_for_project(project_id)
+    style_negative = style_service.generation_negative_for_project(project_id)
     complexity = _complexity_report(scene, project_id, db)
     if settings.GENERATION_BLOCK_COMPLEX_SHOTS and complexity["status"] == "needs_split":
         raise ValueError("Shot is too complex for one stable generation: " + "; ".join(complexity["reasons"]))
@@ -729,6 +730,7 @@ def _generate_quality_candidates(
                 "visual_description": scene_payload.get("visual_description") or scene_payload.get("description"),
                 "repair_action": scene_payload.get("repair_action"),
                 "visible_characters": scene_payload.get("visible_characters", []),
+                "platform_aesthetic_contract": scene_payload.get("platform_aesthetic_contract", {}),
             }
             report["request"] = {
                 "seed": candidate_request.seed,
@@ -740,6 +742,7 @@ def _generate_quality_candidates(
                 "use_ipadapter": candidate_request.use_ipadapter,
                 "character_sheet_references": scene_payload.get("character_sheet_references", []),
                 "identity_contrast_matrix": scene_payload.get("identity_contrast_matrix", {}),
+                "platform_aesthetic_contract": scene_payload.get("platform_aesthetic_contract", {}),
                 "refinement_pass": pass_index,
                 "feedback": feedback,
                 "repair_action": current_repair_action,
@@ -812,6 +815,7 @@ def generate_image_task(
         reference_image = _get_reference_image(character, project_id, scene)
         visible_characters = _visible_character_payload(scene, project_id, db)
         character_sheet_contract = _character_sheet_generation_contract(visible_characters)
+        platform_aesthetic_contract = VisualStyleAssetService().platform_aesthetic_contract(project_id)
         enhanced_prompt = compiled.prompt
         if character_sheet_contract["prompt"]:
             enhanced_prompt = f"{enhanced_prompt}. {character_sheet_contract['prompt']}."
@@ -848,6 +852,7 @@ def generate_image_task(
                 "character_sheet_contract": character_sheet_contract["prompt"],
                 "character_sheet_references": character_sheet_contract["references"],
                 "identity_contrast_matrix": character_sheet_contract["identity_contrast_matrix"],
+                "platform_aesthetic_contract": platform_aesthetic_contract,
                 "repair_action": repair_action,
             }
             final_image_path, quality_report = _generate_quality_candidates(

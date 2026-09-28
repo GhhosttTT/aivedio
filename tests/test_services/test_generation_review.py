@@ -129,11 +129,22 @@ def test_frame_review_accepts_video_aesthetic_scores(tmp_path, monkeypatch):
     reviewer = Mock()
     reviewer.evaluate.return_value = FrameReview(**data, reviewed_frames=[0, 1, 2], issues=[])
 
-    result = GenerationReviewService(reviewer).review_video(str(video), {"scene_number": 1}, tmp_path / "frames.json")
+    result = GenerationReviewService(reviewer).review_video(
+        str(video),
+        {
+            "scene_number": 1,
+            "platform_aesthetic_contract": {
+                "video_features": list(VIDEO_AESTHETIC_FEATURES),
+                "review_instruction": "score platform polish",
+            },
+        },
+        tmp_path / "frames.json",
+    )
 
     assert result["status"] == "passed"
     assert result["batches"][0]["video_aesthetic_gate"]["status"] == "passed"
     assert result["batches"][0]["review"]["video_aesthetic_scores"]["motion_smoothness"]["score"] == 4
+    assert "scene.platform_aesthetic_contract" in reviewer.evaluate.call_args.args[0]
 
 
 def test_temporal_inconsistency_blocks_video_review(tmp_path, monkeypatch):

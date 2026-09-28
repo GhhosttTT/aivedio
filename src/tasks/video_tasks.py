@@ -13,6 +13,7 @@ from src.services.generation_quality_policy import video_quality_budget
 from src.services.generation_review import GenerationReviewService, ReviewError, attach_video_aesthetic_gate, platform_video_score, write_report
 from src.services.repair_queue import attach_repair_queue, build_repair_queue
 from src.services.svd_service import get_svd_service
+from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
 from src.tasks.celery_app import celery_app
 from src.utils.logger import get_logger
@@ -134,6 +135,7 @@ def _apply_video_repair_action(
 def _scene_review_payload(scene: Scene, project_id: int | None = None, db=None) -> dict:
     visible_characters = []
     character_sheet_contract = {"prompt": "", "negative": "", "references": []}
+    style_service = VisualStyleAssetService()
     if project_id is not None and db is not None:
         from src.tasks.image_tasks import _character_sheet_generation_contract, _visible_character_payload
         visible_characters = _visible_character_payload(scene, project_id, db)
@@ -148,6 +150,7 @@ def _scene_review_payload(scene: Scene, project_id: int | None = None, db=None) 
         "character_sheet_contract": character_sheet_contract["prompt"],
         "character_sheet_references": character_sheet_contract["references"],
         "identity_contrast_matrix": character_sheet_contract["identity_contrast_matrix"],
+        "platform_aesthetic_contract": style_service.platform_aesthetic_contract(project_id),
     }
 
 
@@ -428,6 +431,7 @@ def _generate_quality_video_candidates(
                         "reference_image": reference,
                         "character_sheet_references": scene_payload.get("character_sheet_references", []),
                         "identity_contrast_matrix": scene_payload.get("identity_contrast_matrix", {}),
+                        "platform_aesthetic_contract": scene_payload.get("platform_aesthetic_contract", {}),
                         "repair_action": current_repair_action,
                         "quality_budget": budget.as_dict(),
                     },

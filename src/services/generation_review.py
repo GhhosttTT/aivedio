@@ -392,6 +392,8 @@ class GenerationReviewService:
                     "Aesthetic quality must judge whether the clip looks publishable for a commercial short-drama platform: "
                     "attractive face rendering, clean lighting, readable expression on a phone screen, tasteful color, "
                     "production polish, and no cheap filter look, random text, logo, watermark, or repair scars. "
+                    "When scene.platform_aesthetic_contract is present, use its video_features and review_instruction as the required "
+                    "platform polish checklist and return video_aesthetic_scores for every listed feature. "
                     "Temporal consistency must check whether the same characters keep stable faces, hair, wardrobe, body shape, and relative positions; "
                     "whether motion progresses plausibly without flicker, warping, sudden missing or extra "
                     "people, or unrelated camera jumps; and whether action continuity matches the scene. "

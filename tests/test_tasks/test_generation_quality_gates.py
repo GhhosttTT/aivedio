@@ -247,6 +247,16 @@ def test_video_review_payload_carries_identity_contrast_matrix(project_data):
     assert payload["identity_contrast_matrix"]["pairs"][0]["contrast_fields"]
 
 
+def test_video_review_payload_carries_platform_aesthetic_contract(project_data):
+    db, project, scene, _, _ = project_data
+
+    payload = _scene_review_payload(scene, project.id, db)
+
+    assert "Platform aesthetic contract" in payload["platform_aesthetic_contract"]["prompt"]
+    assert "phone_readability" in payload["platform_aesthetic_contract"]["image_features"]
+    assert "motion_smoothness" in payload["platform_aesthetic_contract"]["video_features"]
+
+
 def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_data, monkeypatch):
     _, project, scene, _, _ = project_data
     scene.dialogue = "你把那封信递给我。"
@@ -336,8 +346,11 @@ def test_video_director_prompt_includes_project_visual_style(project_data):
     )
 
     assert "consistent premium red-and-teal short drama look" in plan.director_prompt
+    assert "Platform aesthetic contract" in plan.director_prompt
     assert "consistent premium red-and-teal short drama look" in plan.end_frame_prompt
+    assert "Platform aesthetic contract" in plan.end_frame_prompt
     assert "random color grade" in plan.negative_prompt
+    assert "plastic skin" in plan.negative_prompt
 
 
 def test_composition_constraint_tracks_visible_actor_count(project_data):
@@ -381,7 +394,9 @@ def test_visual_style_pack_is_added_to_image_prompt(project_data):
     compiled, _ = _prepare_prompt(scene, project.id, scene.visual_description, db, ShotPromptService(llm))
 
     assert "consistent premium red-and-teal short drama look" in compiled.prompt
+    assert "Platform aesthetic contract" in compiled.prompt
     assert "random color grade" in compiled.negative_prompt
+    assert "plastic skin" in compiled.negative_prompt
 
 
 def test_visual_style_negative_prompt_edit_invalidates_cached_prompt(project_data):
@@ -1347,6 +1362,7 @@ def test_video_candidate_report_records_character_sheet_reference(project_data, 
         def review_video(self, _video, payload, _report_path, _reference=None):
             assert "Character sheet contract" in payload["character_sheet_contract"]
             assert payload["character_sheet_references"][0]["view"] == "side"
+            assert "motion_smoothness" in payload["platform_aesthetic_contract"]["video_features"]
             return {
                 "status": "passed",
                 "average": 4.6,
@@ -1368,6 +1384,7 @@ def test_video_candidate_report_records_character_sheet_reference(project_data, 
     candidate = report["candidates"][0]
     assert candidate["request"]["character_sheet_references"][0]["view"] == "side"
     assert candidate["request"]["character_sheet_references"][0]["path"] == views["side"]
+    assert "motion_smoothness" in candidate["request"]["platform_aesthetic_contract"]["video_features"]
 
 
 def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp_path):
@@ -1578,6 +1595,12 @@ def test_image_candidate_report_records_reference_contract(tmp_path, monkeypatch
                 "expected_features": {"nose_silhouette": "straight nose bridge"},
             },
         }],
+        "platform_aesthetic_contract": {
+            "prompt": "Platform aesthetic contract: premium mobile short-drama finish",
+            "image_features": ["skin_texture", "phone_readability"],
+            "video_features": ["motion_smoothness"],
+            "review_instruction": "score platform polish",
+        },
     }
 
     _, report = _generate_quality_candidates(FakeProvider(), request, scene_payload, reference)
@@ -1587,8 +1610,10 @@ def test_image_candidate_report_records_reference_contract(tmp_path, monkeypatch
     assert candidate["request"]["use_ipadapter"] is True
     assert candidate["request"]["character_sheet_references"][0]["view"] == "side"
     assert candidate["request"]["identity_contrast_matrix"] == {}
+    assert candidate["request"]["platform_aesthetic_contract"]["image_features"] == ["skin_texture", "phone_readability"]
     assert "Character sheet contract" in scene_payload["review_prompt"]
     assert candidate["scene"]["visible_characters"][0]["turnaround_reference"]["view"] == "side"
+    assert candidate["scene"]["platform_aesthetic_contract"]["review_instruction"] == "score platform polish"
     assert candidate["scene"]["visible_characters"][0]["turnaround_reference"]["expected_features"]["nose_silhouette"] == "straight nose bridge"
 
 

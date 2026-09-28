@@ -291,7 +291,7 @@ class VideoDirectorService:
         if project_id is not None:
             try:
                 from src.services.visual_style_assets import VisualStyleAssetService
-                style_negative = VisualStyleAssetService().negative_prompt_for_project(project_id)
+                style_negative = VisualStyleAssetService().generation_negative_for_project(project_id)
                 if style_negative:
                     base = f"{base}, {style_negative}" if base else style_negative
             except Exception:
@@ -308,7 +308,7 @@ class VideoDirectorService:
             return ""
         try:
             from src.services.visual_style_assets import VisualStyleAssetService
-            return VisualStyleAssetService().style_prompt_for_project(project_id)
+            return VisualStyleAssetService().generation_prompt_for_project(project_id)
         except Exception:
             return ""
 

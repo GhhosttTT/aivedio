@@ -108,6 +108,12 @@ class ComfyUIService:
             if workflow_type is None:
                 # 如果没有指定类型，使用当前类型或默认类型
                 workflow_type = self.current_workflow_type or WorkflowType.BASIC
+
+            if (
+                self.current_workflow_type == workflow_type
+                and self.workflow_manager.current_workflow is not None
+            ):
+                return self.workflow_manager.current_workflow
             
             # 使用 WorkflowManager 加载工作流
             config = self.workflow_manager.switch_workflow(workflow_type)

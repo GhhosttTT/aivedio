@@ -55,6 +55,8 @@ Also return platform_aesthetic_scores with these keys: skin_texture, lighting_qu
 phone_readability, background_separation, production_polish, repair_artifacts_absent. Score each 0-5 with concrete
 visual evidence. Penalize plastic skin, muddy light, over-saturated filters, tiny unreadable faces, messy background,
 low production value, visible face repair scars, and upscale artifacts.
+When scene.platform_aesthetic_contract is present, use its image_features and review_instruction as the required
+platform polish checklist. Do not invent a pass when the requested contract is not visibly satisfied.
 For facial_identity, compare visible face shape, eyes, nose, mouth, hair, apparent age, and distinctive facial traits
 against every expected character identity anchor. Penalize same-face characters and faces that drift from the anchor.
 For identity_consistency, also judge wardrobe, body shape, role separation, and whether all expected characters remain distinct.

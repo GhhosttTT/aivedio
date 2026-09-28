@@ -50,3 +50,27 @@ def test_visual_style_pack_preserves_custom_prompts(tmp_path, monkeypatch):
 
     assert service.style_prompt_for_project(project.id) == "consistent premium red-and-teal short drama look"
     assert service.negative_prompt_for_project(project.id) == "random color grade"
+
+
+def test_generation_prompts_add_platform_aesthetic_contract(tmp_path, monkeypatch):
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path / "storage")
+    service = VisualStyleAssetService()
+    project = _project()
+    service.freeze_project_style(
+        project,
+        [_scene()],
+        style_prompt="consistent premium red-and-teal short drama look",
+        negative_prompt="random color grade",
+    )
+
+    prompt = service.generation_prompt_for_project(project.id)
+    negative = service.generation_negative_for_project(project.id)
+    contract = service.platform_aesthetic_contract(project.id)
+
+    assert "consistent premium red-and-teal short drama look" in prompt
+    assert "Platform aesthetic contract" in prompt
+    assert "random color grade" in negative
+    assert "plastic skin" in negative
+    assert "skin_texture" in contract["image_features"]
+    assert "motion_smoothness" in contract["video_features"]
+    assert "Platform aesthetic contract" in contract["prompt"]
