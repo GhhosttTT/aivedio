@@ -26,7 +26,23 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
             "reason": item.get("reason"),
             "recommendation": item.get("recommendation"),
         }
-        if action == "refine_prompt_composition":
+        if action == "regenerate_keyframe_with_identity_lock":
+            entry["rerun_strategy"] = (
+                "Regenerate affected keyframes with locked character-sheet identity and view-angle constraints."
+            )
+            entry["parameter_hints"] = {
+                "repair_action": "regenerate_keyframe_with_identity_lock",
+                "lock_character_sheet": True,
+                "increase_image_candidates": True,
+                "quality_mode": "ultra",
+                "optimization_mode": "quality",
+            }
+            commands = [
+                f"python -m scripts.validate_local_generation render-images --output {output_path} --quality-mode ultra --optimization-mode quality",
+                f"python -m scripts.validate_local_generation review-images --output {output_path}",
+                f"python -m scripts.validate_local_generation summarize --output {output_path}",
+            ]
+        elif action == "refine_prompt_composition":
             entry["rerun_strategy"] = (
                 "Rerun keyframe generation with composition repair constraints, then run review-images again."
             )

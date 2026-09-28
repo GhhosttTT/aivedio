@@ -487,6 +487,11 @@ def _candidate_seed(base_seed: int, index: int, refinement_pass: int = 0) -> int
 
 
 IMAGE_REPAIR_PARAMETER_PROFILES = {
+    "regenerate_keyframe_with_identity_lock": {
+        "steps_boost": 10,
+        "cfg_delta": -0.2,
+        "reason": "character_identity_lock_repair",
+    },
     "refine_prompt_composition": {
         "steps_boost": 8,
         "cfg_delta": -0.3,
@@ -550,6 +555,10 @@ def _append_terms(text: str | None, addition: str | None) -> str:
 
 
 IMAGE_REPAIR_PROMPTS = {
+    "regenerate_keyframe_with_identity_lock": (
+        "repair pass: lock the approved character-sheet identity, preserve exact face geometry, hair shape, "
+        "wardrobe color and silhouette, selected reference view angle, no same-face casting, no random outfit changes"
+    ),
     "refine_prompt_composition": (
         "repair pass: improve short-drama framing, balanced composition, clean crop, readable face, "
         "cinematic lighting, clear foreground-background separation, polished commercial still"
@@ -561,6 +570,10 @@ IMAGE_REPAIR_PROMPTS = {
 }
 
 IMAGE_REPAIR_NEGATIVES = {
+    "regenerate_keyframe_with_identity_lock": (
+        "changed face, changed hair, changed wardrobe, wrong view angle, same-face cast, identity drift, "
+        "face swap, random costume, inconsistent body proportion"
+    ),
     "refine_prompt_composition": (
         "bad crop, cropped face, awkward framing, flat lighting, muddy lighting, cluttered composition, "
         "unclear subject, low production value"

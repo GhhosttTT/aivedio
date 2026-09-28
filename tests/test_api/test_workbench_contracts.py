@@ -193,6 +193,29 @@ def test_repair_scene_keyframe_creates_targeted_task(setup, monkeypatch):
     chain.apply_async.assert_called_once()
 
 
+def test_repair_scene_identity_lock_creates_keyframe_task(setup, monkeypatch):
+    client, db, _ = setup
+    chain = Mock()
+    chain.freeze.return_value.id = "identity-repair-task-id"
+    generate = Mock(return_value=chain)
+    monkeypatch.setattr("src.services.task_orchestrator.generate_image_task.si", generate)
+    monkeypatch.setattr(
+        "src.services.task_orchestrator.ProductionWorkflowProfileService",
+        lambda: Mock(validate_profile=Mock(return_value={"status": "valid"})),
+    )
+
+    response = client.post(
+        "/api/projects/1/repair-scene",
+        json={"scene_number": 1, "action": "regenerate_keyframe_with_identity_lock"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["task_id"] == "identity-repair-task-id"
+    assert generate.call_args.kwargs["repair_action"] == "regenerate_keyframe_with_identity_lock"
+    scene = db.query(Scene).filter(Scene.project_id == 1, Scene.scene_number == 1).one()
+    assert scene.image_path is None and scene.video_path is None
+
+
 def test_repair_scene_blocks_when_workflow_profile_not_valid(setup, monkeypatch):
     client, db, _ = setup
     monkeypatch.setattr(

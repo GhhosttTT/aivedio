@@ -23,11 +23,31 @@ def test_repair_queue_classifies_identity_and_composition_failures():
     queue = build_repair_queue(report, "image")
 
     assert {item["action"] for item in queue} >= {
-        "regenerate_character_identity",
+        "regenerate_keyframe_with_identity_lock",
         "refine_prompt_composition",
     }
     assert any(item["scene_number"] == 3 for item in queue)
-    assert {item["execution"] for item in queue} >= {"auto", "setup_required"}
+    assert any(item["execution"] == "auto" for item in queue)
+
+
+def test_repair_queue_maps_video_identity_drift_to_motion_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 1,
+            "scene": {"scene_number": 4},
+            "review": {
+                "facial_identity": {"score": 2, "evidence": "identity drift and changed face across frames"},
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "lower_motion_and_regenerate_video"
+    assert queue[0]["stage"] == "video"
+    assert queue[0]["execution"] == "auto"
+    assert queue[0]["scene_number"] == 4
 
 
 def test_repair_queue_classifies_video_motion_failures():

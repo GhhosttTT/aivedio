@@ -1589,6 +1589,20 @@ def test_image_composition_repair_adds_commercial_framing_constraints():
     assert "low production value" in negative
 
 
+def test_image_identity_lock_repair_adds_character_sheet_constraints():
+    prompt, negative = _apply_image_repair_action(
+        "short drama close-up",
+        "blurry",
+        "regenerate_keyframe_with_identity_lock",
+    )
+
+    assert "lock the approved character-sheet identity" in prompt
+    assert "preserve exact face geometry" in prompt
+    assert "wardrobe color and silhouette" in prompt
+    assert "wrong view angle" in negative
+    assert "same-face cast" in negative
+
+
 def test_unknown_image_repair_action_keeps_prompt_unchanged():
     assert _apply_image_repair_action("prompt", "negative", "unknown_action") == ("prompt", "negative")
 

@@ -162,7 +162,11 @@ class TaskOrchestrator:
         if not scene:
             raise ValueError(f"分镜不存在: {scene_number}")
 
-        image_actions = {"regenerate_keyframe_with_prop_constraints", "refine_prompt_composition"}
+        image_actions = {
+            "regenerate_keyframe_with_identity_lock",
+            "regenerate_keyframe_with_prop_constraints",
+            "refine_prompt_composition",
+        }
         video_actions = {"lower_motion_and_regenerate_video"}
         blocked_actions = {
             "regenerate_character_identity": "请先在角色参考页重新生成身份方案和参考图，再重做关键帧。",

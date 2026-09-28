@@ -7,6 +7,15 @@ from typing import Any
 
 ACTION_RULES = [
     (
+        (
+            "changed face", "changed hair", "changed wardrobe", "identity drift",
+            "wrong camera angle versus character sheet", "wrong wardrobe", "face drift",
+        ),
+        "regenerate_keyframe_with_identity_lock",
+        "Regenerate the keyframe with locked character-sheet identity, wardrobe, hair, and view-angle constraints.",
+        "image",
+    ),
+    (
         ("turnaround", "front view", "side view", "back view", "profile view", "three-quarter", "expression", "body proportion", "wardrobe silhouette", "hair silhouette"),
         "regenerate_turnaround_album",
         "Generate and freeze a production character turnaround album before regenerating this character.",
@@ -160,6 +169,20 @@ def _gate_evidence(gate: dict[str, Any], gate_name: str) -> list[str]:
 
 def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]) -> dict[str, Any] | None:
     text = evidence.lower()
+    if media_type == "video" and any(
+        term in text
+        for term in ("changed face", "changed hair", "changed wardrobe", "identity drift", "face drift")
+    ):
+        return {
+            "priority": _priority(text),
+            "stage": "video",
+            "action": "lower_motion_and_regenerate_video",
+            "execution": _execution_mode("lower_motion_and_regenerate_video"),
+            "reason": evidence[:240],
+            "recommendation": "Lower motion/noise and regenerate the clip to reduce identity drift across frames.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
     for keywords, action, message, stage in ACTION_RULES:
         if any(keyword in text for keyword in keywords):
             return {
@@ -176,7 +199,12 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
 
 
 def _execution_mode(action: str) -> str:
-    if action in {"regenerate_keyframe_with_prop_constraints", "refine_prompt_composition", "lower_motion_and_regenerate_video"}:
+    if action in {
+        "regenerate_keyframe_with_identity_lock",
+        "regenerate_keyframe_with_prop_constraints",
+        "refine_prompt_composition",
+        "lower_motion_and_regenerate_video",
+    }:
         return "auto"
     if action in {"regenerate_turnaround_album", "regenerate_character_identity", "refreeze_spatial_plan", "fix_workflow_profile", "start_local_reviewer"}:
         return "setup_required"
