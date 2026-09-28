@@ -147,6 +147,7 @@ def _scene_review_payload(scene: Scene, project_id: int | None = None, db=None) 
         "visible_characters": visible_characters,
         "character_sheet_contract": character_sheet_contract["prompt"],
         "character_sheet_references": character_sheet_contract["references"],
+        "identity_contrast_matrix": character_sheet_contract["identity_contrast_matrix"],
     }
 
 
@@ -426,6 +427,7 @@ def _generate_quality_video_candidates(
                         "noise_aug_strength": noise,
                         "reference_image": reference,
                         "character_sheet_references": scene_payload.get("character_sheet_references", []),
+                        "identity_contrast_matrix": scene_payload.get("identity_contrast_matrix", {}),
                         "repair_action": current_repair_action,
                         "quality_budget": budget.as_dict(),
                     },

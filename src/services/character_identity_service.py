@@ -228,33 +228,82 @@ class CharacterIdentityService:
         status = "passed" if all(pair["status"] == "passed" for pair in pairs) else "needs_revision"
         return {"status": status, "pairs": pairs}
 
+    def identity_contrast_matrix(self, specs: list[dict[str, Any]], max_contrast_fields: int = 5) -> dict[str, Any]:
+        specs = [spec for spec in specs if isinstance(spec, dict) and spec.get("name")]
+        report = self.distinctiveness_report(specs)
+        characters = []
+        for spec in specs:
+            characters.append({
+                "name": spec.get("name"),
+                "key_features": {
+                    field: spec.get(field)
+                    for field in FACIAL_FIELDS + ["wardrobe"]
+                    if spec.get(field)
+                },
+                "identity_anchor": spec.get("identity_anchor") or self.identity_anchor(spec),
+                "negative_identity": spec.get("negative_identity", ""),
+            })
+        pairs = []
+        for pair in report.get("pairs", []):
+            left = next((spec for spec in specs if spec.get("name") == pair.get("left")), {})
+            right = next((spec for spec in specs if spec.get("name") == pair.get("right")), {})
+            contrast_fields = []
+            for field in FACIAL_FIELDS + ["wardrobe"]:
+                if left.get(field) and right.get(field) and left.get(field) != right.get(field):
+                    contrast_fields.append({
+                        "field": field,
+                        "left": left.get(field),
+                        "right": right.get(field),
+                    })
+                if len(contrast_fields) >= max_contrast_fields:
+                    break
+            pairs.append({
+                **pair,
+                "contrast_fields": contrast_fields,
+                "must_keep_apart": (
+                    f"{pair.get('left')} and {pair.get('right')} must remain visually distinct; "
+                    "penalize same-face casting, merged facial geometry, copied hair, or swapped wardrobe."
+                ),
+            })
+        return {
+            "version": 1,
+            "status": report.get("status"),
+            "characters": characters,
+            "pairs": pairs,
+        }
+
     def identity_contrast_prompt(self, specs: list[dict[str, Any]], max_pairs: int = 4) -> str:
         specs = [spec for spec in specs if isinstance(spec, dict) and spec.get("name")]
         if len(specs) < 2:
             return ""
+        matrix = self.identity_contrast_matrix(specs)
         contrasts = []
-        for left_index, left in enumerate(specs):
-            for right in specs[left_index + 1:]:
-                differences = [
-                    field for field in FACIAL_FIELDS + ["wardrobe"]
-                    if left.get(field) and right.get(field) and left.get(field) != right.get(field)
-                ][:2]
-                if not differences:
+        for pair in matrix.get("pairs", []):
+            fields = pair.get("contrast_fields") or []
+            if not fields:
+                contrasts.append(
+                    f"{pair.get('left')} and {pair.get('right')} are at risk of same-face casting; regenerate one identity bible."
+                )
+            else:
+                detail = ", ".join(
+                    f"{field['field']} differs ({field['left']} vs {field['right']})"
+                    for field in fields[:3]
+                )
+                contrasts.append(
+                    f"{pair.get('left')} must not look like {pair.get('right')}: {detail}"
+                )
+            if len(contrasts) >= max_pairs:
+                break
+        if not contrasts:
+            for left_index, left in enumerate(specs):
+                for right in specs[left_index + 1:]:
                     contrasts.append(
                         f"{left.get('name')} and {right.get('name')} are at risk of same-face casting; regenerate one identity bible."
                     )
-                    continue
-                detail = ", ".join(
-                    f"{field} differs"
-                    for field in differences
-                )
-                contrasts.append(
-                    f"{left.get('name')} must not look like {right.get('name')}: {detail}"
-                )
+                    if len(contrasts) >= max_pairs:
+                        break
                 if len(contrasts) >= max_pairs:
                     break
-            if len(contrasts) >= max_pairs:
-                break
         return (
             "Identity contrast contract: distinct faces; "
             + " | ".join(contrasts)

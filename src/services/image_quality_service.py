@@ -58,6 +58,8 @@ low production value, visible face repair scars, and upscale artifacts.
 For facial_identity, compare visible face shape, eyes, nose, mouth, hair, apparent age, and distinctive facial traits
 against every expected character identity anchor. Penalize same-face characters and faces that drift from the anchor.
 For identity_consistency, also judge wardrobe, body shape, role separation, and whether all expected characters remain distinct.
+When scene.identity_contrast_matrix is present, compare each pair's contrast_fields directly. Penalize copied facial
+geometry, copied hair, swapped wardrobe, merged features, or any same-face casting between different named roles.
 When scene.turnaround_view is present, also return turnaround_feature_scores. Score each required character-sheet feature
 from scene.reference_requirements and scene.identity independently: view angle, facial features, hairstyle silhouette,
 body proportion, wardrobe silhouette, and whether the image accidentally uses the wrong angle.

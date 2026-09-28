@@ -141,6 +141,13 @@ def _character_sheet_generation_contract(visible_characters: list[dict]) -> dict
     """Build generator-facing constraints from frozen character-sheet assets."""
     prompts = []
     references = []
+    identity_specs = [
+        item.get("identity_spec")
+        for item in visible_characters
+        if isinstance(item.get("identity_spec"), dict)
+    ]
+    contrast_matrix = CharacterIdentityService().identity_contrast_matrix(identity_specs) if len(identity_specs) >= 2 else {}
+    contrast_prompt = CharacterIdentityService().identity_contrast_prompt(identity_specs) if len(identity_specs) >= 2 else ""
     for item in visible_characters:
         turnaround = item.get("turnaround_reference") if isinstance(item.get("turnaround_reference"), dict) else None
         if not turnaround:
@@ -166,15 +173,19 @@ def _character_sheet_generation_contract(visible_characters: list[dict]) -> dict
             "sha256": turnaround.get("sha256"),
             "expected_features": expected,
         })
+    if contrast_prompt:
+        prompts.append(contrast_prompt)
     if not prompts:
-        return {"prompt": "", "negative": "", "references": []}
+        return {"prompt": "", "negative": "", "references": [], "identity_contrast_matrix": contrast_matrix}
     return {
         "prompt": "Character sheet contract: " + " | ".join(prompts),
         "negative": (
             "changed face, changed hair, changed wardrobe, identity drift, same-face cast, "
+            "same facial geometry across different roles, copied hairstyle across roles, "
             "wrong camera angle versus character sheet"
         ),
         "references": references,
+        "identity_contrast_matrix": contrast_matrix,
     }
 
 
@@ -281,8 +292,15 @@ def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=Non
     complexity = _complexity_report(scene, project_id, db)
     if settings.GENERATION_BLOCK_COMPLEX_SHOTS and complexity["status"] == "needs_split":
         raise ValueError("Shot is too complex for one stable generation: " + "; ".join(complexity["reasons"]))
-    layout_parts = [part for part in (visual_style, composition, complexity["prompt_constraint"]) if part]
-    appearance_with_layout = f"{appearance}. {' '.join(layout_parts)}" if appearance else " ".join(layout_parts)
+    layout_parts = [part for part in (composition, visual_style, complexity["prompt_constraint"]) if part]
+    if appearance:
+        if len(characters) > 1:
+            appearance_parts = [part for part in (composition, appearance, visual_style, complexity["prompt_constraint"]) if part]
+        else:
+            appearance_parts = [part for part in (appearance, composition, visual_style, complexity["prompt_constraint"]) if part]
+        appearance_with_layout = ". ".join(appearance_parts)
+    else:
+        appearance_with_layout = " ".join(layout_parts)
     prompt_with_layout = f"{prompt}\n" + "\n".join(layout_parts)
     artifact = Path(get_scene_image_path(project_id, scene.id)).with_suffix(".prompt.json")
     source_hash = compiler.source_hash(f"{prompt_with_layout}\n{style_negative}", appearance_with_layout)
@@ -721,6 +739,7 @@ def _generate_quality_candidates(
                 "reference_image": candidate_request.reference_image,
                 "use_ipadapter": candidate_request.use_ipadapter,
                 "character_sheet_references": scene_payload.get("character_sheet_references", []),
+                "identity_contrast_matrix": scene_payload.get("identity_contrast_matrix", {}),
                 "refinement_pass": pass_index,
                 "feedback": feedback,
                 "repair_action": current_repair_action,
@@ -828,6 +847,7 @@ def generate_image_task(
                 "visible_characters": visible_characters,
                 "character_sheet_contract": character_sheet_contract["prompt"],
                 "character_sheet_references": character_sheet_contract["references"],
+                "identity_contrast_matrix": character_sheet_contract["identity_contrast_matrix"],
                 "repair_action": repair_action,
             }
             final_image_path, quality_report = _generate_quality_candidates(

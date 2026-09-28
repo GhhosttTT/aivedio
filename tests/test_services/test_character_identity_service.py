@@ -33,7 +33,24 @@ def test_identity_contrast_prompt_lists_pairwise_facial_differences():
 
     assert "Identity contrast contract" in prompt
     assert "林安 must not look like 顾沉" in prompt
+    assert " vs " in prompt
     assert "same-face" in prompt
+
+
+def test_identity_contrast_matrix_lists_pairwise_feature_values():
+    service = CharacterIdentityService()
+    first = service.build_identity_spec("林安", "女主", project_id=7)
+    second = service.build_identity_spec("顾沉", "男主", project_id=7, existing_specs=[first])
+
+    matrix = service.identity_contrast_matrix([first, second])
+
+    assert matrix["status"] == "passed"
+    assert matrix["characters"][0]["name"] == "林安"
+    assert matrix["pairs"][0]["left"] == "林安"
+    assert matrix["pairs"][0]["right"] == "顾沉"
+    assert matrix["pairs"][0]["contrast_fields"]
+    assert {"field", "left", "right"} <= set(matrix["pairs"][0]["contrast_fields"][0])
+    assert "same-face" in matrix["pairs"][0]["must_keep_apart"]
 
 
 def test_score_observed_spec_quantifies_feature_mismatch():

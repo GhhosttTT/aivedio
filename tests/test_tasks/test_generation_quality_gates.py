@@ -104,6 +104,31 @@ def test_visible_character_payload_carries_identity_anchors(project_data):
     ]
 
 
+def test_character_sheet_contract_carries_identity_contrast_matrix(project_data):
+    from src.services.character_identity_service import CharacterIdentityService
+
+    db, project, scene, character, _ = project_data
+    identity_service = CharacterIdentityService()
+    alice_spec = identity_service.build_identity_spec("Alice", "lead", project_id=project.id)
+    bob_spec = identity_service.build_identity_spec("Bob", "rival", project_id=project.id, existing_specs=[alice_spec])
+    character.appearance = alice_spec["identity_anchor"]
+    character.visual_description = json.dumps(alice_spec)
+    db.add(Character(
+        project_id=project.id,
+        name="Bob",
+        appearance=bob_spec["identity_anchor"],
+        visual_description=json.dumps(bob_spec),
+    ))
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice", "Bob"]}]})
+    db.commit()
+
+    contract = _character_sheet_generation_contract(_visible_character_payload(scene, project.id, db))
+
+    assert "Identity contrast contract" in contract["prompt"]
+    assert contract["identity_contrast_matrix"]["pairs"][0]["contrast_fields"]
+    assert "same facial geometry" in contract["negative"]
+
+
 def test_turnaround_album_drives_scene_reference_view(project_data, tmp_path, monkeypatch):
     from PIL import Image
     from src.services.character_identity_service import CharacterIdentityService
@@ -194,6 +219,32 @@ def test_video_review_payload_carries_character_sheet_contract(project_data, tmp
     assert "view=side" in payload["character_sheet_contract"]
     assert payload["character_sheet_references"][0]["view"] == "side"
     assert payload["character_sheet_references"][0]["path"] == views["side"]
+    assert payload["identity_contrast_matrix"] == {}
+
+
+def test_video_review_payload_carries_identity_contrast_matrix(project_data):
+    from src.services.character_identity_service import CharacterIdentityService
+
+    db, project, scene, character, _ = project_data
+    identity_service = CharacterIdentityService()
+    alice_spec = identity_service.build_identity_spec("Alice", "lead", project_id=project.id)
+    bob_spec = identity_service.build_identity_spec("Bob", "rival", project_id=project.id, existing_specs=[alice_spec])
+    character.appearance = alice_spec["identity_anchor"]
+    character.visual_description = json.dumps(alice_spec)
+    db.add(Character(
+        project_id=project.id,
+        name="Bob",
+        appearance=bob_spec["identity_anchor"],
+        visual_description=json.dumps(bob_spec),
+    ))
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice", "Bob"]}]})
+    db.commit()
+
+    payload = _scene_review_payload(scene, project.id, db)
+
+    assert payload["identity_contrast_matrix"]["pairs"][0]["left"] == "Alice"
+    assert payload["identity_contrast_matrix"]["pairs"][0]["right"] == "Bob"
+    assert payload["identity_contrast_matrix"]["pairs"][0]["contrast_fields"]
 
 
 def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_data, monkeypatch):
@@ -1535,6 +1586,7 @@ def test_image_candidate_report_records_reference_contract(tmp_path, monkeypatch
     assert candidate["request"]["reference_image"] == reference
     assert candidate["request"]["use_ipadapter"] is True
     assert candidate["request"]["character_sheet_references"][0]["view"] == "side"
+    assert candidate["request"]["identity_contrast_matrix"] == {}
     assert "Character sheet contract" in scene_payload["review_prompt"]
     assert candidate["scene"]["visible_characters"][0]["turnaround_reference"]["view"] == "side"
     assert candidate["scene"]["visible_characters"][0]["turnaround_reference"]["expected_features"]["nose_silhouette"] == "straight nose bridge"
