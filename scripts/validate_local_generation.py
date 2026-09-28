@@ -325,6 +325,52 @@ def _video_aesthetic_gates_passed(video_review_report: dict | None) -> bool:
     return True
 
 
+def _quality_reports(output: Path) -> dict[str, dict]:
+    reports = {}
+    for path in sorted(output.rglob("*.quality.json")):
+        try:
+            payload = _read_json(path)
+        except (OSError, ValueError):
+            continue
+        if isinstance(payload, dict):
+            reports[str(path.relative_to(output))] = payload
+    return reports
+
+
+def _final_video_reviews(quality_reports: dict[str, dict]) -> list[dict]:
+    reviews = []
+    for source, report in quality_reports.items():
+        review = report.get("final_video_review")
+        if isinstance(review, dict):
+            reviews.append({"source_report": source, **review})
+    return reviews
+
+
+def _final_video_reviews_passed(final_reviews: list[dict]) -> bool:
+    if not final_reviews:
+        return True
+    for review in final_reviews:
+        if review.get("status") != "passed":
+            return False
+        if float(review.get("average") or 0) < settings.GENERATION_VIDEO_MIN_SCORE:
+            return False
+        gate_scores = review.get("gate_scores") if isinstance(review.get("gate_scores"), dict) else {}
+        if gate_scores:
+            if float(gate_scores.get("facial_identity") or 0) < settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE:
+                return False
+            if float(gate_scores.get("identity_consistency") or 0) < settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE:
+                return False
+            if float(gate_scores.get("temporal_consistency") or 0) < settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE:
+                return False
+        platform_score = review.get("platform_score")
+        if isinstance(platform_score, (int, float)) and platform_score < settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE:
+            return False
+        aesthetic_gate = review.get("video_aesthetic_gate")
+        if not isinstance(aesthetic_gate, dict) or aesthetic_gate.get("status") != "passed":
+            return False
+    return True
+
+
 def _image_review_cases_passed(image_review_report: dict | None) -> bool:
     if not isinstance(image_review_report, dict):
         return False
@@ -453,6 +499,8 @@ def summarize_validation(output: Path):
     render_report = _read_json(output / "render.json")
     image_review_report = _read_json(output / "image_review.json")
     video_review_report = _read_json(output / "video_review.json")
+    quality_reports = _quality_reports(output)
+    final_video_reviews = _final_video_reviews(quality_reports)
     baseline_comparison_report = _read_json(output / "seed_dance_baseline_comparison.json")
     manual_review = _read_json(output / "manual_review.json")
     report = {
@@ -464,6 +512,7 @@ def summarize_validation(output: Path):
             "render": str(output / "render.json"),
             "image_review": str(output / "image_review.json"),
             "video_review": str(output / "video_review.json"),
+            "quality_reports": sorted(quality_reports),
             "seed_dance_baseline_comparison": str(output / "seed_dance_baseline_comparison.json"),
             "manual_review": str(output / "manual_review.json"),
         },
@@ -518,6 +567,8 @@ def summarize_validation(output: Path):
         and video_platform_score >= settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE
     )
     checks["video_aesthetic_gate_passed"] = _video_aesthetic_gates_passed(video_review_report)
+    checks["final_normalized_video_review_count"] = len(final_video_reviews)
+    checks["final_normalized_video_review_passed"] = _final_video_reviews_passed(final_video_reviews)
     checks["video_review_passed"] = bool(
         video_review_report
         and video_review_report.get("status") == "passed"
@@ -525,6 +576,7 @@ def summarize_validation(output: Path):
         and checks["video_temporal_gate_passed"]
         and checks["video_platform_gate_passed"]
         and checks["video_aesthetic_gate_passed"]
+        and checks["final_normalized_video_review_passed"]
     )
     checks["baseline_comparison_present"] = bool(baseline_comparison_report)
     checks["baseline_contact_sheet_present"] = _baseline_contact_sheet_present(baseline_comparison_report, output)
@@ -594,6 +646,10 @@ def summarize_validation(output: Path):
             "Run review-video on a generated clip and pass identity/temporal/platform gates; "
             "fix identity drift, same-face characters, flicker, temporal breaks, low commercial appeal, missing video aesthetic gates, or VLM setup."
         )
+    if not checks["final_normalized_video_review_passed"]:
+        report["action_items"].append(
+            "Fix final normalized video review failures from production .quality.json reports before accepting sample quality."
+        )
     if not checks["baseline_comparison_present"]:
         report["action_items"].append("Run compare-baseline against a Seed Dance reference clip before claiming replacement quality.")
     elif not isinstance(baseline_comparison_report, dict) or baseline_comparison_report.get("status") != "passed":
@@ -616,7 +672,14 @@ def summarize_validation(output: Path):
     if not checks["manual_blocking_issues_passed"]:
         report["action_items"].append("Resolve manual blocking issues before accepting production quality: " + json.dumps(manual_blocking_issues, ensure_ascii=False))
     report["calibration_recommendations"] = _calibration_recommendations(manual_cases, video_review_report)
-    repair_queue = _collect_repair_queue(render_report, image_review_report, video_review_report, baseline_comparison_report, manual_review)
+    repair_queue = _collect_repair_queue(
+        render_report,
+        image_review_report,
+        video_review_report,
+        *quality_reports.values(),
+        baseline_comparison_report,
+        manual_review,
+    )
     report["repair_queue"] = repair_queue
     checks["repair_queue_empty"] = not repair_queue
     if repair_queue:
@@ -644,6 +707,7 @@ def _path_exists(path: Path) -> bool:
 
 
 def _collect_validation_evidence(output: Path) -> dict:
+    quality_reports = sorted(str(path.relative_to(output)) for path in output.rglob("*.quality.json"))
     known = {
         "preflight": output / "preflight.json",
         "video_workflow_preflight": output / "video_workflow_preflight.json",
@@ -658,6 +722,12 @@ def _collect_validation_evidence(output: Path) -> dict:
     return {
         name: {"path": str(path), "present": _path_exists(path)}
         for name, path in known.items()
+    } | {
+        "quality_reports": {
+            "count": len(quality_reports),
+            "paths": quality_reports,
+            "present": bool(quality_reports),
+        }
     }
 
 
@@ -838,9 +908,19 @@ def build_acceptance_package(output: Path) -> dict:
     render_report = _read_json(output / "render.json")
     image_review_report = _read_json(output / "image_review.json")
     video_review_report = _read_json(output / "video_review.json")
+    quality_reports = _quality_reports(output)
+    final_video_reviews = _final_video_reviews(quality_reports)
     baseline_report = _read_json(output / "seed_dance_baseline_comparison.json")
     manual_review = _read_json(output / "manual_review.json")
-    repair_queue = _collect_repair_queue(render_report, image_review_report, video_review_report, baseline_report, manual_review, summary)
+    repair_queue = _collect_repair_queue(
+        render_report,
+        image_review_report,
+        video_review_report,
+        *quality_reports.values(),
+        baseline_report,
+        manual_review,
+        summary,
+    )
     manual_section = _manual_review_section(summary, render_report, manual_review)
     package = {
         "status": summary.get("status", "needs_action"),
@@ -859,6 +939,7 @@ def build_acceptance_package(output: Path) -> dict:
             "status": video_review_report.get("status") if isinstance(video_review_report, dict) else None,
             "gate_scores": summary.get("checks", {}).get("video_gate_scores", {}),
             "batches": video_review_report.get("batches", []) if isinstance(video_review_report, dict) else [],
+            "final_normalized_reviews": final_video_reviews,
         },
         "seed_dance_baseline": baseline_report if isinstance(baseline_report, dict) else None,
         "calibration_recommendations": summary.get("calibration_recommendations", []),

@@ -87,6 +87,10 @@ def build_generation_quality_scorecard(reports: dict[str, dict[str, Any]]) -> di
             if isinstance(candidate, dict):
                 candidate_count += 1
                 _add_candidate_findings(dimensions, candidate, report_name)
+        final_video_review = report.get("final_video_review")
+        if isinstance(final_video_review, dict):
+            candidate_count += 1
+            _add_candidate_findings(dimensions, final_video_review, report_name)
         for batch in report.get("batches") or []:
             if isinstance(batch, dict):
                 candidate_count += 1

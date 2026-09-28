@@ -725,6 +725,50 @@ def test_validation_summary_requires_video_aesthetic_gate(tmp_path):
     assert any("video aesthetic gates" in item for item in report["action_items"])
 
 
+def test_validation_summary_blocks_failed_final_normalized_video_review(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery"))
+    write_json(tmp_path / "scene_1.quality.json", {
+        "status": "needs_review",
+        "final_video_review": {
+            "status": "needs_review",
+            "average": 2.8,
+            "scene": {"scene_number": 1},
+            "gate_scores": {
+                "facial_identity": 5,
+                "identity_consistency": 5,
+                "temporal_consistency": 2,
+            },
+            "platform_score": 4.2,
+            "video_aesthetic_gate": {
+                "status": "needs_review",
+                "low": {"motion_smoothness": {"score": 2, "evidence": "clip stutters after normalization"}},
+                "missing": [],
+            },
+        },
+        "repair_queue": [{
+            "scene_number": 1,
+            "action": "lower_motion_and_regenerate_video",
+            "execution": "auto",
+            "reason": "clip stutters after normalization",
+        }],
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["final_normalized_video_review_count"] == 1
+    assert report["checks"]["final_normalized_video_review_passed"] is False
+    assert report["checks"]["video_review_passed"] is False
+    assert report["repair_queue"][0]["action"] == "lower_motion_and_regenerate_video"
+    assert any("final normalized video review" in item for item in report["action_items"])
+
+
 def test_validation_summary_blocks_low_video_identity_gate(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
@@ -810,6 +854,38 @@ def test_acceptance_package_writes_json_and_markdown(tmp_path):
     assert "Full Clip Review" in markdown
     assert "discovery" in markdown
     assert "ready_for_seed_dance_candidate" in markdown
+
+
+def test_acceptance_package_includes_final_normalized_video_reviews(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery"))
+    write_json(tmp_path / "scene_1.quality.json", {
+        "status": "passed",
+        "final_video_review": {
+            "status": "passed",
+            "average": 4.4,
+            "scene": {"scene_number": 1},
+            "gate_scores": {
+                "facial_identity": 4,
+                "identity_consistency": 4,
+                "temporal_consistency": 4,
+            },
+            "platform_score": 4.2,
+            "video_aesthetic_gate": {"status": "passed", "low": {}, "missing": []},
+        },
+    })
+
+    package = validator.build_acceptance_package(tmp_path)
+
+    assert package["status"] == "ready_for_seed_dance_candidate"
+    assert package["evidence_files"]["quality_reports"]["count"] == 1
+    assert package["video_review"]["final_normalized_reviews"][0]["source_report"] == "scene_1.quality.json"
+    assert package["video_review"]["final_normalized_reviews"][0]["status"] == "passed"
 
 
 def test_acceptance_package_surfaces_missing_manual_review_and_setup_actions(tmp_path):
