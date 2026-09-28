@@ -331,6 +331,18 @@ def test_production_readiness_accepts_vertical_mobile_format(setup, monkeypatch)
     assert not any(item["code"] == "non_mobile_short_drama_format" for item in payload["warnings"])
 
 
+def test_production_readiness_blocks_draft_media_fallback_env(setup, monkeypatch):
+    client, _, _ = setup
+    monkeypatch.setenv("ENABLE_DRAFT_MEDIA_FALLBACK", "true")
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["checks"]["draft_media_fallback"]["enabled"] is True
+    assert any(item["code"] == "draft_media_fallback_enabled" for item in payload["blockers"])
+
+
 def test_production_readiness_blocks_non_mobile_format(setup, monkeypatch):
     client, _, _ = setup
     monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_WIDTH", 1344)

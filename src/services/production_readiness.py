@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass
 
@@ -69,6 +70,7 @@ class ProductionReadinessService:
             "story_rhythm": self._story_rhythm_check(project, scenes, warnings),
             "story_room": self._story_room_check(project, scenes, warnings),
             "visual_format": self._visual_format_check(blockers),
+            "draft_media_fallback": self._draft_media_fallback_check(blockers),
             "image_postprocess": self._image_postprocess_check(blockers),
             "characters": self._character_check(project, scenes, characters, blockers, warnings),
             "shot_complexity": self._shot_complexity_check(project, scenes, blockers, warnings),
@@ -141,6 +143,18 @@ class ProductionReadinessService:
             "ratio": ratio,
             "target": "9:16 vertical mobile short drama",
             "recommended": {"width": 768, "height": 1344},
+        }
+
+    def _draft_media_fallback_check(self, blockers: list[ReadinessIssue]) -> dict:
+        enabled = os.getenv("ENABLE_DRAFT_MEDIA_FALLBACK", "false").lower() in {"1", "true", "yes", "on"}
+        if enabled:
+            blockers.append(ReadinessIssue(
+                "draft_media_fallback_enabled",
+                "Disable ENABLE_DRAFT_MEDIA_FALLBACK before production so failed local model calls cannot inject draft placeholder media.",
+            ))
+        return {
+            "enabled": enabled,
+            "env": "ENABLE_DRAFT_MEDIA_FALLBACK",
         }
 
     def _image_postprocess_check(self, blockers: list[ReadinessIssue]) -> dict:
