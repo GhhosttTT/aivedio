@@ -9,6 +9,7 @@ from src.database.database import get_db
 from src.database.models import Scene
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, VideoGenerationRequest, get_generation_provider
+from src.services.generation_quality_policy import video_quality_budget
 from src.services.generation_review import GenerationReviewService, ReviewError, attach_video_aesthetic_gate, platform_video_score, write_report
 from src.services.repair_queue import attach_repair_queue, build_repair_queue
 from src.services.svd_service import get_svd_service
@@ -280,7 +281,12 @@ def _video_repair_action_from_candidates(candidates: list[dict]) -> str | None:
     return None
 
 
-def _select_best_video_candidate(candidates: list[dict], final_path: str, report_path: Path) -> tuple[str, dict]:
+def _select_best_video_candidate(
+    candidates: list[dict],
+    final_path: str,
+    report_path: Path,
+    quality_budget: dict | None = None,
+) -> tuple[str, dict]:
     ranked = sorted(
         candidates,
         key=lambda item: (
@@ -316,6 +322,8 @@ def _select_best_video_candidate(candidates: list[dict], final_path: str, report
         "selected_video_aesthetic_gate": aesthetic_gate,
         "candidates": ranked,
     }
+    if quality_budget:
+        report["quality_budget"] = quality_budget
     if not gate_ok:
         report["error"] = f"Selected video gate scores are below threshold: {gate_scores}"
     elif platform_score is not None and platform_score < settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE:
@@ -363,8 +371,9 @@ def _generate_quality_video_candidates(
     shot_plan: VideoShotPlan | None = None,
     repair_action: str | None = None,
 ) -> tuple[str, dict]:
-    candidate_count = max(1, min(settings.GENERATION_VIDEO_CANDIDATES, 6))
-    refinement_passes = max(0, min(settings.GENERATION_VIDEO_REFINEMENT_PASSES, 3))
+    budget = video_quality_budget(repair_action)
+    candidate_count = budget.candidate_count
+    refinement_passes = max(0, min(budget.refinement_passes, 4))
     reviewer = GenerationReviewService()
     reference = _reference_for_scene(scene, project_id, db)
     scene_payload = _scene_review_payload(scene, project_id, db)
@@ -418,6 +427,7 @@ def _generate_quality_video_candidates(
                         "reference_image": reference,
                         "character_sheet_references": scene_payload.get("character_sheet_references", []),
                         "repair_action": current_repair_action,
+                        "quality_budget": budget.as_dict(),
                     },
                     "shot_plan": shot_plan_payload,
                     "repair_action": current_repair_action,
@@ -490,11 +500,17 @@ def _generate_quality_video_candidates(
             "status": "review_unavailable",
             "selected_path": candidates[0]["path"],
             "candidates": candidates,
+            "quality_budget": budget.as_dict(),
         }
         attach_repair_queue(report, "video")
         write_report(Path(output_path).with_suffix(".quality.json"), report)
         raise ReviewError("All video candidate reviews failed")
-    return _select_best_video_candidate(candidates, output_path, Path(output_path).with_suffix(".quality.json"))
+    return _select_best_video_candidate(
+        candidates,
+        output_path,
+        Path(output_path).with_suffix(".quality.json"),
+        quality_budget=budget.as_dict(),
+    )
 
 
 @celery_app.task(bind=True, name="generate_video")

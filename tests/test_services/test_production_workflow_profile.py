@@ -213,8 +213,13 @@ def test_workflow_profile_tracks_generation_quality_budget(tmp_path, monkeypatch
     monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
     monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_IMAGE_CANDIDATES", 5)
     monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 2)
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_MAX_IMAGE_CANDIDATES", 12)
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_REPAIR_IMAGE_CANDIDATE_MULTIPLIER", 1.5)
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES", 1)
     monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_VIDEO_CANDIDATES", 4)
     monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 2)
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_MAX_VIDEO_CANDIDATES", 8)
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_REPAIR_VIDEO_CANDIDATE_MULTIPLIER", 1.5)
     monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_VIDEO_END_FRAME_ENABLED", True)
     monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_STEPS", 40)
 
@@ -224,12 +229,18 @@ def test_workflow_profile_tracks_generation_quality_budget(tmp_path, monkeypatch
     assert manifest["quality_gates"]["quality_profile"] == "hongguo_reference"
     assert manifest["quality_gates"]["image_candidates"] == 5
     assert manifest["quality_gates"]["image_refinement_passes"] == 2
+    assert manifest["quality_gates"]["max_image_candidates"] == 12
+    assert manifest["quality_gates"]["repair_image_candidate_multiplier"] == 1.5
+    assert manifest["quality_gates"]["repair_extra_refinement_passes"] == 1
     assert manifest["quality_gates"]["video_candidates"] == 4
     assert manifest["quality_gates"]["video_refinement_passes"] == 2
+    assert manifest["quality_gates"]["max_video_candidates"] == 8
+    assert manifest["quality_gates"]["repair_video_candidate_multiplier"] == 1.5
     assert manifest["quality_gates"]["video_end_frame_enabled"] is True
 
     monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_IMAGE_CANDIDATES", 1)
     monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 0)
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES", 0)
     monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_QUALITY_PROFILE", "draft")
 
     report = service.validate_profile(profile_path=str(profile))
@@ -237,6 +248,7 @@ def test_workflow_profile_tracks_generation_quality_budget(tmp_path, monkeypatch
     assert report["status"] == "blocked"
     assert "quality_gate_image_candidates" in report["stale"]
     assert "quality_gate_video_refinement_passes" in report["stale"]
+    assert "quality_gate_repair_extra_refinement_passes" in report["stale"]
     assert "quality_gate_quality_profile" in report["stale"]
 
 

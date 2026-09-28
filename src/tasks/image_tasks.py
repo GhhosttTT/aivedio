@@ -17,6 +17,7 @@ from src.services.generation_review import write_report
 from src.services.image_quality_service import ImageQualitySelector, candidate_output_path
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, get_generation_provider
+from src.services.generation_quality_policy import image_quality_budget
 from src.services.image_postprocess import ImagePostprocessor
 from src.services.repair_queue import build_repair_queue
 from src.services.visual_style_assets import VisualStyleAssetService
@@ -654,8 +655,9 @@ def _generate_quality_candidates(
     reference_image: str | None,
     repair_action: str | None = None,
 ) -> tuple[str, dict]:
-    candidate_count = max(1, min(settings.GENERATION_IMAGE_CANDIDATES, 8))
-    refinement_passes = max(0, min(settings.GENERATION_IMAGE_REFINEMENT_PASSES, 3))
+    budget = image_quality_budget(repair_action)
+    candidate_count = budget.candidate_count
+    refinement_passes = max(0, min(budget.refinement_passes, 4))
     selector = ImageQualitySelector()
     reports = []
     best_report = None
@@ -723,6 +725,7 @@ def _generate_quality_candidates(
                 "feedback": feedback,
                 "repair_action": current_repair_action,
                 "repair_parameter_profile": repair_profile,
+                "quality_budget": budget.as_dict(),
             }
             report["path"] = result.output_path
             pass_reports.append(report)
@@ -736,6 +739,7 @@ def _generate_quality_candidates(
         request.output_path,
         Path(request.output_path).with_suffix(".quality.json"),
     )
+    selection["quality_budget"] = budget.as_dict()
     postprocess_report = ImagePostprocessor().process(
         request.output_path,
         prompt=request.prompt,

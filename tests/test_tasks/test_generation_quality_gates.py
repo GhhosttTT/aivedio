@@ -659,6 +659,65 @@ def test_image_repair_action_is_recorded_in_candidate_request(tmp_path, monkeypa
     assert report["candidates"][0]["provider_metadata"]["workflow"]["sampler_name"] == "dpmpp_2m"
 
 
+def test_image_repair_generation_expands_quality_budget(tmp_path, monkeypatch):
+    from PIL import Image
+    from src.services.generation_provider import ImageGenerationRequest
+
+    class FakeProvider:
+        name = GenerationProviderName.LOCAL_COMFYUI
+
+        def __init__(self):
+            self.requests = []
+
+        def generate_image(self, request):
+            self.requests.append(request)
+            Image.new("RGB", (request.width, request.height), (120, 120, 120)).save(request.output_path)
+            return GenerationResult("local_comfyui", request.output_path, "image", {})
+
+    def fake_review(self, index, image_path, scene, prompt, reference_image=None):
+        return {
+            "index": index,
+            "path": image_path,
+            "status": "passed",
+            "average": 4.6,
+            "review": {"composition": {"score": 5, "evidence": "clean framing"}},
+            "metrics": {"technical_score": 4.6},
+        }
+
+    monkeypatch.setattr("src.tasks.image_tasks.ImageQualitySelector.review_candidate", fake_review)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_CANDIDATES", 2)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 0)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_MAX_IMAGE_CANDIDATES", 6)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_IMAGE_CANDIDATE_MULTIPLIER", 2.0)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES", 0)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+
+    request = ImageGenerationRequest(
+        prompt="short drama still",
+        negative_prompt="blurry",
+        output_path=str(tmp_path / "scene.png"),
+        width=512,
+        height=512,
+        steps=28,
+        cfg_scale=6.0,
+        seed=123,
+    )
+    provider = FakeProvider()
+
+    _, report = _generate_quality_candidates(
+        provider,
+        request,
+        {"scene_number": 1},
+        reference_image=None,
+        repair_action="regenerate_keyframe_with_identity_lock",
+    )
+
+    assert len(provider.requests) == 4
+    assert report["quality_budget"]["candidate_count"] == 4
+    assert report["quality_budget"]["reason"] == "repair_generation_budget"
+    assert report["candidates"][0]["request"]["quality_budget"]["repair_action"] == "regenerate_keyframe_with_identity_lock"
+
+
 def test_video_generation_selects_best_reviewed_candidate(project_data, tmp_path, monkeypatch):
     db, project, scene, _, _ = project_data
     scene.image_path = str(tmp_path / "source.png")
@@ -1150,6 +1209,60 @@ def test_video_refinement_converts_motion_failure_into_repair_action(project_dat
     assert fake_svd.requests[1]["noise_aug_strength"] < round(fake_svd.requests[0]["noise_aug_strength"] * 0.6, 4)
     assert report["candidates"][0]["request"]["repair_action"] == "lower_motion_and_regenerate_video"
     assert report["status"] == "passed"
+
+
+def test_video_repair_generation_expands_quality_budget(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    Path(scene.image_path).write_bytes(b"image")
+    db.commit()
+
+    class FakeSVD:
+        def __init__(self):
+            self.requests = []
+
+        def generate_video(self, **kwargs):
+            self.requests.append(kwargs)
+            Path(kwargs["output_path"]).write_bytes(f"video-{len(self.requests)}".encode())
+            return kwargs["output_path"]
+
+    class FakeReviewService:
+        def review_video(self, _video, payload, _report_path, _reference=None):
+            return {
+                "status": "passed",
+                "average": 4.6,
+                "batches": [{
+                    "review": {
+                        "facial_identity": {"score": 5, "evidence": "face matches"},
+                        "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                        "temporal_consistency": {"score": 5, "evidence": "motion stable"},
+                        "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                    }
+                }],
+            }
+
+    fake_svd = FakeSVD()
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_VIDEO_CANDIDATES", 2)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 0)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_MAX_VIDEO_CANDIDATES", 6)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_VIDEO_CANDIDATE_MULTIPLIER", 2.0)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES", 0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    _, report = _generate_quality_video_candidates(
+        fake_svd, scene, project.id, str(tmp_path / "scene.mp4"), db,
+        num_frames=16, fps=8, motion_bucket_id=150, noise_aug_strength=0.08,
+        repair_action="lower_motion_and_regenerate_video",
+    )
+
+    assert len(fake_svd.requests) == 4
+    assert report["quality_budget"]["candidate_count"] == 4
+    assert report["quality_budget"]["reason"] == "repair_generation_budget"
+    assert report["candidates"][0]["request"]["quality_budget"]["repair_action"] == "lower_motion_and_regenerate_video"
 
 
 def test_video_candidate_report_records_character_sheet_reference(project_data, tmp_path, monkeypatch):
