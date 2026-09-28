@@ -168,6 +168,34 @@ def test_video_review_payload_carries_visible_character_anchors(project_data):
     ]
 
 
+def test_video_review_payload_carries_character_sheet_contract(project_data, tmp_path, monkeypatch):
+    from PIL import Image
+    from src.services.character_identity_service import CharacterIdentityService
+    from src.services.character_turnaround_album import CharacterTurnaroundAlbumService, PRODUCTION_TURNAROUND_VIEWS
+    from src.utils.storage import storage_manager
+
+    db, project, scene, character, _ = project_data
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path / "storage")
+    spec = CharacterIdentityService().build_identity_spec("Alice", "lead", project_id=project.id)
+    character.appearance = spec["identity_anchor"]
+    character.visual_description = json.dumps(spec)
+    scene.visual_description = "Alice side profile by the office doorway"
+    views = {}
+    for view, color in zip(PRODUCTION_TURNAROUND_VIEWS, ("red", "orange", "yellow", "green", "blue", "purple", "white", "black")):
+        image_path = tmp_path / f"{view}.png"
+        Image.new("RGB", (32, 32), color).save(image_path)
+        views[view] = str(image_path)
+    CharacterTurnaroundAlbumService().freeze_album(character, views)
+    db.commit()
+
+    payload = _scene_review_payload(scene, project.id, db)
+
+    assert "Character sheet contract" in payload["character_sheet_contract"]
+    assert "view=side" in payload["character_sheet_contract"]
+    assert payload["character_sheet_references"][0]["view"] == "side"
+    assert payload["character_sheet_references"][0]["path"] == views["side"]
+
+
 def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_data, monkeypatch):
     _, project, scene, _, _ = project_data
     scene.dialogue = "你把那封信递给我。"
@@ -1122,6 +1150,60 @@ def test_video_refinement_converts_motion_failure_into_repair_action(project_dat
     assert fake_svd.requests[1]["noise_aug_strength"] < round(fake_svd.requests[0]["noise_aug_strength"] * 0.6, 4)
     assert report["candidates"][0]["request"]["repair_action"] == "lower_motion_and_regenerate_video"
     assert report["status"] == "passed"
+
+
+def test_video_candidate_report_records_character_sheet_reference(project_data, tmp_path, monkeypatch):
+    from PIL import Image
+    from src.services.character_identity_service import CharacterIdentityService
+    from src.services.character_turnaround_album import CharacterTurnaroundAlbumService, PRODUCTION_TURNAROUND_VIEWS
+    from src.utils.storage import storage_manager
+
+    db, project, scene, character, _ = project_data
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path / "storage")
+    spec = CharacterIdentityService().build_identity_spec("Alice", "lead", project_id=project.id)
+    character.appearance = spec["identity_anchor"]
+    character.visual_description = json.dumps(spec)
+    scene.visual_description = "Alice side profile holding the letter"
+    scene.image_path = str(tmp_path / "source.png")
+    Image.new("RGB", (32, 32), "white").save(scene.image_path)
+    views = {}
+    for view, color in zip(PRODUCTION_TURNAROUND_VIEWS, ("red", "orange", "yellow", "green", "blue", "purple", "white", "black")):
+        image_path = tmp_path / f"{view}.png"
+        Image.new("RGB", (32, 32), color).save(image_path)
+        views[view] = str(image_path)
+    CharacterTurnaroundAlbumService().freeze_album(character, views)
+    db.commit()
+
+    class FakeSVD:
+        def generate_video(self, **kwargs):
+            Path(kwargs["output_path"]).write_bytes(b"video")
+            return kwargs["output_path"]
+
+    class FakeReviewService:
+        def review_video(self, _video, payload, _report_path, _reference=None):
+            assert "Character sheet contract" in payload["character_sheet_contract"]
+            assert payload["character_sheet_references"][0]["view"] == "side"
+            return {
+                "status": "passed",
+                "average": 4.6,
+                "batches": [{"review": {"video_aesthetic_scores": passed_video_aesthetic_scores()}}],
+            }
+
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_CANDIDATES", 1)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    _, report = _generate_quality_video_candidates(
+        FakeSVD(), scene, project.id, str(tmp_path / "scene.mp4"), db,
+        num_frames=16, fps=8, motion_bucket_id=127, noise_aug_strength=0.02,
+    )
+
+    candidate = report["candidates"][0]
+    assert candidate["request"]["character_sheet_references"][0]["view"] == "side"
+    assert candidate["request"]["character_sheet_references"][0]["path"] == views["side"]
 
 
 def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp_path):

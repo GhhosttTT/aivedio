@@ -132,9 +132,11 @@ def _apply_video_repair_action(
 
 def _scene_review_payload(scene: Scene, project_id: int | None = None, db=None) -> dict:
     visible_characters = []
+    character_sheet_contract = {"prompt": "", "negative": "", "references": []}
     if project_id is not None and db is not None:
-        from src.tasks.image_tasks import _visible_character_payload
+        from src.tasks.image_tasks import _character_sheet_generation_contract, _visible_character_payload
         visible_characters = _visible_character_payload(scene, project_id, db)
+        character_sheet_contract = _character_sheet_generation_contract(visible_characters)
     return {
         "scene_number": scene.scene_number,
         "description": scene.visual_description,
@@ -142,6 +144,8 @@ def _scene_review_payload(scene: Scene, project_id: int | None = None, db=None) 
         "image_prompt": scene.image_prompt,
         "expected_image": scene.image_path,
         "visible_characters": visible_characters,
+        "character_sheet_contract": character_sheet_contract["prompt"],
+        "character_sheet_references": character_sheet_contract["references"],
     }
 
 
@@ -412,6 +416,7 @@ def _generate_quality_video_candidates(
                         "motion_bucket_id": motion,
                         "noise_aug_strength": noise,
                         "reference_image": reference,
+                        "character_sheet_references": scene_payload.get("character_sheet_references", []),
                         "repair_action": current_repair_action,
                     },
                     "shot_plan": shot_plan_payload,
