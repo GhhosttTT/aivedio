@@ -16,6 +16,7 @@ class QualityBudget:
     profile: str
     repair_action: str | None = None
     reason: str = "base_generation"
+    action_profile: str | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -25,6 +26,7 @@ class QualityBudget:
             "profile": self.profile,
             "repair_action": self.repair_action,
             "reason": self.reason,
+            "action_profile": self.action_profile,
         }
 
 
@@ -35,8 +37,47 @@ PROFILE_BUDGETS = {
 }
 
 
+ACTION_BUDGETS = {
+    "image": {
+        "regenerate_keyframe_with_identity_lock": {
+            "candidate_multiplier": 1.6,
+            "extra_refinement_passes": 1,
+            "min_candidates": 5,
+            "profile": "identity_lock",
+        },
+        "refine_prompt_composition": {
+            "candidate_multiplier": 1.4,
+            "extra_refinement_passes": 1,
+            "min_candidates": 4,
+            "profile": "composition_polish",
+        },
+        "refine_face_aesthetic_detail": {
+            "candidate_multiplier": 2.0,
+            "extra_refinement_passes": 2,
+            "min_candidates": 6,
+            "profile": "face_aesthetic_micro_detail",
+        },
+        "regenerate_keyframe_with_prop_constraints": {
+            "candidate_multiplier": 1.35,
+            "extra_refinement_passes": 1,
+            "min_candidates": 4,
+            "profile": "prop_hand_constraints",
+        },
+    },
+    "video": {
+        "lower_motion_and_regenerate_video": {
+            "candidate_multiplier": 1.7,
+            "extra_refinement_passes": 2,
+            "min_candidates": 4,
+            "profile": "temporal_identity_stabilization",
+        },
+    },
+}
+
+
 def image_quality_budget(repair_action: str | None = None) -> QualityBudget:
     return _budget(
+        stage="image",
         base_candidates=settings.GENERATION_IMAGE_CANDIDATES,
         base_refinement_passes=settings.GENERATION_IMAGE_REFINEMENT_PASSES,
         max_candidates=settings.GENERATION_MAX_IMAGE_CANDIDATES,
@@ -47,6 +88,7 @@ def image_quality_budget(repair_action: str | None = None) -> QualityBudget:
 
 def video_quality_budget(repair_action: str | None = None) -> QualityBudget:
     return _budget(
+        stage="video",
         base_candidates=settings.GENERATION_VIDEO_CANDIDATES,
         base_refinement_passes=settings.GENERATION_VIDEO_REFINEMENT_PASSES,
         max_candidates=settings.GENERATION_MAX_VIDEO_CANDIDATES,
@@ -57,6 +99,7 @@ def video_quality_budget(repair_action: str | None = None) -> QualityBudget:
 
 def _budget(
     *,
+    stage: str,
     base_candidates: int,
     base_refinement_passes: int,
     max_candidates: int,
@@ -69,6 +112,7 @@ def _budget(
     profile = settings.GENERATION_QUALITY_PROFILE.strip().lower()
     profile_budget = PROFILE_BUDGETS.get(profile)
     reason = "base_generation_budget"
+    action_profile = None
     if profile_budget:
         candidate_count = max(
             candidate_count,
@@ -86,6 +130,15 @@ def _budget(
             refinement_passes + max(0, int(settings.GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES)),
         )
         reason = "repair_generation_budget"
+        action_budget = ACTION_BUDGETS.get(stage, {}).get(repair_action)
+        if action_budget:
+            candidate_count = max(
+                candidate_count,
+                min(max_candidates, int(action_budget["min_candidates"])),
+                min(max_candidates, int(math.ceil(candidate_count * action_budget["candidate_multiplier"]))),
+            )
+            refinement_passes += max(0, int(action_budget["extra_refinement_passes"]))
+            action_profile = str(action_budget["profile"])
     return QualityBudget(
         candidate_count=candidate_count,
         refinement_passes=refinement_passes,
@@ -93,4 +146,5 @@ def _budget(
         profile=profile,
         repair_action=repair_action,
         reason=reason,
+        action_profile=action_profile,
     )

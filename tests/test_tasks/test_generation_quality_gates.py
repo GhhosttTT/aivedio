@@ -983,9 +983,10 @@ def test_image_repair_generation_expands_quality_budget(tmp_path, monkeypatch):
         repair_action="regenerate_keyframe_with_identity_lock",
     )
 
-    assert len(provider.requests) == 4
-    assert report["quality_budget"]["candidate_count"] == 4
+    assert len(provider.requests) == 6
+    assert report["quality_budget"]["candidate_count"] == 6
     assert report["quality_budget"]["reason"] == "repair_generation_budget"
+    assert report["quality_budget"]["action_profile"] == "identity_lock"
     assert report["candidates"][0]["request"]["quality_budget"]["repair_action"] == "regenerate_keyframe_with_identity_lock"
 
 
@@ -1549,9 +1550,10 @@ def test_video_repair_generation_expands_quality_budget(project_data, tmp_path, 
         repair_action="lower_motion_and_regenerate_video",
     )
 
-    assert len(fake_svd.requests) == 4
-    assert report["quality_budget"]["candidate_count"] == 4
+    assert len(fake_svd.requests) == 6
+    assert report["quality_budget"]["candidate_count"] == 6
     assert report["quality_budget"]["reason"] == "repair_generation_budget"
+    assert report["quality_budget"]["action_profile"] == "temporal_identity_stabilization"
     assert report["candidates"][0]["request"]["quality_budget"]["repair_action"] == "lower_motion_and_regenerate_video"
 
 
