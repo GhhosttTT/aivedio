@@ -22,6 +22,14 @@ REQUIRED_CAPABILITIES = {
     "candidate_review",
 }
 REQUIRED_WORKFLOWS = {"image", "reference", "video"}
+MIN_QUALITY_BUDGET = {
+    "image_candidates": 5,
+    "image_refinement_passes": 2,
+    "video_candidates": 4,
+    "video_refinement_passes": 2,
+    "steps": 40,
+}
+APPROVED_QUALITY_PROFILES = {"hongguo_reference", "seed_dance_reference", "ultra", "high_quality"}
 
 
 class ProductionWorkflowProfileService:
@@ -41,6 +49,9 @@ class ProductionWorkflowProfileService:
         ]
         if missing_paths:
             raise ValueError("workflow files are missing: " + ", ".join(missing_paths))
+        budget_issues = self._quality_budget_issues(self._current_quality_gates())
+        if budget_issues:
+            raise ValueError("generation quality budget is below production minimum: " + ", ".join(budget_issues))
         caps = {name: bool((capabilities or {}).get(name, True)) for name in REQUIRED_CAPABILITIES}
         manifest = {
             "version": 1,
@@ -122,6 +133,9 @@ class ProductionWorkflowProfileService:
         for name, value in current_quality_gates.items():
             if quality_gates.get(name) != value:
                 stale.append(f"quality_gate_{name}")
+        low_budget = self._quality_budget_issues(quality_gates)
+        if low_budget:
+            missing.append("production_quality_budget")
         current_paths = self._current_workflow_paths()
         for name, current_path in current_paths.items():
             if name in REQUIRED_WORKFLOWS and not current_path:
@@ -143,6 +157,12 @@ class ProductionWorkflowProfileService:
             "missing": sorted(set(missing)),
             "stale": sorted(set(stale)),
             "missing_capabilities": missing_capabilities,
+            "quality_budget_issues": low_budget,
+            "minimum_quality_budget": {
+                **MIN_QUALITY_BUDGET,
+                "approved_quality_profiles": sorted(APPROVED_QUALITY_PROFILES),
+                "video_end_frame_enabled": True,
+            },
             "profile": profile,
         }
 
@@ -210,3 +230,15 @@ class ProductionWorkflowProfileService:
             "steps": settings.GENERATION_STEPS,
             "cfg": settings.GENERATION_CFG,
         }
+
+    def _quality_budget_issues(self, quality_gates: dict) -> list[str]:
+        issues = []
+        for name, minimum in MIN_QUALITY_BUDGET.items():
+            value = quality_gates.get(name)
+            if not isinstance(value, (int, float)) or value < minimum:
+                issues.append(f"{name}_below_{minimum}")
+        if quality_gates.get("quality_profile") not in APPROVED_QUALITY_PROFILES:
+            issues.append("quality_profile_not_production_approved")
+        if quality_gates.get("video_end_frame_enabled") is not True:
+            issues.append("video_end_frame_disabled")
+        return issues

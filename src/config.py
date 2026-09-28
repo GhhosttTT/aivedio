@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     COMFYUI_TIMEOUT: int = 900
     GENERATION_WIDTH: int = 768
     GENERATION_HEIGHT: int = 1344
-    GENERATION_STEPS: int = 28
+    GENERATION_STEPS: int = 40
     GENERATION_CFG: float = 6.0
     GENERATION_STEP_VARIATION: int = 0  # 新增：Steps变化量，0表示固定
     GENERATION_CFG_VARIATION: float = 0.0  # 新增：CFG变化量，0表示固定
