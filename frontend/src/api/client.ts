@@ -410,6 +410,23 @@ export interface ProductionReadinessReport {
             image_review_required: boolean;
             video_review_required: boolean;
         };
+        workflow_profile?: {
+            status: string;
+            missing?: string[];
+            stale?: string[];
+            missing_capabilities?: string[];
+            quality_budget_issues?: string[];
+            minimum_quality_budget?: Record<string, unknown>;
+            profile?: {
+                capabilities?: Record<string, boolean>;
+                capability_evidence?: Record<string, {
+                    present?: boolean;
+                    matched_nodes?: string[];
+                    requirement?: string;
+                }>;
+                quality_gates?: Record<string, unknown>;
+            };
+        };
         sample_validation?: {
             status: string;
             path: string;

@@ -23,6 +23,15 @@ export function ProductionReadinessPanel({
     const complexity = report?.checks.shot_complexity;
     const spatial = report?.checks.spatial_continuity;
     const reviewer = report?.checks.reviewer;
+    const workflowProfile = report?.checks.workflow_profile;
+    const qualityGates = workflowProfile?.profile?.quality_gates || {};
+    const capabilityEvidence = workflowProfile?.profile?.capability_evidence || {};
+    const missingCapabilities = workflowProfile?.missing_capabilities || [];
+    const profileGaps = [
+        ...(workflowProfile?.missing || []),
+        ...(workflowProfile?.stale || []),
+        ...(workflowProfile?.quality_budget_issues || []),
+    ];
     const sampleValidation = report?.checks.sample_validation;
     return (
         <section className={`wb-panel wb-readiness ${blocked ? 'blocked' : warning ? 'needs_review' : 'ready'}`}>
@@ -47,9 +56,36 @@ export function ProductionReadinessPanel({
                 <Metric label="复杂镜头" value={complexity ? `${complexity.summary.needs_split} 阻断 / ${complexity.summary.warn} 警告` : '未检查'}/>
                 <Metric label="空间计划" value={spatial ? `${spatial.summary.total - spatial.summary.weak}/${spatial.summary.total}` : '未检查'}/>
                 <Metric label="审核门槛" value={reviewer ? `${reviewer.image_review_required && reviewer.video_review_required ? '已开启' : '未完全开启'}` : '未检查'}/>
+                <Metric label="Workflow" value={workflowProfile ? workflowProfile.status : '未检查'}/>
                 <Metric label="样片验证" value={sampleValidation ? sampleValidation.status : '未检查'}/>
                 <Metric label="视频引擎" value={report?.checks.video_engine?.status || '未预检'}/>
             </div>
+            {workflowProfile && (
+                <div className="wb-summary-actions">
+                    <h3>Workflow 生产能力</h3>
+                    <div className="wb-grid compact">
+                        <Metric label="质量档" value={String(qualityGates.quality_profile || '未冻结')}/>
+                        <Metric label="图像预算" value={`${qualityGates.image_candidates ?? '-'} 候选 / ${qualityGates.image_refinement_passes ?? '-'} 轮`}/>
+                        <Metric label="视频预算" value={`${qualityGates.video_candidates ?? '-'} 候选 / ${qualityGates.video_refinement_passes ?? '-'} 轮`}/>
+                    </div>
+                    {profileGaps.length > 0 && <div className="wb-issue blocker">
+                        <span>Profile</span>
+                        <p>{profileGaps.slice(0, 8).join(' / ')}</p>
+                    </div>}
+                    {missingCapabilities.length > 0 && <div className="wb-issue blocker">
+                        <span>能力</span>
+                        <p>{missingCapabilities.join(' / ')}</p>
+                    </div>}
+                    <div className="wb-grid compact">
+                        {Object.entries(capabilityEvidence).slice(0, 8).map(([name, evidence]) => (
+                            <div className="wb-kv" key={name}>
+                                <span>{name}</span>
+                                <strong>{evidence.present ? (evidence.matched_nodes || []).slice(0, 2).join(', ') || '已验证' : '缺失'}</strong>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
             {issues.length > 0 && (
                 <div className="wb-summary-actions">
                     {issues.map(issue => (
