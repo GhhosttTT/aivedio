@@ -27,6 +27,9 @@ from src.utils.logger import logger
 from src.config import settings
 
 
+DEFAULT_LLM_MODEL_PATH = "./models/qwen2.5-14b-instruct-q4_k_m.gguf"
+
+
 class LLMService:
     """LLM 服务（支持本地llama.cpp或远程API）"""
 
@@ -83,7 +86,11 @@ class LLMService:
             self.is_loaded = True
         else:
             # 本地模型模式
-            self.model_path = model_path or settings.LLM_MODEL_PATH or os.getenv("LLM_MODEL_PATH")
+            env_model_path = os.getenv("LLM_MODEL_PATH")
+            settings_model_path = settings.LLM_MODEL_PATH
+            if settings_model_path == DEFAULT_LLM_MODEL_PATH and not os.path.exists(settings_model_path):
+                settings_model_path = ""
+            self.model_path = model_path or env_model_path or settings_model_path
             self.n_gpu_layers = n_gpu_layers
             self.n_ctx = n_ctx
             self.n_threads = n_threads
@@ -214,6 +221,8 @@ class LLMService:
             RuntimeError: 如果模型未加载或生成失败
         """
         if not self.is_loaded:
+            if not self.use_api:
+                raise RuntimeError("LLM 模型未加载")
             raise RuntimeError("LLM 服务未初始化")
 
         if not prompt or len(prompt.strip()) == 0:

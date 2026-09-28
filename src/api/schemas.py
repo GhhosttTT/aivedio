@@ -175,15 +175,15 @@ class CharacterAssetPackResponse(BaseModel):
 
 class CharacterTurnaroundAlbumFreezeRequest(BaseModel):
     """
-    冻结角色三视图/立体画册
+    冻结角色生产级立体画册
     """
-    views: dict = Field(..., description="front/side/back 三个视图对应的图片路径")
-    notes: Optional[str] = Field(None, max_length=500, description="三视图审核备注")
+    views: dict = Field(..., description="front/three_quarter_left/three_quarter_right/side/back/full_body/expression_neutral/expression_intense 图片路径")
+    notes: Optional[str] = Field(None, max_length=500, description="立体画册审核备注")
 
 
 class CharacterTurnaroundAlbumResponse(BaseModel):
     """
-    角色三视图/立体画册响应
+    角色生产级立体画册响应
     """
     character_id: int
     status: str
@@ -192,15 +192,15 @@ class CharacterTurnaroundAlbumResponse(BaseModel):
 
 class CharacterTurnaroundGenerateRequest(BaseModel):
     """
-    自动生成角色三视图/立体画册
+    自动生成角色生产级立体画册
     """
     count_per_view: int = Field(3, ge=1, le=8, description="每个视图生成的候选数量")
-    freeze_album: bool = Field(False, description="生成后是否直接冻结三视图画册")
+    freeze_album: bool = Field(False, description="生成后是否直接冻结生产级立体画册")
 
 
 class CharacterTurnaroundGenerateResponse(BaseModel):
     """
-    自动生成角色三视图响应
+    自动生成角色生产级立体画册响应
     """
     character_id: int
     selected_views: dict

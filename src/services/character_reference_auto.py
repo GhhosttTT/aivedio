@@ -13,6 +13,7 @@ from src.services.comfyui_service import ComfyUIService
 from src.services.generation_review import ReviewError, write_report
 from src.services.image_quality_service import ImageQualitySelector
 from src.services.llm_service import get_llm_service
+from src.services.character_turnaround_album import PRODUCTION_TURNAROUND_VIEWS
 from src.services.turnaround_quality import attach_turnaround_quality_gate, turnaround_expected_features
 
 
@@ -193,13 +194,13 @@ class CharacterReferenceAutoGenerator:
         save_dir: str = "./storage/characters",
     ) -> Dict:
         """
-        Generate front/side/back candidates and select the best image per view.
+        Generate production character-sheet candidates and select the best image per view.
 
         The selected views are meant to be frozen by CharacterTurnaroundAlbumService
         before final production.
         """
         try:
-            logger.info(f"开始为角色 '{character_name}' 生成三视图立体画册")
+            logger.info(f"开始为角色 '{character_name}' 生成生产级立体画册")
             character_data = self.generator.generate_character_description(
                 character_name=character_name,
                 role=role,
@@ -235,10 +236,10 @@ class CharacterReferenceAutoGenerator:
                 "candidate_images": candidate_images,
                 "quality_reports": quality_reports,
                 "reference_prompts": reference_prompts,
-                "message": f"角色 '{character_name}' 三视图立体画册生成成功",
+                "message": f"角色 '{character_name}' 生产级立体画册生成成功",
             }
         except Exception as e:
-            logger.error(f"生成三视图立体画册失败: {e}", exc_info=True)
+            logger.error(f"生成生产级立体画册失败: {e}", exc_info=True)
             return {
                 "success": False,
                 "character_data": {},
@@ -361,7 +362,7 @@ class CharacterReferenceAutoGenerator:
         side_prompt = reference_prompts.get("side_profile", {}).get("prompt")
         back_prompt = reference_prompts.get("back_view", {}).get("prompt")
         prompts = {}
-        for view, prompt_data in {
+        prompt_map = {
             "front": {
                 "prompt": (
                     front_prompt
@@ -383,7 +384,44 @@ class CharacterReferenceAutoGenerator:
                 ) + _turnaround_prompt_suffix("back"),
                 "negative": negative,
             },
-        }.items():
+            "three_quarter_left": {
+                "prompt": (
+                    f"{base}, strict 45 degree left three-quarter view, both eyes readable, "
+                    "nose bridge contour visible, left cheek contour and hairstyle volume readable"
+                ) + _turnaround_prompt_suffix("three_quarter_left"),
+                "negative": negative,
+            },
+            "three_quarter_right": {
+                "prompt": (
+                    f"{base}, strict 45 degree right three-quarter view, both eyes readable, "
+                    "nose bridge contour visible, right cheek contour and hairstyle volume readable"
+                ) + _turnaround_prompt_suffix("three_quarter_right"),
+                "negative": negative,
+            },
+            "full_body": {
+                "prompt": (
+                    f"{base}, full-body front model-sheet view, head-to-toe visible, natural body proportions, "
+                    "wardrobe hemline and shoes visible, face still readable"
+                ) + _turnaround_prompt_suffix("full_body"),
+                "negative": negative,
+            },
+            "expression_neutral": {
+                "prompt": (
+                    f"{base}, front close-up face reference, relaxed neutral expression, even facial muscles, "
+                    "sharp eyes and mouth landmarks"
+                ) + _turnaround_prompt_suffix("expression_neutral"),
+                "negative": negative,
+            },
+            "expression_intense": {
+                "prompt": (
+                    f"{base}, front close-up face reference, intense short-drama emotional expression, "
+                    "controlled tears or anger allowed, facial identity unchanged"
+                ) + _turnaround_prompt_suffix("expression_intense"),
+                "negative": negative,
+            },
+        }
+        for view in PRODUCTION_TURNAROUND_VIEWS:
+            prompt_data = prompt_map[view]
             contract = _turnaround_sheet_contract(view, character_data)
             prompt_data["turnaround_contract"] = contract
             prompts[view] = prompt_data
@@ -408,16 +446,32 @@ def _reference_identity_anchor(character_name: str, character_data: Dict) -> str
 def _turnaround_sheet_contract(view: str, character_data: Dict) -> Dict:
     view_camera = {
         "front": "strict orthographic front camera, shoulders square to camera",
+        "three_quarter_left": "strict 45 degree left three-quarter camera, not a front clone",
+        "three_quarter_right": "strict 45 degree right three-quarter camera, not a front clone",
         "side": "strict 90 degree side profile camera, no three-quarter rotation",
         "back": "strict orthographic rear camera, no face visible",
+        "full_body": "front full-body model-sheet camera, head-to-toe visible",
+        "expression_neutral": "front close-up expression camera, neutral relaxed face",
+        "expression_intense": "front close-up expression camera, emotional short-drama face",
     }
+    category = {
+        "front": "identity_angle",
+        "three_quarter_left": "identity_angle",
+        "three_quarter_right": "identity_angle",
+        "side": "identity_angle",
+        "back": "identity_angle",
+        "full_body": "body_scale",
+        "expression_neutral": "expression_reference",
+        "expression_intense": "expression_reference",
+    }[view]
     return {
         "view": view,
-        "layout": "single full-body character on a neutral production sheet, head-to-toe visible, centered on the same scale",
+        "category": category,
+        "layout": "single character on a neutral production sheet, centered on the same scale",
         "camera": view_camera[view],
         "pose": "neutral A-pose or relaxed straight pose, feet visible, no dramatic action",
         "background": "plain light gray studio background, no props, no text, no watermark",
-        "scale": "match height, lens distance, and body proportions across front side back views",
+        "scale": "match height, lens distance, and body proportions across production character-sheet views",
         "expected_features": turnaround_expected_features(view, character_data),
     }
 
@@ -425,8 +479,13 @@ def _turnaround_sheet_contract(view: str, character_data: Dict) -> Dict:
 def _turnaround_prompt_suffix(view: str) -> str:
     suffix = {
         "front": "strict front turnaround view, no dramatic pose, no camera tilt",
+        "three_quarter_left": "strict left 45 degree three-quarter view, no front clone, no side clone",
+        "three_quarter_right": "strict right 45 degree three-quarter view, no front clone, no side clone",
         "side": "90 degree side view, full body, neutral pose, no three-quarter angle",
         "back": "strict rear turnaround view, no face visible, neutral pose",
+        "full_body": "full-body head-to-toe model sheet, shoes visible, same character scale",
+        "expression_neutral": "neutral expression face sheet, close-up, relaxed mouth and eyes",
+        "expression_intense": "intense short-drama expression sheet, close-up, same facial geometry",
     }[view]
     return (
         f", {suffix}, production model sheet, full body head-to-toe visible, "
@@ -460,6 +519,16 @@ def _turnaround_review_payload(character_name: str, character_data: Dict, view: 
             "face and outfit front readable",
             "neutral pose suitable for identity reference",
         ],
+        "three_quarter_left": [
+            "strict left 45 degree three-quarter view",
+            "not a duplicated front view",
+            "nose bridge and left cheek contour readable",
+        ],
+        "three_quarter_right": [
+            "strict right 45 degree three-quarter view",
+            "not a duplicated front view",
+            "nose bridge and right cheek contour readable",
+        ],
         "side": [
             "strict side profile, not three-quarter",
             "nose silhouette and hair outline readable",
@@ -469,6 +538,21 @@ def _turnaround_review_payload(character_name: str, character_data: Dict, view: 
             "strict back view",
             "hairstyle back shape and outfit back silhouette readable",
             "no face or accidental front-facing pose",
+        ],
+        "full_body": [
+            "head-to-toe full-body reference",
+            "body proportion and wardrobe hemline readable",
+            "same scale as other model-sheet views",
+        ],
+        "expression_neutral": [
+            "front close-up neutral expression",
+            "facial landmarks readable",
+            "identity unchanged from front reference",
+        ],
+        "expression_intense": [
+            "front close-up intense short-drama expression",
+            "emotion readable without face drift",
+            "identity unchanged from front reference",
         ],
     }
     payload["visual_description"] = f"{view} character turnaround reference"

@@ -406,7 +406,7 @@ class ProductionReadinessService:
         if missing_turnaround_albums:
             blockers.append(ReadinessIssue(
                 "missing_character_turnaround_album",
-                "Freeze front/side/back turnaround albums before production: "
+                "Freeze production character turnaround albums before production: "
                 + ", ".join(item["name"] for item in missing_turnaround_albums),
             ))
         if stale_turnaround_albums:

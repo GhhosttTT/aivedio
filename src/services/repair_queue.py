@@ -7,15 +7,15 @@ from typing import Any
 
 ACTION_RULES = [
     (
-        ("turnaround", "front view", "side view", "back view", "profile view", "body proportion", "wardrobe silhouette", "hair silhouette"),
+        ("turnaround", "front view", "side view", "back view", "profile view", "three-quarter", "expression", "body proportion", "wardrobe silhouette", "hair silhouette"),
         "regenerate_turnaround_album",
-        "Generate and freeze a front/side/back turnaround album before regenerating this character.",
+        "Generate and freeze a production character turnaround album before regenerating this character.",
         "character",
     ),
     (
         ("identity", "facial", "face drift", "same-face", "same face", "changed face"),
         "regenerate_character_identity",
-        "Refresh character identity bible, three-view album, and reference image before regenerating this shot.",
+        "Refresh character identity bible, production turnaround album, and reference image before regenerating this shot.",
         "character",
     ),
     (

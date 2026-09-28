@@ -14,10 +14,20 @@ from src.utils.storage import storage_manager
 
 
 REQUIRED_TURNAROUND_VIEWS = ("front", "side", "back")
+PRODUCTION_TURNAROUND_VIEWS = (
+    "front",
+    "three_quarter_left",
+    "three_quarter_right",
+    "side",
+    "back",
+    "full_body",
+    "expression_neutral",
+    "expression_intense",
+)
 
 
 class CharacterTurnaroundAlbumService:
-    """Freeze front/side/back character references before production."""
+    """Freeze production character references before final video generation."""
 
     def freeze_album(
         self,
@@ -28,11 +38,12 @@ class CharacterTurnaroundAlbumService:
         identity_spec = load_identity_spec(character.visual_description)
         if not identity_spec:
             raise ValueError("character identity bible is required before freezing turnaround album")
-        missing_views = [view for view in REQUIRED_TURNAROUND_VIEWS if not view_paths.get(view)]
+        required_views = PRODUCTION_TURNAROUND_VIEWS
+        missing_views = [view for view in required_views if not view_paths.get(view)]
         if missing_views:
             raise ValueError("missing turnaround views: " + ", ".join(missing_views))
         normalized = {}
-        for view in REQUIRED_TURNAROUND_VIEWS:
+        for view in required_views:
             path = Path(view_paths[view])
             if not path.is_absolute():
                 path = Path.cwd() / path
@@ -40,13 +51,19 @@ class CharacterTurnaroundAlbumService:
                 raise ValueError(f"turnaround view file does not exist: {view}={path}")
             normalized[view] = str(path)
         manifest = {
-            "version": 1,
+            "version": 2,
             "status": "frozen",
             "character_id": character.id,
             "project_id": character.project_id,
             "character_name": character.name,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "required_views": list(REQUIRED_TURNAROUND_VIEWS),
+            "production_required_views": list(PRODUCTION_TURNAROUND_VIEWS),
+            "coverage": {
+                "identity_angles": ["front", "three_quarter_left", "three_quarter_right", "side", "back"],
+                "body_scale": ["full_body"],
+                "expression_refs": ["expression_neutral", "expression_intense"],
+            },
             "identity_spec_hash": self._json_hash(identity_spec),
             "identity_anchor": identity_spec.get("identity_anchor", character.appearance or ""),
             "views": {
@@ -79,7 +96,8 @@ class CharacterTurnaroundAlbumService:
         if manifest.get("identity_spec_hash") != self._json_hash(identity_spec):
             stale.append("identity_spec")
         views = manifest.get("views") if isinstance(manifest.get("views"), dict) else {}
-        for view in REQUIRED_TURNAROUND_VIEWS:
+        required_views = list(manifest.get("production_required_views") or PRODUCTION_TURNAROUND_VIEWS)
+        for view in required_views:
             item = views.get(view)
             if not isinstance(item, dict) or not item.get("path"):
                 missing.append(view)
@@ -112,8 +130,13 @@ class CharacterTurnaroundAlbumService:
         anchor = identity_spec.get("identity_anchor", "")
         view_text = {
             "front": "front view, face readable, shoulders square to camera",
+            "three_quarter_left": "45 degree left three-quarter view, both eyes readable, nose bridge contour visible",
+            "three_quarter_right": "45 degree right three-quarter view, both eyes readable, nose bridge contour visible",
             "side": "strict side profile view, nose silhouette, hair outline, outfit side seam visible",
             "back": "back view, hairstyle back shape, outfit back silhouette, no face visible",
+            "full_body": "full-body front model-sheet view, head-to-toe visible, same body scale",
+            "expression_neutral": "front close-up neutral expression reference, relaxed face",
+            "expression_intense": "front close-up intense short-drama expression reference, identity preserved",
         }[view]
         return f"{view_text}; preserve exact identity and wardrobe anchor: {anchor}"
 

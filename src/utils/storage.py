@@ -5,6 +5,8 @@
 
 import os
 import shutil
+import stat
+import time
 from pathlib import Path
 from typing import Optional
 import psutil
@@ -254,14 +256,25 @@ def cleanup_project_files(storage_path: str) -> bool:
     Returns:
         是否清理成功
     """
-    try:
-        if os.path.exists(storage_path):
-            shutil.rmtree(storage_path)
+    def _make_writable(func, path, _exc_info):
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        except Exception:
+            raise
+
+    if not os.path.exists(storage_path):
+        return False
+    last_error = None
+    for attempt in range(5):
+        try:
+            shutil.rmtree(storage_path, onerror=_make_writable)
             return True
-        return False
-    except Exception as e:
-        print(f"清理项目文件失败: {e}")
-        return False
+        except Exception as e:
+            last_error = e
+            time.sleep(0.05 * (attempt + 1))
+    print(f"清理项目文件失败: {last_error}")
+    return False
 
 
 # 导出

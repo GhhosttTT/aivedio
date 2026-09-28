@@ -313,7 +313,7 @@ async def generate_turnaround_album(
     db_session: Session = Depends(get_db_session)
 ):
     """
-    自动生成角色正面、侧面、背面三视图候选，并可直接冻结为立体画册。
+    自动生成角色生产级立体画册候选，并可直接冻结为立体画册。
     """
     try:
         character = db_session.query(Character).filter(
@@ -332,7 +332,7 @@ async def generate_turnaround_album(
             save_dir=str(save_dir),
         )
         if not result.get("success"):
-            raise HTTPException(status_code=500, detail=result.get("message", "三视图生成失败"))
+            raise HTTPException(status_code=500, detail=result.get("message", "立体画册生成失败"))
         album = None
         if request.freeze_album:
             try:
@@ -353,8 +353,8 @@ async def generate_turnaround_album(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"自动生成角色三视图失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"自动生成角色三视图失败: {e}")
+        logger.error(f"自动生成角色立体画册失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"自动生成角色立体画册失败: {e}")
 
 
 @router.post("/{character_id}/freeze-asset-pack", response_model=CharacterAssetPackResponse)
@@ -416,7 +416,7 @@ async def freeze_character_turnaround_album(
     db_session: Session = Depends(get_db_session)
 ):
     """
-    冻结角色正面、侧面、背面三视图，作为短剧生成的立体定妆依据。
+    冻结角色生产级立体画册，作为短剧生成的立体定妆依据。
     """
     try:
         character = db_session.query(Character).filter(
@@ -441,8 +441,8 @@ async def freeze_character_turnaround_album(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"冻结角色三视图失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"冻结角色三视图失败: {e}")
+        logger.error(f"冻结角色立体画册失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"冻结角色立体画册失败: {e}")
 
 
 @router.post("/{character_id}/reference", response_model=CharacterReferenceResponse)

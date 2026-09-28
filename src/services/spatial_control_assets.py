@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.database.models import Character, Project, Scene
-from src.services.character_turnaround_album import CharacterTurnaroundAlbumService, REQUIRED_TURNAROUND_VIEWS
+from src.services.character_turnaround_album import CharacterTurnaroundAlbumService, PRODUCTION_TURNAROUND_VIEWS
 from src.services.video_director_service import get_video_director_service
 from src.utils.storage import storage_manager
 
@@ -202,7 +202,7 @@ class SpatialControlAssetService:
                         "sha256": (views.get(view) or {}).get("sha256"),
                         "control_prompt": (views.get(view) or {}).get("control_prompt"),
                     }
-                    for view in REQUIRED_TURNAROUND_VIEWS
+                    for view in PRODUCTION_TURNAROUND_VIEWS
                     if isinstance(views.get(view), dict)
                 },
             }

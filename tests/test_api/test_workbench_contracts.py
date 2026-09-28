@@ -945,6 +945,7 @@ def test_character_asset_pack_freeze_clears_readiness_asset_pack_blocker(setup):
 def test_character_turnaround_album_freeze_clears_readiness_blocker(setup):
     client, db, path = setup
     from src.services.character_identity_service import CharacterIdentityService
+    from src.services.character_turnaround_album import PRODUCTION_TURNAROUND_VIEWS
 
     project = db.query(Project).filter(Project.id == 1).one()
     scene = db.query(Scene).filter(Scene.project_id == 1).one()
@@ -962,7 +963,8 @@ def test_character_turnaround_album_freeze_clears_readiness_blocker(setup):
     db.commit()
     db.refresh(character)
     views = {}
-    for view, color in {"front": "red", "side": "green", "back": "blue"}.items():
+    colors = ("red", "orange", "yellow", "green", "blue", "purple", "white", "black")
+    for view, color in zip(PRODUCTION_TURNAROUND_VIEWS, colors):
         image_path = path / f"{view}.png"
         Image.new("RGB", (64, 64), color).save(image_path)
         views[view] = str(image_path)
@@ -973,7 +975,7 @@ def test_character_turnaround_album_freeze_clears_readiness_blocker(setup):
 
     frozen = client.post(
         f"/api/projects/1/characters/{character.id}/freeze-turnaround-album",
-        json={"views": views, "notes": "approved three-view"},
+        json={"views": views, "notes": "approved production character sheet"},
     )
     assert frozen.status_code == 200, frozen.text
     assert frozen.json()["status"] == "frozen"
@@ -987,11 +989,13 @@ def test_character_turnaround_album_freeze_clears_readiness_blocker(setup):
 def test_generate_turnaround_album_can_freeze_generated_views(setup, monkeypatch):
     client, db, path = setup
     from src.services.character_identity_service import CharacterIdentityService
+    from src.services.character_turnaround_album import PRODUCTION_TURNAROUND_VIEWS
 
     class FakeTurnaroundGenerator:
         def generate_turnaround_album(self, **kwargs):
             selected = {}
-            for view, color in {"front": "red", "side": "green", "back": "blue"}.items():
+            colors = ("red", "orange", "yellow", "green", "blue", "purple", "white", "black")
+            for view, color in zip(PRODUCTION_TURNAROUND_VIEWS, colors):
                 image_path = path / f"generated_{view}.png"
                 Image.new("RGB", (64, 64), color).save(image_path)
                 selected[view] = str(image_path)
@@ -1021,7 +1025,7 @@ def test_generate_turnaround_album_can_freeze_generated_views(setup, monkeypatch
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert set(payload["selected_views"]) == {"front", "side", "back"}
+    assert set(payload["selected_views"]) == set(PRODUCTION_TURNAROUND_VIEWS)
     assert payload["album"]["status"] == "frozen"
     assert payload["album"]["views"]["side"]["path"].endswith("generated_side.png")
 

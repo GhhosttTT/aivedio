@@ -4,7 +4,7 @@ from PIL import Image
 
 from src.database.models import Character, Project, Scene
 from src.services.character_identity_service import CharacterIdentityService
-from src.services.character_turnaround_album import CharacterTurnaroundAlbumService
+from src.services.character_turnaround_album import CharacterTurnaroundAlbumService, PRODUCTION_TURNAROUND_VIEWS
 from src.services.spatial_control_assets import SpatialControlAssetService
 from src.utils.storage import storage_manager
 
@@ -64,18 +64,21 @@ def test_spatial_control_pack_embeds_turnaround_album_controls(tmp_path, monkeyp
         visual_description=json.dumps(spec),
     )
     views = {
-        "front": _image(tmp_path / "front.png", "red"),
-        "side": _image(tmp_path / "side.png", "green"),
-        "back": _image(tmp_path / "back.png", "blue"),
+        view: _image(tmp_path / f"{view}.png", color)
+        for view, color in zip(
+            PRODUCTION_TURNAROUND_VIEWS,
+            ("red", "orange", "yellow", "green", "blue", "purple", "white", "black"),
+        )
     }
     CharacterTurnaroundAlbumService().freeze_album(character, views)
 
     service = SpatialControlAssetService()
-    pack = service.freeze_project_pack(project, scenes, [character], notes="approved three-view controls")
+    pack = service.freeze_project_pack(project, scenes, [character], notes="approved production character-sheet controls")
 
     character_controls = pack["scenes"][0]["character_turnaround_controls"]["Alice"]
     assert character_controls["status"] == "valid"
-    assert set(character_controls["views"]) == {"front", "side", "back"}
+    assert set(character_controls["views"]) == set(PRODUCTION_TURNAROUND_VIEWS)
+    assert "expression_intense" in character_controls["views"]
     assert character_controls["views"]["side"]["path"] == views["side"]
     assert "strict side profile" in character_controls["views"]["side"]["control_prompt"]
     assert service.validate_project_pack(project, scenes, [character])["status"] == "valid"

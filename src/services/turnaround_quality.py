@@ -32,6 +32,56 @@ TURNAROUND_FEATURES: dict[str, tuple[str, ...]] = {
         "outfit_back_silhouette",
         "no_face_visible",
     ),
+    "three_quarter_left": (
+        "view_angle",
+        "face_shape",
+        "eyes",
+        "nose_bridge",
+        "mouth",
+        "hair_volume",
+        "distinctive_features",
+        "wardrobe_left",
+        "not_front_clone",
+    ),
+    "three_quarter_right": (
+        "view_angle",
+        "face_shape",
+        "eyes",
+        "nose_bridge",
+        "mouth",
+        "hair_volume",
+        "distinctive_features",
+        "wardrobe_right",
+        "not_front_clone",
+    ),
+    "full_body": (
+        "view_angle",
+        "body_proportion",
+        "height_impression",
+        "wardrobe_full",
+        "shoe_or_hemline",
+        "face_readability",
+        "same_scale",
+    ),
+    "expression_neutral": (
+        "view_angle",
+        "face_shape",
+        "eyes",
+        "mouth",
+        "neutral_expression",
+        "hair",
+        "distinctive_features",
+    ),
+    "expression_intense": (
+        "view_angle",
+        "face_shape",
+        "eyes",
+        "mouth",
+        "dramatic_expression",
+        "hair",
+        "distinctive_features",
+        "no_identity_drift",
+    ),
 }
 
 
@@ -46,6 +96,27 @@ def turnaround_expected_features(view: str, character_data: dict[str, Any]) -> d
             "front": {"view_angle": "strict front view, shoulders square to camera"},
             "side": {"view_angle": "strict 90 degree side profile", "no_three_quarter": "not a three-quarter view"},
             "back": {"view_angle": "strict rear view", "no_face_visible": "no visible face or front-facing pose"},
+            "three_quarter_left": {
+                "view_angle": "strict 45 degree left three-quarter view",
+                "not_front_clone": "not a duplicated front view",
+            },
+            "three_quarter_right": {
+                "view_angle": "strict 45 degree right three-quarter view",
+                "not_front_clone": "not a duplicated front view",
+            },
+            "full_body": {
+                "view_angle": "front full-body model-sheet view",
+                "same_scale": "same height scale as turnaround views",
+            },
+            "expression_neutral": {
+                "view_angle": "front close-up expression reference",
+                "neutral_expression": "relaxed neutral face without smile or drama",
+            },
+            "expression_intense": {
+                "view_angle": "front close-up expression reference",
+                "dramatic_expression": "short-drama emotional intensity while preserving identity",
+                "no_identity_drift": "same facial geometry as identity bible",
+            },
         }
         merged = {key: supplied.get(key, "") for key in TURNAROUND_FEATURES[view]}
         merged.update({key: value for key, value in view_requirements.get(view, {}).items() if not merged.get(key)})
@@ -65,15 +136,49 @@ def turnaround_expected_features(view: str, character_data: dict[str, Any]) -> d
         ),
         "wardrobe_front": wardrobe,
         "wardrobe_side": wardrobe,
+        "wardrobe_left": wardrobe,
+        "wardrobe_right": wardrobe,
+        "wardrobe_full": wardrobe,
+        "shoe_or_hemline": wardrobe,
         "outfit_back_silhouette": wardrobe,
         "nose_silhouette": character_data.get("nose", ""),
+        "nose_bridge": character_data.get("nose", ""),
         "hair_outline": character_data.get("hair", ""),
         "hair_back_shape": character_data.get("hair", ""),
+        "hair_volume": character_data.get("hair", ""),
+        "height_impression": character_data.get("height", ""),
+        "face_readability": character_data.get("face_shape", ""),
+        "neutral_expression": "relaxed neutral face without smile or drama",
+        "dramatic_expression": "short-drama emotional intensity while preserving identity",
+        "not_front_clone": "45 degree view, not a duplicated front view",
+        "same_scale": "same height scale as turnaround views",
+        "no_identity_drift": "same facial geometry as identity bible",
     }
     view_requirements = {
         "front": {"view_angle": "strict front view, shoulders square to camera"},
         "side": {"view_angle": "strict 90 degree side profile", "no_three_quarter": "not a three-quarter view"},
         "back": {"view_angle": "strict rear view", "no_face_visible": "no visible face or front-facing pose"},
+        "three_quarter_left": {
+            "view_angle": "strict 45 degree left three-quarter view",
+            "not_front_clone": "not a duplicated front view",
+        },
+        "three_quarter_right": {
+            "view_angle": "strict 45 degree right three-quarter view",
+            "not_front_clone": "not a duplicated front view",
+        },
+        "full_body": {
+            "view_angle": "front full-body model-sheet view",
+            "same_scale": "same height scale as turnaround views",
+        },
+        "expression_neutral": {
+            "view_angle": "front close-up expression reference",
+            "neutral_expression": "relaxed neutral face without smile or drama",
+        },
+        "expression_intense": {
+            "view_angle": "front close-up expression reference",
+            "dramatic_expression": "short-drama emotional intensity while preserving identity",
+            "no_identity_drift": "same facial geometry as identity bible",
+        },
     }
     expected = {key: identity.get(key, "") for key in TURNAROUND_FEATURES[view]}
     expected.update(view_requirements.get(view, {}))
@@ -90,7 +195,7 @@ def attach_turnaround_quality_gate(
 
     The preferred source is the VLM field `turnaround_feature_scores`. When it is
     missing, the gate is marked as needs_review instead of pretending generic
-    facial identity scores prove exact front/side/back consistency.
+    facial identity scores prove exact production character-sheet consistency.
     """
     expected = turnaround_expected_features(view, character_data)
     review = candidate.get("review") if isinstance(candidate.get("review"), dict) else {}

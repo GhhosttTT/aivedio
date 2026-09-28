@@ -7,6 +7,7 @@ from src.services.character_reference_auto import (
     _reference_review_payload,
     _turnaround_review_payload,
 )
+from src.services.character_turnaround_album import PRODUCTION_TURNAROUND_VIEWS
 from src.services.turnaround_quality import TURNAROUND_FEATURES
 
 
@@ -152,19 +153,22 @@ def test_turnaround_album_generation_selects_each_required_view(tmp_path, monkey
     )
 
     assert result["success"] is True
-    assert set(result["selected_views"]) == {"front", "side", "back"}
-    assert set(result["quality_reports"]) == {"front", "side", "back"}
+    assert set(result["selected_views"]) == set(PRODUCTION_TURNAROUND_VIEWS)
+    assert set(result["quality_reports"]) == set(PRODUCTION_TURNAROUND_VIEWS)
     assert all(Path(path).is_file() for path in result["selected_views"].values())
-    assert len(fake_comfy.calls) == 6
+    assert len(fake_comfy.calls) == 16
     prompts = [call["prompt"] for call in fake_comfy.calls]
     assert any("strict front turnaround view" in prompt for prompt in prompts)
+    assert any("strict left 45 degree three-quarter view" in prompt for prompt in prompts)
+    assert any("full-body head-to-toe model sheet" in prompt for prompt in prompts)
+    assert any("intense short-drama expression sheet" in prompt for prompt in prompts)
     assert any("90 degree side view" in prompt for prompt in prompts)
     assert any("strict rear turnaround view" in prompt for prompt in prompts)
     assert all("same scale as other views" in prompt for prompt in prompts)
     assert all("plain light gray background" in prompt for prompt in prompts)
     assert Path(tmp_path / "林安" / "turnaround_front_quality.json").is_file()
     assert result["quality_reports"]["front"]["turnaround_gate"]["status"] == "passed"
-    assert result["quality_reports"]["front"]["turnaround_contract"]["layout"].startswith("single full-body")
+    assert result["quality_reports"]["front"]["turnaround_contract"]["layout"].startswith("single character")
     assert result["quality_reports"]["front"]["candidates"][0]["request"]["turnaround_contract"]["expected_features"]["face_shape"] == "oval face"
     assert set(result["quality_reports"]["side"]["turnaround_gate"]["scores"]) == set(TURNAROUND_FEATURES["side"])
 

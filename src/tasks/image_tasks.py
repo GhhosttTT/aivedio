@@ -35,10 +35,22 @@ def _turnaround_view_for_scene(scene: Scene | None, prompt: str = "") -> str:
         getattr(scene, "visual_description", "") if scene else "",
         getattr(scene, "dialogue", "") if scene else "",
     ])).lower()
+    if any(term in text for term in ("intense expression", "crying close-up", "angry close-up", "崩溃特写", "哭泣特写", "愤怒特写")):
+        return "expression_intense"
+    if any(term in text for term in ("neutral expression", "calm close-up", "passport-like", "定妆特写", "平静特写")):
+        return "expression_neutral"
+    if any(term in text for term in ("full body", "head-to-toe", "wide full shot", "全身", "从头到脚")):
+        return "full_body"
     if any(term in text for term in ("back view", "rear view", "from behind", "turns away", "背影", "背面", "背对")):
         return "back"
     if any(term in text for term in ("side view", "side profile", "profile", "90 degree", "侧脸", "侧面", "侧身")):
         return "side"
+    if any(term in text for term in ("three-quarter left", "left three quarter", "left 45", "左45", "左侧45")):
+        return "three_quarter_left"
+    if any(term in text for term in ("three-quarter right", "right three quarter", "right 45", "右45", "右侧45")):
+        return "three_quarter_right"
+    if any(term in text for term in ("three-quarter", "three quarter", "45 degree", "45度", "斜侧")):
+        return "three_quarter_left"
     return "front"
 
 
@@ -46,7 +58,7 @@ def _turnaround_control_for_character(character: Character, project_id: int, vie
     try:
         validation = CharacterTurnaroundAlbumService().validate_album(character)
     except Exception as exc:
-        logger.warning("读取角色三视图画册失败: {}", exc)
+        logger.warning("读取角色生产级立体画册失败: {}", exc)
         return None
     if validation.get("status") != "valid":
         return None

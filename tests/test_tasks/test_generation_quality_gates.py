@@ -107,7 +107,7 @@ def test_visible_character_payload_carries_identity_anchors(project_data):
 def test_turnaround_album_drives_scene_reference_view(project_data, tmp_path, monkeypatch):
     from PIL import Image
     from src.services.character_identity_service import CharacterIdentityService
-    from src.services.character_turnaround_album import CharacterTurnaroundAlbumService
+    from src.services.character_turnaround_album import CharacterTurnaroundAlbumService, PRODUCTION_TURNAROUND_VIEWS
     from src.utils.storage import storage_manager
 
     db, project, scene, character, _ = project_data
@@ -117,7 +117,8 @@ def test_turnaround_album_drives_scene_reference_view(project_data, tmp_path, mo
     character.visual_description = json.dumps(spec)
     scene.visual_description = "Alice side profile by the office doorway, readable nose silhouette"
     views = {}
-    for view, color in {"front": "red", "side": "green", "back": "blue"}.items():
+    colors = ("red", "orange", "yellow", "green", "blue", "purple", "white", "black")
+    for view, color in zip(PRODUCTION_TURNAROUND_VIEWS, colors):
         image_path = tmp_path / f"{view}.png"
         Image.new("RGB", (32, 32), color).save(image_path)
         views[view] = str(image_path)
@@ -134,6 +135,14 @@ def test_turnaround_album_drives_scene_reference_view(project_data, tmp_path, mo
     assert "strict side profile" in payload[0]["turnaround_reference"]["control_prompt"]
     assert payload[0]["turnaround_reference"]["expected_features"]["nose_silhouette"] == spec["nose"]
     assert payload[0]["turnaround_reference"]["expected_features"]["wardrobe_side"] == spec["wardrobe"]
+
+
+def test_turnaround_view_for_scene_uses_production_character_sheet_assets():
+    assert _turnaround_view_for_scene(None, "left 45 degree three-quarter close shot") == "three_quarter_left"
+    assert _turnaround_view_for_scene(None, "right 45 degree reaction shot") == "three_quarter_right"
+    assert _turnaround_view_for_scene(None, "full body head-to-toe reveal") == "full_body"
+    assert _turnaround_view_for_scene(None, "crying close-up with intense expression") == "expression_intense"
+    assert _turnaround_view_for_scene(None, "neutral expression reference close-up") == "expression_neutral"
 
 
 def test_video_review_payload_carries_visible_character_anchors(project_data):
