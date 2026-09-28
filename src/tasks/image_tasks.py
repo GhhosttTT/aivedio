@@ -18,6 +18,7 @@ from src.services.image_quality_service import ImageQualitySelector, candidate_o
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, get_generation_provider
 from src.services.image_postprocess import ImagePostprocessor
+from src.services.repair_queue import build_repair_queue
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.shot_complexity_service import ShotComplexityService
 from src.tasks.celery_app import celery_app
@@ -566,6 +567,20 @@ def _review_feedback(reports: list[dict]) -> str:
     return "; ".join(compact)
 
 
+def _repair_action_from_reports(reports: list[dict]) -> str | None:
+    """Infer the next automatic repair action from failed candidate reviews."""
+    if not reports:
+        return None
+    queue = build_repair_queue(
+        {"status": "needs_review", "candidates": sorted(reports, key=lambda item: item.get("average", 0))[:4]},
+        "image",
+    )
+    for item in queue:
+        if item.get("execution") == "auto" and item.get("action"):
+            return str(item["action"])
+    return None
+
+
 def _generate_quality_candidates(
     provider,
     request: ImageGenerationRequest,
@@ -587,11 +602,13 @@ def _generate_quality_candidates(
         if feedback:
             prompt = f"{prompt}. Correct previous candidate problems: {feedback}."
             negative_prompt = _append_terms(negative_prompt, feedback)
+        current_repair_action = repair_action or (_repair_action_from_reports(reports) if pass_index else None)
+        prompt, negative_prompt = _apply_image_repair_action(prompt, negative_prompt, current_repair_action)
         for index in range(candidate_count):
             candidate_index = pass_index * candidate_count + index + 1
             output_path = candidate_output_path(request.output_path, candidate_index)
-            repair_profile = _repair_parameter_profile(repair_action)
-            steps, cfg = _quality_parameters(index, pass_index, request.steps, request.cfg_scale, repair_action)
+            repair_profile = _repair_parameter_profile(current_repair_action)
+            steps, cfg = _quality_parameters(index, pass_index, request.steps, request.cfg_scale, current_repair_action)
             candidate_request = ImageGenerationRequest(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
@@ -633,7 +650,7 @@ def _generate_quality_candidates(
                 "use_ipadapter": candidate_request.use_ipadapter,
                 "refinement_pass": pass_index,
                 "feedback": feedback,
-                "repair_action": repair_action,
+                "repair_action": current_repair_action,
                 "repair_parameter_profile": repair_profile,
             }
             report["path"] = result.output_path

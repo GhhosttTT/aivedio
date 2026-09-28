@@ -10,7 +10,7 @@ from src.database.models import Base, Character, Project, Scene, Task, TaskStatu
 from src.services.generation_review import VIDEO_AESTHETIC_FEATURES, fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName, GenerationResult
 from src.services.shot_prompt_service import ShotPromptService
-from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _complexity_report, _composition_constraint, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
+from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _complexity_report, _composition_constraint, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
 from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _scene_review_payload
@@ -1261,6 +1261,102 @@ def test_review_feedback_reads_nested_aesthetic_gate_evidence():
     assert "plastic skin" in feedback
     assert "muddy light" in feedback
     assert "low production value" in feedback
+
+
+def test_repair_action_from_reports_promotes_auto_image_repair():
+    action = _repair_action_from_reports([
+        {
+            "average": 2,
+            "review": {
+                "composition": {"score": 2, "evidence": "bad crop on the main actor"},
+                "aesthetic_quality": {"score": 2, "evidence": "cheap filter look"},
+            },
+            "platform_aesthetic_gate": {
+                "low": {
+                    "production_polish": {"score": 2, "evidence": "low production value"},
+                }
+            },
+        }
+    ])
+
+    assert action == "refine_prompt_composition"
+
+
+def test_quality_refinement_converts_review_failure_into_repair_action(tmp_path, monkeypatch):
+    from PIL import Image
+    from src.services.generation_provider import ImageGenerationRequest, GenerationResult
+
+    class FakeProvider:
+        name = GenerationProviderName.LOCAL_COMFYUI
+
+        def __init__(self):
+            self.requests = []
+
+        def generate_image(self, request):
+            self.requests.append(request)
+            shade = 110 + len(self.requests) * 10
+            Image.new("RGB", (request.width, request.height), (shade, shade, shade)).save(request.output_path)
+            return GenerationResult("local_comfyui", request.output_path, "image", {})
+
+    def fake_review(self, index, image_path, scene, prompt, reference_image=None):
+        if index == 1:
+            return {
+                "index": index,
+                "path": image_path,
+                "status": "needs_review",
+                "average": 2.0,
+                "review": {
+                    "composition": {"score": 2, "evidence": "bad crop on the main actor"},
+                    "aesthetic_quality": {"score": 2, "evidence": "cheap filter look"},
+                    "visual_integrity": {"score": 3, "evidence": "render is usable but weak"},
+                    "facial_identity": {"score": 4, "evidence": "face matches"},
+                    "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
+                    "issues": [],
+                },
+                "metrics": {"technical_score": 2.0},
+            }
+        return {
+            "index": index,
+            "path": image_path,
+            "status": "passed",
+            "average": 4.6,
+            "review": {
+                "composition": {"score": 5, "evidence": "strong framing"},
+                "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+                "visual_integrity": {"score": 5, "evidence": "clean render"},
+                "facial_identity": {"score": 4, "evidence": "face matches"},
+                "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
+                "issues": [],
+            },
+            "metrics": {"technical_score": 4.6},
+        }
+
+    fake_provider = FakeProvider()
+    monkeypatch.setattr("src.tasks.image_tasks.ImageQualitySelector.review_candidate", fake_review)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_CANDIDATES", 1)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 1)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+    request = ImageGenerationRequest(
+        prompt="short drama still",
+        negative_prompt="blurry",
+        output_path=str(tmp_path / "scene.png"),
+        width=512,
+        height=512,
+        steps=28,
+        cfg_scale=6.0,
+        seed=123,
+    )
+
+    _, report = _generate_quality_candidates(fake_provider, request, {"scene_number": 1}, None)
+
+    repaired_request = fake_provider.requests[1]
+    repaired_candidate = report["candidates"][0]
+    assert "balanced composition" in repaired_request.prompt
+    assert "cinematic lighting" in repaired_request.prompt
+    assert "bad crop" in repaired_request.negative_prompt
+    assert repaired_candidate["request"]["repair_action"] == "refine_prompt_composition"
+    assert repaired_candidate["request"]["repair_parameter_profile"]["reason"] == "composition_aesthetic_repair"
 
 
 def test_append_terms_does_not_duplicate_terms():
