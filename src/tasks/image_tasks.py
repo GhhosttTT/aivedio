@@ -661,9 +661,9 @@ def _feedback_repair_directive(feedback: str) -> tuple[str, str]:
     negative_terms = []
     rules = [
         (
-            ("skin_texture", "plastic skin", "waxy", "airbrushed"),
+            ("skin_texture", "plastic skin", "waxy", "airbrushed", "ai generated gloss", "ai gloss", "wax museum face", "over-beautified"),
             "natural skin texture with visible pores, soft but realistic facial highlights",
-            "plastic skin, waxy face, over-smoothed face, airbrushed skin",
+            "plastic skin, waxy face, over-smoothed face, airbrushed skin, AI generated gloss, wax museum face, over-beautified influencer skin",
         ),
         (
             ("lighting_quality", "lighting_consistency", "muddy light", "muddy lighting", "flat lighting"),
@@ -686,9 +686,9 @@ def _feedback_repair_directive(feedback: str) -> tuple[str, str]:
             "flat background, cluttered background, dirty background",
         ),
         (
-            ("production_polish", "low production value", "looks cheap"),
-            "premium short-drama production polish, styled wardrobe, clean set dressing",
-            "low production value, cheap costume, messy set dressing",
+            ("production_polish", "low production value", "looks cheap", "low-budget set", "low budget set", "messy wardrobe"),
+            "premium short-drama production polish, styled but believable wardrobe, clean practical set dressing",
+            "low production value, cheap costume, messy wardrobe, messy set dressing, low-budget set dressing",
         ),
         (
             ("repair_artifacts_absent", "repair scar", "upscale artifact", "artifact"),

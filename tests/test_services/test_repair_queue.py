@@ -111,6 +111,28 @@ def test_repair_queue_reads_nested_platform_aesthetic_gates():
     assert video_queue[0]["execution"] == "auto"
 
 
+def test_repair_queue_maps_seed_dance_profile_defects_to_aesthetic_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 1,
+            "scene": {"scene_number": 5},
+            "platform_aesthetic_gate": {
+                "status": "needs_review",
+                "low": {
+                    "production_polish": {"score": 2, "evidence": "AI generated gloss and low-budget set dressing"},
+                },
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "image")
+
+    assert queue[0]["action"] == "refine_prompt_composition"
+    assert queue[0]["execution"] == "auto"
+    assert queue[0]["scene_number"] == 5
+
+
 def test_repair_queue_reads_scene_number_from_candidate_scene_payload():
     report = {
         "status": "needs_review",

@@ -1930,6 +1930,17 @@ def test_feedback_repair_directive_maps_aesthetic_evidence_to_generation_strateg
     assert "tiny face" in negative
 
 
+def test_feedback_repair_directive_maps_seed_dance_profile_defects():
+    prompt, negative = _feedback_repair_directive(
+        "AI generated gloss; wax museum face; messy wardrobe; low-budget set dressing"
+    )
+
+    assert "natural skin texture" in prompt
+    assert "styled but believable wardrobe" in prompt
+    assert "AI generated gloss" in negative
+    assert "messy wardrobe" in negative
+
+
 def test_repair_action_from_reports_promotes_auto_image_repair():
     action = _repair_action_from_reports([
         {
