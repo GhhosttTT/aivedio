@@ -169,3 +169,43 @@ def test_workflow_profile_tracks_video_aesthetic_feature_gate(tmp_path, monkeypa
 
     assert report["status"] == "blocked"
     assert "quality_gate_video_aesthetic_feature_min_score" in report["stale"]
+
+
+def test_workflow_profile_tracks_generation_quality_budget(tmp_path, monkeypatch):
+    image = tmp_path / "image_workflow.json"
+    reference = tmp_path / "reference_workflow.json"
+    video = tmp_path / "video_workflow.json"
+    profile = tmp_path / "profile.json"
+    image.write_text("{}", encoding="utf-8")
+    reference.write_text("{}", encoding="utf-8")
+    video.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_IMAGE_CANDIDATES", 5)
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 2)
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_VIDEO_CANDIDATES", 4)
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 2)
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_VIDEO_END_FRAME_ENABLED", True)
+
+    service = ProductionWorkflowProfileService()
+    manifest = service.freeze_profile(profile_path=str(profile))
+
+    assert manifest["quality_gates"]["quality_profile"] == "hongguo_reference"
+    assert manifest["quality_gates"]["image_candidates"] == 5
+    assert manifest["quality_gates"]["image_refinement_passes"] == 2
+    assert manifest["quality_gates"]["video_candidates"] == 4
+    assert manifest["quality_gates"]["video_refinement_passes"] == 2
+    assert manifest["quality_gates"]["video_end_frame_enabled"] is True
+
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_IMAGE_CANDIDATES", 1)
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 0)
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_QUALITY_PROFILE", "draft")
+
+    report = service.validate_profile(profile_path=str(profile))
+
+    assert report["status"] == "blocked"
+    assert "quality_gate_image_candidates" in report["stale"]
+    assert "quality_gate_video_refinement_passes" in report["stale"]
+    assert "quality_gate_quality_profile" in report["stale"]
