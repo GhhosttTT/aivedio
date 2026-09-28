@@ -605,6 +605,15 @@ def test_image_generation_uses_multiple_quality_candidates(tmp_path, monkeypatch
                 "visual_integrity": {"score": 5, "evidence": "clean render"},
                 "facial_identity": {"score": 5, "evidence": "face matches"},
                 "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                "platform_aesthetic_scores": {
+                    "skin_texture": {"score": 5, "evidence": "natural skin"},
+                    "lighting_quality": {"score": 5, "evidence": "commercial lighting"},
+                    "color_grade": {"score": 5, "evidence": "clean color"},
+                    "phone_readability": {"score": 5, "evidence": "face readable"},
+                    "background_separation": {"score": 5, "evidence": "clear separation"},
+                    "production_polish": {"score": 5, "evidence": "premium look"},
+                    "repair_artifacts_absent": {"score": 5, "evidence": "no repair scar"},
+                },
             },
             "metrics": {"technical_score": score},
         }
@@ -638,6 +647,151 @@ def test_image_generation_uses_multiple_quality_candidates(tmp_path, monkeypatch
     assert len({item.seed for item in provider.requests}) == 3
     assert report["kind"] == "image_candidate_selection"
     assert report["postprocess"]["status"] == "skipped"
+
+
+def test_image_generation_reviews_postprocessed_final_image(tmp_path, monkeypatch):
+    from PIL import Image
+    from src.services.generation_provider import ImageGenerationRequest, GenerationResult
+
+    class FakeProvider:
+        name = GenerationProviderName.LOCAL_COMFYUI
+
+        def generate_image(self, request):
+            Image.new("RGB", (request.width, request.height), (120, 120, 120)).save(request.output_path)
+            return GenerationResult("local_comfyui", request.output_path, "image", {})
+
+    reviewed_indices = []
+
+    def fake_review(self, index, image_path, scene, prompt, reference_image=None):
+        reviewed_indices.append(index)
+        return {
+            "index": index,
+            "path": image_path,
+            "status": "passed",
+            "average": 4.6,
+            "review": {
+                "composition": {"score": 5, "evidence": "strong framing"},
+                "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+                "visual_integrity": {"score": 5, "evidence": "clean render"},
+                "facial_identity": {"score": 5, "evidence": "face matches"},
+                "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                "platform_aesthetic_scores": {
+                    "skin_texture": {"score": 5, "evidence": "natural skin"},
+                    "lighting_quality": {"score": 5, "evidence": "commercial lighting"},
+                    "color_grade": {"score": 5, "evidence": "clean color"},
+                    "phone_readability": {"score": 5, "evidence": "face readable"},
+                    "background_separation": {"score": 5, "evidence": "clear separation"},
+                    "production_polish": {"score": 5, "evidence": "premium look"},
+                    "repair_artifacts_absent": {"score": 5, "evidence": "no repair scar"},
+                },
+            },
+            "metrics": {"technical_score": 4.6},
+        }
+
+    monkeypatch.setattr("src.tasks.image_tasks.ImageQualitySelector.review_candidate", fake_review)
+    monkeypatch.setattr("src.tasks.image_tasks.ImagePostprocessor.process", lambda *args, **kwargs: {"status": "passed"})
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_CANDIDATES", 1)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 0)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_REQUIRE_IMAGE_REVIEW", True)
+    request = ImageGenerationRequest(
+        prompt="cinematic short drama still",
+        negative_prompt="blurry",
+        output_path=str(tmp_path / "scene.png"),
+        width=512,
+        height=512,
+        steps=28,
+        cfg_scale=6.0,
+        seed=123,
+    )
+
+    _, report = _generate_quality_candidates(FakeProvider(), request, {"scene_number": 1}, None)
+
+    assert reviewed_indices == [1, 0]
+    assert report["postprocess_review"]["stage"] == "postprocess_review"
+    assert report["postprocess_review"]["status"] == "passed"
+
+
+def test_postprocess_review_blocks_degraded_final_image(tmp_path, monkeypatch):
+    from PIL import Image
+    from src.services.generation_provider import ImageGenerationRequest, GenerationResult
+
+    class FakeProvider:
+        name = GenerationProviderName.LOCAL_COMFYUI
+
+        def generate_image(self, request):
+            Image.new("RGB", (request.width, request.height), (120, 120, 120)).save(request.output_path)
+            return GenerationResult("local_comfyui", request.output_path, "image", {})
+
+    def fake_review(self, index, image_path, scene, prompt, reference_image=None):
+        if index == 0:
+            return {
+                "index": index,
+                "path": image_path,
+                "status": "needs_review",
+                "average": 2.0,
+                "review": {
+                    "composition": {"score": 4, "evidence": "usable framing"},
+                    "aesthetic_quality": {"score": 2, "evidence": "plastic skin after face repair"},
+                    "visual_integrity": {"score": 2, "evidence": "visible face repair scar"},
+                    "facial_identity": {"score": 4, "evidence": "face mostly matches"},
+                    "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
+                    "issues": [],
+                },
+                "platform_aesthetic_gate": {
+                    "status": "needs_review",
+                    "low": {
+                        "skin_texture": {"score": 2, "evidence": "plastic skin after face repair"},
+                        "repair_artifacts_absent": {"score": 2, "evidence": "visible face repair scar"},
+                    },
+                },
+                "metrics": {"technical_score": 2.0},
+            }
+        return {
+            "index": index,
+            "path": image_path,
+            "status": "passed",
+            "average": 4.6,
+            "review": {
+                "composition": {"score": 5, "evidence": "strong framing"},
+                "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+                "visual_integrity": {"score": 5, "evidence": "clean render"},
+                "facial_identity": {"score": 5, "evidence": "face matches"},
+                "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                "platform_aesthetic_scores": {
+                    "skin_texture": {"score": 5, "evidence": "natural skin"},
+                    "lighting_quality": {"score": 5, "evidence": "commercial lighting"},
+                    "color_grade": {"score": 5, "evidence": "clean color"},
+                    "phone_readability": {"score": 5, "evidence": "face readable"},
+                    "background_separation": {"score": 5, "evidence": "clear separation"},
+                    "production_polish": {"score": 5, "evidence": "premium look"},
+                    "repair_artifacts_absent": {"score": 5, "evidence": "no repair scar"},
+                },
+            },
+            "metrics": {"technical_score": 4.6},
+        }
+
+    monkeypatch.setattr("src.tasks.image_tasks.ImageQualitySelector.review_candidate", fake_review)
+    monkeypatch.setattr("src.tasks.image_tasks.ImagePostprocessor.process", lambda *args, **kwargs: {"status": "passed"})
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_CANDIDATES", 1)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 0)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_REQUIRE_IMAGE_REVIEW", True)
+    request = ImageGenerationRequest(
+        prompt="cinematic short drama still",
+        negative_prompt="blurry",
+        output_path=str(tmp_path / "scene.png"),
+        width=512,
+        height=512,
+        steps=28,
+        cfg_scale=6.0,
+        seed=123,
+    )
+
+    with pytest.raises(ReviewError, match="Postprocessed image failed"):
+        _generate_quality_candidates(FakeProvider(), request, {"scene_number": 1}, None)
+
+    quality_report = json.loads((tmp_path / "scene.quality.json").read_text(encoding="utf-8"))
+    assert quality_report["postprocess_review"]["status"] == "needs_review"
+    assert quality_report["repair_queue"][0]["action"] == "fix_workflow_profile"
 
 
 def test_image_repair_action_boosts_quality_parameters(monkeypatch):

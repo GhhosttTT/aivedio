@@ -13,7 +13,7 @@ from src.config import settings
 from src.services.character_identity_service import CharacterIdentityService, load_identity_spec
 from src.services.character_turnaround_album import CharacterTurnaroundAlbumService
 from src.services.shot_prompt_service import ShotPromptService, CompiledShot
-from src.services.generation_review import write_report
+from src.services.generation_review import ReviewError, write_report
 from src.services.image_quality_service import ImageQualitySelector, candidate_output_path
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, get_generation_provider
@@ -825,6 +825,32 @@ def _generate_quality_candidates(
         report_path=Path(request.output_path).with_suffix(".postprocess.json"),
     )
     selection["postprocess"] = postprocess_report
+    if postprocess_report.get("status") == "passed":
+        postprocess_review = selector.review_candidate(
+            0,
+            request.output_path,
+            scene_payload,
+            request.prompt,
+            reference_image,
+        )
+        postprocess_review["stage"] = "postprocess_review"
+        selection["postprocess_review"] = postprocess_review
+        postprocess_gate = postprocess_review.get("platform_aesthetic_gate")
+        if settings.GENERATION_REQUIRE_IMAGE_REVIEW and (
+            postprocess_review.get("status") != "passed"
+            or (
+                isinstance(postprocess_gate, dict)
+                and postprocess_gate.get("status") != "passed"
+            )
+        ):
+            selection["status"] = "needs_review"
+            selection["error"] = "Postprocessed image failed final local VLM review"
+            selection["repair_queue"] = build_repair_queue(
+                {"status": "needs_review", "candidates": [postprocess_review]},
+                "image",
+            )
+            write_report(Path(request.output_path).with_suffix(".quality.json"), selection)
+            raise ReviewError(selection["error"])
     write_report(Path(request.output_path).with_suffix(".quality.json"), selection)
     return request.output_path, selection
 
