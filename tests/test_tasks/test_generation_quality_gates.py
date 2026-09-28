@@ -13,7 +13,7 @@ from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _character_sheet_generation_contract, _complexity_report, _composition_constraint, _feedback_repair_directive, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
-from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _scene_review_payload, _video_repair_action_from_candidates
+from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _review_final_video_after_postprocess, _scene_review_payload, _video_repair_action_from_candidates
 
 
 def passed_video_aesthetic_scores(score: int = 5) -> dict:
@@ -1539,6 +1539,98 @@ def test_video_candidate_report_records_character_sheet_reference(project_data, 
     assert candidate["request"]["character_sheet_references"][0]["view"] == "side"
     assert candidate["request"]["character_sheet_references"][0]["path"] == views["side"]
     assert "motion_smoothness" in candidate["request"]["platform_aesthetic_contract"]["video_features"]
+
+
+def test_final_normalized_video_is_reviewed_before_acceptance(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    video = tmp_path / "scene.mp4"
+    Path(scene.image_path).write_bytes(b"image")
+    video.write_bytes(b"video")
+    db.commit()
+
+    class FakeReviewService:
+        def review_video(self, _video, payload, _report_path, _reference=None):
+            assert payload["final_stage"] == "postprocess_normalized_clip"
+            return {
+                "status": "passed",
+                "average": 4.6,
+                "batches": [{
+                    "review": {
+                        "facial_identity": {"score": 5, "evidence": "face matches"},
+                        "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                        "temporal_consistency": {"score": 5, "evidence": "motion stable"},
+                        "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                    }
+                }],
+            }
+
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    report = _review_final_video_after_postprocess(
+        str(video),
+        scene,
+        project.id,
+        db,
+        quality_report={"kind": "video_candidate_selection", "status": "passed"},
+    )
+
+    assert report["final_video_review"]["status"] == "passed"
+    assert report["final_video_review"]["video_aesthetic_gate"]["status"] == "passed"
+    assert json.loads(video.with_suffix(".quality.json").read_text(encoding="utf-8"))["final_video_review"]["status"] == "passed"
+
+
+def test_final_normalized_video_review_blocks_temporal_regression(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    video = tmp_path / "scene.mp4"
+    Path(scene.image_path).write_bytes(b"image")
+    video.write_bytes(b"video")
+    db.commit()
+
+    class FakeReviewService:
+        def review_video(self, _video, _payload, _report_path, _reference=None):
+            return {
+                "status": "needs_review",
+                "average": 2.8,
+                "batches": [{
+                    "review": {
+                        "facial_identity": {"score": 5, "evidence": "face matches"},
+                        "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                        "temporal_consistency": {"score": 2, "evidence": "normalized clip stutters and camera jumps"},
+                        "video_aesthetic_scores": {
+                            "skin_texture_stability": {"score": 4, "evidence": "skin stable"},
+                            "lighting_consistency": {"score": 4, "evidence": "lighting stable"},
+                            "color_grade_consistency": {"score": 4, "evidence": "color stable"},
+                            "phone_readability": {"score": 4, "evidence": "face readable"},
+                            "motion_smoothness": {"score": 2, "evidence": "stutter after padding"},
+                            "background_stability": {"score": 3, "evidence": "background jumps"},
+                            "artifact_absence": {"score": 4, "evidence": "no scars"},
+                        },
+                    }
+                }],
+            }
+
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
+
+    with pytest.raises(ReviewError, match="Final normalized video failed"):
+        _review_final_video_after_postprocess(
+            str(video),
+            scene,
+            project.id,
+            db,
+            quality_report={"kind": "video_candidate_selection", "status": "passed"},
+        )
+
+    report = json.loads(video.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert report["status"] == "needs_review"
+    assert report["final_video_review"]["status"] == "needs_review"
+    assert report["repair_queue"][0]["action"] == "lower_motion_and_regenerate_video"
 
 
 def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp_path):

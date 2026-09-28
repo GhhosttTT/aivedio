@@ -271,6 +271,78 @@ def _video_gate_passes(candidate: dict) -> tuple[bool, dict[str, float]]:
     return identity_ok and temporal_ok, scores
 
 
+def _review_final_video_after_postprocess(
+    video_path: str,
+    scene: Scene,
+    project_id: int,
+    db,
+    *,
+    quality_report: dict,
+    reference: str | None = None,
+    shot_plan: VideoShotPlan | None = None,
+) -> dict:
+    """Review the final normalized clip before accepting it for composition."""
+    reviewer = GenerationReviewService()
+    scene_payload = _scene_review_payload(scene, project_id, db)
+    shot_plan_payload = shot_plan.as_dict() if shot_plan else None
+    review_path = Path(video_path).with_suffix(".final_review.json")
+    review = reviewer.review_video(
+        video_path,
+        {
+            **scene_payload,
+            "shot_plan": shot_plan_payload,
+            "final_stage": "postprocess_normalized_clip",
+        },
+        review_path,
+        reference,
+    )
+    final_review = {
+        "path": video_path,
+        "status": review.get("status"),
+        "average": review.get("average", 0),
+        "review_path": str(review_path),
+        "scene": {"scene_number": scene.scene_number},
+    }
+    gate_scores = _video_gate_scores(review)
+    if gate_scores:
+        final_review["gate_scores"] = gate_scores
+    platform_score = _video_platform_score(review)
+    if platform_score is not None:
+        final_review["platform_score"] = platform_score
+    aesthetic_gate = _video_aesthetic_gate_summary(review)
+    if aesthetic_gate:
+        final_review["video_aesthetic_gate"] = aesthetic_gate
+    if review.get("error"):
+        final_review["error"] = review["error"]
+    quality_report["final_video_review"] = final_review
+    gate_ok, gate_scores = _video_gate_passes(final_review)
+    aesthetic_ok = _video_aesthetic_gate_passes(final_review)
+    platform_score = final_review.get("platform_score")
+    if (
+        settings.GENERATION_REQUIRE_VIDEO_REVIEW
+        and (
+            final_review.get("status") != "passed"
+            or final_review.get("average", 0) < settings.GENERATION_VIDEO_MIN_SCORE
+            or not gate_ok
+            or not aesthetic_ok
+            or (
+                isinstance(platform_score, (int, float))
+                and platform_score < settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE
+            )
+        )
+    ):
+        quality_report["status"] = "needs_review"
+        quality_report["error"] = "Final normalized video failed local VLM review"
+        quality_report["repair_queue"] = build_repair_queue(
+            {"status": "needs_review", "candidates": [final_review]},
+            "video",
+        )
+        write_report(Path(video_path).with_suffix(".quality.json"), quality_report)
+        raise ReviewError(quality_report["error"])
+    write_report(Path(video_path).with_suffix(".quality.json"), quality_report)
+    return quality_report
+
+
 def _video_repair_action_from_candidates(candidates: list[dict]) -> str | None:
     """Infer the next automatic video repair action from failed candidate reviews."""
     if not candidates:
@@ -587,6 +659,15 @@ def generate_video_task(
             if normalized != result_path:
                 shutil.copyfile(normalized, video_path)
                 result_path = video_path
+            quality_report = _review_final_video_after_postprocess(
+                result_path,
+                scene,
+                project_id,
+                db,
+                quality_report=quality_report,
+                reference=_reference_for_scene(scene, project_id, db),
+                shot_plan=shot_plan,
+            )
             logger.info("Video candidate selection completed: scene_id={}, report={}", scene_id, quality_report)
         except Exception as exc:
             if not draft_fallback_enabled():
