@@ -35,6 +35,12 @@ class ChoiceBank:
         "heart-shaped face with a pointed chin",
         "diamond face with high cheekbones",
         "rectangular face with a strong vertical proportion",
+        "short oval face with a soft chin",
+        "inverted triangle face with a narrow jaw",
+        "wide oval face with full cheeks",
+        "slim V-shaped face with a delicate jaw",
+        "broad cheekbone face with a compact chin",
+        "mature oblong face with defined cheek hollows",
     )
     eyes: tuple[str, ...] = (
         "deep-set monolid dark brown eyes",
@@ -43,6 +49,12 @@ class ChoiceBank:
         "slightly downturned hazel eyes",
         "sharp phoenix-shaped dark eyes",
         "round expressive grey-brown eyes",
+        "hooded dark eyes with a calm gaze",
+        "wide-set brown eyes with soft lower lids",
+        "upturned almond eyes with clear whites",
+        "small intense black eyes",
+        "long-lashed warm brown eyes",
+        "sleepy-lidded grey-brown eyes",
     )
     eyebrows: tuple[str, ...] = (
         "straight thick brows",
@@ -51,6 +63,12 @@ class ChoiceBank:
         "short angled brows",
         "low flat brows",
         "defined sword-shaped brows",
+        "long tapered brows",
+        "rounded gentle brows",
+        "dense horizontal brows",
+        "high arched dramatic brows",
+        "sparse natural brows",
+        "slightly asymmetric brows",
     )
     nose: tuple[str, ...] = (
         "straight high nose bridge with a small tip",
@@ -59,6 +77,12 @@ class ChoiceBank:
         "short button nose",
         "slightly aquiline nose",
         "wide nose bridge with a blunt tip",
+        "delicate narrow nose bridge with a lifted tip",
+        "medium straight nose with rounded nostrils",
+        "strong nose bridge with a square tip",
+        "flat soft nose bridge with small nostrils",
+        "long elegant nose with a subtle bump",
+        "compact nose with a defined alar base",
     )
     mouth: tuple[str, ...] = (
         "thin lips with a firm line",
@@ -67,6 +91,12 @@ class ChoiceBank:
         "wide mouth with defined corners",
         "medium lips with a slight asymmetry",
         "heart-shaped lips with a clear upper bow",
+        "soft bow-shaped lips with a fuller lower lip",
+        "straight narrow mouth with muted color",
+        "rounded lips with gentle corners",
+        "wide natural lips with a relaxed line",
+        "compact lips with a sharp cupid bow",
+        "mature lips with subtle vertical texture",
     )
     jawline: tuple[str, ...] = (
         "soft rounded jawline",
@@ -75,6 +105,12 @@ class ChoiceBank:
         "slender tapered jaw",
         "short compact jaw",
         "long defined jaw",
+        "gentle oval jawline",
+        "prominent cheek-to-jaw transition",
+        "narrow delicate jaw",
+        "firm mature jawline",
+        "broad lower face with a stable jaw",
+        "soft V-shaped jawline",
     )
     hair: tuple[str, ...] = (
         "short black side-parted hair",
@@ -83,6 +119,12 @@ class ChoiceBank:
         "messy black textured crop",
         "neat low ponytail with black hair",
         "short silver-grey bob",
+        "long black hair with airy curtain bangs",
+        "medium dark hair in a clean business bob",
+        "short chestnut layered hair",
+        "slicked-back black hair with a side fade",
+        "loose dark waves tied half-up",
+        "natural black pixie cut",
     )
     skin_tone: tuple[str, ...] = (
         "fair warm skin tone",
@@ -91,6 +133,12 @@ class ChoiceBank:
         "cool pale skin tone",
         "deep warm skin tone",
         "freckled light skin tone",
+        "neutral beige skin tone",
+        "warm honey skin tone",
+        "porcelain skin tone with natural redness",
+        "golden medium skin tone",
+        "cool ivory skin tone",
+        "light tan skin tone with visible texture",
     )
     distinctive_mark: tuple[str, ...] = (
         "small mole under the left eye",
@@ -99,6 +147,12 @@ class ChoiceBank:
         "single small ear cuff on the left ear",
         "subtle dimple on the right cheek",
         "no visible marks, clean face",
+        "tiny mole on the right cheekbone",
+        "faint birthmark near the jaw",
+        "small scar at the left temple",
+        "single gold stud earring on the right ear",
+        "soft under-eye crease",
+        "slight gap in the front teeth when smiling",
     )
     wardrobe: tuple[str, ...] = (
         "matte black trench coat over a white shirt",
@@ -107,6 +161,12 @@ class ChoiceBank:
         "grey hoodie under a worn denim jacket",
         "burgundy silk blouse with black trousers",
         "beige utility jacket with a black turtleneck",
+        "charcoal wool coat over a slate shirt",
+        "white blouse under a cropped black blazer",
+        "forest green dress with a narrow belt",
+        "dark brown leather jacket over a plain tee",
+        "pale blue shirt with tailored grey trousers",
+        "black turtleneck with a long camel coat",
     )
 
 

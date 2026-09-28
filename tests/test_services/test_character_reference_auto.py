@@ -94,6 +94,7 @@ def _passed_review(index, image_path, scene, prompt, reference_image=None):
 
 def test_character_reference_generation_selects_best_candidate(tmp_path, monkeypatch):
     generator = CharacterReferenceAutoGenerator(comfyui_service=FakeComfyUI(), generator=FakeDescriptionGenerator())
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
     monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_IMAGE_MIN_SCORE", 0.0)
     monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
     monkeypatch.setattr(
@@ -111,12 +112,41 @@ def test_character_reference_generation_selects_best_candidate(tmp_path, monkeyp
 
     assert result["success"] is True
     assert Path(result["reference_image_path"]).is_file()
-    assert len(result["reference_images"]) == 3
+    assert len(result["reference_images"]) == 5
+    assert result["quality_report"]["requested_candidate_count"] == 5
     assert result["quality_report"]["kind"] == "image_candidate_selection"
     assert Path(tmp_path / "林安" / "reference_quality.json").is_file()
-    assert len(generator.comfyui.calls) == 3
+    assert len(generator.comfyui.calls) == 5
     assert "consistent facial identity reference" in generator.comfyui.calls[0]["prompt"]
     assert "natural skin texture" in generator.comfyui.calls[0]["prompt"]
+
+
+def test_character_reference_generation_expands_candidates_for_seed_dance_profile(tmp_path, monkeypatch):
+    fake_comfy = FakeComfyUI()
+    generator = CharacterReferenceAutoGenerator(comfyui_service=fake_comfy, generator=FakeDescriptionGenerator())
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "seed_dance_reference")
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_CANDIDATES", 3)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_MAX_IMAGE_CANDIDATES", 6)
+    monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_IMAGE_MIN_SCORE", 0.0)
+    monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+    monkeypatch.setattr(
+        "src.services.character_reference_auto.ImageQualitySelector.review_candidate",
+        lambda self, index, image_path, scene, prompt, reference_image=None: _passed_review(index, image_path, scene, prompt, reference_image),
+    )
+
+    result = generator.generate_multiple_references(
+        character_name="林安",
+        role="女主",
+        personality="克制",
+        count=1,
+        save_dir=str(tmp_path),
+    )
+
+    assert result["success"] is True
+    assert len(fake_comfy.calls) == 6
+    assert result["quality_report"]["requested_candidate_count"] == 6
+    assert result["quality_report"]["quality_budget"]["profile"] == "seed_dance_reference"
+    assert result["quality_report"]["candidates"][0]["request"]["quality_budget"]["candidate_count"] == 6
 
 
 def test_reference_review_payload_carries_identity_anchor():
@@ -136,6 +166,7 @@ def test_reference_review_payload_carries_identity_anchor():
 def test_turnaround_album_generation_selects_each_required_view(tmp_path, monkeypatch):
     fake_comfy = FakeComfyUI()
     generator = CharacterReferenceAutoGenerator(comfyui_service=fake_comfy, generator=FakeDescriptionGenerator())
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
     monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_IMAGE_MIN_SCORE", 0.0)
     monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE", 0.0)
     monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
@@ -156,7 +187,7 @@ def test_turnaround_album_generation_selects_each_required_view(tmp_path, monkey
     assert set(result["selected_views"]) == set(PRODUCTION_TURNAROUND_VIEWS)
     assert set(result["quality_reports"]) == set(PRODUCTION_TURNAROUND_VIEWS)
     assert all(Path(path).is_file() for path in result["selected_views"].values())
-    assert len(fake_comfy.calls) == 16
+    assert len(fake_comfy.calls) == 40
     prompts = [call["prompt"] for call in fake_comfy.calls]
     assert any("strict front turnaround view" in prompt for prompt in prompts)
     assert any("strict left 45 degree three-quarter view" in prompt for prompt in prompts)
@@ -176,6 +207,7 @@ def test_turnaround_album_generation_selects_each_required_view(tmp_path, monkey
 def test_turnaround_album_generation_blocks_failed_feature_gate(tmp_path, monkeypatch):
     fake_comfy = FakeComfyUI()
     generator = CharacterReferenceAutoGenerator(comfyui_service=fake_comfy, generator=FakeDescriptionGenerator())
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
     monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_IMAGE_MIN_SCORE", 0.0)
     monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE", 0.0)
     monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)

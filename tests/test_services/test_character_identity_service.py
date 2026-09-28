@@ -14,6 +14,27 @@ def test_identity_specs_are_stable_and_distinct_for_same_project():
     assert report["pairs"][0]["distance"] >= 0.72
 
 
+def test_identity_specs_remain_distinct_for_large_cast():
+    service = CharacterIdentityService()
+    specs = []
+    for index, name in enumerate(["林安", "顾沉", "宁夏", "周砚", "苏禾", "陆川", "许沫", "江野", "唐梨", "沈既白"]):
+        specs.append(
+            service.build_identity_spec(
+                name,
+                role=f"角色{index}",
+                personality=f"性格{index}",
+                project_id=12,
+                existing_specs=specs,
+            )
+        )
+
+    report = service.distinctiveness_report(specs)
+
+    assert report["status"] == "passed"
+    assert len(report["pairs"]) == 45
+    assert min(pair["distance"] for pair in report["pairs"]) >= 0.72
+
+
 def test_prompt_pack_contains_requested_languages_and_negative_identity():
     service = CharacterIdentityService()
     spec = service.build_identity_spec("阿澈", project_id=9)

@@ -10,6 +10,7 @@ from loguru import logger
 from src.config import settings
 from src.services.character_reference_generator import CharacterReferenceGenerator
 from src.services.comfyui_service import ComfyUIService
+from src.services.generation_quality_policy import image_quality_budget
 from src.services.generation_review import ReviewError, write_report
 from src.services.image_quality_service import ImageQualitySelector
 from src.services.llm_service import get_llm_service
@@ -269,7 +270,8 @@ class CharacterReferenceAutoGenerator:
         final_path = character_dir / final_name
         selector = ImageQualitySelector()
         candidates = []
-        count = max(1, min(count, 8))
+        quality_budget = image_quality_budget()
+        count = max(1, min(max(count, quality_budget.candidate_count), quality_budget.max_candidates))
         import hashlib
         for index in range(count):
             output_path = character_dir / f"{candidate_prefix}_{index + 1:02d}.png"
@@ -307,6 +309,7 @@ class CharacterReferenceAutoGenerator:
                 "seed": seed,
                 "steps": min(max(settings.GENERATION_STEPS, 28) + index * 4, 48),
                 "cfg_scale": settings.GENERATION_CFG,
+                "quality_budget": quality_budget.as_dict(),
             }
             if turnaround_view:
                 report["request"]["turnaround_view"] = turnaround_view
@@ -335,6 +338,9 @@ class CharacterReferenceAutoGenerator:
                     f"Turnaround {turnaround_view} feature gate failed: "
                     + ", ".join(selection["turnaround_gate"].get("missing") or selection["turnaround_gate"].get("low", {}).keys())
                 )
+        selection["requested_candidate_count"] = count
+        selection["quality_budget"] = quality_budget.as_dict()
+        write_report(report_path, selection)
         return {
             "reference_image_path": str(final_path),
             "candidate_images": [candidate["path"] for candidate in candidates],
