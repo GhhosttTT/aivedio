@@ -77,6 +77,9 @@ def _production_error_status(message: str) -> int:
         or "分镜不存在" in message
         or "不支持的返工动作" in message
         or "返工需要" in message
+        or "workflow profile" in message
+        or "workflow_profile" in message
+        or "生产 workflow profile" in message
         or "请先" in message
         or "短剧" in message
         or "not ready" in message

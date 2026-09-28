@@ -176,6 +176,10 @@ def test_repair_scene_keyframe_creates_targeted_task(setup, monkeypatch):
     chain = Mock()
     chain.freeze.return_value.id = "repair-task-id"
     monkeypatch.setattr("src.services.task_orchestrator.generate_image_task.si", Mock(return_value=chain))
+    monkeypatch.setattr(
+        "src.services.task_orchestrator.ProductionWorkflowProfileService",
+        lambda: Mock(validate_profile=Mock(return_value={"status": "valid"})),
+    )
 
     response = client.post(
         "/api/projects/1/repair-scene",
@@ -187,6 +191,29 @@ def test_repair_scene_keyframe_creates_targeted_task(setup, monkeypatch):
     scene = db.query(Scene).filter(Scene.project_id == 1, Scene.scene_number == 1).one()
     assert scene.image_path is None and scene.video_path is None
     chain.apply_async.assert_called_once()
+
+
+def test_repair_scene_blocks_when_workflow_profile_not_valid(setup, monkeypatch):
+    client, db, _ = setup
+    monkeypatch.setattr(
+        "src.services.task_orchestrator.ProductionWorkflowProfileService",
+        lambda: Mock(validate_profile=Mock(return_value={
+            "status": "blocked",
+            "missing": ["production_quality_budget"],
+            "stale": [],
+            "missing_capabilities": ["face_repair"],
+        })),
+    )
+
+    response = client.post(
+        "/api/projects/1/repair-scene",
+        json={"scene_number": 1, "action": "refine_prompt_composition"},
+    )
+
+    assert response.status_code == 400
+    assert "workflow profile" in response.json()["detail"]
+    assert "production_quality_budget" in response.json()["detail"]
+    assert "face_repair" in response.json()["detail"]
 
 
 def test_repair_scene_rejects_non_executable_action(setup):

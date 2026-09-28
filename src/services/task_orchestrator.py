@@ -14,6 +14,7 @@ from src.config import settings
 from src.database.models import Project, Scene, Task as TaskModel, TaskStatus, ProjectStatus
 from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.production_readiness import ProductionReadinessService
+from src.services.production_workflow_profile import ProductionWorkflowProfileService
 from src.services.video_engine_preflight import preflight_production_video_engine
 from src.tasks.celery_app import celery_app
 from src.tasks.image_tasks import generate_image_task, prepare_generation_task
@@ -175,6 +176,19 @@ class TaskOrchestrator:
             raise ValueError(f"不支持的返工动作: {action}")
         if action in video_actions and not scene.image_path:
             raise ValueError("视频返工需要先有已通过的关键帧，请先重做关键帧。")
+        profile_report = ProductionWorkflowProfileService().validate_profile()
+        if profile_report.get("status") != "valid":
+            details = []
+            if profile_report.get("missing"):
+                details.append("missing=" + ",".join(profile_report["missing"]))
+            if profile_report.get("stale"):
+                details.append("stale=" + ",".join(profile_report["stale"]))
+            if profile_report.get("missing_capabilities"):
+                details.append("capabilities=" + ",".join(profile_report["missing_capabilities"]))
+            raise ValueError(
+                "返工生成需要先通过本机 ComfyUI 生产 workflow profile 校验"
+                + (": " + "; ".join(details) if details else "")
+            )
 
         task_model = TaskModel(
             project_id=project_id,
