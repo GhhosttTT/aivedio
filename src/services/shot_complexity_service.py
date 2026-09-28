@@ -26,6 +26,7 @@ class ShotComplexityReport:
     reasons: list[str]
     recommendations: list[str]
     prompt_constraint: str
+    suggested_atomic_shots: list[dict]
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -90,4 +91,61 @@ class ShotComplexityService:
             reasons=reasons,
             recommendations=recommendations,
             prompt_constraint=prompt_constraint,
+            suggested_atomic_shots=_suggest_atomic_shots(text, visible_characters) if status in {"warn", "needs_split"} else [],
         )
+
+
+def _suggest_atomic_shots(text: str, visible_characters: list[str]) -> list[dict]:
+    """Return deterministic split hints for overloaded short-drama shots."""
+    clean_text = " ".join(str(text or "").split())
+    if not clean_text:
+        return []
+    parts = [
+        part.strip(" ,.;，。；")
+        for part in re.split(
+            r"\b(?:and then|then|afterwards|subsequently|while)\b|然后|接着|随后|同时|一边",
+            clean_text,
+            flags=re.I,
+        )
+        if part.strip(" ,.;，。；")
+    ]
+    if len(parts) <= 1:
+        parts = [clean_text]
+    shots = []
+    for index, part in enumerate(parts[:4], start=1):
+        primary_action = _primary_action(part)
+        characters = _characters_in_text(part, visible_characters) or visible_characters[:2]
+        shots.append({
+            "order": index,
+            "visual_description": _atomic_visual_description(part),
+            "primary_action": primary_action,
+            "visible_characters": characters,
+            "camera": "static medium shot or close-up; no pan, zoom, orbit, or tracking move",
+            "continuity_note": "Continuity: keep wardrobe, prop state, screen direction, and emotional beat consistent with adjacent atomic shots.",
+        })
+    return shots
+
+
+def _primary_action(text: str) -> str:
+    matches = ACTION_RE.findall(text or "")
+    if not matches:
+        return "hold one readable emotional beat"
+    first = matches[0]
+    if isinstance(first, tuple):
+        first = next((item for item in first if item), "")
+    return str(first or "hold one readable emotional beat")
+
+
+def _characters_in_text(text: str, visible_characters: list[str]) -> list[str]:
+    lowered = (text or "").lower()
+    found = [name for name in visible_characters if name and name.lower() in lowered]
+    return found
+
+
+def _atomic_visual_description(text: str) -> str:
+    text = re.sub(CAMERA_RE, "static camera", text or "")
+    text = re.sub(r"\b(camera pans|camera zooms|tracking shot)\b|镜头推进|镜头拉远|镜头跟随|推镜|拉镜|摇镜|跟拍|环绕", "static camera", text, flags=re.I)
+    text = " ".join(text.split())
+    if len(text) > 180:
+        text = text[:177].rstrip() + "..."
+    return text

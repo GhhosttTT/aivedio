@@ -469,6 +469,7 @@ class ProductionReadinessService:
                 "score": report["score"],
                 "reasons": report["reasons"],
                 "recommendations": report["recommendations"],
+                "suggested_atomic_shots": report.get("suggested_atomic_shots", []),
             })
         needs_split = [item for item in reports if item["status"] == "needs_split"]
         warn = [item for item in reports if item["status"] == "warn"]

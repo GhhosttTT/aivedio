@@ -1046,6 +1046,29 @@ def test_production_readiness_reports_missing_character_references(setup):
     assert payload["checks"]["characters"]["missing_references"] == ["Alice"]
 
 
+def test_production_readiness_returns_atomic_split_hints_for_overloaded_shots(setup):
+    client, db, _ = setup
+    project = db.query(Project).filter(Project.id == 1).one()
+    scene = db.query(Scene).filter(Scene.project_id == 1).one()
+    scene.visual_description = (
+        "Alice enters the room and then sits down while Bob and Cara fight as the camera pans around them"
+    )
+    scene.dialogue = "Stop, both of you."
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice", "Bob", "Cara"]}]})
+    db.commit()
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert any(item["code"] == "overloaded_shots" for item in payload["blockers"])
+    shot = payload["checks"]["shot_complexity"]["scenes"][0]
+    assert shot["status"] == "needs_split"
+    assert len(shot["suggested_atomic_shots"]) >= 2
+    assert shot["suggested_atomic_shots"][0]["visible_characters"] == ["Alice"]
+    assert "static" in shot["suggested_atomic_shots"][0]["camera"]
+
+
 def test_production_readiness_requires_character_identity_bible(setup):
     client, db, _ = setup
     project = db.query(Project).filter(Project.id == 1).one()

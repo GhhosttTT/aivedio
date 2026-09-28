@@ -22,3 +22,19 @@ def test_group_sequential_camera_move_needs_split():
     assert any("visible characters" in reason for reason in report.reasons)
     assert any("sequential" in reason for reason in report.reasons)
     assert any("camera movement" in reason for reason in report.reasons)
+    assert len(report.suggested_atomic_shots) >= 2
+    assert report.suggested_atomic_shots[0]["order"] == 1
+    assert report.suggested_atomic_shots[0]["visible_characters"] == ["Alice"]
+    assert "static" in report.suggested_atomic_shots[0]["camera"]
+    assert "continuity" in report.suggested_atomic_shots[0]["continuity_note"].lower()
+
+
+def test_warning_shot_gets_atomic_simplification_hint():
+    report = ShotComplexityService().diagnose(
+        "Alice opens the letter then turns toward Bob",
+        ["Alice", "Bob"],
+    )
+
+    assert report.status == "warn"
+    assert report.suggested_atomic_shots
+    assert report.suggested_atomic_shots[0]["primary_action"]
