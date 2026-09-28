@@ -123,7 +123,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
   -> 保存 .quality.json 和 .generation.json
 ```
 
-`GENERATION_QUALITY_PROFILE` 控制时间换质量的预算档位。`seed_dance_reference` 会在 `GENERATION_IMAGE_CANDIDATES` 和 `GENERATION_VIDEO_CANDIDATES` 的基础上放大候选数并增加精修轮次；`hongguo_reference` 保持配置值，适合先跑通流程或显存紧张时使用。
+`GENERATION_QUALITY_PROFILE` 控制时间换质量的预算档位和视觉合约。`seed_dance_reference` 会在 `GENERATION_IMAGE_CANDIDATES` 和 `GENERATION_VIDEO_CANDIDATES` 的基础上放大候选数并增加精修轮次，同时把自然肤质、稳定脸型、真实服装、受控实景光、商业色彩和反 AI 光泽/塑料感的要求写入图片提示词、负向提示词、视频审核 payload 和 VLM rubric；`hongguo_reference` 保持配置值，适合先跑通流程或显存紧张时使用。
 `GENERATION_IMAGE_CANDIDATES` 是每轮候选起点。质量优先建议从 5 开始；在 `seed_dance_reference` 下有效图片候选数会放大到 10，但仍受 `GENERATION_MAX_IMAGE_CANDIDATES` 限制。3060 12GB 扛不住时降到 3。
 `GENERATION_IMAGE_REFINEMENT_PASSES` 是额外精修轮数。设为 2 表示最多生成三轮候选；第一轮已经有 VLM 高分图时会提前停止。
 `GENERATION_IMAGE_MIN_SCORE` 是晋级门槛。建议先用 4.0，人工校准后再提高。

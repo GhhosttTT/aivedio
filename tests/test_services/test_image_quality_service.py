@@ -36,6 +36,8 @@ def test_image_review_rubric_checks_mobile_short_drama_aesthetics():
     assert "same-face characters" in IMAGE_REVIEW_RUBRIC
     assert "platform_aesthetic_scores" in IMAGE_REVIEW_RUBRIC
     assert "scene.platform_aesthetic_contract" in IMAGE_REVIEW_RUBRIC
+    assert "profile_prompt" in IMAGE_REVIEW_RUBRIC
+    assert "profile_negative_prompt" in IMAGE_REVIEW_RUBRIC
 
 
 def test_platform_aesthetic_gate_quantifies_short_drama_surface_quality(monkeypatch):

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+from src.config import settings
 from src.database.models import Project, Scene
 from src.utils.storage import storage_manager
 
@@ -21,6 +22,30 @@ class VisualStyleAssetService:
         "cheap filter look, plastic skin, waxy face, muddy light, oversaturated color, crushed shadows, blown highlights, "
         "tiny unreadable face, flat background, noisy upscale artifacts, visible face repair scar"
     )
+    PROFILE_AESTHETIC_PROMPTS = {
+        "seed_dance_reference": (
+            "Seed Dance reference target: high-end vertical short-drama frame, photorealistic Asian drama cast, "
+            "stable face geometry, natural pores and skin tone, styled but believable wardrobe, controlled practical lighting, "
+            "premium set dressing, restrained commercial color grade, phone-readable eyes and expression, no AI gloss"
+        ),
+        "ultra": (
+            "Ultra local generation target: photorealistic short-drama still, natural skin detail, clean lens contrast, "
+            "premium wardrobe detail, controlled highlights, strong subject-background separation"
+        ),
+        "high_quality": (
+            "High quality short-drama target: clean commercial lighting, readable expression, stable wardrobe, natural skin"
+        ),
+    }
+    PROFILE_AESTHETIC_NEGATIVES = {
+        "seed_dance_reference": (
+            "AI generated gloss, wax museum face, same-face casting, unstable facial geometry, over-beautified influencer skin, "
+            "plastic texture, cheap app filter, messy wardrobe, low-budget set dressing, poster-like overprocessing"
+        ),
+        "ultra": (
+            "AI gloss, plastic skin, cheap beauty filter, unstable face shape, low-budget wardrobe, noisy upscale artifacts"
+        ),
+        "high_quality": "plastic skin, cheap filter, unstable face, muddy light",
+    }
     IMAGE_AESTHETIC_FEATURES = (
         "skin_texture",
         "lighting_quality",
@@ -97,19 +122,24 @@ class VisualStyleAssetService:
         return str(manifest.get("negative_prompt") or "").strip()
 
     def generation_prompt_for_project(self, project_id: int) -> str:
-        return self._append_sentence(self.style_prompt_for_project(project_id), self.PLATFORM_AESTHETIC_PROMPT)
+        prompt = self._append_sentence(self.style_prompt_for_project(project_id), self.PLATFORM_AESTHETIC_PROMPT)
+        return self._append_sentence(prompt, self._profile_prompt())
 
     def generation_negative_for_project(self, project_id: int) -> str:
-        return self._append_sentence(self.negative_prompt_for_project(project_id), self.PLATFORM_AESTHETIC_NEGATIVE)
+        negative = self._append_sentence(self.negative_prompt_for_project(project_id), self.PLATFORM_AESTHETIC_NEGATIVE)
+        return self._append_sentence(negative, self._profile_negative_prompt())
 
     def platform_aesthetic_contract(self, project_id: int | None = None) -> dict:
         style_prompt = self.style_prompt_for_project(project_id) if project_id is not None else ""
         negative_prompt = self.negative_prompt_for_project(project_id) if project_id is not None else ""
         return {
             "version": 1,
+            "quality_profile": self._quality_profile(),
             "style_prompt": style_prompt,
             "prompt": self.generation_prompt_for_project(project_id) if project_id is not None else self.PLATFORM_AESTHETIC_PROMPT,
             "negative_prompt": self.generation_negative_for_project(project_id) if project_id is not None else self.PLATFORM_AESTHETIC_NEGATIVE,
+            "profile_prompt": self._profile_prompt(),
+            "profile_negative_prompt": self._profile_negative_prompt(),
             "image_features": list(self.IMAGE_AESTHETIC_FEATURES),
             "video_features": list(self.VIDEO_AESTHETIC_FEATURES),
             "review_instruction": (
@@ -192,6 +222,16 @@ class VisualStyleAssetService:
         if addition.lower() in base.lower():
             return base
         return base.rstrip(" .") + ". " + addition
+
+    @staticmethod
+    def _quality_profile() -> str:
+        return settings.GENERATION_QUALITY_PROFILE.strip().lower()
+
+    def _profile_prompt(self) -> str:
+        return self.PROFILE_AESTHETIC_PROMPTS.get(self._quality_profile(), "")
+
+    def _profile_negative_prompt(self) -> str:
+        return self.PROFILE_AESTHETIC_NEGATIVES.get(self._quality_profile(), "")
 
     def _path(self, project_id: int) -> Path:
         return storage_manager.get_project_path(project_id) / "style" / "visual_style_asset_pack.json"

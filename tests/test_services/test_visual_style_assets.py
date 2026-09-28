@@ -54,6 +54,7 @@ def test_visual_style_pack_preserves_custom_prompts(tmp_path, monkeypatch):
 
 def test_generation_prompts_add_platform_aesthetic_contract(tmp_path, monkeypatch):
     monkeypatch.setattr(storage_manager, "base_path", tmp_path / "storage")
+    monkeypatch.setattr("src.services.visual_style_assets.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
     service = VisualStyleAssetService()
     project = _project()
     service.freeze_project_style(
@@ -74,3 +75,22 @@ def test_generation_prompts_add_platform_aesthetic_contract(tmp_path, monkeypatc
     assert "skin_texture" in contract["image_features"]
     assert "motion_smoothness" in contract["video_features"]
     assert "Platform aesthetic contract" in contract["prompt"]
+
+
+def test_seed_dance_profile_adds_stricter_visual_contract(tmp_path, monkeypatch):
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path / "storage")
+    monkeypatch.setattr("src.services.visual_style_assets.settings.GENERATION_QUALITY_PROFILE", "seed_dance_reference")
+    service = VisualStyleAssetService()
+    project = _project()
+    service.freeze_project_style(project, [_scene()])
+
+    prompt = service.generation_prompt_for_project(project.id)
+    negative = service.generation_negative_for_project(project.id)
+    contract = service.platform_aesthetic_contract(project.id)
+
+    assert "Seed Dance reference target" in prompt
+    assert "natural pores and skin tone" in prompt
+    assert "AI generated gloss" in negative
+    assert contract["quality_profile"] == "seed_dance_reference"
+    assert "Seed Dance reference target" in contract["profile_prompt"]
+    assert "AI generated gloss" in contract["profile_negative_prompt"]

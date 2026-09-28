@@ -145,6 +145,8 @@ def test_frame_review_accepts_video_aesthetic_scores(tmp_path, monkeypatch):
     assert result["batches"][0]["video_aesthetic_gate"]["status"] == "passed"
     assert result["batches"][0]["review"]["video_aesthetic_scores"]["motion_smoothness"]["score"] == 4
     assert "scene.platform_aesthetic_contract" in reviewer.evaluate.call_args.args[0]
+    assert "profile_prompt" in reviewer.evaluate.call_args.args[0]
+    assert "profile_negative_prompt" in reviewer.evaluate.call_args.args[0]
 
 
 def test_temporal_inconsistency_blocks_video_review(tmp_path, monkeypatch):

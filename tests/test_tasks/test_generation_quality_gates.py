@@ -262,6 +262,18 @@ def test_video_review_payload_carries_platform_aesthetic_contract(project_data):
     assert "motion_smoothness" in payload["platform_aesthetic_contract"]["video_features"]
 
 
+def test_seed_dance_profile_reaches_video_review_payload(project_data, monkeypatch):
+    db, project, scene, _, _ = project_data
+    monkeypatch.setattr("src.services.visual_style_assets.settings.GENERATION_QUALITY_PROFILE", "seed_dance_reference")
+
+    payload = _scene_review_payload(scene, project.id, db)
+
+    contract = payload["platform_aesthetic_contract"]
+    assert contract["quality_profile"] == "seed_dance_reference"
+    assert "Seed Dance reference target" in contract["prompt"]
+    assert "AI generated gloss" in contract["negative_prompt"]
+
+
 def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_data, monkeypatch):
     _, project, scene, _, _ = project_data
     scene.dialogue = "你把那封信递给我。"
