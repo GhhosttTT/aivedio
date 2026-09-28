@@ -20,6 +20,7 @@ from src.services.shot_complexity_service import ShotComplexityService
 from src.services.spatial_control_assets import SpatialControlAssetService
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
+from src.services.quality_loop import build_quality_loop_plan
 from src.services.story_room_quality import StoryRoomQualityService
 from src.services.video_director_service import get_video_director_service
 from src.services.video_engine_preflight import preflight_production_video_engine
@@ -78,6 +79,7 @@ class ProductionReadinessService:
             "visual_style": self._visual_style_check(project, scenes, blockers),
             "workflow_profile": self._workflow_profile_check(blockers),
             "reviewer": self._reviewer_check(blockers),
+            "project_generation_quality": self._project_generation_quality_check(project, warnings),
             "sample_validation": self._sample_validation_check(warnings),
         }
         if include_engine_preflight:
@@ -800,6 +802,87 @@ class ProductionReadinessService:
                 "manual_review_passed": checks.get("manual_review_passed"),
             },
             "action_items": summary.get("action_items", []) if isinstance(summary.get("action_items"), list) else [],
+        }
+
+    def _project_generation_quality_check(self, project: Project, warnings: list[ReadinessIssue]) -> dict:
+        project_root = storage_manager.get_project_path(project.id)
+        reports: dict[str, dict] = {}
+        invalid_reports: list[str] = []
+        for path in sorted((project_root / "reviews").glob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                invalid_reports.append(str(path))
+                continue
+            if isinstance(payload, dict):
+                reports[path.stem] = payload
+        for path in sorted(project_root.rglob("*.quality.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                invalid_reports.append(str(path))
+                continue
+            if isinstance(payload, dict):
+                key = "quality_" + "_".join(path.relative_to(project_root).with_suffix("").parts)
+                reports[key] = payload
+
+        repair_items: list[dict] = []
+        actions: dict[str, int] = {}
+        execution = {"auto": 0, "setup_required": 0, "manual": 0}
+        for name, report in reports.items():
+            for item in report.get("repair_queue") or []:
+                if not isinstance(item, dict):
+                    continue
+                copied = dict(item)
+                copied["source_report"] = name
+                repair_items.append(copied)
+                action = copied.get("action") or "unknown"
+                actions[action] = actions.get(action, 0) + 1
+                mode = copied.get("execution") or "manual"
+                execution[mode] = execution.get(mode, 0) + 1
+
+        priority_rank = {"high": 0, "medium": 1, "low": 2}
+        repair_items.sort(key=lambda item: (priority_rank.get(item.get("priority"), 9), item.get("stage") or "", item.get("action") or ""))
+        repair_queue = {
+            "total": len(repair_items),
+            "actions": actions,
+            "execution": execution,
+            "items": repair_items[:20],
+            "setup_required": [item for item in repair_items if item.get("execution") == "setup_required"][:10],
+            "manual_actions": [item for item in repair_items if item.get("execution") not in {"auto", "setup_required"}][:10],
+        }
+        summary = {
+            "status": "blocked" if repair_items else "ready",
+            "repair_queue": repair_queue,
+        }
+        loop_plan = build_quality_loop_plan(summary, max_actions=5)
+        if invalid_reports:
+            warnings.append(ReadinessIssue(
+                "project_generation_quality_report_invalid",
+                "Fix invalid project generation quality reports before accepting production quality.",
+                severity="warning",
+            ))
+        if repair_items:
+            warnings.append(ReadinessIssue(
+                "project_generation_repair_queue_not_empty",
+                (
+                    "Resolve project generation repair_queue items before final production. "
+                    f"Quality loop status: {loop_plan['status']}; next step: {loop_plan['next_step']}"
+                ),
+                severity="warning",
+            ))
+        return {
+            "status": loop_plan["status"],
+            "project_root": str(project_root),
+            "report_count": len(reports),
+            "invalid_reports": invalid_reports,
+            "repair_queue_total": len(repair_items),
+            "actions": actions,
+            "execution": execution,
+            "selected_auto_repairs": loop_plan["selected"],
+            "setup_required": loop_plan["setup_required"],
+            "manual_actions": loop_plan["manual_actions"],
+            "next_step": loop_plan["next_step"],
         }
 
     def _script_scene_map(self, project: Project) -> dict[int, dict]:
