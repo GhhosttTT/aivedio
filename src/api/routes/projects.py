@@ -18,6 +18,8 @@ from src.api.schemas import (
     ProjectListResponse,
     GenerateScriptRequest,
     RegenerateSceneRequest,
+    RepairQueueAutoRunRequest,
+    RepairQueueAutoRunResponse,
     RepairSceneRequest,
     MessageResponse,
     ProductionTaskResponse,
@@ -371,6 +373,64 @@ def _repair_queue_summary(reports: dict) -> dict:
         "manual_actions": [item for item in items if item.get("execution") not in {"auto", "setup_required"}][:10],
         "items": items[:20],
     }
+
+
+def _scene_number_from_repair_item(item: dict) -> Optional[int]:
+    value = item.get("scene_number")
+    if value is None:
+        return None
+    try:
+        scene_number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return scene_number if scene_number > 0 else None
+
+
+def _auto_repair_candidates(repair_queue: dict, max_actions: int) -> tuple[list[dict], list[dict]]:
+    priority_rank = {"high": 0, "medium": 1, "low": 2}
+    stage_rank = {"image": 0, "keyframe": 0, "video": 1}
+    items = [
+        dict(item)
+        for item in repair_queue.get("items", [])
+        if isinstance(item, dict) and item.get("execution") == "auto"
+    ]
+    items.sort(
+        key=lambda item: (
+            priority_rank.get(item.get("priority"), 9),
+            stage_rank.get(item.get("stage"), 5),
+            item.get("source_report") or "",
+            item.get("action") or "",
+        )
+    )
+
+    selected = []
+    skipped = []
+    seen_scenes = set()
+    seen_actions = set()
+    for item in items:
+        scene_number = _scene_number_from_repair_item(item)
+        action = item.get("action")
+        item["scene_number"] = scene_number
+        if scene_number is None:
+            skipped.append({**item, "reason": "missing_scene_number"})
+            continue
+        if not action:
+            skipped.append({**item, "reason": "missing_action"})
+            continue
+        if scene_number in seen_scenes:
+            skipped.append({**item, "reason": "scene_already_selected"})
+            continue
+        key = (scene_number, action)
+        if key in seen_actions:
+            skipped.append({**item, "reason": "duplicate_action"})
+            continue
+        if len(selected) >= max_actions:
+            skipped.append({**item, "reason": "max_actions_reached"})
+            continue
+        selected.append(item)
+        seen_scenes.add(scene_number)
+        seen_actions.add(key)
+    return selected, skipped
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -981,6 +1041,71 @@ async def repair_scene_generation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="创建返工任务时发生错误",
         )
+
+
+@router.post("/{project_id}/repair-queue/auto", response_model=RepairQueueAutoRunResponse)
+async def run_auto_repair_queue(
+    project_id: int,
+    request: RepairQueueAutoRunRequest,
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    review = await get_generation_review(project_id, current_user, db_session)
+    repair_queue = review.get("summary", {}).get("repair_queue", {})
+    selected, skipped = _auto_repair_candidates(repair_queue, request.max_actions)
+    if request.dry_run:
+        return RepairQueueAutoRunResponse(
+            project_id=project_id,
+            status="planned" if selected else "no_auto_actions",
+            dry_run=True,
+            submitted=[],
+            skipped=skipped,
+            considered=selected,
+        )
+
+    submitted = []
+    task_orchestrator = TaskOrchestrator(db_session)
+    from src.database.models import Task as TaskModel
+
+    for item in selected:
+        scene_number = item["scene_number"]
+        action = item["action"]
+        try:
+            celery_task_id = task_orchestrator.create_scene_repair_task(
+                project_id,
+                scene_number,
+                action,
+            )
+            task_record = db_session.query(TaskModel).filter(
+                TaskModel.celery_task_id == celery_task_id
+            ).first()
+            submitted.append({
+                **item,
+                "task_id": celery_task_id,
+                "status": task_record.status.value if task_record else "submitted",
+            })
+        except ValueError as exc:
+            skipped.append({**item, "reason": str(exc)})
+        except Exception as exc:
+            logger.error(f"自动返工任务创建失败: {exc}", exc_info=True)
+            skipped.append({**item, "reason": "task_submission_failed"})
+
+    if submitted and skipped:
+        result_status = "partial"
+    elif submitted:
+        result_status = "submitted"
+    elif selected:
+        result_status = "blocked"
+    else:
+        result_status = "no_auto_actions"
+    return RepairQueueAutoRunResponse(
+        project_id=project_id,
+        status=result_status,
+        dry_run=False,
+        submitted=submitted,
+        skipped=skipped,
+        considered=selected,
+    )
 
 
 @router.get("/{project_id}/production-task")

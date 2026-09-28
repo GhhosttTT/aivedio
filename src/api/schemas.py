@@ -371,6 +371,20 @@ class RepairSceneRequest(BaseModel):
     action: str = Field(..., min_length=1, max_length=100, description="返工队列中的动作")
 
 
+class RepairQueueAutoRunRequest(BaseModel):
+    max_actions: int = Field(5, ge=1, le=20, description="本次最多提交的自动返工任务数")
+    dry_run: bool = Field(False, description="只返回将要提交的计划，不真正创建任务")
+
+
+class RepairQueueAutoRunResponse(BaseModel):
+    project_id: int
+    status: str
+    dry_run: bool
+    submitted: List[dict] = Field(default_factory=list)
+    skipped: List[dict] = Field(default_factory=list)
+    considered: List[dict] = Field(default_factory=list)
+
+
 # ==================== 任务相关模型 ====================
 
 class ProductionTaskResponse(BaseModel):

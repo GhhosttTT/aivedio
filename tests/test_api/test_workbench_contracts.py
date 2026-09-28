@@ -251,6 +251,114 @@ def test_repair_scene_rejects_non_executable_action(setup):
     assert "拆" in response.json()["detail"]
 
 
+def test_repair_queue_auto_dry_run_prioritizes_image_and_dedupes_scene(setup):
+    client, db, _ = setup
+    project_root = storage_manager.get_project_path(1)
+    report_root = project_root / "images"
+    report_root.mkdir(parents=True, exist_ok=True)
+    (report_root / "scene_1.quality.json").write_text(json.dumps({
+        "status": "needs_review",
+        "repair_queue": [
+            {
+                "scene_number": 1,
+                "priority": "high",
+                "stage": "video",
+                "action": "lower_motion_and_regenerate_video",
+                "execution": "auto",
+            },
+            {
+                "scene_number": 1,
+                "priority": "high",
+                "stage": "image",
+                "action": "regenerate_keyframe_with_identity_lock",
+                "execution": "auto",
+            },
+            {
+                "priority": "high",
+                "stage": "image",
+                "action": "refine_prompt_composition",
+                "execution": "auto",
+            },
+        ],
+    }), encoding="utf-8")
+
+    response = client.post(
+        "/api/projects/1/repair-queue/auto",
+        json={"dry_run": True, "max_actions": 5},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "planned"
+    assert payload["submitted"] == []
+    assert payload["considered"][0]["action"] == "regenerate_keyframe_with_identity_lock"
+    assert any(item["reason"] == "scene_already_selected" for item in payload["skipped"])
+    assert any(item["reason"] == "missing_scene_number" for item in payload["skipped"])
+    assert db.query(Task).count() == 0
+
+
+def test_repair_queue_auto_submits_batch_repair_tasks(setup, monkeypatch):
+    client, db, _ = setup
+    db.add(Scene(project_id=1, scene_number=2, visual_description="A close-up reaction", dialogue="Wait"))
+    db.commit()
+    project_root = storage_manager.get_project_path(1)
+    report_root = project_root / "images"
+    report_root.mkdir(parents=True, exist_ok=True)
+    (report_root / "scene_1.quality.json").write_text(json.dumps({
+        "status": "needs_review",
+        "repair_queue": [
+            {
+                "scene_number": 1,
+                "priority": "high",
+                "stage": "image",
+                "action": "regenerate_keyframe_with_identity_lock",
+                "execution": "auto",
+            },
+            {
+                "scene_number": 2,
+                "priority": "medium",
+                "stage": "image",
+                "action": "refine_prompt_composition",
+                "execution": "auto",
+            },
+        ],
+    }), encoding="utf-8")
+    submitted = []
+
+    def fake_create_scene_repair_task(self, project_id, scene_number, action):
+        celery_task_id = f"repair-{scene_number}-{action}"
+        self.db.add(Task(
+            project_id=project_id,
+            celery_task_id=celery_task_id,
+            status=TaskStatus.PENDING,
+            progress=0.0,
+            total_steps=1,
+            current_step=0,
+        ))
+        self.db.commit()
+        submitted.append((scene_number, action))
+        return celery_task_id
+
+    monkeypatch.setattr(TaskOrchestrator, "create_scene_repair_task", fake_create_scene_repair_task)
+
+    response = client.post(
+        "/api/projects/1/repair-queue/auto",
+        json={"max_actions": 10},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "submitted"
+    assert [item["task_id"] for item in payload["submitted"]] == [
+        "repair-1-regenerate_keyframe_with_identity_lock",
+        "repair-2-refine_prompt_composition",
+    ]
+    assert submitted == [
+        (1, "regenerate_keyframe_with_identity_lock"),
+        (2, "refine_prompt_composition"),
+    ]
+
+
 def test_production_readiness_reports_scene_and_review_gaps(setup, monkeypatch):
     client, db, _ = setup
     monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)
