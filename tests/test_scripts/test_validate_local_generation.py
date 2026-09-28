@@ -835,3 +835,34 @@ def test_acceptance_package_surfaces_missing_manual_review_and_setup_actions(tmp
     assert package["repair_queue"][0]["execution"] == "setup_required"
     assert any("missing rendered cases" in item for item in package["blocking_action_items"])
     assert any("setup-required" in item for item in package["blocking_action_items"])
+
+
+def test_acceptance_package_includes_repair_rerun_plan(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "video_review.json", {
+        **passed_video_review(),
+        "repair_queue": [{
+            "action": "lower_motion_and_regenerate_video",
+            "execution": "auto",
+            "stage": "video",
+            "scene_number": 1,
+            "reason": "stutter and repair scar flickers",
+            "recommendation": "Lower motion strength/noise and regenerate the video clip from the accepted keyframe.",
+        }],
+    })
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery"))
+
+    package = validator.build_acceptance_package(tmp_path)
+
+    plan = package["repair_execution_plan"]
+    assert plan["auto"][0]["action"] == "lower_motion_and_regenerate_video"
+    assert plan["auto"][0]["parameter_hints"]["lower_motion_bucket_id"] is True
+    assert any("review-video" in command for command in plan["rerun_validation_commands"])
+    assert any("compare-baseline" in command for command in plan["rerun_validation_commands"])
+    markdown = (tmp_path / "acceptance_package.md").read_text(encoding="utf-8")
+    assert "Repair Rerun Plan" in markdown
+    assert "review-video" in markdown
