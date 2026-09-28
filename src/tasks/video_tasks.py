@@ -10,7 +10,7 @@ from src.database.models import Scene
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, VideoGenerationRequest, get_generation_provider
 from src.services.generation_review import GenerationReviewService, ReviewError, attach_video_aesthetic_gate, platform_video_score, write_report
-from src.services.repair_queue import attach_repair_queue
+from src.services.repair_queue import attach_repair_queue, build_repair_queue
 from src.services.svd_service import get_svd_service
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
 from src.tasks.celery_app import celery_app
@@ -262,6 +262,20 @@ def _video_gate_passes(candidate: dict) -> tuple[bool, dict[str, float]]:
     return identity_ok and temporal_ok, scores
 
 
+def _video_repair_action_from_candidates(candidates: list[dict]) -> str | None:
+    """Infer the next automatic video repair action from failed candidate reviews."""
+    if not candidates:
+        return None
+    queue = build_repair_queue(
+        {"status": "needs_review", "candidates": sorted(candidates, key=lambda item: item.get("average", 0))[:4]},
+        "video",
+    )
+    for item in queue:
+        if item.get("execution") == "auto" and item.get("action"):
+            return str(item["action"])
+    return None
+
+
 def _select_best_video_candidate(candidates: list[dict], final_path: str, report_path: Path) -> tuple[str, dict]:
     ranked = sorted(
         candidates,
@@ -363,11 +377,19 @@ def _generate_quality_video_candidates(
     current_noise = noise_aug_strength
     for pass_index in range(refinement_passes + 1):
         generated = []
+        current_repair_action = repair_action or (
+            _video_repair_action_from_candidates(candidates) if pass_index else None
+        )
+        pass_motion, pass_noise = _apply_video_repair_action(
+            current_motion,
+            current_noise,
+            current_repair_action,
+        )
         try:
             for offset in range(1, candidate_count + 1):
                 index = pass_index * candidate_count + offset
                 candidate_path = _candidate_video_path(output_path, index)
-                motion, noise = _video_variant_params(current_motion, current_noise, offset)
+                motion, noise = _video_variant_params(pass_motion, pass_noise, offset)
                 generated_path = svd_service.generate_video(
                     image_path=scene.image_path,
                     output_path=candidate_path,
@@ -390,10 +412,10 @@ def _generate_quality_video_candidates(
                         "motion_bucket_id": motion,
                         "noise_aug_strength": noise,
                         "reference_image": reference,
-                        "repair_action": repair_action,
+                        "repair_action": current_repair_action,
                     },
                     "shot_plan": shot_plan_payload,
-                    "repair_action": repair_action,
+                    "repair_action": current_repair_action,
                 })
         finally:
             cleanup_svd_service()
@@ -412,7 +434,7 @@ def _generate_quality_video_candidates(
                     "refinement_pass": generated_candidate["pass"],
                     "motion_bucket_id": generated_candidate["motion_bucket_id"],
                     "noise_aug_strength": generated_candidate["noise_aug_strength"],
-                    "repair_action": repair_action,
+                    "repair_action": current_repair_action,
                 },
                 review_path,
                 reference,
@@ -438,8 +460,8 @@ def _generate_quality_video_candidates(
             aesthetic_gate = _video_aesthetic_gate_summary(review)
             if aesthetic_gate:
                 candidate["video_aesthetic_gate"] = aesthetic_gate
-            if repair_action:
-                candidate["repair_action"] = repair_action
+            if current_repair_action:
+                candidate["repair_action"] = current_repair_action
             if shot_plan_payload:
                 candidate["shot_plan"] = shot_plan_payload
             if review.get("error"):
@@ -456,7 +478,7 @@ def _generate_quality_video_candidates(
             break
         if all(candidate.get("status") == "error" for candidate in pass_candidates):
             break
-        current_motion, current_noise = _refined_video_base_params(current_motion, current_noise)
+        current_motion, current_noise = _refined_video_base_params(pass_motion, pass_noise)
     if all(candidate.get("status") == "error" for candidate in candidates):
         report = {
             "kind": "video_candidate_selection",

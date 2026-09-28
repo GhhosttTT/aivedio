@@ -13,7 +13,7 @@ from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _complexity_report, _composition_constraint, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
-from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _scene_review_payload
+from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _scene_review_payload, _video_repair_action_from_candidates
 
 
 def passed_video_aesthetic_scores(score: int = 5) -> dict:
@@ -1013,6 +1013,95 @@ def test_video_refinement_pass_reduces_motion_after_low_score(project_data, tmp_
     assert fake_svd.requests[1]["motion_bucket_id"] < fake_svd.requests[0]["motion_bucket_id"]
     assert fake_svd.requests[1]["noise_aug_strength"] < fake_svd.requests[0]["noise_aug_strength"]
     assert report["candidates"][0]["pass"] == 1
+    assert report["status"] == "passed"
+
+
+def test_video_repair_action_from_candidates_promotes_motion_repair():
+    action = _video_repair_action_from_candidates([
+        {
+            "average": 2.2,
+            "status": "needs_review",
+            "scene": {"scene_number": 1},
+            "video_aesthetic_gate": {
+                "low": {
+                    "motion_smoothness": {"score": 2, "evidence": "stutter and camera jump"},
+                    "artifact_absence": {"score": 2, "evidence": "repair scar flickers"},
+                }
+            },
+        }
+    ])
+
+    assert action == "lower_motion_and_regenerate_video"
+
+
+def test_video_refinement_converts_motion_failure_into_repair_action(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    Path(scene.image_path).write_bytes(b"image")
+    db.commit()
+
+    class FakeSVD:
+        def __init__(self):
+            self.requests = []
+
+        def generate_video(self, **kwargs):
+            self.requests.append(kwargs)
+            Path(kwargs["output_path"]).write_bytes(f"video-{len(self.requests)}".encode())
+            return kwargs["output_path"]
+
+    class FakeReviewService:
+        def review_video(self, _video, payload, _report_path, _reference=None):
+            if payload["refinement_pass"] == 0:
+                return {
+                    "status": "needs_review",
+                    "average": 2.5,
+                    "batches": [{
+                        "review": {
+                            "story_match": {"score": 4, "evidence": "scene matches"},
+                            "composition": {"score": 4, "evidence": "usable framing"},
+                            "aesthetic_quality": {"score": 3, "evidence": "motion artifacts weaken polish"},
+                            "visual_integrity": {"score": 3, "evidence": "minor warping"},
+                            "facial_identity": {"score": 4, "evidence": "face matches"},
+                            "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
+                            "temporal_consistency": {"score": 2, "evidence": "stutter and camera jump"},
+                            "video_aesthetic_scores": {
+                                "skin_texture_stability": {"score": 4, "evidence": "skin stable"},
+                                "lighting_consistency": {"score": 4, "evidence": "lighting stable"},
+                                "color_grade_consistency": {"score": 4, "evidence": "color stable"},
+                                "phone_readability": {"score": 4, "evidence": "face readable"},
+                                "motion_smoothness": {"score": 2, "evidence": "stutter"},
+                                "background_stability": {"score": 3, "evidence": "background wobbles"},
+                                "artifact_absence": {"score": 2, "evidence": "repair scar flickers"},
+                            },
+                        }
+                    }],
+                }
+            assert payload["repair_action"] == "lower_motion_and_regenerate_video"
+            return {
+                "status": "passed",
+                "average": 4.5,
+                "batches": [{
+                    "review": {"video_aesthetic_scores": passed_video_aesthetic_scores()}
+                }],
+            }
+
+    fake_svd = FakeSVD()
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_CANDIDATES", 1)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 1)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    _, report = _generate_quality_video_candidates(
+        fake_svd, scene, project.id, str(tmp_path / "scene.mp4"), db,
+        num_frames=16, fps=8, motion_bucket_id=150, noise_aug_strength=0.08,
+    )
+
+    assert len(fake_svd.requests) == 2
+    assert fake_svd.requests[1]["motion_bucket_id"] < int(fake_svd.requests[0]["motion_bucket_id"] * 0.72)
+    assert fake_svd.requests[1]["noise_aug_strength"] < round(fake_svd.requests[0]["noise_aug_strength"] * 0.6, 4)
+    assert report["candidates"][0]["request"]["repair_action"] == "lower_motion_and_regenerate_video"
     assert report["status"] == "passed"
 
 
