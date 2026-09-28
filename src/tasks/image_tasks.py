@@ -136,6 +136,47 @@ def _visible_character_payload(scene: Scene, project_id: int, db) -> list[dict]:
     return payload
 
 
+def _character_sheet_generation_contract(visible_characters: list[dict]) -> dict:
+    """Build generator-facing constraints from frozen character-sheet assets."""
+    prompts = []
+    references = []
+    for item in visible_characters:
+        turnaround = item.get("turnaround_reference") if isinstance(item.get("turnaround_reference"), dict) else None
+        if not turnaround:
+            continue
+        expected = turnaround.get("expected_features") if isinstance(turnaround.get("expected_features"), dict) else {}
+        feature_terms = [
+            f"{key}: {value}"
+            for key, value in expected.items()
+            if str(value or "").strip()
+        ][:7]
+        prompt = turnaround.get("control_prompt") or ""
+        view = turnaround.get("view") or "front"
+        name = _prompt_safe_name(item.get("name", ""), "the character")
+        contract = (
+            f"{name} character-sheet reference view={view}; {prompt}; "
+            f"must match reviewed features: {'; '.join(feature_terms)}"
+        ).strip(" ;")
+        prompts.append(contract)
+        references.append({
+            "name": item.get("name"),
+            "view": view,
+            "path": turnaround.get("path"),
+            "sha256": turnaround.get("sha256"),
+            "expected_features": expected,
+        })
+    if not prompts:
+        return {"prompt": "", "negative": "", "references": []}
+    return {
+        "prompt": "Character sheet contract: " + " | ".join(prompts),
+        "negative": (
+            "changed face, changed hair, changed wardrobe, identity drift, same-face cast, "
+            "wrong camera angle versus character sheet"
+        ),
+        "references": references,
+    }
+
+
 def _appearance_anchor(characters: list[Character], db, compiler) -> str | None:
     if not characters:
         return None
@@ -609,7 +650,11 @@ def _generate_quality_candidates(
     for pass_index in range(refinement_passes + 1):
         pass_reports = []
         feedback = _review_feedback(reports) if pass_index else ""
-        prompt = _append_terms(request.prompt, settings.GENERATION_QUALITY_PROMPT_APPEND)
+        base_prompt = request.prompt
+        sheet_contract = str(scene_payload.get("character_sheet_contract") or "").strip()
+        if sheet_contract and sheet_contract not in base_prompt:
+            base_prompt = f"{base_prompt}. {sheet_contract}."
+        prompt = _append_terms(base_prompt, settings.GENERATION_QUALITY_PROMPT_APPEND)
         negative_prompt = _append_terms(request.negative_prompt, settings.GENERATION_QUALITY_NEGATIVE_APPEND)
         if feedback:
             prompt = f"{prompt}. Correct previous candidate problems: {feedback}."
@@ -660,6 +705,7 @@ def _generate_quality_candidates(
                 "height": candidate_request.height,
                 "reference_image": candidate_request.reference_image,
                 "use_ipadapter": candidate_request.use_ipadapter,
+                "character_sheet_references": scene_payload.get("character_sheet_references", []),
                 "refinement_pass": pass_index,
                 "feedback": feedback,
                 "repair_action": current_repair_action,
@@ -728,11 +774,15 @@ def generate_image_task(
             from src.services.llm_service import cleanup_llm_service
             cleanup_llm_service()
         reference_image = _get_reference_image(character, project_id, scene)
+        visible_characters = _visible_character_payload(scene, project_id, db)
+        character_sheet_contract = _character_sheet_generation_contract(visible_characters)
         enhanced_prompt = compiled.prompt
+        if character_sheet_contract["prompt"]:
+            enhanced_prompt = f"{enhanced_prompt}. {character_sheet_contract['prompt']}."
         repair_action = kwargs.get("repair_action")
         enhanced_prompt, negative_prompt = _apply_image_repair_action(
             enhanced_prompt,
-            compiled.negative_prompt,
+            _append_terms(compiled.negative_prompt, character_sheet_contract["negative"]),
             repair_action,
         )
 
@@ -758,7 +808,9 @@ def generate_image_task(
                 "complexity": _complexity_report(scene, project_id, db),
                 "dialogue": scene.dialogue,
                 "character_name": scene.character_name,
-                "visible_characters": _visible_character_payload(scene, project_id, db),
+                "visible_characters": visible_characters,
+                "character_sheet_contract": character_sheet_contract["prompt"],
+                "character_sheet_references": character_sheet_contract["references"],
                 "repair_action": repair_action,
             }
             final_image_path, quality_report = _generate_quality_candidates(

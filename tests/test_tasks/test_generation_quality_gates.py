@@ -10,7 +10,7 @@ from src.database.models import Base, Character, Project, Scene, Task, TaskStatu
 from src.services.generation_review import VIDEO_AESTHETIC_FEATURES, fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName, GenerationResult
 from src.services.shot_prompt_service import ShotPromptService
-from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _complexity_report, _composition_constraint, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
+from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _character_sheet_generation_contract, _complexity_report, _composition_constraint, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
 from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _scene_review_payload, _video_repair_action_from_candidates
@@ -135,6 +135,15 @@ def test_turnaround_album_drives_scene_reference_view(project_data, tmp_path, mo
     assert "strict side profile" in payload[0]["turnaround_reference"]["control_prompt"]
     assert payload[0]["turnaround_reference"]["expected_features"]["nose_silhouette"] == spec["nose"]
     assert payload[0]["turnaround_reference"]["expected_features"]["wardrobe_side"] == spec["wardrobe"]
+
+    contract = _character_sheet_generation_contract(payload)
+    assert "Character sheet contract" in contract["prompt"]
+    assert "view=side" in contract["prompt"]
+    assert "strict side profile" in contract["prompt"]
+    assert "nose_silhouette" in contract["prompt"]
+    assert contract["references"][0]["view"] == "side"
+    assert contract["references"][0]["path"] == views["side"]
+    assert "identity drift" in contract["negative"]
 
 
 def test_turnaround_view_for_scene_uses_production_character_sheet_assets():
@@ -575,6 +584,7 @@ def test_image_repair_action_is_recorded_in_candidate_request(tmp_path, monkeypa
             )
 
     def fake_review(self, index, image_path, scene, prompt, reference_image=None):
+        scene["review_prompt"] = prompt
         return {
             "index": index,
             "path": image_path,
@@ -1275,6 +1285,7 @@ def test_image_candidate_report_records_reference_contract(tmp_path, monkeypatch
             return GenerationResult("local_comfyui", request.output_path, "image", {"workflow": {"steps": request.steps}})
 
     def fake_review(self, index, image_path, scene, prompt, reference_image=None):
+        scene["review_prompt"] = prompt
         return {
             "index": index,
             "path": image_path,
@@ -1305,6 +1316,13 @@ def test_image_candidate_report_records_reference_contract(tmp_path, monkeypatch
     )
     scene_payload = {
         "scene_number": 1,
+        "character_sheet_contract": "Character sheet contract: Alice character-sheet reference view=side; strict side profile",
+        "character_sheet_references": [{
+            "name": "Alice",
+            "view": "side",
+            "path": reference,
+            "expected_features": {"nose_silhouette": "straight nose bridge"},
+        }],
         "visible_characters": [{
             "name": "Alice",
             "appearance": "Alice identity",
@@ -1321,6 +1339,8 @@ def test_image_candidate_report_records_reference_contract(tmp_path, monkeypatch
     candidate = report["candidates"][0]
     assert candidate["request"]["reference_image"] == reference
     assert candidate["request"]["use_ipadapter"] is True
+    assert candidate["request"]["character_sheet_references"][0]["view"] == "side"
+    assert "Character sheet contract" in scene_payload["review_prompt"]
     assert candidate["scene"]["visible_characters"][0]["turnaround_reference"]["view"] == "side"
     assert candidate["scene"]["visible_characters"][0]["turnaround_reference"]["expected_features"]["nose_silhouette"] == "straight nose bridge"
 
