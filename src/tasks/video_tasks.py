@@ -377,7 +377,10 @@ def _video_repair_action_from_candidates(candidates: list[dict]) -> str | None:
         "video",
     )
     for item in queue:
-        if item.get("execution") == "auto" and item.get("action"):
+        if (
+            item.get("execution") == "auto"
+            and item.get("action") == "lower_motion_and_regenerate_video"
+        ):
             return str(item["action"])
     return None
 

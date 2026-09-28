@@ -130,14 +130,23 @@ class VideoDirectorService:
             return input_path
         destination = Path(output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        filters = [f"fps={int(settings.GENERATION_VIDEO_OUTPUT_FPS)}"]
+        width = int(settings.GENERATION_WIDTH)
+        height = int(settings.GENERATION_HEIGHT)
+        filters = [
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease",
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
+            "setsar=1",
+            f"fps={int(settings.GENERATION_VIDEO_OUTPUT_FPS)}",
+        ]
         minimum = target_duration or settings.GENERATION_VIDEO_TARGET_SECONDS
         if duration < minimum:
             filters.append(f"tpad=stop_mode=clone:stop_duration={minimum - duration:.3f}")
+        filters.append("format=yuv420p")
         command = [
             "ffmpeg", "-y", "-v", "error", "-i", str(source),
             "-vf", ",".join(filters),
-            "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+            "-an", "-c:v", "libx264", "-preset", "slow", "-crf", "18",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart",
             str(destination),
         ]
         try:

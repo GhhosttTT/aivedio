@@ -303,6 +303,40 @@ def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_dat
     assert "identity drift" in plan.negative_prompt
 
 
+def test_video_director_normalize_clip_uses_production_frame_contract(tmp_path, monkeypatch):
+    source = tmp_path / "source.mp4"
+    output = tmp_path / "normalized.mp4"
+    source.write_bytes(b"video")
+    director = get_video_director_service()
+    commands = []
+
+    monkeypatch.setattr("src.services.video_director_service.shutil.which", lambda _name: "ffmpeg")
+    monkeypatch.setattr(director, "_probe_duration", lambda _path: 2.0)
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        output.write_bytes(b"normalized video")
+        return Mock(returncode=0)
+
+    monkeypatch.setattr("src.services.video_director_service.subprocess.run", fake_run)
+
+    result = director.normalize_clip(str(source), str(output), target_duration=3.6)
+
+    assert result == str(output)
+    command = commands[0]
+    vf = command[command.index("-vf") + 1]
+    assert "scale=768:1344:force_original_aspect_ratio=decrease" in vf
+    assert "pad=768:1344:(ow-iw)/2:(oh-ih)/2" in vf
+    assert "setsar=1" in vf
+    assert "fps=24" in vf
+    assert "tpad=stop_mode=clone:stop_duration=1.600" in vf
+    assert "format=yuv420p" in vf
+    assert command[command.index("-c:v") + 1] == "libx264"
+    assert command[command.index("-preset") + 1] == "slow"
+    assert command[command.index("-crf") + 1] == "18"
+    assert command[command.index("-movflags") + 1] == "+faststart"
+
+
 def test_video_director_prompt_uses_turnaround_reference_contract(project_data):
     _, project, scene, _, _ = project_data
 
@@ -1375,6 +1409,25 @@ def test_video_repair_action_from_candidates_promotes_motion_repair():
     ])
 
     assert action == "lower_motion_and_regenerate_video"
+
+
+def test_video_repair_action_ignores_image_stage_aesthetic_repairs():
+    action = _video_repair_action_from_candidates([
+        {
+            "average": 2.3,
+            "status": "needs_review",
+            "scene": {"scene_number": 1},
+            "video_aesthetic_gate": {
+                "low": {
+                    "skin_texture_stability": {"score": 2, "evidence": "plastic skin and AI generated gloss"},
+                    "lighting_consistency": {"score": 2, "evidence": "muddy low-budget set lighting"},
+                    "phone_readability": {"score": 2, "evidence": "cheap filter look hides face"},
+                }
+            },
+        }
+    ])
+
+    assert action is None
 
 
 def test_video_refinement_converts_motion_failure_into_repair_action(project_data, tmp_path, monkeypatch):

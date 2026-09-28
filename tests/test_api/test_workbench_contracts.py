@@ -578,6 +578,44 @@ def test_production_readiness_accepts_required_image_postprocess(setup, monkeypa
     assert not any(item["code"] == "image_postprocess_not_configured" for item in payload["blockers"])
 
 
+def test_production_readiness_reports_video_postprocess_contract(setup, monkeypatch):
+    client, _, _ = setup
+    monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_VIDEO_POSTPROCESS", True)
+    monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_WIDTH", 768)
+    monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_HEIGHT", 1344)
+    monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_VIDEO_OUTPUT_FPS", 24)
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    postprocess = payload["checks"]["video_postprocess"]
+    assert postprocess == {
+        "enabled": True,
+        "width": 768,
+        "height": 1344,
+        "fps": 24,
+        "frame_contract": "scale_pad_setsar_fps_yuv420p",
+        "codec": "libx264",
+        "crf": 18,
+        "preset": "slow",
+        "movflags": "+faststart",
+    }
+    assert not any(item["code"] == "video_postprocess_disabled" for item in payload["blockers"])
+
+
+def test_production_readiness_blocks_disabled_video_postprocess(setup, monkeypatch):
+    client, _, _ = setup
+    monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_VIDEO_POSTPROCESS", False)
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["checks"]["video_postprocess"]["enabled"] is False
+    assert any(item["code"] == "video_postprocess_disabled" for item in payload["blockers"])
+
+
 def test_production_readiness_reports_weak_story_rhythm(setup):
     client, db, _ = setup
     project = db.query(Project).filter(Project.id == 1).one()

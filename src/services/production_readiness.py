@@ -74,6 +74,7 @@ class ProductionReadinessService:
             "visual_format": self._visual_format_check(blockers),
             "draft_media_fallback": self._draft_media_fallback_check(blockers),
             "image_postprocess": self._image_postprocess_check(blockers),
+            "video_postprocess": self._video_postprocess_check(blockers),
             "characters": self._character_check(project, scenes, characters, blockers, warnings),
             "shot_complexity": self._shot_complexity_check(project, scenes, blockers, warnings),
             "spatial_continuity": self._spatial_continuity_check(project, scenes, characters, blockers, warnings),
@@ -185,6 +186,31 @@ class ProductionReadinessService:
             "configured": configured,
             "timeout_seconds": settings.GENERATION_IMAGE_POSTPROCESS_TIMEOUT_SECONDS,
             "command_sha256": hashlib.sha256(command.encode("utf-8")).hexdigest() if configured else "",
+        }
+
+    def _video_postprocess_check(self, blockers: list[ReadinessIssue]) -> dict:
+        enabled = bool(settings.GENERATION_VIDEO_POSTPROCESS)
+        width = int(settings.GENERATION_WIDTH)
+        height = int(settings.GENERATION_HEIGHT)
+        fps = int(settings.GENERATION_VIDEO_OUTPUT_FPS)
+        if not enabled:
+            blockers.append(ReadinessIssue(
+                "video_postprocess_disabled",
+                (
+                    "Enable GENERATION_VIDEO_POSTPROCESS=true so candidate clips and final composition use a "
+                    "stable short-drama frame contract before local VLM review and publishing."
+                ),
+            ))
+        return {
+            "enabled": enabled,
+            "width": width,
+            "height": height,
+            "fps": fps,
+            "frame_contract": "scale_pad_setsar_fps_yuv420p",
+            "codec": "libx264",
+            "crf": 18,
+            "preset": "slow",
+            "movflags": "+faststart",
         }
 
     def _story_rhythm_check(
