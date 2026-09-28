@@ -1651,7 +1651,14 @@ def test_final_normalized_video_review_blocks_temporal_regression(project_data, 
 
 
 def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp_path):
-    _, _, scene, _, _ = project_data
+    _, project, scene, _, _ = project_data
+    from src.services.visual_style_assets import VisualStyleAssetService
+    VisualStyleAssetService().freeze_project_style(
+        project,
+        [scene],
+        style_prompt="premium red-and-teal mobile drama look",
+        negative_prompt="random color grade",
+    )
     scene.image_prompt = "cinematic woman holding a red letter"
 
     class FakeProvider:
@@ -1690,7 +1697,9 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
 
     assert result == str(output)
     assert provider.request.prompt == "directed emotional reaction"
-    assert provider.request.negative_prompt == "identity drift"
+    assert "identity drift" in provider.request.negative_prompt
+    assert "random color grade" in provider.request.negative_prompt
+    assert "plastic skin" in provider.request.negative_prompt
     assert provider.request.reference_image.endswith("source.png")
     assert provider.request.end_image.endswith("end.png")
     assert provider.request.duration_seconds == 4.2

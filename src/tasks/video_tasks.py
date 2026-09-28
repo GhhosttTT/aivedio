@@ -48,6 +48,30 @@ def _aspect_ratio_for_size(width: int, height: int) -> str:
     return f"{width // divisor}:{height // divisor}"
 
 
+def _append_terms(text: str | None, addition: str | None) -> str:
+    parts = []
+    seen = set()
+    for value in (text, addition):
+        for term in str(value or "").split(","):
+            clean = term.strip()
+            key = clean.lower()
+            if clean and key not in seen:
+                parts.append(clean)
+                seen.add(key)
+    return ", ".join(parts)
+
+
+def _project_video_negative_prompt(scene: Scene, base_negative: str | None) -> str:
+    project_id = getattr(scene, "project_id", None)
+    if project_id is None:
+        return base_negative or ""
+    try:
+        style_negative = VisualStyleAssetService().generation_negative_for_project(project_id)
+    except Exception:
+        style_negative = ""
+    return _append_terms(base_negative, style_negative)
+
+
 class _ComfyVideoGenerator:
     def __init__(self, scene: Scene, provider=None, shot_plan: VideoShotPlan | None = None):
         self.scene = scene
@@ -78,6 +102,7 @@ class _ComfyVideoGenerator:
             if self.shot_plan
             else settings.GENERATION_QUALITY_NEGATIVE_APPEND
         )
+        negative_prompt = _project_video_negative_prompt(self.scene, negative_prompt)
         seed = abs(hash((self.scene.id, output_path, motion_bucket_id, round(noise_aug_strength, 4)))) % (2 ** 31)
         result = self.provider.generate_video(VideoGenerationRequest(
             prompt=prompt,
