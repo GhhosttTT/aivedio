@@ -40,6 +40,7 @@ from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
 from src.services.quality_loop import build_quality_loop_plan
 from src.services.repair_plan import build_repair_execution_plan
+from src.services.generation_quality_scorecard import build_generation_quality_scorecard
 from src.database.session import get_db_session
 from src.database.models import Character, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
@@ -327,6 +328,7 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
 
     repair_queue = _repair_queue_summary(reports)
     repair_plan = build_repair_execution_plan(repair_output or Path("storage/validation"), repair_queue["items"])
+    scorecard = build_generation_quality_scorecard(reports)
     if repair_queue["total"]:
         action_items.append(f"Repair queue has {repair_queue['total']} targeted actions from failed generation reports.")
 
@@ -342,6 +344,7 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         },
         "repair_queue": repair_queue,
         "repair_execution_plan": repair_plan,
+        "quality_scorecard": scorecard,
         "action_items": action_items,
     }
 
@@ -1060,10 +1063,12 @@ async def get_quality_loop_plan(
     db_session: Session = Depends(get_db_session),
 ):
     review = await get_generation_review(project_id, current_user, db_session)
+    summary = review.get("summary", {})
     return {
         "project_id": project_id,
-        "summary_status": review.get("summary", {}).get("status"),
-        "plan": build_quality_loop_plan(review.get("summary", {}), max_actions),
+        "summary_status": summary.get("status"),
+        "quality_scorecard": summary.get("quality_scorecard", {}),
+        "plan": build_quality_loop_plan(summary, max_actions),
     }
 
 

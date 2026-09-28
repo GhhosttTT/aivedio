@@ -19,6 +19,7 @@ from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.shot_complexity_service import ShotComplexityService
 from src.services.spatial_control_assets import SpatialControlAssetService
 from src.services.visual_style_assets import VisualStyleAssetService
+from src.services.generation_quality_scorecard import build_generation_quality_scorecard
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
 from src.services.quality_loop import build_quality_loop_plan
 from src.services.story_room_quality import StoryRoomQualityService
@@ -856,6 +857,7 @@ class ProductionReadinessService:
             "repair_queue": repair_queue,
         }
         loop_plan = build_quality_loop_plan(summary, max_actions=5)
+        scorecard = build_generation_quality_scorecard(reports)
         if invalid_reports:
             warnings.append(ReadinessIssue(
                 "project_generation_quality_report_invalid",
@@ -882,6 +884,7 @@ class ProductionReadinessService:
             "selected_auto_repairs": loop_plan["selected"],
             "setup_required": loop_plan["setup_required"],
             "manual_actions": loop_plan["manual_actions"],
+            "quality_scorecard": scorecard,
             "next_step": loop_plan["next_step"],
         }
 

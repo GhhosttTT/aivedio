@@ -383,6 +383,8 @@ def test_quality_loop_plan_exposes_next_repair_cycle(setup):
     assert payload["summary_status"] == "blocked"
     assert payload["plan"]["status"] == "can_auto_repair"
     assert payload["plan"]["selected"][0]["action"] == "regenerate_keyframe_with_identity_lock"
+    assert payload["quality_scorecard"]["status"] == "needs_repair"
+    assert payload["quality_scorecard"]["next_focus"]["dimension"] == "identity"
 
 
 def test_production_readiness_warns_when_project_generation_repair_queue_is_not_empty(setup):
@@ -411,6 +413,8 @@ def test_production_readiness_warns_when_project_generation_repair_queue_is_not_
     assert quality["status"] == "can_auto_repair"
     assert quality["repair_queue_total"] == 1
     assert quality["selected_auto_repairs"][0]["action"] == "regenerate_keyframe_with_identity_lock"
+    assert quality["quality_scorecard"]["status"] == "needs_repair"
+    assert quality["quality_scorecard"]["next_focus"]["dimension"] == "identity"
     assert any(item["code"] == "project_generation_repair_queue_not_empty" for item in payload["warnings"])
 
 
