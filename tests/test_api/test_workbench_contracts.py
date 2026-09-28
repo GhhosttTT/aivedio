@@ -359,6 +359,32 @@ def test_repair_queue_auto_submits_batch_repair_tasks(setup, monkeypatch):
     ]
 
 
+def test_quality_loop_plan_exposes_next_repair_cycle(setup):
+    client, db, _ = setup
+    report_root = storage_manager.get_project_path(1) / "images"
+    report_root.mkdir(parents=True, exist_ok=True)
+    (report_root / "scene_1.quality.json").write_text(json.dumps({
+        "status": "needs_review",
+        "repair_queue": [
+            {
+                "scene_number": 1,
+                "priority": "high",
+                "stage": "image",
+                "action": "regenerate_keyframe_with_identity_lock",
+                "execution": "auto",
+            }
+        ],
+    }), encoding="utf-8")
+
+    response = client.get("/api/projects/1/quality-loop/plan")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["summary_status"] == "blocked"
+    assert payload["plan"]["status"] == "can_auto_repair"
+    assert payload["plan"]["selected"][0]["action"] == "regenerate_keyframe_with_identity_lock"
+
+
 def test_production_readiness_reports_scene_and_review_gaps(setup, monkeypatch):
     client, db, _ = setup
     monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)

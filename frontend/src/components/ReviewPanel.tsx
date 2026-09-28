@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { errorText, projectApi } from '../api/client';
-import type { GenerationReviewSummary } from '../api/client';
+import type { GenerationReviewSummary, QualityLoopPlan } from '../api/client';
 import { ProjectImage } from './ProjectMedia';
 
 const names: Record<string, string> = {
@@ -47,6 +47,15 @@ const repairActionLabels: Record<string, string> = {
     split_scene: '拆分为更简单的原子镜头',
     start_local_reviewer: '启动 llama.cpp 视觉审核后重跑',
     manual_review: '人工复核',
+    regenerate_keyframe_with_identity_lock: '按立体画册锁定身份重做关键帧',
+};
+
+const loopStatusLabels: Record<string, string> = {
+    can_auto_repair: '可自动返工',
+    setup_required: '需要先补配置',
+    manual_review_required: '需要人工判断',
+    ready: '可进入成片',
+    blocked: '被阻断',
 };
 
 function labelAction(item: string) {
@@ -59,6 +68,7 @@ function labelRepairAction(action?: string) {
 
 function executableRepair(action?: string, sceneNumber?: number) {
     return Boolean(sceneNumber && action && [
+        'regenerate_keyframe_with_identity_lock',
         'regenerate_keyframe_with_prop_constraints',
         'refine_prompt_composition',
         'lower_motion_and_regenerate_video',
@@ -149,12 +159,16 @@ function SeedDanceComparison({projectId, report}: {projectId: number; report: an
 
 function ReviewSummary({
     summary,
+    qualityPlan,
     busy,
     onRepair,
+    onAutoRepair,
 }: {
     summary?: GenerationReviewSummary;
+    qualityPlan?: QualityLoopPlan;
     busy: boolean;
     onRepair: (sceneNumber: number, action: string) => void;
+    onAutoRepair: () => void;
 }) {
     if (!summary) return null;
     const reportEntries = Object.entries(summary.reports || {}).filter(([key]) => !key.startsWith('story_attempt'));
@@ -178,6 +192,23 @@ function ReviewSummary({
             <h3>下一步动作</h3>
             {summary.action_items.map((item) => <p key={item} className="wb-alert">{labelAction(item)}</p>)}
         </div> : <p className="wb-muted">关键门禁已通过，可以继续进入最终合成或人工抽检。</p>}
+        {qualityPlan && <div className="wb-summary-actions">
+            <div className="wb-row wb-between">
+                <div>
+                    <h3>质量闭环计划</h3>
+                    <p className="wb-muted">{loopStatusLabels[qualityPlan.status] || qualityPlan.status} · {qualityPlan.next_step}</p>
+                </div>
+                <button className="wb-button primary" disabled={busy || !qualityPlan.selected?.length} onClick={onAutoRepair}>
+                    <RefreshCw size={16} className={busy ? 'animate-spin' : ''}/>批量自动返工
+                </button>
+            </div>
+            {qualityPlan.selected?.slice(0, 5).map((item, index) => <div className="wb-issue warning" key={`quality-loop-${item.action}-${index}`}>
+                <span>{item.scene_number ? `分镜 ${item.scene_number}` : item.stage || '全局'}</span>
+                <p>{labelRepairAction(item.action)}：{item.recommendation || item.reason}</p>
+            </div>)}
+            {qualityPlan.setup_required?.length ? <p className="wb-alert">还有 {qualityPlan.setup_required.length} 项需要先补资产、workflow 或本地审核服务。</p> : null}
+            {qualityPlan.manual_actions?.length ? <p className="wb-alert">还有 {qualityPlan.manual_actions.length} 项需要人工复核后再选择动作。</p> : null}
+        </div>}
         {summary.repair_queue?.total ? <div className="wb-summary-actions">
             <h3>返工队列 · {summary.repair_queue.total}</h3>
             <div className="wb-grid compact">
@@ -222,14 +253,26 @@ function ReviewSummary({
 export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedAt: string}) {
     const [reports, setReports] = useState<Record<string, any>>({});
     const [summary, setSummary] = useState<GenerationReviewSummary | undefined>();
+    const [qualityPlan, setQualityPlan] = useState<QualityLoopPlan | undefined>();
     const [error, setError] = useState('');
     const [baselinePath, setBaselinePath] = useState('');
     const [baselineFile, setBaselineFile] = useState<File | null>(null);
     const [busy, setBusy] = useState(false);
 
-    const load = () => projectApi.reviews(projectId)
-        .then(data => {setReports(data.reports); setSummary(data.summary); setError('');})
-        .catch(e => setError(errorText(e)));
+    const load = async () => {
+        try {
+            const [reviewData, planData] = await Promise.all([
+                projectApi.reviews(projectId),
+                projectApi.qualityLoopPlan(projectId),
+            ]);
+            setReports(reviewData.reports);
+            setSummary(reviewData.summary);
+            setQualityPlan(planData.plan);
+            setError('');
+        } catch (e) {
+            setError(errorText(e));
+        }
+    };
 
     const compareBaseline = async () => {
         const baseline = baselinePath.trim();
@@ -267,6 +310,20 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
         }
     };
 
+    const runAutoRepair = async () => {
+        setBusy(true);
+        setError('');
+        try {
+            const result = await projectApi.runAutoRepairQueue(projectId, {max_actions: 5});
+            setError(`已提交 ${result.submitted.length} 个自动返工任务，跳过 ${result.skipped.length} 个。`);
+            await load();
+        } catch (e) {
+            setError(errorText(e));
+        } finally {
+            setBusy(false);
+        }
+    };
+
     useEffect(() => { load(); }, [projectId, updatedAt]);
 
     return <section aria-label="质量审核">
@@ -275,7 +332,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <button className="wb-icon" aria-label="刷新审核" title="刷新审核" onClick={load}><RefreshCw size={17}/></button>
         </div>
         {error && <p className="wb-alert" role="alert">{error}</p>}
-        <ReviewSummary summary={summary} busy={busy} onRepair={runRepair}/>
+        <ReviewSummary summary={summary} qualityPlan={qualityPlan} busy={busy} onRepair={runRepair} onAutoRepair={runAutoRepair}/>
         <section className="wb-panel" aria-label="Seed Dance 基线对比">
             <div className="wb-row wb-between">
                 <div>

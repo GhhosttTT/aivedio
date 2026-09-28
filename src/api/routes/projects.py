@@ -38,6 +38,7 @@ from src.services.production_readiness import ProductionReadinessService
 from src.services.spatial_control_assets import SpatialControlAssetService
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
+from src.services.quality_loop import build_quality_loop_plan
 from src.services.repair_plan import build_repair_execution_plan
 from src.database.session import get_db_session
 from src.database.models import Character, ProjectStatus, Scene
@@ -373,64 +374,6 @@ def _repair_queue_summary(reports: dict) -> dict:
         "manual_actions": [item for item in items if item.get("execution") not in {"auto", "setup_required"}][:10],
         "items": items[:20],
     }
-
-
-def _scene_number_from_repair_item(item: dict) -> Optional[int]:
-    value = item.get("scene_number")
-    if value is None:
-        return None
-    try:
-        scene_number = int(value)
-    except (TypeError, ValueError):
-        return None
-    return scene_number if scene_number > 0 else None
-
-
-def _auto_repair_candidates(repair_queue: dict, max_actions: int) -> tuple[list[dict], list[dict]]:
-    priority_rank = {"high": 0, "medium": 1, "low": 2}
-    stage_rank = {"image": 0, "keyframe": 0, "video": 1}
-    items = [
-        dict(item)
-        for item in repair_queue.get("items", [])
-        if isinstance(item, dict) and item.get("execution") == "auto"
-    ]
-    items.sort(
-        key=lambda item: (
-            priority_rank.get(item.get("priority"), 9),
-            stage_rank.get(item.get("stage"), 5),
-            item.get("source_report") or "",
-            item.get("action") or "",
-        )
-    )
-
-    selected = []
-    skipped = []
-    seen_scenes = set()
-    seen_actions = set()
-    for item in items:
-        scene_number = _scene_number_from_repair_item(item)
-        action = item.get("action")
-        item["scene_number"] = scene_number
-        if scene_number is None:
-            skipped.append({**item, "reason": "missing_scene_number"})
-            continue
-        if not action:
-            skipped.append({**item, "reason": "missing_action"})
-            continue
-        if scene_number in seen_scenes:
-            skipped.append({**item, "reason": "scene_already_selected"})
-            continue
-        key = (scene_number, action)
-        if key in seen_actions:
-            skipped.append({**item, "reason": "duplicate_action"})
-            continue
-        if len(selected) >= max_actions:
-            skipped.append({**item, "reason": "max_actions_reached"})
-            continue
-        selected.append(item)
-        seen_scenes.add(scene_number)
-        seen_actions.add(key)
-    return selected, skipped
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -1051,8 +994,9 @@ async def run_auto_repair_queue(
     db_session: Session = Depends(get_db_session),
 ):
     review = await get_generation_review(project_id, current_user, db_session)
-    repair_queue = review.get("summary", {}).get("repair_queue", {})
-    selected, skipped = _auto_repair_candidates(repair_queue, request.max_actions)
+    loop_plan = build_quality_loop_plan(review.get("summary", {}), request.max_actions)
+    selected = loop_plan["selected"]
+    skipped = loop_plan["skipped"]
     if request.dry_run:
         return RepairQueueAutoRunResponse(
             project_id=project_id,
@@ -1106,6 +1050,21 @@ async def run_auto_repair_queue(
         skipped=skipped,
         considered=selected,
     )
+
+
+@router.get("/{project_id}/quality-loop/plan")
+async def get_quality_loop_plan(
+    project_id: int,
+    max_actions: int = Query(5, ge=1, le=20, description="本轮最多规划的自动返工任务数"),
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    review = await get_generation_review(project_id, current_user, db_session)
+    return {
+        "project_id": project_id,
+        "summary_status": review.get("summary", {}).get("status"),
+        "plan": build_quality_loop_plan(review.get("summary", {}), max_actions),
+    }
 
 
 @router.get("/{project_id}/production-task")

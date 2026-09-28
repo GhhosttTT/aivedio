@@ -71,6 +71,8 @@ export const projectApi = {
     videoEnginePreflight: () => apiClient.get<any, VideoEnginePreflight>('/projects/video-engine/preflight'),
     latestTask: (id: number) => apiClient.get<any, ProductionTask | null>(`/projects/${id}/production-task`),
     reviews: (id: number) => apiClient.get<any, GenerationReviewResponse>(`/projects/${id}/generation-review`),
+    qualityLoopPlan: (id: number, maxActions = 5) => apiClient.get<any, QualityLoopPlanResponse>(`/projects/${id}/quality-loop/plan`, {params: {max_actions: maxActions}}),
+    runAutoRepairQueue: (id: number, data: {max_actions?: number; dry_run?: boolean}) => apiClient.post<any, RepairQueueAutoRunResponse>(`/projects/${id}/repair-queue/auto`, data),
     productionReadiness: (id: number, includeEnginePreflight = true) => apiClient.get<any, ProductionReadinessReport>(`/projects/${id}/production-readiness`, {params: {include_engine_preflight: includeEnginePreflight}}),
     compareSeedDanceBaseline: (id: number, data: {baseline_path: string; candidate_path?: string}) => apiClient.post(`/projects/${id}/seed-dance-baseline`, data, {timeout: 300000}),
     uploadSeedDanceBaseline: (id: number, file: File) => {
@@ -321,6 +323,41 @@ export interface RepairExecutionPlanItem {
     recommendation?: string;
     rerun_strategy?: string;
     parameter_hints?: Record<string, string | number | boolean>;
+}
+
+export interface QualityLoopPlan {
+    status: 'can_auto_repair' | 'setup_required' | 'manual_review_required' | 'ready' | 'blocked' | string;
+    selected: Array<GenerationRepairQueueItem>;
+    skipped: Array<GenerationRepairQueueItem & {reason?: string}>;
+    setup_required: Array<GenerationRepairQueueItem>;
+    manual_actions: Array<GenerationRepairQueueItem>;
+    next_step: string;
+}
+
+export interface QualityLoopPlanResponse {
+    project_id: number;
+    summary_status?: string;
+    plan: QualityLoopPlan;
+}
+
+export interface RepairQueueAutoRunResponse {
+    project_id: number;
+    status: string;
+    dry_run: boolean;
+    submitted: Array<GenerationRepairQueueItem & {task_id?: string; status?: string}>;
+    skipped: Array<GenerationRepairQueueItem & {reason?: string}>;
+    considered: Array<GenerationRepairQueueItem>;
+}
+
+export interface GenerationRepairQueueItem {
+    priority?: string;
+    stage?: string;
+    action?: string;
+    reason?: string;
+    recommendation?: string;
+    source_report?: string;
+    scene_number?: number;
+    candidate_index?: number;
 }
 
 export interface GenerationReviewResponse {
