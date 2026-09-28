@@ -906,7 +906,7 @@ English identity anchor:"""
             logger.info(f"LLM 生成完成，输出长度: {len(new_scene_text)} 字符")
             
             # 解析新分镜
-            new_scene_data = self._parse_scene_fields(new_scene_text)
+            new_scene_data = self._parse_regenerated_scene_fields(new_scene_text)
             
             # 更新数据库
             scene.visual_description = new_description or new_scene_data.get("description") or scene.visual_description
@@ -937,6 +937,24 @@ English identity anchor:"""
         finally:
             from src.services.llm_service import cleanup_llm_service
             cleanup_llm_service()
+
+    def _parse_regenerated_scene_fields(self, scene_content: str) -> Dict:
+        labels = {
+            "场景描述": "description",
+            "对话": "dialogue",
+            "说话人": "speaker",
+            "情感": "emotion",
+            "图像提示词": "image_prompt",
+        }
+        scene_data = {}
+        for label, key in labels.items():
+            match = re.search(r"-\s*" + label + r"[：:]([^\n\r]*)", scene_content)
+            if match:
+                scene_data[key] = match.group(1)
+        for key in ("dialogue", "speaker"):
+            if scene_data.get(key, "").strip() in {"无", "无对白", "None", "none"}:
+                scene_data[key] = None
+        return scene_data
     
     def _build_regenerate_prompt(
         self,

@@ -159,10 +159,6 @@ class TestVideoComposerProperties:
         output_path = os.path.join(self.temp_dir, "output.mp4")
         self._touch_files(video_paths)
         
-        # 找到最高分辨率
-        max_width = max(w for w, h in resolutions)
-        max_height = max(h for w, h in resolutions)
-        
         # Mock FFmpeg 执行
         with patch('subprocess.run') as mock_run:
             mock_run.return_value = Mock(returncode=0)
@@ -175,10 +171,18 @@ class TestVideoComposerProperties:
                 assume(False)
                 return
         
-        # 验证 FFmpeg 命令包含分辨率统一的参数
-        # 注意：这里我们验证的是行为，而不是实际的视频文件
-        # 在实际实现中，VideoComposer 应该使用 scale 滤镜统一分辨率
-        assert True  # 占位符，实际应该验证 FFmpeg 命令
+        cmd = mock_run.call_args[0][0]
+        assert "-filter_complex" in cmd
+        filter_complex = cmd[cmd.index("-filter_complex") + 1]
+        assert "scale=768:1344:force_original_aspect_ratio=decrease" in filter_complex
+        assert "pad=768:1344:(ow-iw)/2:(oh-ih)/2" in filter_complex
+        assert "setsar=1" in filter_complex
+        assert "fps=24" in filter_complex
+        assert "format=yuv420p" in filter_complex
+        assert "-c:v" in cmd
+        assert cmd[cmd.index("-c:v") + 1] == "libx264"
+        assert "-pix_fmt" in cmd
+        assert cmd[cmd.index("-pix_fmt") + 1] == "yuv420p"
     
     @given(
         num_videos=st.integers(min_value=2, max_value=10)

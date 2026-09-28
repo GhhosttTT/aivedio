@@ -68,6 +68,39 @@ class TestVideoComposer:
         
         assert result == str(output_path)
         mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert "-filter_complex" in cmd
+        filter_complex = cmd[cmd.index("-filter_complex") + 1]
+        assert "scale=768:1344:force_original_aspect_ratio=decrease" in filter_complex
+        assert "pad=768:1344:(ow-iw)/2:(oh-ih)/2" in filter_complex
+        assert "fps=24" in filter_complex
+        assert "format=yuv420p" in filter_complex
+        assert "concat=n=2:v=1:a=0" in filter_complex
+        assert "-c:v" in cmd
+        assert cmd[cmd.index("-c:v") + 1] == "libx264"
+        assert "-movflags" in cmd
+        assert cmd[cmd.index("-movflags") + 1] == "+faststart"
+
+    def test_concat_videos_single_file_with_output_normalizes(self, service, tmp_path):
+        """测试：单个视频有输出路径时也归一化为生产格式"""
+        video_file = tmp_path / "video.mp4"
+        video_file.write_text("fake video")
+        output_path = tmp_path / "output.mp4"
+
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            result = service.concat_videos([str(video_file)], str(output_path))
+
+        assert result == str(output_path)
+        cmd = mock_run.call_args[0][0]
+        assert "-vf" in cmd
+        vf = cmd[cmd.index("-vf") + 1]
+        assert "scale=768:1344:force_original_aspect_ratio=decrease" in vf
+        assert "pad=768:1344:(ow-iw)/2:(oh-ih)/2" in vf
+        assert "fps=24" in vf
+        assert "format=yuv420p" in vf
+        assert "-an" in cmd
     
     def test_sync_audio_video_video_not_exists(self, service):
         """测试：视频文件不存在时抛出异常"""

@@ -9,6 +9,7 @@ import subprocess
 from typing import List, Optional, Tuple
 from pathlib import Path
 
+from src.config import settings
 from src.utils.logger import logger
 
 
@@ -47,7 +48,7 @@ class VideoComposer:
         if not video_files:
             raise ValueError("视频文件列表不能为空")
         
-        if len(video_files) == 1:
+        if len(video_files) == 1 and not output_path:
             logger.info("只有一个视频文件，无需拼接")
             return video_files[0]
         
@@ -65,24 +66,10 @@ class VideoComposer:
                 output_dir.mkdir(parents=True, exist_ok=True)
                 output_path = str(output_dir / "concatenated.mp4")
             
-            # 创建文件列表
-            concat_list_path = Path(output_path).parent / "concat_list.txt"
-            with open(concat_list_path, "w", encoding="utf-8") as f:
-                for video_file in video_files:
-                    # 使用绝对路径
-                    abs_path = os.path.abspath(video_file)
-                    f.write(f"file '{abs_path}'\n")
-            
-            # 使用 FFmpeg concat demuxer 拼接视频
-            cmd = [
-                "ffmpeg",
-                "-f", "concat",
-                "-safe", "0",
-                "-i", str(concat_list_path),
-                "-c", "copy",  # 直接复制流，不重新编码
-                "-y",
-                output_path
-            ]
+            if len(video_files) == 1:
+                cmd = self._build_single_video_normalize_cmd(video_files[0], output_path)
+            else:
+                cmd = self._build_video_concat_cmd(video_files, output_path)
             
             logger.debug(f"FFmpeg 命令: {' '.join(cmd)}")
             
@@ -92,9 +79,6 @@ class VideoComposer:
                 text=True,
                 check=True
             )
-            
-            # 清理临时文件
-            concat_list_path.unlink()
             
             logger.info(f"视频拼接成功: {output_path}")
             
@@ -398,6 +382,61 @@ class VideoComposer:
         except Exception as e:
             logger.warning(f"获取文件时长失败: {e}")
             return 0.0
+
+    def _build_single_video_normalize_cmd(self, video_path: str, output_path: str) -> list[str]:
+        return [
+            "ffmpeg",
+            "-i", os.path.abspath(video_path),
+            "-vf", self._production_video_filter(),
+            *self._production_video_encode_args(),
+            "-y",
+            output_path,
+        ]
+
+    def _build_video_concat_cmd(self, video_files: List[str], output_path: str) -> list[str]:
+        inputs: list[str] = []
+        filter_parts: list[str] = []
+        labels: list[str] = []
+
+        for index, video_file in enumerate(video_files):
+            inputs.extend(["-i", os.path.abspath(video_file)])
+            label = f"v{index}"
+            labels.append(f"[{label}]")
+            filter_parts.append(f"[{index}:v]{self._production_video_filter()}[{label}]")
+
+        filter_parts.append("".join(labels) + f"concat=n={len(video_files)}:v=1:a=0[vout]")
+
+        return [
+            "ffmpeg",
+            *inputs,
+            "-filter_complex", ";".join(filter_parts),
+            "-map", "[vout]",
+            *self._production_video_encode_args(),
+            "-y",
+            output_path,
+        ]
+
+    def _production_video_filter(self) -> str:
+        width = int(settings.GENERATION_WIDTH)
+        height = int(settings.GENERATION_HEIGHT)
+        fps = int(settings.GENERATION_VIDEO_OUTPUT_FPS)
+        return (
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+            "setsar=1,"
+            f"fps={fps},"
+            "format=yuv420p"
+        )
+
+    def _production_video_encode_args(self) -> list[str]:
+        return [
+            "-c:v", "libx264",
+            "-preset", "slow",
+            "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            "-an",
+        ]
     
     def _concat_audio(
         self,
