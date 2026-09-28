@@ -3,7 +3,84 @@ import pytest
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
 
 
+def write_production_workflows(tmp_path):
+    image = tmp_path / "image_workflow.json"
+    reference = tmp_path / "reference_workflow.json"
+    video = tmp_path / "video_workflow.json"
+    image.write_text(
+        """
+        {
+          "1": {"class_type": "KSampler"},
+          "2": {"class_type": "ControlNetApply"},
+          "3": {"class_type": "OpenPosePreprocessor"},
+          "4": {"class_type": "ZoeDepthPreprocessor"},
+          "5": {"class_type": "FaceDetailer"},
+          "6": {"class_type": "ImageUpscaleWithModel"},
+          "7": {"class_type": "SaveImage"}
+        }
+        """,
+        encoding="utf-8",
+    )
+    reference.write_text(
+        """
+        {
+          "1": {"class_type": "IPAdapterFaceID"},
+          "2": {"class_type": "SaveImage"}
+        }
+        """,
+        encoding="utf-8",
+    )
+    video.write_text(
+        """
+        {
+          "1": {"class_type": "LoadImage"},
+          "2": {"class_type": "LoadImage"},
+          "3": {"class_type": "SVD_img2vid_Conditioning"},
+          "4": {"class_type": "VHS_VideoCombine"}
+        }
+        """,
+        encoding="utf-8",
+    )
+    return image, reference, video
+
+
 def test_workflow_profile_freezes_required_workflow_hashes(tmp_path, monkeypatch):
+    image, reference, video = write_production_workflows(tmp_path)
+    profile = tmp_path / "profile.json"
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
+
+    service = ProductionWorkflowProfileService()
+    manifest = service.freeze_profile(profile_path=str(profile), notes="approved local profile")
+
+    assert manifest["status"] == "approved"
+    assert set(manifest["required_workflows"]) == {"image", "reference", "video"}
+    assert manifest["capabilities"]["character_identity"] is True
+    assert manifest["capabilities"]["pose_control"] is True
+    assert manifest["capabilities"]["depth_control"] is True
+    assert manifest["capability_evidence"]["face_repair"]["matched_nodes"] == ["FaceDetailer"]
+    assert service.validate_profile(profile_path=str(profile))["status"] == "valid"
+
+    video.write_text('{"1":{"class_type":"DifferentVideoNode"}}', encoding="utf-8")
+    stale = service.validate_profile(profile_path=str(profile))
+    assert stale["status"] == "blocked"
+    assert "video_workflow_hash" in stale["stale"]
+
+
+def test_workflow_profile_requires_quality_capabilities(tmp_path, monkeypatch):
+    image, reference, video = write_production_workflows(tmp_path)
+    profile = tmp_path / "profile.json"
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
+
+    service = ProductionWorkflowProfileService()
+    with pytest.raises(ValueError, match="face_repair"):
+        service.freeze_profile(profile_path=str(profile), capabilities={"face_repair": False})
+
+
+def test_workflow_profile_rejects_workflows_without_capability_evidence(tmp_path, monkeypatch):
     image = tmp_path / "image_workflow.json"
     reference = tmp_path / "reference_workflow.json"
     video = tmp_path / "video_workflow.json"
@@ -16,39 +93,15 @@ def test_workflow_profile_freezes_required_workflow_hashes(tmp_path, monkeypatch
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
 
     service = ProductionWorkflowProfileService()
-    manifest = service.freeze_profile(profile_path=str(profile), notes="approved local profile")
 
-    assert manifest["status"] == "approved"
-    assert set(manifest["required_workflows"]) == {"image", "reference", "video"}
-    assert manifest["capabilities"]["character_identity"] is True
-    assert service.validate_profile(profile_path=str(profile))["status"] == "valid"
+    with pytest.raises(ValueError, match="workflow capabilities are missing") as exc:
+        service.freeze_profile(profile_path=str(profile))
 
-    video.write_text('{"1":{"class_type":"DifferentVideoNode"}}', encoding="utf-8")
-    stale = service.validate_profile(profile_path=str(profile))
-    assert stale["status"] == "blocked"
-    assert "video_workflow_hash" in stale["stale"]
-
-
-def test_workflow_profile_requires_quality_capabilities(tmp_path, monkeypatch):
-    image = tmp_path / "image_workflow.json"
-    reference = tmp_path / "reference_workflow.json"
-    video = tmp_path / "video_workflow.json"
-    profile = tmp_path / "profile.json"
-    image.write_text("{}", encoding="utf-8")
-    reference.write_text("{}", encoding="utf-8")
-    video.write_text("{}", encoding="utf-8")
-    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
-    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
-    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
-
-    service = ProductionWorkflowProfileService()
-    service.freeze_profile(profile_path=str(profile), capabilities={"face_repair": False})
-
-    report = service.validate_profile(profile_path=str(profile))
-
-    assert report["status"] == "blocked"
-    assert "required_capabilities" in report["missing"]
-    assert "face_repair" in report["missing_capabilities"]
+    message = str(exc.value)
+    assert "face_repair" in message
+    assert "upscale" in message
+    assert "pose_control" in message
+    assert "depth_control" in message
 
 
 def test_workflow_profile_requires_reference_workflow_for_turnaround_assets(tmp_path, monkeypatch):
@@ -71,13 +124,8 @@ def test_workflow_profile_requires_reference_workflow_for_turnaround_assets(tmp_
 
 
 def test_workflow_profile_tracks_postprocess_command(tmp_path, monkeypatch):
-    image = tmp_path / "image_workflow.json"
-    reference = tmp_path / "reference_workflow.json"
-    video = tmp_path / "video_workflow.json"
+    image, reference, video = write_production_workflows(tmp_path)
     profile = tmp_path / "profile.json"
-    image.write_text("{}", encoding="utf-8")
-    reference.write_text("{}", encoding="utf-8")
-    video.write_text("{}", encoding="utf-8")
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
@@ -100,13 +148,8 @@ def test_workflow_profile_tracks_postprocess_command(tmp_path, monkeypatch):
 
 
 def test_workflow_profile_tracks_turnaround_feature_gate(tmp_path, monkeypatch):
-    image = tmp_path / "image_workflow.json"
-    reference = tmp_path / "reference_workflow.json"
-    video = tmp_path / "video_workflow.json"
+    image, reference, video = write_production_workflows(tmp_path)
     profile = tmp_path / "profile.json"
-    image.write_text("{}", encoding="utf-8")
-    reference.write_text("{}", encoding="utf-8")
-    video.write_text("{}", encoding="utf-8")
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
@@ -124,13 +167,8 @@ def test_workflow_profile_tracks_turnaround_feature_gate(tmp_path, monkeypatch):
 
 
 def test_workflow_profile_tracks_image_aesthetic_feature_gate(tmp_path, monkeypatch):
-    image = tmp_path / "image_workflow.json"
-    reference = tmp_path / "reference_workflow.json"
-    video = tmp_path / "video_workflow.json"
+    image, reference, video = write_production_workflows(tmp_path)
     profile = tmp_path / "profile.json"
-    image.write_text("{}", encoding="utf-8")
-    reference.write_text("{}", encoding="utf-8")
-    video.write_text("{}", encoding="utf-8")
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
@@ -148,13 +186,8 @@ def test_workflow_profile_tracks_image_aesthetic_feature_gate(tmp_path, monkeypa
 
 
 def test_workflow_profile_tracks_video_aesthetic_feature_gate(tmp_path, monkeypatch):
-    image = tmp_path / "image_workflow.json"
-    reference = tmp_path / "reference_workflow.json"
-    video = tmp_path / "video_workflow.json"
+    image, reference, video = write_production_workflows(tmp_path)
     profile = tmp_path / "profile.json"
-    image.write_text("{}", encoding="utf-8")
-    reference.write_text("{}", encoding="utf-8")
-    video.write_text("{}", encoding="utf-8")
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
@@ -172,13 +205,8 @@ def test_workflow_profile_tracks_video_aesthetic_feature_gate(tmp_path, monkeypa
 
 
 def test_workflow_profile_tracks_generation_quality_budget(tmp_path, monkeypatch):
-    image = tmp_path / "image_workflow.json"
-    reference = tmp_path / "reference_workflow.json"
-    video = tmp_path / "video_workflow.json"
+    image, reference, video = write_production_workflows(tmp_path)
     profile = tmp_path / "profile.json"
-    image.write_text("{}", encoding="utf-8")
-    reference.write_text("{}", encoding="utf-8")
-    video.write_text("{}", encoding="utf-8")
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
@@ -213,13 +241,8 @@ def test_workflow_profile_tracks_generation_quality_budget(tmp_path, monkeypatch
 
 
 def test_workflow_profile_rejects_low_generation_quality_budget(tmp_path, monkeypatch):
-    image = tmp_path / "image_workflow.json"
-    reference = tmp_path / "reference_workflow.json"
-    video = tmp_path / "video_workflow.json"
+    image, reference, video = write_production_workflows(tmp_path)
     profile = tmp_path / "profile.json"
-    image.write_text("{}", encoding="utf-8")
-    reference.write_text("{}", encoding="utf-8")
-    video.write_text("{}", encoding="utf-8")
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
@@ -238,13 +261,8 @@ def test_workflow_profile_rejects_low_generation_quality_budget(tmp_path, monkey
 
 
 def test_workflow_profile_blocks_existing_low_quality_budget(tmp_path, monkeypatch):
-    image = tmp_path / "image_workflow.json"
-    reference = tmp_path / "reference_workflow.json"
-    video = tmp_path / "video_workflow.json"
+    image, reference, video = write_production_workflows(tmp_path)
     profile = tmp_path / "profile.json"
-    image.write_text("{}", encoding="utf-8")
-    reference.write_text("{}", encoding="utf-8")
-    video.write_text("{}", encoding="utf-8")
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))

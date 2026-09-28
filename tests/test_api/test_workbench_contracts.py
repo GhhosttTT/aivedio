@@ -259,9 +259,19 @@ def test_workflow_profile_freeze_clears_readiness_workflow_profile_blocker(setup
     reference = path / "reference_workflow.json"
     video = path / "video_workflow.json"
     profile = path / "production_workflow_profile.json"
-    image.write_text('{"1":{"class_type":"KSampler"}}', encoding="utf-8")
-    reference.write_text('{"1":{"class_type":"IPAdapterFaceID"}}', encoding="utf-8")
-    video.write_text('{"1":{"class_type":"VHS_VideoCombine"}}', encoding="utf-8")
+    image.write_text(
+        '{"1":{"class_type":"KSampler"},"2":{"class_type":"ControlNetApply"},'
+        '"3":{"class_type":"OpenPosePreprocessor"},"4":{"class_type":"ZoeDepthPreprocessor"},'
+        '"5":{"class_type":"FaceDetailer"},"6":{"class_type":"ImageUpscaleWithModel"},'
+        '"7":{"class_type":"SaveImage"}}',
+        encoding="utf-8",
+    )
+    reference.write_text('{"1":{"class_type":"IPAdapterFaceID"},"2":{"class_type":"SaveImage"}}', encoding="utf-8")
+    video.write_text(
+        '{"1":{"class_type":"LoadImage"},"2":{"class_type":"LoadImage"},'
+        '"3":{"class_type":"SVD_img2vid_Conditioning"},"4":{"class_type":"VHS_VideoCombine"}}',
+        encoding="utf-8",
+    )
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))

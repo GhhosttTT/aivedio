@@ -30,6 +30,17 @@ MIN_QUALITY_BUDGET = {
     "steps": 40,
 }
 APPROVED_QUALITY_PROFILES = {"hongguo_reference", "seed_dance_reference", "ultra", "high_quality"}
+CAPABILITY_KEYWORDS = {
+    "character_identity": ("ipadapter", "faceid", "instantid"),
+    "spatial_control": ("controlnet", "depth", "openpose", "dwpose", "pose", "seg", "mask"),
+    "pose_control": ("openpose", "dwpose", "pose"),
+    "depth_control": ("depth", "zoe", "midas"),
+    "motion_control": ("svd", "animatediff", "video", "motion", "ltx", "wan"),
+    "face_repair": ("facedetailer", "face detailer", "gfpgan", "codeformer", "facerestore"),
+    "upscale": ("upscale", "ultrascale", "supir", "esrgan"),
+    "candidate_review": ("saveimage", "save_image", "savevideo", "video combine", "vhs_videocombine"),
+}
+VIDEO_OUTPUT_KEYWORDS = ("vhs_videocombine", "savevideo", "createvideo", "video combine")
 
 
 class ProductionWorkflowProfileService:
@@ -52,7 +63,14 @@ class ProductionWorkflowProfileService:
         budget_issues = self._quality_budget_issues(self._current_quality_gates())
         if budget_issues:
             raise ValueError("generation quality budget is below production minimum: " + ", ".join(budget_issues))
-        caps = {name: bool((capabilities or {}).get(name, True)) for name in REQUIRED_CAPABILITIES}
+        detected_capabilities = self._detect_workflow_capabilities(workflow_paths)
+        caps = {
+            name: bool((detected_capabilities.get(name) or {}).get("present")) and bool((capabilities or {}).get(name, True))
+            for name in REQUIRED_CAPABILITIES
+        }
+        missing_capabilities = sorted(name for name in REQUIRED_CAPABILITIES if not caps.get(name))
+        if missing_capabilities:
+            raise ValueError("workflow capabilities are missing: " + ", ".join(missing_capabilities))
         manifest = {
             "version": 1,
             "status": "approved",
@@ -67,6 +85,7 @@ class ProductionWorkflowProfileService:
             "required_capabilities": sorted(REQUIRED_CAPABILITIES),
             "required_workflows": sorted(REQUIRED_WORKFLOWS),
             "capabilities": caps,
+            "capability_evidence": detected_capabilities,
             "quality_gates": {
                 "image_min_score": settings.GENERATION_IMAGE_MIN_SCORE,
                 "image_identity_min_score": settings.GENERATION_IMAGE_IDENTITY_MIN_SCORE,
@@ -123,9 +142,18 @@ class ProductionWorkflowProfileService:
         if profile.get("status") != "approved":
             missing.append("approved_status")
         capabilities = profile.get("capabilities") if isinstance(profile.get("capabilities"), dict) else {}
+        capability_evidence = profile.get("capability_evidence") if isinstance(profile.get("capability_evidence"), dict) else {}
         missing_capabilities = sorted(name for name in REQUIRED_CAPABILITIES if not capabilities.get(name))
         if missing_capabilities:
             missing.append("required_capabilities")
+        current_workflow_capabilities = self._detect_workflow_capabilities(self._current_workflow_paths())
+        for name in REQUIRED_CAPABILITIES:
+            if not (current_workflow_capabilities.get(name) or {}).get("present"):
+                if name not in missing_capabilities:
+                    missing_capabilities.append(name)
+                missing.append("required_workflow_capability_evidence")
+            elif capability_evidence.get(name) != current_workflow_capabilities.get(name):
+                stale.append(f"capability_evidence_{name}")
         workflow_paths = profile.get("workflow_paths") if isinstance(profile.get("workflow_paths"), dict) else {}
         workflow_hashes = profile.get("workflow_hashes") if isinstance(profile.get("workflow_hashes"), dict) else {}
         quality_gates = profile.get("quality_gates") if isinstance(profile.get("quality_gates"), dict) else {}
@@ -242,3 +270,80 @@ class ProductionWorkflowProfileService:
         if quality_gates.get("video_end_frame_enabled") is not True:
             issues.append("video_end_frame_disabled")
         return issues
+
+    def _detect_workflow_capabilities(self, workflow_paths: dict[str, str]) -> dict[str, dict]:
+        class_names = []
+        class_names_by_workflow = {}
+        load_image_counts = {}
+        for workflow_name, workflow_path in workflow_paths.items():
+            classes = self._workflow_class_names(workflow_path)
+            class_names_by_workflow[workflow_name] = classes
+            class_names.extend(classes)
+            load_image_counts[workflow_name] = sum(1 for class_name in classes if class_name.lower() == "loadimage")
+        lower_classes = [class_name.lower() for class_name in class_names]
+        evidence = {
+            capability: self._capability_match(capability, lower_classes, class_names)
+            for capability in REQUIRED_CAPABILITIES
+        }
+        video_classes = [class_name.lower() for class_name in class_names_by_workflow.get("video", [])]
+        has_video_output = any(any(keyword in class_name for keyword in VIDEO_OUTPUT_KEYWORDS) for class_name in video_classes)
+        first_last_ok = bool(
+            has_video_output
+            and settings.GENERATION_VIDEO_END_FRAME_ENABLED
+            and load_image_counts.get("video", 0) >= 2
+        )
+        evidence["first_last_frame_video"] = {
+            "present": first_last_ok,
+            "matched_nodes": [
+                class_name for class_name in class_names_by_workflow.get("video", [])
+                if class_name.lower() == "loadimage" or any(keyword in class_name.lower() for keyword in VIDEO_OUTPUT_KEYWORDS)
+            ],
+            "requirement": "video workflow must load first and last frame images and emit video",
+        }
+        command = settings.GENERATION_IMAGE_POSTPROCESS_COMMAND.lower()
+        if settings.GENERATION_REQUIRE_IMAGE_POSTPROCESS and command:
+            if any(term in command for term in ("face", "gfpgan", "codeformer")):
+                evidence["face_repair"] = {
+                    "present": True,
+                    "matched_nodes": ["GENERATION_IMAGE_POSTPROCESS_COMMAND"],
+                    "requirement": "face repair can be provided by a required postprocess command",
+                }
+            if any(term in command for term in ("upscale", "supir", "esrgan", "vsr")):
+                evidence["upscale"] = {
+                    "present": True,
+                    "matched_nodes": ["GENERATION_IMAGE_POSTPROCESS_COMMAND"],
+                    "requirement": "upscale can be provided by a required postprocess command",
+                }
+        return evidence
+
+    def _workflow_class_names(self, workflow_path: str) -> list[str]:
+        if not workflow_path:
+            return []
+        path = Path(workflow_path)
+        if not path.is_file():
+            return []
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        nodes = data.get("nodes") if isinstance(data, dict) and isinstance(data.get("nodes"), dict) else data
+        if not isinstance(nodes, dict):
+            return []
+        classes = []
+        for node in nodes.values():
+            if isinstance(node, dict) and node.get("class_type"):
+                classes.append(str(node["class_type"]))
+        return classes
+
+    def _capability_match(self, capability: str, lower_classes: list[str], class_names: list[str]) -> dict:
+        keywords = CAPABILITY_KEYWORDS.get(capability, ())
+        matched = [
+            class_names[index]
+            for index, class_name in enumerate(lower_classes)
+            if any(keyword in class_name for keyword in keywords)
+        ]
+        return {
+            "present": bool(matched),
+            "matched_nodes": sorted(set(matched)),
+            "requirement": " or ".join(keywords),
+        }
