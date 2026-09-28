@@ -517,6 +517,11 @@ IMAGE_REPAIR_PARAMETER_PROFILES = {
         "cfg_delta": -0.3,
         "reason": "composition_aesthetic_repair",
     },
+    "refine_face_aesthetic_detail": {
+        "steps_boost": 12,
+        "cfg_delta": -0.35,
+        "reason": "face_aesthetic_detail_repair",
+    },
     "regenerate_keyframe_with_prop_constraints": {
         "steps_boost": 6,
         "cfg_delta": 0.2,
@@ -595,6 +600,11 @@ IMAGE_REPAIR_PROMPTS = {
         "repair pass: improve short-drama framing, balanced composition, clean crop, readable face, "
         "cinematic lighting, clear foreground-background separation, polished commercial still"
     ),
+    "refine_face_aesthetic_detail": (
+        "repair pass: premium short-drama face rendering, natural skin texture with subtle pores, "
+        "believable facial micro-contrast, clean catchlights, attractive but realistic features, "
+        "high-end commercial beauty lighting without waxy smoothing"
+    ),
     "regenerate_keyframe_with_prop_constraints": (
         "repair pass: preserve important props, readable hands, natural fingers, clear hand-object contact, "
         "stable prop color and position, no disappearing objects"
@@ -609,6 +619,10 @@ IMAGE_REPAIR_NEGATIVES = {
     "refine_prompt_composition": (
         "bad crop, cropped face, awkward framing, flat lighting, muddy lighting, cluttered composition, "
         "unclear subject, low production value"
+    ),
+    "refine_face_aesthetic_detail": (
+        "plastic skin, waxy face, over-smoothed face, airbrushed skin, AI generated gloss, "
+        "wax museum face, fake pores, distorted face repair, cheap beauty filter, over-beautified influencer skin"
     ),
     "regenerate_keyframe_with_prop_constraints": (
         "broken fingers, fused fingers, missing fingers, deformed hands, disappearing prop, changed prop, "

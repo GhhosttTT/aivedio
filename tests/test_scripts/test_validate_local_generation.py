@@ -344,7 +344,7 @@ def test_review_images_builds_repair_queue_for_failed_keyframes(tmp_path, monkey
     report = validator.review_images(tmp_path)
 
     assert report["status"] == "needs_review"
-    assert report["repair_queue"][0]["action"] == "refine_prompt_composition"
+    assert report["repair_queue"][0]["action"] == "refine_face_aesthetic_detail"
     assert report["repair_queue"][0]["scene_number"] == 7
 
 

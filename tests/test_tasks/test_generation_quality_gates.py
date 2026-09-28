@@ -2140,6 +2140,25 @@ def test_image_composition_repair_adds_commercial_framing_constraints():
     assert "low production value" in negative
 
 
+def test_image_face_aesthetic_repair_adds_natural_skin_constraints():
+    prompt, negative = _apply_image_repair_action(
+        "short drama close-up",
+        "blurry",
+        "refine_face_aesthetic_detail",
+    )
+
+    assert "natural skin texture with subtle pores" in prompt
+    assert "clean catchlights" in prompt
+    assert "plastic skin" in negative
+    assert "AI generated gloss" in negative
+    assert "cheap beauty filter" in negative
+    profile = _repair_parameter_profile("refine_face_aesthetic_detail")
+    assert profile["reason"] == "face_aesthetic_detail_repair"
+    steps, cfg = _quality_parameters(1, 0, 40, 6.0, "refine_face_aesthetic_detail")
+    assert steps > 40
+    assert cfg < 6.0
+
+
 def test_image_identity_lock_repair_adds_character_sheet_constraints():
     prompt, negative = _apply_image_repair_action(
         "short drama close-up",

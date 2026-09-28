@@ -60,3 +60,20 @@ def test_quality_loop_reports_ready_after_clean_summary():
 
     assert plan["status"] == "ready"
     assert plan["selected"] == []
+
+
+def test_quality_loop_selects_face_aesthetic_detail_repair():
+    plan = build_quality_loop_plan({
+        "repair_queue": {
+            "items": [{
+                "scene_number": 3,
+                "priority": "high",
+                "stage": "image",
+                "action": "refine_face_aesthetic_detail",
+                "execution": "auto",
+            }]
+        }
+    }, max_actions=5)
+
+    assert plan["status"] == "can_auto_repair"
+    assert plan["selected"][0]["action"] == "refine_face_aesthetic_detail"

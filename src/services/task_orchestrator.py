@@ -166,6 +166,7 @@ class TaskOrchestrator:
             "regenerate_keyframe_with_identity_lock",
             "regenerate_keyframe_with_prop_constraints",
             "refine_prompt_composition",
+            "refine_face_aesthetic_detail",
         }
         video_actions = {"lower_motion_and_regenerate_video"}
         blocked_actions = {

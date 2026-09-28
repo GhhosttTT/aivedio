@@ -105,7 +105,7 @@ def test_repair_queue_reads_nested_platform_aesthetic_gates():
     image_queue = build_repair_queue({"status": "needs_review", "candidates": [report["candidates"][0]]}, "image")
     video_queue = build_repair_queue({"status": "needs_review", "candidates": [report["candidates"][1]]}, "video")
 
-    assert image_queue[0]["action"] == "refine_prompt_composition"
+    assert image_queue[0]["action"] == "refine_face_aesthetic_detail"
     assert image_queue[0]["execution"] == "auto"
     assert video_queue[0]["action"] == "lower_motion_and_regenerate_video"
     assert video_queue[0]["execution"] == "auto"
@@ -128,9 +128,30 @@ def test_repair_queue_maps_seed_dance_profile_defects_to_aesthetic_repair():
 
     queue = build_repair_queue(report, "image")
 
-    assert queue[0]["action"] == "refine_prompt_composition"
+    assert queue[0]["action"] == "refine_face_aesthetic_detail"
     assert queue[0]["execution"] == "auto"
     assert queue[0]["scene_number"] == 5
+
+
+def test_repair_queue_routes_face_repair_scars_to_workflow_setup():
+    queue = build_repair_queue({
+        "status": "needs_review",
+        "candidates": [{
+            "index": 1,
+            "scene": {"scene_number": 4},
+            "platform_aesthetic_gate": {
+                "status": "needs_review",
+                "low": {
+                    "skin_texture": {"score": 2, "evidence": "plastic skin after face repair"},
+                    "repair_artifacts_absent": {"score": 2, "evidence": "visible face repair scar"},
+                },
+            },
+        }],
+    }, "image")
+
+    assert queue[0]["action"] == "fix_workflow_profile"
+    assert queue[0]["execution"] == "setup_required"
+    assert queue[0]["scene_number"] == 4
 
 
 def test_repair_queue_reads_scene_number_from_candidate_scene_payload():

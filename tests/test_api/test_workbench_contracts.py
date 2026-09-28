@@ -175,7 +175,8 @@ def test_repair_scene_keyframe_creates_targeted_task(setup, monkeypatch):
     client, db, _ = setup
     chain = Mock()
     chain.freeze.return_value.id = "repair-task-id"
-    monkeypatch.setattr("src.services.task_orchestrator.generate_image_task.si", Mock(return_value=chain))
+    generate = Mock(return_value=chain)
+    monkeypatch.setattr("src.services.task_orchestrator.generate_image_task.si", generate)
     monkeypatch.setattr(
         "src.services.task_orchestrator.ProductionWorkflowProfileService",
         lambda: Mock(validate_profile=Mock(return_value={"status": "valid"})),
@@ -183,11 +184,12 @@ def test_repair_scene_keyframe_creates_targeted_task(setup, monkeypatch):
 
     response = client.post(
         "/api/projects/1/repair-scene",
-        json={"scene_number": 1, "action": "refine_prompt_composition"},
+        json={"scene_number": 1, "action": "refine_face_aesthetic_detail"},
     )
 
     assert response.status_code == 200, response.text
     assert response.json()["task_id"] == "repair-task-id"
+    assert generate.call_args.kwargs["repair_action"] == "refine_face_aesthetic_detail"
     scene = db.query(Scene).filter(Scene.project_id == 1, Scene.scene_number == 1).one()
     assert scene.image_path is None and scene.video_path is None
     chain.apply_async.assert_called_once()
@@ -276,7 +278,7 @@ def test_repair_queue_auto_dry_run_prioritizes_image_and_dedupes_scene(setup):
             {
                 "priority": "high",
                 "stage": "image",
-                "action": "refine_prompt_composition",
+                "action": "refine_face_aesthetic_detail",
                 "execution": "auto",
             },
         ],
@@ -318,7 +320,7 @@ def test_repair_queue_auto_submits_batch_repair_tasks(setup, monkeypatch):
                 "scene_number": 2,
                 "priority": "medium",
                 "stage": "image",
-                "action": "refine_prompt_composition",
+                "action": "refine_face_aesthetic_detail",
                 "execution": "auto",
             },
         ],
@@ -351,11 +353,11 @@ def test_repair_queue_auto_submits_batch_repair_tasks(setup, monkeypatch):
     assert payload["status"] == "submitted"
     assert [item["task_id"] for item in payload["submitted"]] == [
         "repair-1-regenerate_keyframe_with_identity_lock",
-        "repair-2-refine_prompt_composition",
+        "repair-2-refine_face_aesthetic_detail",
     ]
     assert submitted == [
         (1, "regenerate_keyframe_with_identity_lock"),
-        (2, "refine_prompt_composition"),
+        (2, "refine_face_aesthetic_detail"),
     ]
 
 

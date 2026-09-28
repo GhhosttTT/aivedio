@@ -28,6 +28,16 @@ ACTION_RULES = [
         "character",
     ),
     (
+        (
+            "plastic skin", "skin_texture", "skin texture", "ai generated gloss", "ai gloss",
+            "wax museum face", "waxy face", "airbrushed skin", "over-smoothed face",
+            "over-beautified", "face rendering", "unnatural pores", "fake skin",
+        ),
+        "refine_face_aesthetic_detail",
+        "Regenerate the keyframe with stricter natural face texture, pore detail, and premium short-drama beauty constraints.",
+        "image",
+    ),
+    (
         ("spatial", "position", "left/right", "screen direction", "camera axis", "blocking", "stage map", "relative position"),
         "refreeze_spatial_plan",
         "Review and freeze the spatial plan before regenerating the affected shots.",
@@ -170,6 +180,17 @@ def _gate_evidence(gate: dict[str, Any], gate_name: str) -> list[str]:
 
 def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]) -> dict[str, Any] | None:
     text = evidence.lower()
+    if any(term in text for term in ("after face repair", "face repair scar", "distorted face repair")):
+        return {
+            "priority": _priority(text),
+            "stage": "workflow",
+            "action": "fix_workflow_profile",
+            "execution": _execution_mode("fix_workflow_profile"),
+            "reason": evidence[:240],
+            "recommendation": "Fix the local face/detail/upscale workflow or postprocess command before rerunning generation.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
     if media_type == "video" and any(
         term in text
         for term in ("changed face", "changed hair", "changed wardrobe", "identity drift", "face drift")
@@ -204,6 +225,7 @@ def _execution_mode(action: str) -> str:
         "regenerate_keyframe_with_identity_lock",
         "regenerate_keyframe_with_prop_constraints",
         "refine_prompt_composition",
+        "refine_face_aesthetic_detail",
         "lower_motion_and_regenerate_video",
     }:
         return "auto"
