@@ -24,6 +24,7 @@ from src.services.video_engine_preflight import (
 from src.services.generation_review import GenerationReviewService, platform_video_score, write_report
 from src.services.shot_prompt_service import ShotPromptService
 from src.services.repair_queue import attach_repair_queue
+from src.services.repair_plan import build_repair_execution_plan
 from scripts.compare_video_baseline import compare as compare_video_baseline
 
 
@@ -732,84 +733,6 @@ def _acceptance_action_items(summary: dict, manual_section: dict, repair_queue: 
     return unique
 
 
-def _repair_execution_plan(output: Path, repair_queue: list[dict]) -> dict:
-    """Build actionable rerun guidance from unresolved repair actions."""
-    plan = {
-        "auto": [],
-        "setup_required": [],
-        "manual": [],
-        "rerun_validation_commands": [],
-    }
-    command_set = set()
-    for item in repair_queue:
-        if not isinstance(item, dict):
-            continue
-        action = item.get("action")
-        execution = item.get("execution") or "manual"
-        entry = {
-            "action": action,
-            "stage": item.get("stage"),
-            "scene_number": item.get("scene_number"),
-            "reason": item.get("reason"),
-            "recommendation": item.get("recommendation"),
-        }
-        if action == "refine_prompt_composition":
-            entry["rerun_strategy"] = (
-                "Rerun keyframe generation with composition repair constraints, then run review-images again."
-            )
-            entry["parameter_hints"] = {
-                "repair_action": "refine_prompt_composition",
-                "quality_mode": "ultra",
-                "optimization_mode": "quality",
-                "increase_image_candidates": True,
-            }
-            commands = [
-                f"python -m scripts.validate_local_generation render-images --output {output} --quality-mode ultra --optimization-mode quality",
-                f"python -m scripts.validate_local_generation review-images --output {output}",
-                f"python -m scripts.validate_local_generation summarize --output {output}",
-            ]
-        elif action == "regenerate_keyframe_with_prop_constraints":
-            entry["rerun_strategy"] = (
-                "Regenerate affected keyframes with hand and prop constraints before video generation."
-            )
-            entry["parameter_hints"] = {
-                "repair_action": "regenerate_keyframe_with_prop_constraints",
-                "lock_props": True,
-                "increase_image_candidates": True,
-            }
-            commands = [
-                f"python -m scripts.validate_local_generation render-images --output {output} --quality-mode ultra --optimization-mode quality",
-                f"python -m scripts.validate_local_generation review-images --output {output}",
-                f"python -m scripts.validate_local_generation summarize --output {output}",
-            ]
-        elif action == "lower_motion_and_regenerate_video":
-            entry["rerun_strategy"] = (
-                "Regenerate the affected clip with lower motion/noise, then rerun VLM video review and baseline comparison."
-            )
-            entry["parameter_hints"] = {
-                "repair_action": "lower_motion_and_regenerate_video",
-                "lower_motion_bucket_id": True,
-                "lower_noise_aug_strength": True,
-                "increase_video_refinement_passes": True,
-            }
-            commands = [
-                f"python -m scripts.validate_local_generation review-video --output {output} --video <regenerated_clip.mp4> --description \"<scene description>\"",
-                f"python -m scripts.validate_local_generation compare-baseline --output {output} --candidate <regenerated_clip.mp4> --baseline <seed_dance_reference.mp4>",
-                f"python -m scripts.validate_local_generation summarize --output {output}",
-            ]
-        else:
-            entry["rerun_strategy"] = item.get("recommendation") or "Resolve this repair action and rerun summarize."
-            commands = [f"python -m scripts.validate_local_generation summarize --output {output}"]
-
-        bucket = execution if execution in plan else "manual"
-        plan[bucket].append(entry)
-        for command in commands:
-            if command not in command_set:
-                plan["rerun_validation_commands"].append(command)
-                command_set.add(command)
-    return plan
-
-
 def _markdown_bool(value) -> str:
     return "PASS" if value else "FAIL"
 
@@ -940,7 +863,7 @@ def build_acceptance_package(output: Path) -> dict:
         "seed_dance_baseline": baseline_report if isinstance(baseline_report, dict) else None,
         "calibration_recommendations": summary.get("calibration_recommendations", []),
         "repair_queue": repair_queue,
-        "repair_execution_plan": _repair_execution_plan(output, repair_queue),
+        "repair_execution_plan": build_repair_execution_plan(output, repair_queue),
         "human_review_checklist": [
             "Confirm every rendered case image matches the intended character, wardrobe, scene, and camera angle.",
             "Reject same-face characters, face drift, broken hands, unreadable expressions, bad crops, and random text/watermarks.",

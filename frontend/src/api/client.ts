@@ -304,7 +304,23 @@ export interface GenerationReviewSummary {
             candidate_index?: number;
         }>;
     };
+    repair_execution_plan?: {
+        auto?: Array<RepairExecutionPlanItem>;
+        setup_required?: Array<RepairExecutionPlanItem>;
+        manual?: Array<RepairExecutionPlanItem>;
+        rerun_validation_commands?: string[];
+    };
     action_items: string[];
+}
+
+export interface RepairExecutionPlanItem {
+    action?: string;
+    stage?: string;
+    scene_number?: number;
+    reason?: string;
+    recommendation?: string;
+    rerun_strategy?: string;
+    parameter_hints?: Record<string, string | number | boolean>;
 }
 
 export interface GenerationReviewResponse {

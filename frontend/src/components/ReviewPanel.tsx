@@ -65,6 +65,17 @@ function executableRepair(action?: string, sceneNumber?: number) {
     ].includes(action));
 }
 
+function repairPlanCount(summary: GenerationReviewSummary) {
+    const plan = summary.repair_execution_plan;
+    return (plan?.auto?.length || 0) + (plan?.setup_required?.length || 0) + (plan?.manual?.length || 0);
+}
+
+function planLabel(bucket: string) {
+    if (bucket === 'auto') return '可自动返修';
+    if (bucket === 'setup_required') return '需要先配置';
+    return '人工确认';
+}
+
 function reportTitle(key: string) {
     if (key.startsWith('scene_')) return `分镜 ${key.replace('scene_', '')} 抽帧审核`;
     return names[key] || key;
@@ -148,6 +159,8 @@ function ReviewSummary({
     if (!summary) return null;
     const reportEntries = Object.entries(summary.reports || {}).filter(([key]) => !key.startsWith('story_attempt'));
     const isReady = summary.status === 'ready';
+    const repairPlan = summary.repair_execution_plan;
+    const plannedActions = repairPlanCount(summary);
     return <section className={`wb-panel wb-review-summary ${isReady ? 'ready' : 'blocked'}`} aria-label="审核摘要">
         <div className="wb-row wb-between">
             <div className="wb-row">
@@ -178,6 +191,24 @@ function ReviewSummary({
                 <p>{item.scene_number ? `分镜 ${item.scene_number} · ` : ''}{labelRepairAction(item.action)}：{item.recommendation || item.reason}</p>
                 {executableRepair(item.action, item.scene_number) && <button className="wb-button" disabled={busy} onClick={() => onRepair(Number(item.scene_number), String(item.action))}>执行</button>}
             </div>)}
+        </div> : null}
+        {plannedActions ? <div className="wb-summary-actions">
+            <h3>返修重跑计划 · {plannedActions}</h3>
+            {(['auto', 'setup_required', 'manual'] as const).map(bucket => {
+                const items = repairPlan?.[bucket] || [];
+                if (!items.length) return null;
+                return <div key={bucket}>
+                    <p className="wb-muted">{planLabel(bucket)}</p>
+                    {items.slice(0, 4).map((item, index) => <div className="wb-issue warning" key={`${bucket}-${item.action}-${index}`}>
+                        <span>{item.scene_number ? `分镜 ${item.scene_number}` : item.stage || '全局'}</span>
+                        <p>{labelRepairAction(item.action)}：{item.rerun_strategy || item.recommendation || item.reason}</p>
+                    </div>)}
+                </div>;
+            })}
+            {repairPlan?.rerun_validation_commands?.length ? <div>
+                <p className="wb-muted">复验命令</p>
+                {repairPlan.rerun_validation_commands.slice(0, 5).map(command => <div className="wb-code" key={command}>{command}</div>)}
+            </div> : null}
         </div> : null}
         {reportEntries.length > 0 && <div className="wb-grid compact" aria-label="报告状态">
             {reportEntries.map(([key, statusValue]) => <div className="wb-kv" key={key}>

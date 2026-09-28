@@ -67,6 +67,10 @@ def test_review_api_summarizes_repair_queue_from_quality_reports(tmp_path, monke
     assert result["summary"]["repair_queue"]["total"] == 1
     assert result["summary"]["repair_queue"]["actions"] == {"refine_prompt_composition": 1}
     assert result["summary"]["repair_queue"]["items"][0]["source_report"].startswith("quality_images_scene_1")
+    plan = result["summary"]["repair_execution_plan"]
+    assert plan["manual"][0]["action"] == "refine_prompt_composition"
+    assert any("review-images" in command for command in plan["rerun_validation_commands"])
+    assert any(str(project_root / "reviews") in command for command in plan["rerun_validation_commands"])
     assert any("Repair queue has 1" in item for item in result["summary"]["action_items"])
 
 
@@ -104,6 +108,9 @@ def test_generation_review_summary_includes_repair_queue():
     assert summary["repair_queue"]["execution"]["setup_required"] == 1
     assert summary["repair_queue"]["auto_actions"][0]["action"] == "lower_motion_and_regenerate_video"
     assert summary["repair_queue"]["setup_required"][0]["action"] == "fix_workflow_profile"
+    assert summary["repair_execution_plan"]["auto"][0]["action"] == "lower_motion_and_regenerate_video"
+    assert summary["repair_execution_plan"]["setup_required"][0]["action"] == "fix_workflow_profile"
+    assert any("compare-baseline" in command for command in summary["repair_execution_plan"]["rerun_validation_commands"])
 
 
 def test_generation_review_summary_ready_when_reviews_pass():

@@ -36,6 +36,7 @@ from src.services.production_readiness import ProductionReadinessService
 from src.services.spatial_control_assets import SpatialControlAssetService
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
+from src.services.repair_plan import build_repair_execution_plan
 from src.database.session import get_db_session
 from src.database.models import Character, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
@@ -202,7 +203,7 @@ async def get_generation_review(
                     report["status"] = "stale"
             except (OSError, TypeError, ValueError):
                 report["status"] = "stale"
-    summary = _generation_review_summary(reports)
+    summary = _generation_review_summary(reports, repair_output=root)
     return {"project_id": project_id, "reports": reports, "summary": summary}
 
 
@@ -292,7 +293,7 @@ async def freeze_visual_style(
     )
 
 
-def _generation_review_summary(reports: dict) -> dict:
+def _generation_review_summary(reports: dict, repair_output: Path | None = None) -> dict:
     action_items = []
     statuses = {name: report.get("status") for name, report in reports.items() if isinstance(report, dict)}
     stale = sorted(name for name, status_value in statuses.items() if status_value == "stale")
@@ -319,6 +320,7 @@ def _generation_review_summary(reports: dict) -> dict:
         action_items.append("Run Seed Dance baseline comparison before claiming replacement quality.")
 
     repair_queue = _repair_queue_summary(reports)
+    repair_plan = build_repair_execution_plan(repair_output or Path("storage/validation"), repair_queue["items"])
     if repair_queue["total"]:
         action_items.append(f"Repair queue has {repair_queue['total']} targeted actions from failed generation reports.")
 
@@ -333,6 +335,7 @@ def _generation_review_summary(reports: dict) -> dict:
             "warn": warn,
         },
         "repair_queue": repair_queue,
+        "repair_execution_plan": repair_plan,
         "action_items": action_items,
     }
 
