@@ -139,10 +139,13 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
         "sharpness_not_collapsed": candidate_stats.sharpness >= max(8.0, baseline_stats.sharpness * 0.45),
         "brightness_stable": candidate_stats.brightness_variance <= max(900.0, baseline_stats.brightness_variance * 3.0),
     }
-    status = "passed" if all(gates.values()) else "needs_review"
+    score = _technical_similarity_score(differences, gates)
+    status = "passed" if all(gates.values()) and score >= 4.0 else "needs_review"
     return {
         "kind": "seed_dance_baseline_comparison",
         "status": status,
+        "score": score,
+        "min_score": 4.0,
         "candidate": asdict(candidate_stats),
         "baseline": asdict(baseline_stats),
         "differences": differences,
@@ -215,6 +218,31 @@ def _safe_ratio(value: float, baseline: float) -> float | None:
     if not math.isfinite(baseline) or abs(baseline) < 1e-6:
         return None
     return round(value / baseline, 3)
+
+
+def _ratio_score(value: float | None, ideal: float = 1.0, tolerance: float = 0.55) -> float:
+    if value is None or not math.isfinite(value):
+        return 2.5
+    distance = abs(value - ideal)
+    return max(0.0, min(5.0, 5.0 * (1.0 - distance / max(tolerance, 1e-6))))
+
+
+def _delta_score(value: float, tolerance: float) -> float:
+    return max(0.0, min(5.0, 5.0 * (1.0 - abs(value) / max(tolerance, 1e-6))))
+
+
+def _technical_similarity_score(differences: dict, gates: dict[str, bool]) -> float:
+    gate_score = 5.0 * (sum(1 for passed in gates.values() if passed) / max(len(gates), 1))
+    component_scores = [
+        _delta_score(float(differences["duration_delta_seconds"]), 1.0),
+        _delta_score(float(differences["fps_delta"]), 8.0),
+        _ratio_score(differences.get("motion_energy_ratio"), tolerance=0.75),
+        _ratio_score(differences.get("sharpness_ratio"), tolerance=0.75),
+        _delta_score(float(differences["brightness_delta"]), 60.0),
+        _ratio_score(differences.get("brightness_variance_ratio"), tolerance=2.0),
+    ]
+    metric_score = sum(component_scores) / len(component_scores)
+    return round(max(0.0, min(5.0, gate_score * 0.45 + metric_score * 0.55)), 2)
 
 
 def main() -> int:

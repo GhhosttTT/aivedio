@@ -36,8 +36,22 @@ def test_compare_video_baseline_reports_measurable_gates(tmp_path):
 
     assert report["kind"] == "seed_dance_baseline_comparison"
     assert report["status"] == "passed"
+    assert report["score"] >= report["min_score"]
     assert report["candidate"]["sampled_frames"] >= 4
     assert report["gates"]["duration_close"] is True
     assert report["gates"]["motion_not_static"] is True
     assert Path(report["contact_sheet_path"]).is_file()
     assert Path(report["contact_sheet_path"]).name == "seed_dance_contact_sheet.png"
+
+
+def test_compare_video_baseline_blocks_static_candidate(tmp_path):
+    baseline = tmp_path / "seed_dance.mp4"
+    candidate = tmp_path / "candidate_static.mp4"
+    _write_test_video(baseline, moving=True)
+    _write_test_video(candidate, moving=False)
+
+    report = compare(candidate, baseline, max_samples=6, artifact_dir=tmp_path)
+
+    assert report["status"] == "needs_review"
+    assert report["score"] < report["min_score"]
+    assert report["gates"]["motion_not_static"] is False
