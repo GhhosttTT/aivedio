@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.config import settings
+from src.services.generation_quality_policy import image_quality_budget, video_quality_budget
 
 
 REQUIRED_CAPABILITIES = {
@@ -86,42 +87,7 @@ class ProductionWorkflowProfileService:
             "required_workflows": sorted(REQUIRED_WORKFLOWS),
             "capabilities": caps,
             "capability_evidence": detected_capabilities,
-            "quality_gates": {
-                "image_min_score": settings.GENERATION_IMAGE_MIN_SCORE,
-                "image_identity_min_score": settings.GENERATION_IMAGE_IDENTITY_MIN_SCORE,
-                "image_platform_min_score": settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE,
-                "image_aesthetic_feature_min_score": settings.GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE,
-                "turnaround_feature_min_score": settings.GENERATION_TURNAROUND_FEATURE_MIN_SCORE,
-                "video_min_score": settings.GENERATION_VIDEO_MIN_SCORE,
-                "video_identity_min_score": settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE,
-                "video_temporal_min_score": settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE,
-                "video_platform_min_score": settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE,
-                "video_aesthetic_feature_min_score": settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE,
-                "image_review_required": settings.GENERATION_REQUIRE_IMAGE_REVIEW,
-                "video_review_required": settings.GENERATION_REQUIRE_VIDEO_REVIEW,
-                "image_postprocess_required": settings.GENERATION_REQUIRE_IMAGE_POSTPROCESS,
-                "image_postprocess_command_hash": self._text_hash(settings.GENERATION_IMAGE_POSTPROCESS_COMMAND)
-                if settings.GENERATION_IMAGE_POSTPROCESS_COMMAND else "",
-                "quality_profile": settings.GENERATION_QUALITY_PROFILE,
-                "image_candidates": settings.GENERATION_IMAGE_CANDIDATES,
-                "image_refinement_passes": settings.GENERATION_IMAGE_REFINEMENT_PASSES,
-                "max_image_candidates": settings.GENERATION_MAX_IMAGE_CANDIDATES,
-                "repair_image_candidate_multiplier": settings.GENERATION_REPAIR_IMAGE_CANDIDATE_MULTIPLIER,
-                "repair_extra_refinement_passes": settings.GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES,
-                "video_candidates": settings.GENERATION_VIDEO_CANDIDATES,
-                "video_refinement_passes": settings.GENERATION_VIDEO_REFINEMENT_PASSES,
-                "max_video_candidates": settings.GENERATION_MAX_VIDEO_CANDIDATES,
-                "repair_video_candidate_multiplier": settings.GENERATION_REPAIR_VIDEO_CANDIDATE_MULTIPLIER,
-                "video_end_frame_enabled": settings.GENERATION_VIDEO_END_FRAME_ENABLED,
-                "video_target_seconds": settings.GENERATION_VIDEO_TARGET_SECONDS,
-                "video_max_frames": settings.GENERATION_VIDEO_MAX_FRAMES,
-                "video_model_fps": settings.GENERATION_VIDEO_MODEL_FPS,
-                "video_output_fps": settings.GENERATION_VIDEO_OUTPUT_FPS,
-                "width": settings.GENERATION_WIDTH,
-                "height": settings.GENERATION_HEIGHT,
-                "steps": settings.GENERATION_STEPS,
-                "cfg": settings.GENERATION_CFG,
-            },
+            "quality_gates": self._current_quality_gates(),
             "notes": notes,
         }
         profile_file.parent.mkdir(parents=True, exist_ok=True)
@@ -232,6 +198,8 @@ class ProductionWorkflowProfileService:
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
     def _current_quality_gates(self) -> dict:
+        image_budget = image_quality_budget()
+        video_budget = video_quality_budget()
         return {
             "image_min_score": settings.GENERATION_IMAGE_MIN_SCORE,
             "image_identity_min_score": settings.GENERATION_IMAGE_IDENTITY_MIN_SCORE,
@@ -258,6 +226,10 @@ class ProductionWorkflowProfileService:
             "video_refinement_passes": settings.GENERATION_VIDEO_REFINEMENT_PASSES,
             "max_video_candidates": settings.GENERATION_MAX_VIDEO_CANDIDATES,
             "repair_video_candidate_multiplier": settings.GENERATION_REPAIR_VIDEO_CANDIDATE_MULTIPLIER,
+            "effective_image_candidates": image_budget.candidate_count,
+            "effective_image_refinement_passes": image_budget.refinement_passes,
+            "effective_video_candidates": video_budget.candidate_count,
+            "effective_video_refinement_passes": video_budget.refinement_passes,
             "video_end_frame_enabled": settings.GENERATION_VIDEO_END_FRAME_ENABLED,
             "video_target_seconds": settings.GENERATION_VIDEO_TARGET_SECONDS,
             "video_max_frames": settings.GENERATION_VIDEO_MAX_FRAMES,

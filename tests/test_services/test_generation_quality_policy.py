@@ -2,6 +2,7 @@ from src.services.generation_quality_policy import image_quality_budget, video_q
 
 
 def test_repair_image_budget_increases_candidates_and_refinement(monkeypatch):
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_CANDIDATES", 4)
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 1)
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_MAX_IMAGE_CANDIDATES", 8)
@@ -16,6 +17,7 @@ def test_repair_image_budget_increases_candidates_and_refinement(monkeypatch):
 
 
 def test_video_budget_respects_max_candidate_cap(monkeypatch):
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_VIDEO_CANDIDATES", 6)
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 2)
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_MAX_VIDEO_CANDIDATES", 8)
@@ -30,6 +32,7 @@ def test_video_budget_respects_max_candidate_cap(monkeypatch):
 
 
 def test_base_generation_budget_keeps_configured_values(monkeypatch):
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_CANDIDATES", 5)
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 2)
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_MAX_IMAGE_CANDIDATES", 12)
@@ -39,3 +42,30 @@ def test_base_generation_budget_keeps_configured_values(monkeypatch):
     assert budget.candidate_count == 5
     assert budget.refinement_passes == 2
     assert budget.reason == "base_generation_budget"
+
+
+def test_seed_dance_profile_expands_generation_budget(monkeypatch):
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "seed_dance_reference")
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_CANDIDATES", 5)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 2)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_MAX_IMAGE_CANDIDATES", 12)
+
+    budget = image_quality_budget()
+
+    assert budget.candidate_count == 10
+    assert budget.refinement_passes == 4
+    assert budget.profile == "seed_dance_reference"
+    assert budget.reason == "profile_generation_budget"
+
+
+def test_seed_dance_video_budget_uses_candidate_cap(monkeypatch):
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "seed_dance_reference")
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_VIDEO_CANDIDATES", 4)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 2)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_MAX_VIDEO_CANDIDATES", 8)
+
+    budget = video_quality_budget()
+
+    assert budget.candidate_count == 8
+    assert budget.refinement_passes == 4
+    assert budget.profile == "seed_dance_reference"

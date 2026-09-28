@@ -161,7 +161,7 @@ class Settings(BaseSettings):
     # AI 生成短剧质量配置
     GENERATION_PROVIDER: str = "local_comfyui"
     GENERATION_PRIMARY_PROVIDER: str = "jimeng_api"
-    GENERATION_QUALITY_PROFILE: str = "hongguo_reference"
+    GENERATION_QUALITY_PROFILE: str = "seed_dance_reference"
     COMFYUI_DEFAULT_WORKFLOW_TYPE: str = "juggernaut"
     JIMENG_ENDPOINT: str = ""
     JIMENG_API_KEY: str = ""

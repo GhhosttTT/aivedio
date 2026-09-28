@@ -53,6 +53,7 @@
 
 ```dotenv
 GENERATION_PROVIDER=local_comfyui
+GENERATION_QUALITY_PROFILE=seed_dance_reference
 COMFYUI_DEFAULT_WORKFLOW_TYPE=juggernaut
 COMFYUI_REFERENCE_WORKFLOW_PATH=./configs/comfyui_workflow_ipadapter_sdxl.json
 COMFYUI_VIDEO_WORKFLOW_PATH=
@@ -86,7 +87,7 @@ LOCAL_REVIEW_MODEL=local-vlm
 LOCAL_REVIEW_TIMEOUT=300
 ```
 
-这是质量优先的起步参数，会明显增加每个镜头耗时，不是 12GB 显存占用保证。显存或排队时间扛不住时，优先把候选数降到 3，再降分辨率。当前 SVD 后端仍以横屏输入为主；竖屏视频和复杂运动需要单独验收。
+这是质量优先的起步参数，会明显增加每个镜头耗时，不是 12GB 显存占用保证。`GENERATION_QUALITY_PROFILE=seed_dance_reference` 会把图片有效候选数从 5 放大到最多 10、视频有效候选数从 4 放大到最多 8，并额外增加精修轮次。显存或排队时间扛不住时，优先把质量档位降到 `hongguo_reference`，再把候选数降到 3，最后再降分辨率。当前 SVD 后端仍以横屏输入为主；竖屏视频和复杂运动需要单独验收。
 文本模型可沿用已可运行的 GGUF。显存紧张时先降低文本模型 GPU 层数或使用较小量化模型，避免与图像模型同时驻留。
 `llama-cpp-python` 已从过旧的固定版本调整为 `>=0.3.16,<0.4`，目标机器需安装与驱动匹配的 CUDA 构建，不能只确认 Python 包安装成功。
 
@@ -122,7 +123,8 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
   -> 保存 .quality.json 和 .generation.json
 ```
 
-`GENERATION_IMAGE_CANDIDATES` 是每轮候选数量。质量优先建议从 5 开始；3060 12GB 扛不住时降到 3。超过 8 目前会被代码限制，避免单镜头排队过久。
+`GENERATION_QUALITY_PROFILE` 控制时间换质量的预算档位。`seed_dance_reference` 会在 `GENERATION_IMAGE_CANDIDATES` 和 `GENERATION_VIDEO_CANDIDATES` 的基础上放大候选数并增加精修轮次；`hongguo_reference` 保持配置值，适合先跑通流程或显存紧张时使用。
+`GENERATION_IMAGE_CANDIDATES` 是每轮候选起点。质量优先建议从 5 开始；在 `seed_dance_reference` 下有效图片候选数会放大到 10，但仍受 `GENERATION_MAX_IMAGE_CANDIDATES` 限制。3060 12GB 扛不住时降到 3。
 `GENERATION_IMAGE_REFINEMENT_PASSES` 是额外精修轮数。设为 2 表示最多生成三轮候选；第一轮已经有 VLM 高分图时会提前停止。
 `GENERATION_IMAGE_MIN_SCORE` 是晋级门槛。建议先用 4.0，人工校准后再提高。
 `GENERATION_IMAGE_PLATFORM_MIN_SCORE` 是图片短剧平台观感门槛，会对商业美观、构图、画面完整性、脸部身份和整体身份加权；平均分够但塑料感、廉价滤镜、脏光或平台观感差的候选不会晋级。
@@ -137,7 +139,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 
 这个机制提升的是命中率和可追溯性，仍依赖底层模型、checkpoint、LoRA、Control/IPAdapter 节点质量。低质模型生成 20 张也可能只能选出较差的一张；候选择优不能替代更强模型或人工定妆。
 
-视频阶段同样支持候选择优。`GENERATION_VIDEO_CANDIDATES` 会让同一关键帧串行生成多个视频候选，并轻微扰动运动强度和噪声增强参数；每个候选都会保存独立的 `.review.json` 抽帧审核报告，最终视频旁边保存 `.quality.json` 候选排序。若第一轮候选都低于门槛，`GENERATION_VIDEO_REFINEMENT_PASSES` 会追加稳定性优先的精修轮，自动降低运动强度和噪声，优先压制身份漂移、闪烁和动作断裂。最终生产必须设置 `GENERATION_REQUIRE_VIDEO_REVIEW=true`，避免 llama.cpp 视觉模型离线时把未审核视频当成高质量结果；生产就绪检查会阻断 false。
+视频阶段同样支持候选择优。`GENERATION_VIDEO_CANDIDATES` 会让同一关键帧串行生成多个视频候选，并轻微扰动运动强度和噪声增强参数；在 `seed_dance_reference` 下有效视频候选数会放大到 8，但仍受 `GENERATION_MAX_VIDEO_CANDIDATES` 限制。每个候选都会保存独立的 `.review.json` 抽帧审核报告，最终视频旁边保存 `.quality.json` 候选排序。若第一轮候选都低于门槛，`GENERATION_VIDEO_REFINEMENT_PASSES` 会追加稳定性优先的精修轮，自动降低运动强度和噪声，优先压制身份漂移、闪烁和动作断裂。最终生产必须设置 `GENERATION_REQUIRE_VIDEO_REVIEW=true`，避免 llama.cpp 视觉模型离线时把未审核视频当成高质量结果；生产就绪检查会阻断 false。
 
 视频候选选择除了平均分，还会单独检查身份和时间稳定性。`GENERATION_VIDEO_IDENTITY_MIN_SCORE=4.0` 要求 `facial_identity` 和 `identity_consistency` 都达到 4 分；`GENERATION_VIDEO_TEMPORAL_MIN_SCORE=4.0` 要求 `temporal_consistency` 达到 4 分。若一个候选平均分更高但脸漂或同脸，它会排在身份稳定候选之后；若正式审核开启且所有候选身份/时间门槛都失败，任务会进入失败并写入返修队列。
 视频还会计算 `GENERATION_VIDEO_PLATFORM_MIN_SCORE`，把剧情匹配、构图、商业美观、画面完整性、脸部身份、整体身份和时间连续性合成短剧平台分。这个分数用于拦截“技术上可用但不像红果/短剧平台成片”的候选，例如塑料皮肤、廉价滤镜、脏光、随机文字/水印、修复痕迹或手机屏幕上表情不可读。

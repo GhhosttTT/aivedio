@@ -236,6 +236,10 @@ def test_workflow_profile_tracks_generation_quality_budget(tmp_path, monkeypatch
     assert manifest["quality_gates"]["video_refinement_passes"] == 2
     assert manifest["quality_gates"]["max_video_candidates"] == 8
     assert manifest["quality_gates"]["repair_video_candidate_multiplier"] == 1.5
+    assert manifest["quality_gates"]["effective_image_candidates"] == 5
+    assert manifest["quality_gates"]["effective_image_refinement_passes"] == 2
+    assert manifest["quality_gates"]["effective_video_candidates"] == 4
+    assert manifest["quality_gates"]["effective_video_refinement_passes"] == 2
     assert manifest["quality_gates"]["video_end_frame_enabled"] is True
 
     monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_IMAGE_CANDIDATES", 1)

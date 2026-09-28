@@ -23,6 +23,11 @@ def passed_video_aesthetic_scores(score: int = 5) -> dict:
     }
 
 
+@pytest.fixture(autouse=True)
+def stable_quality_profile(monkeypatch):
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
+
+
 @pytest.fixture
 def project_data(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
