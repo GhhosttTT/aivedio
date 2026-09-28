@@ -1806,7 +1806,11 @@ def test_image_candidate_report_records_reference_contract(tmp_path, monkeypatch
     class FakeProvider:
         name = GenerationProviderName.LOCAL_COMFYUI
 
+        def __init__(self):
+            self.requests = []
+
         def generate_image(self, request):
+            self.requests.append(request)
             Image.new("RGB", (request.width, request.height), (120, 120, 120)).save(request.output_path)
             return GenerationResult("local_comfyui", request.output_path, "image", {"workflow": {"steps": request.steps}})
 
@@ -1860,13 +1864,15 @@ def test_image_candidate_report_records_reference_contract(tmp_path, monkeypatch
         }],
         "platform_aesthetic_contract": {
             "prompt": "Platform aesthetic contract: premium mobile short-drama finish",
+            "negative_prompt": "AI generated gloss, plastic skin",
             "image_features": ["skin_texture", "phone_readability"],
             "video_features": ["motion_smoothness"],
             "review_instruction": "score platform polish",
         },
     }
 
-    _, report = _generate_quality_candidates(FakeProvider(), request, scene_payload, reference)
+    provider = FakeProvider()
+    _, report = _generate_quality_candidates(provider, request, scene_payload, reference)
 
     candidate = report["candidates"][0]
     assert candidate["request"]["reference_image"] == reference
@@ -1874,7 +1880,10 @@ def test_image_candidate_report_records_reference_contract(tmp_path, monkeypatch
     assert candidate["request"]["character_sheet_references"][0]["view"] == "side"
     assert candidate["request"]["identity_contrast_matrix"] == {}
     assert candidate["request"]["platform_aesthetic_contract"]["image_features"] == ["skin_texture", "phone_readability"]
+    assert "Platform aesthetic contract: premium mobile short-drama finish" in scene_payload["review_prompt"]
     assert "Character sheet contract" in scene_payload["review_prompt"]
+    assert "AI generated gloss" in provider.requests[0].negative_prompt
+    assert "plastic skin" in provider.requests[0].negative_prompt
     assert candidate["scene"]["visible_characters"][0]["turnaround_reference"]["view"] == "side"
     assert candidate["scene"]["platform_aesthetic_contract"]["review_instruction"] == "score platform polish"
     assert candidate["scene"]["visible_characters"][0]["turnaround_reference"]["expected_features"]["nose_silhouette"] == "straight nose bridge"

@@ -574,6 +574,18 @@ def _append_terms(text: str | None, addition: str | None) -> str:
     return ", ".join(parts)
 
 
+def _append_sentence_once(text: str | None, addition: str | None) -> str:
+    base = str(text or "").strip()
+    addition = str(addition or "").strip()
+    if not addition:
+        return base
+    if addition.lower() in base.lower():
+        return base
+    if not base:
+        return addition
+    return base.rstrip(" .") + ". " + addition.strip(" .") + "."
+
+
 IMAGE_REPAIR_PROMPTS = {
     "regenerate_keyframe_with_identity_lock": (
         "repair pass: lock the approved character-sheet identity, preserve exact face geometry, hair shape, "
@@ -735,11 +747,18 @@ def _generate_quality_candidates(
         pass_reports = []
         feedback = _review_feedback(reports) if pass_index else ""
         base_prompt = request.prompt
+        platform_contract = scene_payload.get("platform_aesthetic_contract")
+        platform_prompt = ""
+        platform_negative = ""
+        if isinstance(platform_contract, dict):
+            platform_prompt = str(platform_contract.get("prompt") or "")
+            platform_negative = str(platform_contract.get("negative_prompt") or "")
+        base_prompt = _append_sentence_once(base_prompt, platform_prompt)
         sheet_contract = str(scene_payload.get("character_sheet_contract") or "").strip()
-        if sheet_contract and sheet_contract not in base_prompt:
-            base_prompt = f"{base_prompt}. {sheet_contract}."
+        base_prompt = _append_sentence_once(base_prompt, sheet_contract)
         prompt = _append_terms(base_prompt, settings.GENERATION_QUALITY_PROMPT_APPEND)
-        negative_prompt = _append_terms(request.negative_prompt, settings.GENERATION_QUALITY_NEGATIVE_APPEND)
+        negative_prompt = _append_terms(request.negative_prompt, platform_negative)
+        negative_prompt = _append_terms(negative_prompt, settings.GENERATION_QUALITY_NEGATIVE_APPEND)
         if feedback:
             prompt = f"{prompt}. Correct previous candidate problems: {feedback}."
             negative_prompt = _append_terms(negative_prompt, feedback)
