@@ -638,7 +638,8 @@ def _review_feedback(reports: list[dict]) -> str:
             gate = report.get(gate_name) if isinstance(report.get(gate_name), dict) else {}
             low = gate.get("low") if isinstance(gate.get("low"), dict) else {}
             for key, value in low.items():
-                feedback.append(value.get("evidence", key) if isinstance(value, dict) else key)
+                evidence = value.get("evidence", key) if isinstance(value, dict) else key
+                feedback.append(f"{key}: {evidence}")
         if report.get("status") == "technical_only" and report.get("metrics", {}).get("technical_score", 5) < 3:
             feedback.append("improve exposure, sharpness, color separation and visual clarity")
     compact = []
@@ -651,6 +652,55 @@ def _review_feedback(reports: list[dict]) -> str:
         if len(compact) >= 6:
             break
     return "; ".join(compact)
+
+
+def _feedback_repair_directive(feedback: str) -> tuple[str, str]:
+    """Translate low-score evidence into generator-facing repair constraints."""
+    text = (feedback or "").lower()
+    prompt_terms = []
+    negative_terms = []
+    rules = [
+        (
+            ("skin_texture", "plastic skin", "waxy", "airbrushed"),
+            "natural skin texture with visible pores, soft but realistic facial highlights",
+            "plastic skin, waxy face, over-smoothed face, airbrushed skin",
+        ),
+        (
+            ("lighting_quality", "lighting_consistency", "muddy light", "muddy lighting", "flat lighting"),
+            "controlled soft key light, clean catchlights, separated face and background",
+            "muddy lighting, flat lighting, crushed shadows, blown highlights",
+        ),
+        (
+            ("color_grade", "color_grade_consistency", "oversaturated", "cheap filter"),
+            "tasteful commercial color grade with natural contrast and stable skin tones",
+            "oversaturated filter, cheap filter look, unnatural color cast",
+        ),
+        (
+            ("phone_readability", "tiny unreadable", "unreadable face", "face readable"),
+            "phone-readable face, clear eyes and expression, medium close framing",
+            "tiny face, unreadable expression, face hidden in frame",
+        ),
+        (
+            ("background_separation", "flat background", "messy background"),
+            "clear foreground-background separation, tidy production-designed background",
+            "flat background, cluttered background, dirty background",
+        ),
+        (
+            ("production_polish", "low production value", "looks cheap"),
+            "premium short-drama production polish, styled wardrobe, clean set dressing",
+            "low production value, cheap costume, messy set dressing",
+        ),
+        (
+            ("repair_artifacts_absent", "repair scar", "upscale artifact", "artifact"),
+            "clean retouched render without visible repair marks or upscale artifacts",
+            "repair scar, inpaint scar, noisy upscale artifacts, distorted face repair",
+        ),
+    ]
+    for keywords, prompt, negative in rules:
+        if any(keyword in text for keyword in keywords):
+            prompt_terms.append(prompt)
+            negative_terms.append(negative)
+    return "; ".join(dict.fromkeys(prompt_terms)), ", ".join(dict.fromkeys(negative_terms))
 
 
 def _repair_action_from_reports(reports: list[dict]) -> str | None:
@@ -693,6 +743,11 @@ def _generate_quality_candidates(
         if feedback:
             prompt = f"{prompt}. Correct previous candidate problems: {feedback}."
             negative_prompt = _append_terms(negative_prompt, feedback)
+            feedback_prompt, feedback_negative = _feedback_repair_directive(feedback)
+            if feedback_prompt:
+                prompt = f"{prompt}. Repair directive: {feedback_prompt}."
+            if feedback_negative:
+                negative_prompt = _append_terms(negative_prompt, feedback_negative)
         current_repair_action = repair_action or (_repair_action_from_reports(reports) if pass_index else None)
         prompt, negative_prompt = _apply_image_repair_action(prompt, negative_prompt, current_repair_action)
         for index in range(candidate_count):

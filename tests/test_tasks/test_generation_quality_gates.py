@@ -10,7 +10,7 @@ from src.database.models import Base, Character, Project, Scene, Task, TaskStatu
 from src.services.generation_review import VIDEO_AESTHETIC_FEATURES, fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName, GenerationResult
 from src.services.shot_prompt_service import ShotPromptService
-from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _character_sheet_generation_contract, _complexity_report, _composition_constraint, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
+from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _character_sheet_generation_contract, _complexity_report, _composition_constraint, _feedback_repair_directive, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
 from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _scene_review_payload, _video_repair_action_from_candidates
@@ -1650,7 +1650,21 @@ def test_review_feedback_reads_nested_aesthetic_gate_evidence():
 
     assert "plastic skin" in feedback
     assert "muddy light" in feedback
+    assert "production_polish: low production value" in feedback
     assert "low production value" in feedback
+
+
+def test_feedback_repair_directive_maps_aesthetic_evidence_to_generation_strategy():
+    prompt, negative = _feedback_repair_directive(
+        "skin_texture: plastic skin; lighting_quality: muddy light; phone_readability: tiny unreadable face"
+    )
+
+    assert "natural skin texture" in prompt
+    assert "controlled soft key light" in prompt
+    assert "phone-readable face" in prompt
+    assert "plastic skin" in negative
+    assert "muddy lighting" in negative
+    assert "tiny face" in negative
 
 
 def test_repair_action_from_reports_promotes_auto_image_repair():
@@ -1744,7 +1758,9 @@ def test_quality_refinement_converts_review_failure_into_repair_action(tmp_path,
     repaired_candidate = report["candidates"][0]
     assert "balanced composition" in repaired_request.prompt
     assert "cinematic lighting" in repaired_request.prompt
+    assert "tasteful commercial color grade" in repaired_request.prompt
     assert "bad crop" in repaired_request.negative_prompt
+    assert "cheap filter look" in repaired_request.negative_prompt
     assert repaired_candidate["request"]["repair_action"] == "refine_prompt_composition"
     assert repaired_candidate["request"]["repair_parameter_profile"]["reason"] == "composition_aesthetic_repair"
 
