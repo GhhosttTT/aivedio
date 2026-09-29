@@ -8,7 +8,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.config import settings
-from src.services.generation_quality_policy import image_quality_budget, video_quality_budget
+from src.services.generation_quality_policy import (
+    SHOT_PIPELINE_STAGES,
+    image_quality_budget,
+    video_quality_budget,
+)
 
 
 REQUIRED_CAPABILITIES = {
@@ -23,6 +27,11 @@ REQUIRED_CAPABILITIES = {
     "candidate_review",
 }
 REQUIRED_WORKFLOWS = {"image", "reference", "video"}
+REQUIRED_IMAGE_PIPELINE_STAGES = sorted({
+    stage
+    for profile in SHOT_PIPELINE_STAGES.values()
+    for stage in profile["stages"]
+})
 MIN_QUALITY_BUDGET = {
     "image_candidates": 5,
     "image_refinement_passes": 2,
@@ -85,6 +94,7 @@ class ProductionWorkflowProfileService:
             },
             "required_capabilities": sorted(REQUIRED_CAPABILITIES),
             "required_workflows": sorted(REQUIRED_WORKFLOWS),
+            "required_image_pipeline_stages": REQUIRED_IMAGE_PIPELINE_STAGES,
             "capabilities": caps,
             "capability_evidence": detected_capabilities,
             "quality_gates": self._current_quality_gates(),
@@ -112,6 +122,8 @@ class ProductionWorkflowProfileService:
         stale = []
         if profile.get("status") != "approved":
             missing.append("approved_status")
+        if profile.get("required_image_pipeline_stages") != REQUIRED_IMAGE_PIPELINE_STAGES:
+            stale.append("required_image_pipeline_stages")
         capabilities = profile.get("capabilities") if isinstance(profile.get("capabilities"), dict) else {}
         capability_evidence = profile.get("capability_evidence") if isinstance(profile.get("capability_evidence"), dict) else {}
         missing_capabilities = sorted(name for name in REQUIRED_CAPABILITIES if not capabilities.get(name))
@@ -161,6 +173,7 @@ class ProductionWorkflowProfileService:
                 **MIN_QUALITY_BUDGET,
                 "approved_quality_profiles": sorted(APPROVED_QUALITY_PROFILES),
                 "video_end_frame_enabled": True,
+                "required_image_pipeline_stages": REQUIRED_IMAGE_PIPELINE_STAGES,
             },
             "profile": profile,
         }

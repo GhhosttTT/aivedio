@@ -30,10 +30,97 @@ class QualityBudget:
         }
 
 
+@dataclass(frozen=True)
+class QualityPipeline:
+    stages: list[str]
+    prompt_directive: str
+    negative_directive: str
+    required_capabilities: list[str]
+    shot_profile_id: str | None = None
+    repair_action: str | None = None
+
+    def as_dict(self) -> dict:
+        return {
+            "stages": list(self.stages),
+            "prompt_directive": self.prompt_directive,
+            "negative_directive": self.negative_directive,
+            "required_capabilities": list(self.required_capabilities),
+            "shot_profile_id": self.shot_profile_id,
+            "repair_action": self.repair_action,
+        }
+
+
 PROFILE_BUDGETS = {
     "high_quality": {"candidate_multiplier": 1.25, "extra_refinement_passes": 0},
     "ultra": {"candidate_multiplier": 1.5, "extra_refinement_passes": 1},
     "seed_dance_reference": {"candidate_multiplier": 2.0, "extra_refinement_passes": 2},
+}
+
+
+SHOT_PIPELINE_STAGES = {
+    "close_up": {
+        "stages": ["identity_reference", "face_detail", "skin_texture_pass", "upscale", "final_vlm_review"],
+        "prompt": "production pipeline: face detail pass, natural skin texture pass, clean catchlight preservation, final VLM review",
+        "negative": "waxy face after detailer, over-sharpened pores, face repair scar, plastic close-up",
+        "capabilities": ["character_identity", "face_repair", "upscale", "candidate_review"],
+    },
+    "reaction": {
+        "stages": ["identity_reference", "expression_polish", "face_detail", "upscale", "final_vlm_review"],
+        "prompt": "production pipeline: expression polish pass, face detail pass, emotion readability check, final VLM review",
+        "negative": "flat acting, dead eyes, overdone expression repair, waxy emotion close-up",
+        "capabilities": ["character_identity", "face_repair", "upscale", "candidate_review"],
+    },
+    "two_shot": {
+        "stages": ["identity_reference", "spatial_control", "role_separation", "upscale", "final_vlm_review"],
+        "prompt": "production pipeline: spatial control pass, role separation pass, both faces readable, final VLM review",
+        "negative": "same-face casting after upscale, merged bodies, hidden second actor, copied wardrobe silhouette",
+        "capabilities": ["character_identity", "spatial_control", "upscale", "candidate_review"],
+    },
+    "full_body": {
+        "stages": ["pose_control", "body_integrity", "wardrobe_silhouette", "upscale", "final_vlm_review"],
+        "prompt": "production pipeline: pose control pass, full-body proportion check, wardrobe silhouette preservation, final VLM review",
+        "negative": "floating feet, broken full-body pose, cropped shoes, distorted body after upscale",
+        "capabilities": ["pose_control", "spatial_control", "upscale", "candidate_review"],
+    },
+    "prop_interaction": {
+        "stages": ["pose_control", "hand_prop_integrity", "face_detail", "upscale", "final_vlm_review"],
+        "prompt": "production pipeline: hand-prop integrity pass, readable fingers, stable prop contact, face detail pass, final VLM review",
+        "negative": "broken fingers after detail pass, disappearing prop, floating prop, unclear hand-object contact",
+        "capabilities": ["pose_control", "face_repair", "upscale", "candidate_review"],
+    },
+    "establishing": {
+        "stages": ["spatial_control", "set_dressing_polish", "color_grade_lock", "upscale", "final_vlm_review"],
+        "prompt": "production pipeline: set dressing polish pass, color grade lock, subject readability check, final VLM review",
+        "negative": "generic empty set, low-budget background, dirty clutter after upscale, washed-out color grade",
+        "capabilities": ["spatial_control", "upscale", "candidate_review"],
+    },
+}
+
+REPAIR_PIPELINE_STAGES = {
+    "regenerate_keyframe_with_identity_lock": {
+        "stages": ["identity_reference", "face_detail", "identity_vlm_review"],
+        "prompt": "repair pipeline: stricter identity reference lock and identity VLM review before acceptance",
+        "negative": "identity drift after repair, same-face cast, changed wardrobe after identity lock",
+        "capabilities": ["character_identity", "face_repair", "candidate_review"],
+    },
+    "refine_face_aesthetic_detail": {
+        "stages": ["face_detail", "skin_texture_pass", "upscale", "artifact_vlm_review"],
+        "prompt": "repair pipeline: high quality face detail pass, skin texture artifact check, upscale artifact review",
+        "negative": "face repair scar, wax museum skin, over-smoothed detailer result, noisy upscale face",
+        "capabilities": ["face_repair", "upscale", "candidate_review"],
+    },
+    "refine_prompt_composition": {
+        "stages": ["spatial_control", "composition_vlm_review"],
+        "prompt": "repair pipeline: composition control pass and phone-frame composition review",
+        "negative": "bad crop after composition repair, unreadable face, cluttered layout",
+        "capabilities": ["spatial_control", "candidate_review"],
+    },
+    "regenerate_keyframe_with_prop_constraints": {
+        "stages": ["pose_control", "hand_prop_integrity", "prop_vlm_review"],
+        "prompt": "repair pipeline: hand and prop constraint pass with prop VLM review",
+        "negative": "changed prop after repair, fused fingers, disappearing object",
+        "capabilities": ["pose_control", "candidate_review"],
+    },
 }
 
 
@@ -105,6 +192,36 @@ def video_quality_budget(repair_action: str | None = None) -> QualityBudget:
         base_refinement_passes=settings.GENERATION_VIDEO_REFINEMENT_PASSES,
         max_candidates=settings.GENERATION_MAX_VIDEO_CANDIDATES,
         repair_multiplier=settings.GENERATION_REPAIR_VIDEO_CANDIDATE_MULTIPLIER,
+        repair_action=repair_action,
+    )
+
+
+def image_quality_pipeline(
+    shot_aesthetic_profile: dict | None = None,
+    repair_action: str | None = None,
+) -> QualityPipeline:
+    profile_id = None
+    if isinstance(shot_aesthetic_profile, dict):
+        profile_id = str(shot_aesthetic_profile.get("id") or "").strip() or None
+    base = SHOT_PIPELINE_STAGES.get(profile_id or "", SHOT_PIPELINE_STAGES["reaction"])
+    stages = list(base["stages"])
+    prompt_parts = [base["prompt"]]
+    negative_parts = [base["negative"]]
+    capabilities = set(base["capabilities"])
+    if repair_action:
+        repair = REPAIR_PIPELINE_STAGES.get(repair_action)
+        if repair:
+            stages.extend(repair["stages"])
+            prompt_parts.append(repair["prompt"])
+            negative_parts.append(repair["negative"])
+            capabilities.update(repair["capabilities"])
+    stages = list(dict.fromkeys(stages))
+    return QualityPipeline(
+        stages=stages,
+        prompt_directive=". ".join(dict.fromkeys(part for part in prompt_parts if part)),
+        negative_directive=", ".join(dict.fromkeys(part for part in negative_parts if part)),
+        required_capabilities=sorted(capabilities),
+        shot_profile_id=profile_id,
         repair_action=repair_action,
     )
 

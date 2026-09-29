@@ -17,7 +17,7 @@ from src.services.generation_review import ReviewError, write_report
 from src.services.image_quality_service import ImageQualitySelector, candidate_output_path
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, get_generation_provider
-from src.services.generation_quality_policy import image_quality_budget
+from src.services.generation_quality_policy import image_quality_budget, image_quality_pipeline
 from src.services.image_postprocess import ImagePostprocessor
 from src.services.repair_queue import build_repair_queue
 from src.services.visual_style_assets import VisualStyleAssetService
@@ -785,6 +785,10 @@ def _generate_quality_candidates(
         if isinstance(shot_profile, dict):
             base_prompt = _append_sentence_once(base_prompt, str(shot_profile.get("prompt") or ""))
             platform_negative = _append_terms(platform_negative, str(shot_profile.get("negative_prompt") or ""))
+        current_repair_action = repair_action or (_repair_action_from_reports(reports) if pass_index else None)
+        quality_pipeline = image_quality_pipeline(shot_profile if isinstance(shot_profile, dict) else None, current_repair_action)
+        base_prompt = _append_sentence_once(base_prompt, quality_pipeline.prompt_directive)
+        platform_negative = _append_terms(platform_negative, quality_pipeline.negative_directive)
         sheet_contract = str(scene_payload.get("character_sheet_contract") or "").strip()
         base_prompt = _append_sentence_once(base_prompt, sheet_contract)
         prompt = _append_terms(base_prompt, settings.GENERATION_QUALITY_PROMPT_APPEND)
@@ -798,7 +802,6 @@ def _generate_quality_candidates(
                 prompt = f"{prompt}. Repair directive: {feedback_prompt}."
             if feedback_negative:
                 negative_prompt = _append_terms(negative_prompt, feedback_negative)
-        current_repair_action = repair_action or (_repair_action_from_reports(reports) if pass_index else None)
         prompt, negative_prompt = _apply_image_repair_action(prompt, negative_prompt, current_repair_action)
         for index in range(candidate_count):
             candidate_index = pass_index * candidate_count + index + 1
@@ -833,11 +836,12 @@ def _generate_quality_candidates(
             report["scene"] = {
                 "scene_number": scene_payload.get("scene_number"),
                 "visual_description": scene_payload.get("visual_description") or scene_payload.get("description"),
-                "repair_action": scene_payload.get("repair_action"),
+                "repair_action": current_repair_action,
                 "visible_characters": scene_payload.get("visible_characters", []),
                 "identity_contrast_matrix": scene_payload.get("identity_contrast_matrix", {}),
                 "platform_aesthetic_contract": scene_payload.get("platform_aesthetic_contract", {}),
                 "shot_aesthetic_profile": scene_payload.get("shot_aesthetic_profile", {}),
+                "quality_pipeline": quality_pipeline.as_dict(),
             }
             report["request"] = {
                 "seed": candidate_request.seed,
@@ -851,6 +855,7 @@ def _generate_quality_candidates(
                 "identity_contrast_matrix": scene_payload.get("identity_contrast_matrix", {}),
                 "platform_aesthetic_contract": scene_payload.get("platform_aesthetic_contract", {}),
                 "shot_aesthetic_profile": scene_payload.get("shot_aesthetic_profile", {}),
+                "quality_pipeline": quality_pipeline.as_dict(),
                 "refinement_pass": pass_index,
                 "feedback": feedback,
                 "repair_action": current_repair_action,
@@ -952,16 +957,21 @@ def generate_image_task(
         style_service = VisualStyleAssetService()
         platform_aesthetic_contract = style_service.platform_aesthetic_contract(project_id)
         shot_aesthetic_profile = style_service.shot_aesthetic_profile(scene, visible_count=len(visible_characters))
+        quality_pipeline = image_quality_pipeline(shot_aesthetic_profile, kwargs.get("repair_action"))
         enhanced_prompt = compiled.prompt
         if character_sheet_contract["prompt"]:
             enhanced_prompt = f"{enhanced_prompt}. {character_sheet_contract['prompt']}."
         enhanced_prompt = _append_sentence_once(enhanced_prompt, shot_aesthetic_profile["prompt"])
+        enhanced_prompt = _append_sentence_once(enhanced_prompt, quality_pipeline.prompt_directive)
         repair_action = kwargs.get("repair_action")
         enhanced_prompt, negative_prompt = _apply_image_repair_action(
             enhanced_prompt,
             _append_terms(
-                _append_terms(compiled.negative_prompt, character_sheet_contract["negative"]),
-                shot_aesthetic_profile["negative_prompt"],
+                _append_terms(
+                    _append_terms(compiled.negative_prompt, character_sheet_contract["negative"]),
+                    shot_aesthetic_profile["negative_prompt"],
+                ),
+                quality_pipeline.negative_directive,
             ),
             repair_action,
         )
@@ -994,6 +1004,7 @@ def generate_image_task(
                 "identity_contrast_matrix": character_sheet_contract["identity_contrast_matrix"],
                 "platform_aesthetic_contract": platform_aesthetic_contract,
                 "shot_aesthetic_profile": shot_aesthetic_profile,
+                "quality_pipeline": quality_pipeline.as_dict(),
                 "repair_action": repair_action,
             }
             final_image_path, quality_report = _generate_quality_candidates(

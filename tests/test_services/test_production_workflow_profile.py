@@ -56,6 +56,9 @@ def test_workflow_profile_freezes_required_workflow_hashes(tmp_path, monkeypatch
 
     assert manifest["status"] == "approved"
     assert set(manifest["required_workflows"]) == {"image", "reference", "video"}
+    assert "face_detail" in manifest["required_image_pipeline_stages"]
+    assert "upscale" in manifest["required_image_pipeline_stages"]
+    assert "final_vlm_review" in manifest["required_image_pipeline_stages"]
     assert manifest["capabilities"]["character_identity"] is True
     assert manifest["capabilities"]["pose_control"] is True
     assert manifest["capabilities"]["depth_control"] is True

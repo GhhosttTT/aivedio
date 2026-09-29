@@ -954,11 +954,16 @@ def test_image_repair_action_is_recorded_in_candidate_request(tmp_path, monkeypa
     assert candidate_request["repair_action"] == "refine_prompt_composition"
     assert candidate_request["repair_parameter_profile"]["reason"] == "composition_aesthetic_repair"
     assert candidate_request["shot_aesthetic_profile"]["id"] == "prop_interaction"
+    assert candidate_request["quality_pipeline"]["shot_profile_id"] == "prop_interaction"
+    assert "hand_prop_integrity" in candidate_request["quality_pipeline"]["stages"]
+    assert "composition_vlm_review" in candidate_request["quality_pipeline"]["stages"]
     assert "important prop visible" in provider.requests[0].prompt
+    assert "hand-prop integrity pass" in provider.requests[0].prompt
     assert "disappearing prop" in provider.requests[0].negative_prompt
     assert report["candidates"][0]["scene"]["scene_number"] == 1
     assert report["candidates"][0]["scene"]["repair_action"] == "refine_prompt_composition"
     assert report["candidates"][0]["scene"]["shot_aesthetic_profile"]["id"] == "prop_interaction"
+    assert report["candidates"][0]["scene"]["quality_pipeline"]["repair_action"] == "refine_prompt_composition"
     assert report["candidates"][0]["provider_metadata"]["workflow"]["steps"] == 45
     assert report["candidates"][0]["provider_metadata"]["workflow"]["sampler_name"] == "dpmpp_2m"
 

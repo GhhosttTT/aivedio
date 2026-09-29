@@ -1,4 +1,4 @@
-from src.services.generation_quality_policy import image_quality_budget, video_quality_budget
+from src.services.generation_quality_policy import image_quality_budget, image_quality_pipeline, video_quality_budget
 
 
 def test_repair_image_budget_increases_candidates_and_refinement(monkeypatch):
@@ -117,3 +117,29 @@ def test_seed_dance_video_budget_uses_candidate_cap(monkeypatch):
     assert budget.candidate_count == 8
     assert budget.refinement_passes == 4
     assert budget.profile == "seed_dance_reference"
+
+
+def test_prop_interaction_pipeline_requires_hand_prop_and_face_quality():
+    pipeline = image_quality_pipeline({"id": "prop_interaction"})
+
+    assert pipeline.shot_profile_id == "prop_interaction"
+    assert "hand_prop_integrity" in pipeline.stages
+    assert "face_detail" in pipeline.stages
+    assert "upscale" in pipeline.stages
+    assert "pose_control" in pipeline.required_capabilities
+    assert "final VLM review" in pipeline.prompt_directive
+    assert "disappearing prop" in pipeline.negative_directive
+
+
+def test_face_repair_pipeline_adds_artifact_review():
+    pipeline = image_quality_pipeline(
+        {"id": "close_up"},
+        repair_action="refine_face_aesthetic_detail",
+    )
+
+    assert pipeline.repair_action == "refine_face_aesthetic_detail"
+    assert "skin_texture_pass" in pipeline.stages
+    assert "artifact_vlm_review" in pipeline.stages
+    assert pipeline.stages.count("upscale") == 1
+    assert "face_repair" in pipeline.required_capabilities
+    assert "face repair scar" in pipeline.negative_directive
