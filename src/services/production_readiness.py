@@ -705,6 +705,7 @@ class ProductionReadinessService:
             }
         status = summary.get("status")
         checks = summary.get("checks") if isinstance(summary.get("checks"), dict) else {}
+        quality_scorecard = summary.get("quality_scorecard") if isinstance(summary.get("quality_scorecard"), dict) else {}
         if status != "ready_for_seed_dance_candidate":
             warnings.append(ReadinessIssue(
                 "sample_validation_not_ready",
@@ -873,10 +874,23 @@ class ProductionReadinessService:
                 "Resolve every repair_queue action from validation reports before accepting production quality.",
                 severity="warning",
             ))
+        if quality_scorecard and quality_scorecard.get("status") not in {None, "clean"}:
+            next_focus = quality_scorecard.get("next_focus") if isinstance(quality_scorecard.get("next_focus"), dict) else {}
+            focus = next_focus.get("dimension") or "unknown"
+            action = next_focus.get("suggested_action") or "manual_review"
+            warnings.append(ReadinessIssue(
+                "sample_validation_quality_scorecard_needs_repair",
+                (
+                    "Resolve the sample validation quality scorecard before accepting production quality. "
+                    f"Next focus: {focus}; suggested action: {action}."
+                ),
+                severity="warning",
+            ))
         return {
             "status": status or "unknown",
             "path": str(path),
             "required_status": "ready_for_seed_dance_candidate",
+            "quality_scorecard": quality_scorecard,
             "checks": {
                 "render_profile": checks.get("render_profile"),
                 "render_profile_passed": checks.get("render_profile_passed"),
@@ -910,6 +924,14 @@ class ProductionReadinessService:
                 "manual_blocking_issues_passed": checks.get("manual_blocking_issues_passed"),
                 "repair_queue_empty": checks.get("repair_queue_empty"),
                 "manual_review_passed": checks.get("manual_review_passed"),
+                "quality_scorecard_production_score": checks.get(
+                    "quality_scorecard_production_score",
+                    quality_scorecard.get("production_score") if quality_scorecard else None,
+                ),
+                "quality_scorecard_next_focus": checks.get(
+                    "quality_scorecard_next_focus",
+                    quality_scorecard.get("next_focus") if quality_scorecard else None,
+                ),
             },
             "action_items": summary.get("action_items", []) if isinstance(summary.get("action_items"), list) else [],
         }
