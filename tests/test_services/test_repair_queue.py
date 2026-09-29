@@ -75,6 +75,51 @@ def test_repair_queue_classifies_video_motion_failures():
     assert queue[0]["execution"] == "auto"
 
 
+def test_repair_queue_maps_low_image_technical_metrics_to_composition_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 1,
+            "scene": {"scene_number": 6},
+            "metrics": {
+                "technical_score": 2.1,
+                "sharpness": 2.0,
+                "mean_luma": 42.0,
+                "colorfulness": 4.0,
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "image")
+
+    assert queue[0]["action"] == "refine_prompt_composition"
+    assert queue[0]["execution"] == "auto"
+    assert queue[0]["scene_number"] == 6
+
+
+def test_repair_queue_maps_low_video_technical_metrics_to_motion_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 2,
+            "scene": {"scene_number": 9},
+            "technical_metrics": {
+                "technical_score": 2.3,
+                "motion_energy": 0.4,
+                "sharpness": 3.0,
+                "brightness": 48.0,
+                "brightness_variance": 720.0,
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "lower_motion_and_regenerate_video"
+    assert queue[0]["execution"] == "auto"
+    assert queue[0]["scene_number"] == 9
+
+
 def test_repair_queue_reads_nested_platform_aesthetic_gates():
     report = {
         "status": "needs_review",

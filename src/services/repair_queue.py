@@ -147,10 +147,38 @@ def _candidate_evidence(candidate: dict[str, Any]) -> list[str]:
     for gate_name in ("platform_aesthetic_gate", "video_aesthetic_gate", "turnaround_gate"):
         gate = candidate.get(gate_name) if isinstance(candidate.get(gate_name), dict) else {}
         evidence.extend(_gate_evidence(gate, gate_name))
-    metrics = candidate.get("metrics") if isinstance(candidate.get("metrics"), dict) else {}
-    if metrics.get("technical_score", 5) < 3:
-        evidence.append("low technical image score: exposure sharpness composition")
+    evidence.extend(_technical_metric_evidence(candidate))
     return [item for item in evidence if item]
+
+
+def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
+    evidence = []
+    image_metrics = candidate.get("metrics") if isinstance(candidate.get("metrics"), dict) else {}
+    image_score = image_metrics.get("technical_score")
+    if image_metrics and isinstance(image_score, (int, float)) and image_score < 3:
+        evidence.append("low technical image score: exposure sharpness composition")
+        if image_metrics.get("sharpness", 99) < 4:
+            evidence.append("low image sharpness and blurry keyframe")
+        mean_luma = image_metrics.get("mean_luma")
+        if isinstance(mean_luma, (int, float)) and (mean_luma < 65 or mean_luma > 205):
+            evidence.append("bad image exposure and lighting balance")
+        if image_metrics.get("colorfulness", 99) < 6:
+            evidence.append("dull color grade and weak production polish")
+
+    video_metrics = candidate.get("technical_metrics") if isinstance(candidate.get("technical_metrics"), dict) else {}
+    video_score = video_metrics.get("technical_score")
+    if video_metrics and isinstance(video_score, (int, float)) and video_score < 3:
+        evidence.append("low technical video score: motion sharpness exposure stability")
+        if video_metrics.get("motion_energy", 99) < 2:
+            evidence.append("video motion too static or frozen")
+        if video_metrics.get("sharpness", 99) < 8:
+            evidence.append("video sharpness collapsed and blurry frames")
+        brightness = video_metrics.get("brightness")
+        if isinstance(brightness, (int, float)) and (brightness < 65 or brightness > 205):
+            evidence.append("video exposure is outside usable range")
+        if video_metrics.get("brightness_variance", 0) > 500:
+            evidence.append("video brightness flicker and unstable exposure")
+    return evidence
 
 
 def _nested_score_evidence(section: dict[str, Any]) -> list[str]:
@@ -180,6 +208,28 @@ def _gate_evidence(gate: dict[str, Any], gate_name: str) -> list[str]:
 
 def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]) -> dict[str, Any] | None:
     text = evidence.lower()
+    if text.startswith("low technical image score") or text.startswith("low image sharpness") or text.startswith("bad image exposure") or text.startswith("dull color grade"):
+        return {
+            "priority": _priority(text),
+            "stage": "image",
+            "action": "refine_prompt_composition",
+            "execution": _execution_mode("refine_prompt_composition"),
+            "reason": evidence[:240],
+            "recommendation": "Regenerate with stronger lighting, exposure, sharpness, color grade, and clean composition constraints.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
+    if text.startswith("low technical video score") or text.startswith("video motion too static") or text.startswith("video sharpness collapsed") or text.startswith("video exposure") or text.startswith("video brightness flicker"):
+        return {
+            "priority": _priority(text),
+            "stage": "video",
+            "action": "lower_motion_and_regenerate_video",
+            "execution": _execution_mode("lower_motion_and_regenerate_video"),
+            "reason": evidence[:240],
+            "recommendation": "Regenerate the clip with lower motion/noise and keep only candidates with readable motion, sharp frames, and stable exposure.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
     if any(term in text for term in ("after face repair", "face repair scar", "distorted face repair")):
         return {
             "priority": _priority(text),
