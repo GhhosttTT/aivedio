@@ -77,3 +77,48 @@ def test_quality_loop_selects_face_aesthetic_detail_repair():
 
     assert plan["status"] == "can_auto_repair"
     assert plan["selected"][0]["action"] == "refine_face_aesthetic_detail"
+
+
+def test_quality_loop_accepts_flat_validation_repair_queue():
+    summary = {
+        "status": "partial_needs_review",
+        "repair_queue": [
+            {
+                "scene_number": 4,
+                "priority": "high",
+                "stage": "image",
+                "action": "refine_face_aesthetic_detail",
+                "execution": "auto",
+                "source_report": "image_review.json",
+            },
+            {
+                "scene_number": 5,
+                "priority": "high",
+                "stage": "workflow",
+                "action": "fix_workflow_profile",
+                "execution": "setup_required",
+            },
+            {
+                "scene_number": 6,
+                "priority": "medium",
+                "stage": "review",
+                "action": "manual_review",
+                "execution": "manual",
+            },
+        ],
+    }
+
+    plan = build_quality_loop_plan(summary, max_actions=2)
+
+    assert plan["status"] == "can_auto_repair"
+    assert plan["selected"][0]["action"] == "refine_face_aesthetic_detail"
+    assert plan["selected"][0]["source_report"] == "image_review.json"
+    assert plan["setup_required"][0]["action"] == "fix_workflow_profile"
+    assert plan["manual_actions"][0]["action"] == "manual_review"
+
+
+def test_quality_loop_treats_seed_dance_candidate_summary_as_ready():
+    plan = build_quality_loop_plan({"status": "ready_for_seed_dance_candidate", "repair_queue": []}, max_actions=5)
+
+    assert plan["status"] == "ready"
+    assert plan["next_step"] == "Proceed to final composition and human sample review."

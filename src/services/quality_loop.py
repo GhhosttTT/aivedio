@@ -68,18 +68,63 @@ def auto_repair_candidates(repair_queue: dict[str, Any], max_actions: int) -> tu
     return selected, skipped
 
 
+def normalize_repair_queue(repair_queue: Any) -> dict[str, list[dict[str, Any]]]:
+    """Accept repair queues from API summaries and validation artifacts.
+
+    The API quality loop stores a grouped dict. The local validation CLI writes a
+    flat list gathered from image, video, baseline, manual, and quality reports.
+    Normalizing both shapes keeps the rerun planner usable after real sample
+    validation failures.
+    """
+
+    if isinstance(repair_queue, dict):
+        return {
+            "items": [
+                dict(item)
+                for item in repair_queue.get("items", [])
+                if isinstance(item, dict)
+            ],
+            "setup_required": [
+                dict(item)
+                for item in repair_queue.get("setup_required", [])
+                if isinstance(item, dict)
+            ],
+            "manual_actions": [
+                dict(item)
+                for item in repair_queue.get("manual_actions", [])
+                if isinstance(item, dict)
+            ],
+        }
+    if not isinstance(repair_queue, list):
+        return {"items": [], "setup_required": [], "manual_actions": []}
+
+    normalized = {"items": [], "setup_required": [], "manual_actions": []}
+    for item in repair_queue:
+        if not isinstance(item, dict):
+            continue
+        copied = dict(item)
+        execution = copied.get("execution") or "manual"
+        if execution == "auto":
+            normalized["items"].append(copied)
+        elif execution == "setup_required":
+            normalized["setup_required"].append(copied)
+        else:
+            normalized["manual_actions"].append(copied)
+    return normalized
+
+
 def build_quality_loop_plan(summary: dict[str, Any], max_actions: int) -> dict[str, Any]:
-    repair_queue = summary.get("repair_queue", {}) if isinstance(summary.get("repair_queue"), dict) else {}
+    repair_queue = normalize_repair_queue(summary.get("repair_queue"))
     selected, skipped = auto_repair_candidates(repair_queue, max_actions)
-    setup_required = repair_queue.get("setup_required", []) if isinstance(repair_queue.get("setup_required"), list) else []
-    manual_actions = repair_queue.get("manual_actions", []) if isinstance(repair_queue.get("manual_actions"), list) else []
+    setup_required = repair_queue["setup_required"]
+    manual_actions = repair_queue["manual_actions"]
     if selected:
         status = "can_auto_repair"
     elif setup_required:
         status = "setup_required"
     elif manual_actions:
         status = "manual_review_required"
-    elif summary.get("status") == "ready":
+    elif summary.get("status") in {"ready", "ready_for_seed_dance_candidate"}:
         status = "ready"
     else:
         status = "blocked"
