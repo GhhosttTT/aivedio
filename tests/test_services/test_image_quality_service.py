@@ -5,6 +5,7 @@ from PIL import Image
 
 from src.services.generation_review import ReviewError
 from src.services.image_quality_service import (
+    CHARACTER_DISTINCTIVENESS_FEATURES,
     IMAGE_REVIEW_RUBRIC,
     PLATFORM_AESTHETIC_FEATURES,
     ImageQualitySelector,
@@ -39,6 +40,7 @@ def test_image_review_rubric_checks_mobile_short_drama_aesthetics():
     assert "scene.platform_aesthetic_contract" in IMAGE_REVIEW_RUBRIC
     assert "profile_prompt" in IMAGE_REVIEW_RUBRIC
     assert "profile_negative_prompt" in IMAGE_REVIEW_RUBRIC
+    assert "character_distinctiveness_scores" in IMAGE_REVIEW_RUBRIC
 
 
 def test_platform_aesthetic_gate_quantifies_short_drama_surface_quality(monkeypatch):
@@ -123,6 +125,106 @@ def test_select_best_prefers_identity_safe_candidate_over_higher_average(tmp_pat
     assert report["best_index"] == 2
     assert report["best_identity_scores"] == {"facial_identity": 4.0, "identity_consistency": 4.0}
     assert final.read_bytes() == second.read_bytes()
+
+
+def test_select_best_prefers_character_distinctiveness_over_higher_average(tmp_path, monkeypatch):
+    first = tmp_path / "same_face.png"
+    second = tmp_path / "distinct.png"
+    final = tmp_path / "final.png"
+    make_image(first, (90, 90, 90))
+    make_image(second, (130, 130, 130))
+    monkeypatch.setattr("src.services.image_quality_service.settings.GENERATION_CHARACTER_DISTINCTIVENESS_MIN_SCORE", 4.0)
+
+    scene = {
+        "scene_number": 1,
+        "visible_characters": [
+            {"name": "Alice", "appearance": "sharp eyes, black bob, green jacket"},
+            {"name": "Bob", "appearance": "round eyes, short crop, navy suit"},
+        ],
+        "identity_contrast_matrix": {
+            "pairs": [{
+                "left": "Alice",
+                "right": "Bob",
+                "contrast_fields": ["eyes", "hair", "wardrobe"],
+            }]
+        },
+    }
+    shared_review = {
+        "composition": {"score": 5, "evidence": "strong framing"},
+        "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+        "visual_integrity": {"score": 5, "evidence": "clean render"},
+        "facial_identity": {"score": 5, "evidence": "faces match their anchors"},
+        "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+        "platform_aesthetic_scores": passed_platform_aesthetic_scores(),
+    }
+    weak_distinctiveness = {
+        feature: {"score": 5, "evidence": "passes"}
+        for feature in CHARACTER_DISTINCTIVENESS_FEATURES
+    }
+    weak_distinctiveness["no_same_face_casting"] = {"score": 2, "evidence": "same-face casting between Alice and Bob"}
+    strong_distinctiveness = {
+        feature: {"score": 4, "evidence": "characters remain visually distinct"}
+        for feature in CHARACTER_DISTINCTIVENESS_FEATURES
+    }
+
+    selector = ImageQualitySelector(reviewer=object())
+    report = selector.select_best([
+        {
+            "index": 1,
+            "path": str(first),
+            "average": 4.9,
+            "status": "passed",
+            "scene": scene,
+            "review": {**shared_review, "character_distinctiveness_scores": weak_distinctiveness},
+        },
+        {
+            "index": 2,
+            "path": str(second),
+            "average": 4.3,
+            "status": "passed",
+            "scene": scene,
+            "review": {**shared_review, "character_distinctiveness_scores": strong_distinctiveness},
+        },
+    ], final, tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0)
+
+    assert report["best_index"] == 2
+    assert report["best_character_distinctiveness_gate"]["status"] == "passed"
+    assert report["candidates"][1]["character_distinctiveness_gate"]["status"] == "needs_review"
+    assert final.read_bytes() == second.read_bytes()
+
+
+def test_select_best_rejects_missing_character_distinctiveness_scores_for_multi_character_scene(tmp_path):
+    image = tmp_path / "candidate.png"
+    make_image(image, (120, 120, 120))
+    selector = ImageQualitySelector(reviewer=object())
+
+    with pytest.raises(ReviewError, match="character distinctiveness gate"):
+        selector.select_best([
+            {
+                "index": 1,
+                "path": str(image),
+                "average": 4.8,
+                "status": "passed",
+                "scene": {
+                    "scene_number": 1,
+                    "visible_characters": [
+                        {"name": "Alice", "appearance": "sharp eyes and black bob"},
+                        {"name": "Bob", "appearance": "round eyes and short crop"},
+                    ],
+                },
+                "review": {
+                    "composition": {"score": 5, "evidence": "strong framing"},
+                    "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+                    "visual_integrity": {"score": 5, "evidence": "clean render"},
+                    "facial_identity": {"score": 5, "evidence": "faces match"},
+                    "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                    "platform_aesthetic_scores": passed_platform_aesthetic_scores(),
+                },
+            },
+        ], tmp_path / "final.png", tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0)
+
+    report = (tmp_path / "quality.json").read_text(encoding="utf-8")
+    assert "regenerate_keyframe_with_identity_lock" in report
 
 
 def test_select_best_rejects_when_identity_scores_are_low(tmp_path):

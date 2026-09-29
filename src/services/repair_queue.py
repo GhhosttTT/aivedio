@@ -10,6 +10,9 @@ ACTION_RULES = [
         (
             "changed face", "changed hair", "changed wardrobe", "identity drift",
             "wrong camera angle versus character sheet", "wrong wardrobe", "face drift",
+            "same-face", "same face",
+            "character distinctiveness", "character_distinctiveness", "face_geometry",
+            "no_same_face_casting", "role_readability", "hair_separation", "wardrobe_separation",
         ),
         "regenerate_keyframe_with_identity_lock",
         "Regenerate the keyframe with locked character-sheet identity, wardrobe, hair, and view-angle constraints.",
@@ -144,7 +147,7 @@ def _candidate_evidence(candidate: dict[str, Any]) -> list[str]:
             evidence.append(str(key))
         elif isinstance(value, dict):
             evidence.extend(_nested_score_evidence(value))
-    for gate_name in ("platform_aesthetic_gate", "video_aesthetic_gate", "turnaround_gate"):
+    for gate_name in ("platform_aesthetic_gate", "video_aesthetic_gate", "turnaround_gate", "character_distinctiveness_gate"):
         gate = candidate.get(gate_name) if isinstance(candidate.get(gate_name), dict) else {}
         evidence.extend(_gate_evidence(gate, gate_name))
     evidence.extend(_technical_metric_evidence(candidate))

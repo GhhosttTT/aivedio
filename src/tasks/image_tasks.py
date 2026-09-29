@@ -818,6 +818,7 @@ def _generate_quality_candidates(
                 "visual_description": scene_payload.get("visual_description") or scene_payload.get("description"),
                 "repair_action": scene_payload.get("repair_action"),
                 "visible_characters": scene_payload.get("visible_characters", []),
+                "identity_contrast_matrix": scene_payload.get("identity_contrast_matrix", {}),
                 "platform_aesthetic_contract": scene_payload.get("platform_aesthetic_contract", {}),
             }
             report["request"] = {

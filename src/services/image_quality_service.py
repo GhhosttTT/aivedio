@@ -30,6 +30,7 @@ class ImageReview(BaseModel):
     facial_identity: Score
     identity_consistency: Score
     platform_aesthetic_scores: dict[str, Score] | None = None
+    character_distinctiveness_scores: dict[str, Score] | None = None
     turnaround_feature_scores: dict[str, Score] | None = None
     reviewed_images: list[StrictInt]
     issues: list[Issue] = Field(default_factory=list)
@@ -42,6 +43,14 @@ PLATFORM_AESTHETIC_FEATURES = (
     "background_separation",
     "production_polish",
     "repair_artifacts_absent",
+)
+
+CHARACTER_DISTINCTIVENESS_FEATURES = (
+    "face_geometry_separation",
+    "hair_separation",
+    "wardrobe_separation",
+    "role_readability",
+    "no_same_face_casting",
 )
 
 
@@ -64,6 +73,10 @@ against every expected character identity anchor. Penalize same-face characters 
 For identity_consistency, also judge wardrobe, body shape, role separation, and whether all expected characters remain distinct.
 When scene.identity_contrast_matrix is present, compare each pair's contrast_fields directly. Penalize copied facial
 geometry, copied hair, swapped wardrobe, merged features, or any same-face casting between different named roles.
+When two or more visible characters are present, also return character_distinctiveness_scores with these keys:
+face_geometry_separation, hair_separation, wardrobe_separation, role_readability, no_same_face_casting.
+Score each 0-5 with concrete visual evidence. Penalize same-face casting, copied eye/nose/mouth geometry,
+near-identical hairstyles, swapped clothing, merged bodies, or unclear role separation.
 When scene.turnaround_view is present, also return turnaround_feature_scores. Score each required character-sheet feature
 from scene.reference_requirements and scene.identity independently: view angle, facial features, hairstyle silhouette,
 body proportion, wardrobe silhouette, and whether the image accidentally uses the wrong angle.
@@ -161,6 +174,65 @@ def attach_platform_aesthetic_gate(candidate: dict[str, Any]) -> None:
         candidate["platform_score"] = candidate["platform_aesthetic_score"]
 
 
+def _requires_character_distinctiveness(scene: dict[str, Any]) -> bool:
+    visible = [
+        item
+        for item in scene.get("visible_characters", []) or []
+        if isinstance(item, dict) and str(item.get("name") or item.get("appearance") or "").strip()
+    ]
+    if len(visible) >= 2:
+        return True
+    matrix = scene.get("identity_contrast_matrix")
+    return isinstance(matrix, dict) and bool(matrix.get("pairs"))
+
+
+def character_distinctiveness_gate(candidate: dict[str, Any], scene: dict[str, Any]) -> dict[str, Any] | None:
+    if not _requires_character_distinctiveness(scene):
+        return None
+    review = candidate.get("review") if isinstance(candidate.get("review"), dict) else {}
+    supplied = review.get("character_distinctiveness_scores")
+    scores = {}
+    missing = []
+    min_score = settings.GENERATION_CHARACTER_DISTINCTIVENESS_MIN_SCORE
+    for feature in CHARACTER_DISTINCTIVENESS_FEATURES:
+        item = supplied.get(feature) if isinstance(supplied, dict) else None
+        score = item.get("score") if isinstance(item, dict) else None
+        evidence = item.get("evidence") if isinstance(item, dict) else ""
+        if isinstance(score, (int, float)):
+            scores[feature] = {
+                "score": _clamp_score(float(score)),
+                "evidence": str(evidence or "character distinctiveness feature reviewed"),
+            }
+        else:
+            missing.append(feature)
+            scores[feature] = {
+                "score": 0.0,
+                "evidence": "character distinctiveness feature was not reviewed by the local VLM",
+            }
+    average = _clamp_score(sum(item["score"] for item in scores.values()) / len(scores))
+    low = {
+        feature: item
+        for feature, item in scores.items()
+        if item["score"] < min_score
+    }
+    return {
+        "status": "passed" if not missing and not low else "needs_review",
+        "min_score": min_score,
+        "average": average,
+        "scores": scores,
+        "missing": missing,
+        "low": low,
+    }
+
+
+def attach_character_distinctiveness_gate(candidate: dict[str, Any], scene: dict[str, Any]) -> None:
+    gate = character_distinctiveness_gate(candidate, scene)
+    if not gate:
+        return
+    candidate["character_distinctiveness_gate"] = gate
+    candidate["character_distinctiveness_score"] = gate["average"] if gate["status"] == "passed" else 0.0
+
+
 def _scene_turnaround_contract(scene: dict[str, Any]) -> dict[str, Any] | None:
     if scene.get("turnaround_view"):
         return {
@@ -210,6 +282,18 @@ def attach_scene_turnaround_gate(candidate: dict[str, Any], scene: dict[str, Any
     )
 
 
+def _candidate_scene(candidate: dict[str, Any]) -> dict[str, Any]:
+    scene = candidate.get("scene")
+    if isinstance(scene, dict):
+        if "identity_contrast_matrix" not in scene:
+            request = candidate.get("request") if isinstance(candidate.get("request"), dict) else {}
+            matrix = request.get("identity_contrast_matrix")
+            if isinstance(matrix, dict):
+                return {**scene, "identity_contrast_matrix": matrix}
+        return scene
+    return {}
+
+
 def _identity_gate(candidate: dict[str, Any], min_score: float) -> tuple[bool, dict[str, float]]:
     scores = {
         key: score
@@ -227,23 +311,43 @@ def _candidate_technical_score(candidate: dict[str, Any]) -> float | None:
     return float(score) if isinstance(score, (int, float)) else None
 
 
+def _candidate_distinctiveness_score(candidate: dict[str, Any]) -> float | None:
+    score = candidate.get("character_distinctiveness_score")
+    return float(score) if isinstance(score, (int, float)) else None
+
+
 def image_selection_score(candidate: dict[str, Any]) -> float:
     platform_score = candidate.get("platform_score")
     average = candidate.get("average")
     technical_score = _candidate_technical_score(candidate)
+    distinctiveness_score = _candidate_distinctiveness_score(candidate)
     if not isinstance(platform_score, (int, float)):
         platform_score = average if isinstance(average, (int, float)) else technical_score
     if not isinstance(average, (int, float)):
         average = platform_score if isinstance(platform_score, (int, float)) else technical_score
     if not isinstance(technical_score, (int, float)):
         technical_score = platform_score if isinstance(platform_score, (int, float)) else average
-    values = [value for value in (platform_score, average, technical_score) if isinstance(value, (int, float))]
+    if not isinstance(distinctiveness_score, (int, float)):
+        distinctiveness_score = platform_score if isinstance(platform_score, (int, float)) else average
+    values = [
+        value
+        for value in (platform_score, average, technical_score, distinctiveness_score)
+        if isinstance(value, (int, float))
+    ]
     if not values:
         return 0.0
     platform_value = float(platform_score if isinstance(platform_score, (int, float)) else values[0])
     average_value = float(average if isinstance(average, (int, float)) else platform_value)
     technical_value = float(technical_score if isinstance(technical_score, (int, float)) else platform_value)
-    return _clamp_score(platform_value * 0.55 + average_value * 0.25 + technical_value * 0.20)
+    distinctiveness_value = float(
+        distinctiveness_score if isinstance(distinctiveness_score, (int, float)) else platform_value
+    )
+    return _clamp_score(
+        platform_value * 0.45
+        + average_value * 0.20
+        + technical_value * 0.15
+        + distinctiveness_value * 0.20
+    )
 
 
 class ImageQualitySelector:
@@ -312,6 +416,7 @@ class ImageQualitySelector:
                 report["platform_score"] = platform_score
             attach_platform_aesthetic_gate(report)
             attach_scene_turnaround_gate(report, review_scene)
+            attach_character_distinctiveness_gate(report, review_scene)
         except Exception as exc:
             fallback = report["metrics"]["technical_score"]
             report.update({
@@ -342,11 +447,13 @@ class ImageQualitySelector:
         )
         min_platform_score = settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE
         for candidate in candidates:
+            scene = _candidate_scene(candidate)
             if "platform_score" not in candidate:
                 platform_score = platform_image_score(candidate)
                 if platform_score is not None:
                     candidate["platform_score"] = platform_score
             attach_platform_aesthetic_gate(candidate)
+            attach_character_distinctiveness_gate(candidate, scene)
             candidate["selection_score"] = image_selection_score(candidate)
         ranked = sorted(
             candidates,
@@ -362,6 +469,7 @@ class ImageQualitySelector:
         identity_ok, identity_scores = _identity_gate(best, min_identity_score)
         platform_score = best.get("platform_score")
         aesthetic_gate = best.get("platform_aesthetic_gate")
+        distinctiveness_gate = best.get("character_distinctiveness_gate")
         report = {
             "kind": "image_candidate_selection",
             "status": "passed",
@@ -375,6 +483,7 @@ class ImageQualitySelector:
             "min_platform_score": min_platform_score,
             "best_identity_scores": identity_scores,
             "best_platform_aesthetic_gate": aesthetic_gate,
+            "best_character_distinctiveness_gate": distinctiveness_gate,
             "require_vlm": require_vlm,
             "candidates": ranked,
         }
@@ -393,6 +502,9 @@ class ImageQualitySelector:
         elif isinstance(aesthetic_gate, dict) and aesthetic_gate.get("status") != "passed":
             report["status"] = "needs_review"
             report["error"] = "Best image platform aesthetic feature gate did not pass"
+        elif isinstance(distinctiveness_gate, dict) and distinctiveness_gate.get("status") != "passed":
+            report["status"] = "needs_review"
+            report["error"] = "Best image character distinctiveness gate did not pass"
         elif best.get("average", 0) < min_average:
             report["status"] = "needs_review"
             report["error"] = f"Best image score {best.get('average', 0)} is below {min_average}"

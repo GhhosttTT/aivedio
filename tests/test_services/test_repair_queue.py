@@ -30,6 +30,32 @@ def test_repair_queue_classifies_identity_and_composition_failures():
     assert any(item["execution"] == "auto" for item in queue)
 
 
+def test_repair_queue_maps_character_distinctiveness_gate_to_identity_lock():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 1,
+            "scene": {"scene_number": 4},
+            "character_distinctiveness_gate": {
+                "status": "needs_review",
+                "low": {
+                    "no_same_face_casting": {
+                        "score": 2,
+                        "evidence": "same-face casting between two named roles",
+                    }
+                },
+                "missing": [],
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "image")
+
+    assert queue[0]["action"] == "regenerate_keyframe_with_identity_lock"
+    assert queue[0]["scene_number"] == 4
+    assert queue[0]["execution"] == "auto"
+
+
 def test_repair_queue_maps_video_identity_drift_to_motion_repair():
     report = {
         "status": "needs_review",
