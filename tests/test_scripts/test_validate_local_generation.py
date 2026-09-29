@@ -979,6 +979,41 @@ def test_validation_summary_blocks_failed_final_composition_review(tmp_path):
     assert any("final composed episode review" in item for item in report["action_items"])
 
 
+def test_validation_summary_blocks_low_final_composition_frame_scores(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery"))
+    write_json(tmp_path / "final.composition_review.json", {
+        "status": "passed",
+        "average": 4.5,
+        "stage": "final_composition",
+        "batches": [{
+            "status": "passed",
+            "average": 4.5,
+            "platform_score": 4.4,
+            "video_aesthetic_gate": {"status": "passed", "low": {}, "missing": []},
+            "character_distinctiveness_gate": {"status": "passed", "low": {}, "missing": []},
+            "video_performance_gate": {"status": "passed", "low": {}, "missing": []},
+            "review": {
+                "facial_identity": {"score": 3, "evidence": "lead face drifts after the scene cut"},
+                "identity_consistency": {"score": 4, "evidence": "wardrobe remains stable"},
+                "temporal_consistency": {"score": 4, "evidence": "motion is coherent"},
+            },
+        }],
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["composition_review_count"] == 1
+    assert report["checks"]["composition_review_passed"] is False
+    assert report["checks"]["video_review_passed"] is False
+
+
 def test_validation_summary_blocks_low_video_identity_gate(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})

@@ -468,6 +468,17 @@ def _composition_reviews_passed(composition_reviews: list[dict]) -> bool:
         for batch in batches:
             if not isinstance(batch, dict) or batch.get("status") != "passed":
                 return False
+            batch_review = batch.get("review") if isinstance(batch.get("review"), dict) else {}
+            for key in ("facial_identity", "identity_consistency"):
+                value = batch_review.get(key)
+                if isinstance(value, dict) and float(value.get("score") or 0) < settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE:
+                    return False
+            temporal = batch_review.get("temporal_consistency")
+            if isinstance(temporal, dict) and float(temporal.get("score") or 0) < settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE:
+                return False
+            platform_score = batch.get("platform_score")
+            if isinstance(platform_score, (int, float)) and platform_score < settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE:
+                return False
             if not _video_aesthetic_gates_passed({"batches": [batch]}):
                 return False
             if not _video_character_distinctiveness_gates_passed({"batches": [batch]}):
