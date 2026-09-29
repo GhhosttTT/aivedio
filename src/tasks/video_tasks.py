@@ -150,12 +150,17 @@ def _apply_video_repair_action(
     noise_aug_strength: float,
     repair_action: str | None,
 ) -> tuple[int, float]:
-    if repair_action != "lower_motion_and_regenerate_video":
-        return motion_bucket_id, noise_aug_strength
-    return (
-        max(1, min(255, int(motion_bucket_id * 0.58))),
-        max(0.0, min(1.0, round(noise_aug_strength * 0.45, 4))),
-    )
+    if repair_action == "lower_motion_and_regenerate_video":
+        return (
+            max(1, min(255, int(motion_bucket_id * 0.58))),
+            max(0.0, min(1.0, round(noise_aug_strength * 0.45, 4))),
+        )
+    if repair_action == "increase_motion_and_regenerate_video":
+        return (
+            max(1, min(255, int(motion_bucket_id * 1.22))),
+            max(0.0, min(1.0, round(max(noise_aug_strength * 1.15, noise_aug_strength + 0.006), 4))),
+        )
+    return motion_bucket_id, noise_aug_strength
 
 
 def _scene_review_payload(scene: Scene, project_id: int | None = None, db=None) -> dict:
@@ -403,10 +408,10 @@ def _video_repair_action_from_candidates(candidates: list[dict]) -> str | None:
         "video",
     )
     for item in queue:
-        if (
-            item.get("execution") == "auto"
-            and item.get("action") == "lower_motion_and_regenerate_video"
-        ):
+        if item.get("execution") == "auto" and item.get("action") in {
+            "lower_motion_and_regenerate_video",
+            "increase_motion_and_regenerate_video",
+        }:
             return str(item["action"])
     return None
 

@@ -37,3 +37,21 @@ def test_repair_execution_plan_passes_face_repair_action_to_render_images(tmp_pa
 
     assert plan["auto"][0]["parameter_hints"]["natural_face_texture_required"] is True
     assert any("--repair-action refine_face_aesthetic_detail" in command for command in plan["rerun_validation_commands"])
+
+
+def test_repair_execution_plan_handles_increase_motion_video_rerun(tmp_path):
+    plan = build_repair_execution_plan(
+        tmp_path,
+        [{
+            "action": "increase_motion_and_regenerate_video",
+            "execution": "auto",
+            "stage": "video",
+            "scene_number": 4,
+            "reason": "video motion too static or frozen",
+        }],
+    )
+
+    item = plan["auto"][0]
+    assert item["action"] == "increase_motion_and_regenerate_video"
+    assert item["parameter_hints"]["raise_motion_bucket_id"] is True
+    assert item["parameter_hints"]["raise_noise_aug_strength_slightly"] is True

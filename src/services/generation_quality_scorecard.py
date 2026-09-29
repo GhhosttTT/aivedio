@@ -22,6 +22,7 @@ ACTION_DIMENSIONS = {
     "refine_face_aesthetic_detail": "platform_aesthetic",
     "regenerate_keyframe_with_prop_constraints": "technical_integrity",
     "lower_motion_and_regenerate_video": "temporal_motion",
+    "increase_motion_and_regenerate_video": "temporal_motion",
     "split_scene": "story_atomicity",
     "fix_workflow_profile": "workflow_assets",
     "refreeze_spatial_plan": "workflow_assets",

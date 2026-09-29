@@ -102,6 +102,21 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 f"python -m scripts.validate_local_generation compare-baseline --output {output_path} --candidate <regenerated_clip.mp4> --baseline <seed_dance_reference.mp4>",
                 f"python -m scripts.validate_local_generation summarize --output {output_path}",
             ]
+        elif action == "increase_motion_and_regenerate_video":
+            entry["rerun_strategy"] = (
+                "Regenerate the affected clip with a higher motion floor, then rerun VLM video review and baseline comparison."
+            )
+            entry["parameter_hints"] = {
+                "repair_action": "increase_motion_and_regenerate_video",
+                "raise_motion_bucket_id": True,
+                "raise_noise_aug_strength_slightly": True,
+                "increase_video_candidates": True,
+            }
+            commands = [
+                f"python -m scripts.validate_local_generation review-video --output {output_path} --video <regenerated_clip.mp4> --description \"<scene description>\"",
+                f"python -m scripts.validate_local_generation compare-baseline --output {output_path} --candidate <regenerated_clip.mp4> --baseline <seed_dance_reference.mp4>",
+                f"python -m scripts.validate_local_generation summarize --output {output_path}",
+            ]
         else:
             entry["rerun_strategy"] = item.get("recommendation") or "Resolve this repair action and rerun summarize."
             commands = [f"python -m scripts.validate_local_generation summarize --output {output_path}"]

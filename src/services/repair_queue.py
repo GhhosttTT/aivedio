@@ -168,7 +168,6 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
     video_metrics = candidate.get("technical_metrics") if isinstance(candidate.get("technical_metrics"), dict) else {}
     video_score = video_metrics.get("technical_score")
     if video_metrics and isinstance(video_score, (int, float)) and video_score < 3:
-        evidence.append("low technical video score: motion sharpness exposure stability")
         if video_metrics.get("motion_energy", 99) < 2:
             evidence.append("video motion too static or frozen")
         if video_metrics.get("sharpness", 99) < 8:
@@ -178,6 +177,7 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
             evidence.append("video exposure is outside usable range")
         if video_metrics.get("brightness_variance", 0) > 500:
             evidence.append("video brightness flicker and unstable exposure")
+        evidence.append("low technical video score: motion sharpness exposure stability")
     return evidence
 
 
@@ -219,7 +219,18 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
             "candidate_index": candidate.get("index"),
             "scene_number": _scene_number(candidate),
         }
-    if text.startswith("low technical video score") or text.startswith("video motion too static") or text.startswith("video sharpness collapsed") or text.startswith("video exposure") or text.startswith("video brightness flicker"):
+    if text.startswith("video motion too static"):
+        return {
+            "priority": _priority(text),
+            "stage": "video",
+            "action": "increase_motion_and_regenerate_video",
+            "execution": _execution_mode("increase_motion_and_regenerate_video"),
+            "reason": evidence[:240],
+            "recommendation": "Regenerate the clip with a higher motion floor so it does not read as a frozen still.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
+    if text.startswith("low technical video score") or text.startswith("video sharpness collapsed") or text.startswith("video exposure") or text.startswith("video brightness flicker"):
         return {
             "priority": _priority(text),
             "stage": "video",
@@ -277,6 +288,7 @@ def _execution_mode(action: str) -> str:
         "refine_prompt_composition",
         "refine_face_aesthetic_detail",
         "lower_motion_and_regenerate_video",
+        "increase_motion_and_regenerate_video",
     }:
         return "auto"
     if action in {"regenerate_turnaround_album", "regenerate_character_identity", "refreeze_spatial_plan", "fix_workflow_profile", "start_local_reviewer"}:

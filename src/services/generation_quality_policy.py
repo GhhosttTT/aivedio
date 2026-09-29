@@ -71,6 +71,12 @@ ACTION_BUDGETS = {
             "min_candidates": 4,
             "profile": "temporal_identity_stabilization",
         },
+        "increase_motion_and_regenerate_video": {
+            "candidate_multiplier": 1.5,
+            "extra_refinement_passes": 1,
+            "min_candidates": 4,
+            "profile": "motion_floor_recovery",
+        },
     },
 }
 

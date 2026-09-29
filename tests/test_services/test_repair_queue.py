@@ -97,7 +97,7 @@ def test_repair_queue_maps_low_image_technical_metrics_to_composition_repair():
     assert queue[0]["scene_number"] == 6
 
 
-def test_repair_queue_maps_low_video_technical_metrics_to_motion_repair():
+def test_repair_queue_maps_static_video_technical_metrics_to_increase_motion_repair():
     report = {
         "status": "needs_review",
         "candidates": [{
@@ -115,7 +115,7 @@ def test_repair_queue_maps_low_video_technical_metrics_to_motion_repair():
 
     queue = build_repair_queue(report, "video")
 
-    assert queue[0]["action"] == "lower_motion_and_regenerate_video"
+    assert queue[0]["action"] == "increase_motion_and_regenerate_video"
     assert queue[0]["execution"] == "auto"
     assert queue[0]["scene_number"] == 9
 

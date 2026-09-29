@@ -168,7 +168,10 @@ class TaskOrchestrator:
             "refine_prompt_composition",
             "refine_face_aesthetic_detail",
         }
-        video_actions = {"lower_motion_and_regenerate_video"}
+        video_actions = {
+            "lower_motion_and_regenerate_video",
+            "increase_motion_and_regenerate_video",
+        }
         blocked_actions = {
             "regenerate_character_identity": "请先在角色参考页重新生成身份方案和参考图，再重做关键帧。",
             "split_scene": "请先把该分镜拆成更简单的原子镜头，再重新生成。",

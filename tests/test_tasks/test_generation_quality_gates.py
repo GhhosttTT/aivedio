@@ -1449,6 +1449,25 @@ def test_video_repair_action_from_candidates_promotes_motion_repair():
     assert action == "lower_motion_and_regenerate_video"
 
 
+def test_video_repair_action_from_candidates_promotes_static_motion_repair():
+    action = _video_repair_action_from_candidates([
+        {
+            "average": 2.8,
+            "status": "needs_review",
+            "scene": {"scene_number": 1},
+            "technical_metrics": {
+                "technical_score": 2.4,
+                "motion_energy": 0.3,
+                "sharpness": 42.0,
+                "brightness": 128.0,
+                "brightness_variance": 20.0,
+            },
+        }
+    ])
+
+    assert action == "increase_motion_and_regenerate_video"
+
+
 def test_video_repair_action_ignores_image_stage_aesthetic_repairs():
     action = _video_repair_action_from_candidates([
         {
@@ -2221,6 +2240,13 @@ def test_video_repair_action_lowers_motion_and_noise():
 
     assert motion == 87
     assert noise == 0.036
+
+
+def test_video_repair_action_raises_motion_floor():
+    motion, noise = _apply_video_repair_action(120, 0.02, "increase_motion_and_regenerate_video")
+
+    assert motion == 146
+    assert noise == 0.026
 
 
 def test_unknown_video_repair_action_keeps_parameters_unchanged():
