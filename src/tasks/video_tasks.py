@@ -584,13 +584,13 @@ def _video_selection_score(candidate: dict) -> float:
     return round(
         max(0.0, min(
             5.0,
-            float(platform_score) * 0.20
-            + float(average) * 0.12
-            + float(technical_score) * 0.08
-            + float(distinctiveness_score) * 0.15
-            + float(performance_score) * 0.15
-            + float(aesthetic_score) * 0.07
-            + float(reference_score) * 0.03
+            float(platform_score) * 0.16
+            + float(average) * 0.10
+            + float(technical_score) * 0.07
+            + float(distinctiveness_score) * 0.14
+            + float(performance_score) * 0.14
+            + float(aesthetic_score) * 0.04
+            + float(reference_score) * 0.15
             + float(critical_floor_score) * 0.20,
         )),
         2,
