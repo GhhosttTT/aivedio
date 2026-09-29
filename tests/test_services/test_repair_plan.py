@@ -25,6 +25,27 @@ def test_repair_execution_plan_handles_identity_lock_rerun(tmp_path):
     assert any("--scene-number 3" in command for command in plan["rerun_validation_commands"])
 
 
+def test_repair_execution_plan_handles_role_separation_rerun(tmp_path):
+    plan = build_repair_execution_plan(
+        tmp_path,
+        [{
+            "action": "regenerate_keyframe_with_role_separation",
+            "execution": "auto",
+            "stage": "image",
+            "scene_number": 4,
+            "reason": "same-face casting between two named roles",
+        }],
+    )
+
+    item = plan["auto"][0]
+    assert item["action"] == "regenerate_keyframe_with_role_separation"
+    assert item["parameter_hints"]["use_identity_contrast_matrix"] is True
+    assert item["parameter_hints"]["require_role_separation"] is True
+    assert "role_separation" in item["quality_pipeline"]["stages"]
+    assert "distinctiveness_vlm_review" in item["quality_pipeline"]["stages"]
+    assert any("--repair-action regenerate_keyframe_with_role_separation" in command for command in plan["rerun_validation_commands"])
+
+
 def test_repair_execution_plan_passes_face_repair_action_to_render_images(tmp_path):
     plan = build_repair_execution_plan(
         tmp_path,

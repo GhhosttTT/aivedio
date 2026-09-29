@@ -224,7 +224,7 @@ def test_select_best_rejects_missing_character_distinctiveness_scores_for_multi_
         ], tmp_path / "final.png", tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0)
 
     report = (tmp_path / "quality.json").read_text(encoding="utf-8")
-    assert "regenerate_keyframe_with_identity_lock" in report
+    assert "regenerate_keyframe_with_role_separation" in report
 
 
 def test_select_best_rejects_when_identity_scores_are_low(tmp_path):

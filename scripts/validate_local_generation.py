@@ -55,7 +55,7 @@ REQUIRED_MANUAL_CLIP_DIMENSIONS = {
 }
 
 MANUAL_CASE_DIMENSION_REPAIR_HINTS = {
-    "identity_match": "identity drift face drift changed wardrobe character distinctiveness",
+    "identity_match": "identity drift face drift changed wardrobe wrong view angle",
     "phone_readability": "phone_readability crop composition face prop action clarity",
     "platform_aesthetic": "platform score commercial aesthetic lighting skin_texture production value",
     "visual_integrity": "visual_integrity artifact hand finger prop anatomy random text",

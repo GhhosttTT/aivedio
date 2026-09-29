@@ -8,11 +8,21 @@ from typing import Any
 ACTION_RULES = [
     (
         (
+            "same-face casting", "same-face characters", "same face characters", "same-face cast",
+            "no_same_face_casting", "copied facial geometry", "copied face geometry",
+            "merged visual identity", "merged facial geometry", "role_readability",
+            "character_distinctiveness", "character distinctiveness",
+            "face_geometry_separation", "hair_separation", "wardrobe_separation",
+        ),
+        "regenerate_keyframe_with_role_separation",
+        "Regenerate the keyframe with stricter multi-character role separation, identity contrast, face geometry, hair, and wardrobe constraints.",
+        "image",
+    ),
+    (
+        (
             "changed face", "changed hair", "changed wardrobe", "identity drift",
             "wrong camera angle versus character sheet", "wrong wardrobe", "face drift",
-            "same-face", "same face",
-            "character distinctiveness", "character_distinctiveness", "face_geometry",
-            "no_same_face_casting", "role_readability", "hair_separation", "wardrobe_separation",
+            "same-face", "same face", "face_geometry",
         ),
         "regenerate_keyframe_with_identity_lock",
         "Regenerate the keyframe with locked character-sheet identity, wardrobe, hair, and view-angle constraints.",
@@ -348,6 +358,7 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
 def _execution_mode(action: str) -> str:
     if action in {
         "regenerate_keyframe_with_identity_lock",
+        "regenerate_keyframe_with_role_separation",
         "regenerate_keyframe_with_prop_constraints",
         "refine_prompt_composition",
         "refine_face_aesthetic_detail",

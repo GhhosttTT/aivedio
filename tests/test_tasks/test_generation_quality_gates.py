@@ -2512,6 +2512,25 @@ def test_image_identity_lock_repair_adds_character_sheet_constraints():
     assert "same-face cast" in negative
 
 
+def test_image_role_separation_repair_adds_identity_contrast_constraints():
+    prompt, negative = _apply_image_repair_action(
+        "two characters argue in a hallway",
+        "blurry",
+        "regenerate_keyframe_with_role_separation",
+    )
+    profile = _repair_parameter_profile("regenerate_keyframe_with_role_separation")
+    steps, cfg = _quality_parameters(1, 0, 40, 6.0, "regenerate_keyframe_with_role_separation")
+
+    assert "multi-character role separation" in prompt
+    assert "identity contrast matrix" in prompt
+    assert "each named character's unique face geometry" in prompt
+    assert "same-face casting" in negative
+    assert "copied facial geometry" in negative
+    assert profile["reason"] == "multi_character_role_separation_repair"
+    assert steps > 40
+    assert cfg < 6.0
+
+
 def test_unknown_image_repair_action_keeps_prompt_unchanged():
     assert _apply_image_repair_action("prompt", "negative", "unknown_action") == ("prompt", "negative")
 

@@ -164,6 +164,7 @@ class TaskOrchestrator:
 
         image_actions = {
             "regenerate_keyframe_with_identity_lock",
+            "regenerate_keyframe_with_role_separation",
             "regenerate_keyframe_with_prop_constraints",
             "refine_prompt_composition",
             "refine_face_aesthetic_detail",

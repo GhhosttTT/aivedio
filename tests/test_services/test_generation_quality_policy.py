@@ -17,6 +17,25 @@ def test_repair_image_budget_increases_candidates_and_refinement(monkeypatch):
     assert budget.action_profile == "identity_lock"
 
 
+def test_role_separation_image_budget_uses_heavier_multi_character_profile(monkeypatch):
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_CANDIDATES", 2)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 1)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_MAX_IMAGE_CANDIDATES", 8)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_IMAGE_CANDIDATE_MULTIPLIER", 1.5)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES", 1)
+
+    budget = image_quality_budget("regenerate_keyframe_with_role_separation")
+    pipeline = image_quality_pipeline({"id": "two_shot"}, "regenerate_keyframe_with_role_separation")
+
+    assert budget.candidate_count == 6
+    assert budget.refinement_passes == 4
+    assert budget.action_profile == "multi_character_role_separation"
+    assert "role_separation" in pipeline.stages
+    assert "distinctiveness_vlm_review" in pipeline.stages
+    assert "spatial_control" in pipeline.required_capabilities
+
+
 def test_video_budget_respects_max_candidate_cap(monkeypatch):
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_VIDEO_CANDIDATES", 6)

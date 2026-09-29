@@ -45,6 +45,25 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 f"python -m scripts.validate_local_generation review-images --output {output_path}",
                 f"python -m scripts.validate_local_generation summarize --output {output_path}",
             ]
+        elif action == "regenerate_keyframe_with_role_separation":
+            entry["rerun_strategy"] = (
+                "Regenerate affected keyframes with stricter multi-character role separation and identity contrast constraints."
+            )
+            entry["parameter_hints"] = {
+                "repair_action": "regenerate_keyframe_with_role_separation",
+                "lock_character_sheet": True,
+                "use_identity_contrast_matrix": True,
+                "require_role_separation": True,
+                "increase_image_candidates": True,
+                "quality_mode": "ultra",
+                "optimization_mode": "quality",
+            }
+            _attach_image_pipeline_hint(entry, action, {"id": "two_shot"})
+            commands = [
+                _render_images_command(output_path, action, item.get("scene_number")),
+                f"python -m scripts.validate_local_generation review-images --output {output_path}",
+                f"python -m scripts.validate_local_generation summarize --output {output_path}",
+            ]
         elif action == "refine_prompt_composition":
             entry["rerun_strategy"] = (
                 "Rerun keyframe generation with composition repair constraints, then run review-images again."

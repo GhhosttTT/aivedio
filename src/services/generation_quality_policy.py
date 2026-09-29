@@ -103,6 +103,12 @@ REPAIR_PIPELINE_STAGES = {
         "negative": "identity drift after repair, same-face cast, changed wardrobe after identity lock",
         "capabilities": ["character_identity", "face_repair", "candidate_review"],
     },
+    "regenerate_keyframe_with_role_separation": {
+        "stages": ["identity_reference", "spatial_control", "role_separation", "face_detail", "distinctiveness_vlm_review"],
+        "prompt": "repair pipeline: enforce identity contrast matrix, role separation, and character distinctiveness VLM review before acceptance",
+        "negative": "same-face casting after repair, copied facial geometry, merged visual identity, hidden second actor",
+        "capabilities": ["character_identity", "spatial_control", "face_repair", "candidate_review"],
+    },
     "refine_face_aesthetic_detail": {
         "stages": ["face_detail", "skin_texture_pass", "upscale", "artifact_vlm_review"],
         "prompt": "repair pipeline: high quality face detail pass, skin texture artifact check, upscale artifact review",
@@ -131,6 +137,12 @@ ACTION_BUDGETS = {
             "extra_refinement_passes": 1,
             "min_candidates": 5,
             "profile": "identity_lock",
+        },
+        "regenerate_keyframe_with_role_separation": {
+            "candidate_multiplier": 2.0,
+            "extra_refinement_passes": 2,
+            "min_candidates": 6,
+            "profile": "multi_character_role_separation",
         },
         "refine_prompt_composition": {
             "candidate_multiplier": 1.4,

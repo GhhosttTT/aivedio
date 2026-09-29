@@ -30,7 +30,7 @@ def test_repair_queue_classifies_identity_and_composition_failures():
     assert any(item["execution"] == "auto" for item in queue)
 
 
-def test_repair_queue_maps_character_distinctiveness_gate_to_identity_lock():
+def test_repair_queue_maps_character_distinctiveness_gate_to_role_separation():
     report = {
         "status": "needs_review",
         "candidates": [{
@@ -51,7 +51,7 @@ def test_repair_queue_maps_character_distinctiveness_gate_to_identity_lock():
 
     queue = build_repair_queue(report, "image")
 
-    assert queue[0]["action"] == "regenerate_keyframe_with_identity_lock"
+    assert queue[0]["action"] == "regenerate_keyframe_with_role_separation"
     assert queue[0]["scene_number"] == 4
     assert queue[0]["execution"] == "auto"
 

@@ -525,6 +525,11 @@ IMAGE_REPAIR_PARAMETER_PROFILES = {
         "cfg_delta": -0.2,
         "reason": "character_identity_lock_repair",
     },
+    "regenerate_keyframe_with_role_separation": {
+        "steps_boost": 14,
+        "cfg_delta": -0.25,
+        "reason": "multi_character_role_separation_repair",
+    },
     "refine_prompt_composition": {
         "steps_boost": 8,
         "cfg_delta": -0.3,
@@ -609,6 +614,10 @@ IMAGE_REPAIR_PROMPTS = {
         "repair pass: lock the approved character-sheet identity, preserve exact face geometry, hair shape, "
         "wardrobe color and silhouette, selected reference view angle, no same-face casting, no random outfit changes"
     ),
+    "regenerate_keyframe_with_role_separation": (
+        "repair pass: enforce multi-character role separation, preserve each named character's unique face geometry, "
+        "hair silhouette, age impression, wardrobe color, body scale, and identity contrast matrix; keep every visible role visually distinct"
+    ),
     "refine_prompt_composition": (
         "repair pass: improve short-drama framing, balanced composition, clean crop, readable face, "
         "cinematic lighting, clear foreground-background separation, polished commercial still"
@@ -628,6 +637,10 @@ IMAGE_REPAIR_NEGATIVES = {
     "regenerate_keyframe_with_identity_lock": (
         "changed face, changed hair, changed wardrobe, wrong view angle, same-face cast, identity drift, "
         "face swap, random costume, inconsistent body proportion"
+    ),
+    "regenerate_keyframe_with_role_separation": (
+        "same-face casting, copied facial geometry, copied hair, copied wardrobe, merged roles, hidden second actor, "
+        "swapped wardrobe, unclear role readability, duplicated face shape"
     ),
     "refine_prompt_composition": (
         "bad crop, cropped face, awkward framing, flat lighting, muddy lighting, cluttered composition, "
