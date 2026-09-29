@@ -83,9 +83,9 @@ SHOT_PIPELINE_STAGES = {
         "capabilities": ["pose_control", "spatial_control", "upscale", "candidate_review"],
     },
     "prop_interaction": {
-        "stages": ["pose_control", "hand_prop_integrity", "face_detail", "upscale", "final_vlm_review"],
-        "prompt": "production pipeline: hand-prop integrity pass, readable fingers, stable prop contact, face detail pass, final VLM review",
-        "negative": "broken fingers after detail pass, disappearing prop, floating prop, unclear hand-object contact",
+        "stages": ["pose_control", "hand_prop_integrity", "body_anatomy_integrity", "face_detail", "upscale", "final_vlm_review"],
+        "prompt": "production pipeline: hand-prop integrity pass, readable fingers, stable prop contact, local anatomy check, face detail pass, final VLM review",
+        "negative": "broken fingers after detail pass, twisted wrist, broken local anatomy, disappearing prop, floating prop, unclear hand-object contact",
         "capabilities": ["pose_control", "face_repair", "upscale", "candidate_review"],
     },
     "establishing": {
@@ -161,10 +161,13 @@ REPAIR_PIPELINE_STAGES = {
         "capabilities": ["spatial_control", "candidate_review"],
     },
     "regenerate_keyframe_with_prop_constraints": {
-        "stages": ["pose_control", "hand_prop_integrity", "prop_vlm_review"],
-        "prompt": "repair pipeline: hand and prop constraint pass with prop VLM review",
-        "negative": "changed prop after repair, fused fingers, disappearing object",
-        "capabilities": ["pose_control", "candidate_review"],
+        "stages": ["pose_control", "hand_prop_integrity", "body_anatomy_integrity", "artifact_vlm_review", "prop_vlm_review"],
+        "prompt": (
+            "repair pipeline: hand, prop, wrist, arm, and local anatomy constraint pass; "
+            "remove random text, inpaint scars, and upscale artifacts; prop VLM review before acceptance"
+        ),
+        "negative": "changed prop after repair, fused fingers, twisted wrist, broken local anatomy, random text, inpaint scar, disappearing object",
+        "capabilities": ["pose_control", "upscale", "candidate_review"],
     },
 }
 
@@ -250,10 +253,10 @@ ACTION_BUDGETS = {
             "profile": "face_aesthetic_micro_detail",
         },
         "regenerate_keyframe_with_prop_constraints": {
-            "candidate_multiplier": 1.35,
-            "extra_refinement_passes": 1,
-            "min_candidates": 4,
-            "profile": "prop_hand_constraints",
+            "candidate_multiplier": 1.8,
+            "extra_refinement_passes": 2,
+            "min_candidates": 5,
+            "profile": "prop_hand_anatomy_integrity",
         },
     },
     "video": {

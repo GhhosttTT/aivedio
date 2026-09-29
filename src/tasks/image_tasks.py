@@ -546,9 +546,9 @@ IMAGE_REPAIR_PARAMETER_PROFILES = {
         "reason": "face_aesthetic_detail_repair",
     },
     "regenerate_keyframe_with_prop_constraints": {
-        "steps_boost": 6,
-        "cfg_delta": 0.2,
-        "reason": "prop_hand_repair",
+        "steps_boost": 12,
+        "cfg_delta": -0.1,
+        "reason": "prop_hand_anatomy_integrity_repair",
     },
 }
 
@@ -638,7 +638,8 @@ IMAGE_REPAIR_PROMPTS = {
     ),
     "regenerate_keyframe_with_prop_constraints": (
         "repair pass: preserve important props, readable hands, natural fingers, clear hand-object contact, "
-        "stable prop color and position, no disappearing objects"
+        "stable prop color and position, believable wrist and arm joints, clean local anatomy, "
+        "no disappearing objects, no random text, no repair scar, premium commercial still finish"
     ),
 }
 
@@ -665,7 +666,8 @@ IMAGE_REPAIR_NEGATIVES = {
     ),
     "regenerate_keyframe_with_prop_constraints": (
         "broken fingers, fused fingers, missing fingers, deformed hands, disappearing prop, changed prop, "
-        "floating object, unclear hand-object contact"
+        "floating object, unclear hand-object contact, extra fingers, twisted wrist, broken anatomy, "
+        "random text, watermark, repair scar, inpaint scar, noisy upscale artifact"
     ),
 }
 

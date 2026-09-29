@@ -2624,8 +2624,18 @@ def test_image_repair_action_adds_targeted_generation_constraints():
 
     assert "readable hands" in prompt
     assert "stable prop color" in prompt
+    assert "clean local anatomy" in prompt
+    assert "premium commercial still finish" in prompt
     assert "broken fingers" in negative
     assert "disappearing prop" in negative
+    assert "twisted wrist" in negative
+    assert "random text" in negative
+    assert "inpaint scar" in negative
+    profile = _repair_parameter_profile("regenerate_keyframe_with_prop_constraints")
+    steps, cfg = _quality_parameters(1, 0, 40, 6.0, "regenerate_keyframe_with_prop_constraints")
+    assert profile["reason"] == "prop_hand_anatomy_integrity_repair"
+    assert steps > 40
+    assert cfg < 6.0
 
 
 def test_image_composition_repair_adds_commercial_framing_constraints():

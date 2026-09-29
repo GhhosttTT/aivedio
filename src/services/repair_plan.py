@@ -125,6 +125,10 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "repair_action": "regenerate_keyframe_with_prop_constraints",
                 "lock_props": True,
                 "increase_image_candidates": True,
+                "quality_mode": "ultra",
+                "optimization_mode": "quality",
+                "anatomy_integrity_required": True,
+                "repair_artifacts_absent_required": True,
             }
             _attach_image_pipeline_hint(entry, action, {"id": "prop_interaction"})
             commands = [

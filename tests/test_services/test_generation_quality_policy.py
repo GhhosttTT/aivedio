@@ -137,6 +137,28 @@ def test_final_composition_finish_video_budget_uses_heavy_finishing_profile(monk
     assert budget.action_profile == "final_composition_finishing_recovery"
 
 
+def test_prop_integrity_image_budget_uses_heavier_anatomy_repair_profile(monkeypatch):
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_CANDIDATES", 2)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 1)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_MAX_IMAGE_CANDIDATES", 8)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_IMAGE_CANDIDATE_MULTIPLIER", 1.5)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES", 1)
+
+    budget = image_quality_budget("regenerate_keyframe_with_prop_constraints")
+    pipeline = image_quality_pipeline({"id": "prop_interaction"}, "regenerate_keyframe_with_prop_constraints")
+
+    assert budget.candidate_count == 6
+    assert budget.refinement_passes == 4
+    assert budget.action_profile == "prop_hand_anatomy_integrity"
+    assert "hand_prop_integrity" in pipeline.stages
+    assert "body_anatomy_integrity" in pipeline.stages
+    assert "artifact_vlm_review" in pipeline.stages
+    assert "upscale" in pipeline.required_capabilities
+    assert "random text" in pipeline.negative_directive
+    assert "inpaint scar" in pipeline.negative_directive
+
+
 def test_video_quality_pipeline_uses_dialogue_performance_contract():
     pipeline = video_quality_pipeline({"shot_role": "dialogue_reaction"})
 
@@ -228,11 +250,13 @@ def test_prop_interaction_pipeline_requires_hand_prop_and_face_quality():
 
     assert pipeline.shot_profile_id == "prop_interaction"
     assert "hand_prop_integrity" in pipeline.stages
+    assert "body_anatomy_integrity" in pipeline.stages
     assert "face_detail" in pipeline.stages
     assert "upscale" in pipeline.stages
     assert "pose_control" in pipeline.required_capabilities
     assert "final VLM review" in pipeline.prompt_directive
     assert "disappearing prop" in pipeline.negative_directive
+    assert "twisted wrist" in pipeline.negative_directive
 
 
 def test_face_repair_pipeline_adds_artifact_review():

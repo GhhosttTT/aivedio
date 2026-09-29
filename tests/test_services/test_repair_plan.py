@@ -86,6 +86,31 @@ def test_repair_execution_plan_handles_project_style_consistency_rerun(tmp_path)
     assert any("--repair-action refine_project_style_consistency" in command for command in plan["rerun_validation_commands"])
 
 
+def test_repair_execution_plan_handles_prop_anatomy_integrity_rerun(tmp_path):
+    plan = build_repair_execution_plan(
+        tmp_path,
+        [{
+            "action": "regenerate_keyframe_with_prop_constraints",
+            "execution": "auto",
+            "stage": "image",
+            "scene_number": 8,
+            "reason": "broken hand, random text, and visible inpaint scar near phone prop",
+        }],
+    )
+
+    item = plan["auto"][0]
+    assert item["action"] == "regenerate_keyframe_with_prop_constraints"
+    assert item["parameter_hints"]["lock_props"] is True
+    assert item["parameter_hints"]["quality_mode"] == "ultra"
+    assert item["parameter_hints"]["anatomy_integrity_required"] is True
+    assert item["parameter_hints"]["repair_artifacts_absent_required"] is True
+    assert "body_anatomy_integrity" in item["quality_pipeline"]["stages"]
+    assert "artifact_vlm_review" in item["quality_pipeline"]["stages"]
+    assert "upscale" in item["parameter_hints"]["required_workflow_capabilities"]
+    assert any("--repair-action regenerate_keyframe_with_prop_constraints" in command for command in plan["rerun_validation_commands"])
+    assert any("--scene-number 8" in command for command in plan["rerun_validation_commands"])
+
+
 def test_repair_execution_plan_handles_lower_motion_video_rerun(tmp_path):
     plan = build_repair_execution_plan(
         tmp_path,
