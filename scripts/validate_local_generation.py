@@ -103,6 +103,7 @@ def render_images(
     quality_mode: str = "ultra",
     optimization_mode: str = "quality",
     repair_action: str | None = None,
+    scene_number: int | None = None,
 ):
     steps, cfg_scale = _quality_parameters(
         0,
@@ -126,14 +127,25 @@ def render_images(
             "parameter_optimization": quality_mode in {"high_quality", "ultra"},
             "repair_action": repair_action,
             "repair_parameter_profile": _repair_parameter_profile(repair_action),
+            "target_scene_number": scene_number,
         },
         "cases": [],
+        "skipped_cases": [],
     }
     service = ComfyUIService(base_url=base_url, timeout=900)
     try:
         for case in cases:
             if not str(case["id"]).replace("_", "").isalnum():
                 raise ValueError("Case ID must be alphanumeric")
+            case_scene = case.get("scene") if isinstance(case.get("scene"), dict) else {}
+            case_scene_number = case_scene.get("scene_number")
+            if scene_number is not None and case_scene_number != scene_number:
+                report["skipped_cases"].append({
+                    "id": case["id"],
+                    "scene_number": case_scene_number,
+                    "reason": "scene_number_filter",
+                })
+                continue
             compiled = ShotPromptService().compile(case["prompt"])
             prompt, negative_prompt = _apply_image_repair_action(
                 compiled.prompt,
@@ -180,6 +192,8 @@ def render_images(
                 },
             })
             write_report(output / "render.json", report)
+        if not report["cases"]:
+            raise ValueError(f"No validation cases matched scene_number={scene_number}")
         report["status"] = "rendered_pending_human_review"
     except Exception as exc:
         report["error"] = str(exc)
@@ -1068,6 +1082,7 @@ def main():
         "refine_face_aesthetic_detail",
         "regenerate_keyframe_with_prop_constraints",
     ], help="Apply targeted image repair constraints during render-images")
+    parser.add_argument("--scene-number", type=int, help="Render only one validation scene number")
     parser.add_argument("--max-actions", type=int, default=5, help="Maximum automatic repairs to select for quality-loop")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -1089,6 +1104,7 @@ def main():
             quality_mode=args.quality_mode,
             optimization_mode=args.optimization_mode,
             repair_action=args.repair_action,
+            scene_number=args.scene_number,
         )
     elif args.mode == "review-images":
         report = review_images(args.output, args.reference)

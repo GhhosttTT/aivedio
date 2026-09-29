@@ -348,6 +348,72 @@ def test_render_images_applies_repair_action_constraints(tmp_path, monkeypatch):
     assert report["cases"][0]["request"]["repair_parameter_profile"]["reason"] == "face_aesthetic_detail_repair"
 
 
+def test_render_images_can_target_one_scene_number(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeClient:
+        def close(self):
+            return None
+
+    class FakeComfyUIService:
+        def __init__(self, *args, **kwargs):
+            self.client = FakeClient()
+
+        def generate_image(self, **kwargs):
+            calls.append(kwargs)
+            path = tmp_path / f"rendered_{len(calls)}.png"
+            path.write_bytes(b"image")
+            return str(path)
+
+    monkeypatch.setattr(validator, "ComfyUIService", FakeComfyUIService)
+
+    report = validator.render_images(
+        [
+            {"id": "first", "prompt": "first scene", "seed": 1, "scene": {"scene_number": 1}},
+            {"id": "second", "prompt": "second scene", "seed": 2, "scene": {"scene_number": 2}},
+        ],
+        tmp_path,
+        repair_action="refine_prompt_composition",
+        scene_number=2,
+    )
+
+    assert report["status"] == "rendered_pending_human_review"
+    assert len(calls) == 1
+    assert report["render_profile"]["target_scene_number"] == 2
+    assert report["cases"][0]["id"] == "second"
+    assert report["cases"][0]["request"]["repair_action"] == "refine_prompt_composition"
+    assert report["skipped_cases"] == [{
+        "id": "first",
+        "scene_number": 1,
+        "reason": "scene_number_filter",
+    }]
+
+
+def test_render_images_reports_error_when_scene_filter_matches_nothing(tmp_path, monkeypatch):
+    class FakeClient:
+        def close(self):
+            return None
+
+    class FakeComfyUIService:
+        def __init__(self, *args, **kwargs):
+            self.client = FakeClient()
+
+        def generate_image(self, **_kwargs):
+            raise AssertionError("generate_image should not be called")
+
+    monkeypatch.setattr(validator, "ComfyUIService", FakeComfyUIService)
+
+    report = validator.render_images(
+        [{"id": "first", "prompt": "first scene", "seed": 1, "scene": {"scene_number": 1}}],
+        tmp_path,
+        scene_number=9,
+    )
+
+    assert report["status"] == "error"
+    assert "scene_number=9" in report["error"]
+    assert report["cases"] == []
+
+
 def test_review_images_builds_repair_queue_for_failed_keyframes(tmp_path, monkeypatch):
     write_json(tmp_path / "render.json", {
         "status": "rendered_pending_human_review",

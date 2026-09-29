@@ -33,6 +33,9 @@ class TestVideoComposerProperties:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "wb") as file:
                 file.write(b"test-media-placeholder")
+
+    def _example_dir(self):
+        return tempfile.mkdtemp(dir=self.temp_dir)
     
     @given(
         num_videos=st.integers(min_value=2, max_value=10),
@@ -49,8 +52,9 @@ class TestVideoComposerProperties:
         3. 时长误差在可接受范围内（±0.1秒）
         """
         # 创建测试视频路径
-        video_paths = [os.path.join(self.temp_dir, f"video_{i}.mp4") for i in range(num_videos)]
-        output_path = os.path.join(self.temp_dir, "output.mp4")
+        example_dir = self._example_dir()
+        video_paths = [os.path.join(example_dir, f"video_{i}.mp4") for i in range(num_videos)]
+        output_path = os.path.join(example_dir, "output.mp4")
         self._touch_files(video_paths)
         
         # Mock _get_duration 方法
@@ -92,9 +96,10 @@ class TestVideoComposerProperties:
         2. 音视频同步不会导致时长异常
         3. 同步后的时长在合理范围内
         """
-        video_path = os.path.join(self.temp_dir, "video.mp4")
-        audio_path = os.path.join(self.temp_dir, "audio.mp3")
-        output_path = os.path.join(self.temp_dir, "output.mp4")
+        example_dir = self._example_dir()
+        video_path = os.path.join(example_dir, "video.mp4")
+        audio_path = os.path.join(example_dir, "audio.mp3")
+        output_path = os.path.join(example_dir, "output.mp4")
         self._touch_files([video_path, audio_path])
         
         # Mock _get_duration 方法
@@ -155,8 +160,9 @@ class TestVideoComposerProperties:
         resolutions = resolutions[:num_videos]
         
         # 创建测试视频路径
-        video_paths = [os.path.join(self.temp_dir, f"video_{i}.mp4") for i in range(num_videos)]
-        output_path = os.path.join(self.temp_dir, "output.mp4")
+        example_dir = self._example_dir()
+        video_paths = [os.path.join(example_dir, f"video_{i}.mp4") for i in range(num_videos)]
+        output_path = os.path.join(example_dir, "output.mp4")
         self._touch_files(video_paths)
         
         # Mock FFmpeg 执行
@@ -198,8 +204,9 @@ class TestVideoComposerProperties:
         3. 视频数量保持不变
         """
         # 创建测试视频路径
-        video_paths = [os.path.join(self.temp_dir, f"video_{i}.mp4") for i in range(num_videos)]
-        output_path = os.path.join(self.temp_dir, "output.mp4")
+        example_dir = self._example_dir()
+        video_paths = [os.path.join(example_dir, f"video_{i}.mp4") for i in range(num_videos)]
+        output_path = os.path.join(example_dir, "output.mp4")
         self._touch_files(video_paths)
         
         # Mock FFmpeg 执行
@@ -242,9 +249,10 @@ class TestVideoComposerProperties:
         2. 背景音乐音量正确设置
         3. 原始音频和背景音乐正确混合
         """
-        video_path = os.path.join(self.temp_dir, "video.mp4")
-        bgm_path = os.path.join(self.temp_dir, "bgm.mp3")
-        output_path = os.path.join(self.temp_dir, "output.mp4")
+        example_dir = self._example_dir()
+        video_path = os.path.join(example_dir, "video.mp4")
+        bgm_path = os.path.join(example_dir, "bgm.mp3")
+        output_path = os.path.join(example_dir, "output.mp4")
         self._touch_files([video_path, bgm_path])
         
         # Mock _get_duration 方法
@@ -289,8 +297,9 @@ class TestVideoComposerProperties:
         2. 音频拼接不会丢失或增加内容
         """
         # 创建测试音频路径
-        audio_paths = [os.path.join(self.temp_dir, f"audio_{i}.mp3") for i in range(num_audios)]
-        output_path = os.path.join(self.temp_dir, "output.mp3")
+        example_dir = self._example_dir()
+        audio_paths = [os.path.join(example_dir, f"audio_{i}.mp3") for i in range(num_audios)]
+        output_path = os.path.join(example_dir, "output.mp3")
         self._touch_files(audio_paths)
         
         # Mock _get_duration 方法

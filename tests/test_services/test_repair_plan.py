@@ -20,6 +20,7 @@ def test_repair_execution_plan_handles_identity_lock_rerun(tmp_path):
     assert item["parameter_hints"]["repair_action"] == "regenerate_keyframe_with_identity_lock"
     assert any("render-images" in command for command in plan["rerun_validation_commands"])
     assert any("--repair-action regenerate_keyframe_with_identity_lock" in command for command in plan["rerun_validation_commands"])
+    assert any("--scene-number 3" in command for command in plan["rerun_validation_commands"])
 
 
 def test_repair_execution_plan_passes_face_repair_action_to_render_images(tmp_path):
