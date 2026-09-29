@@ -99,7 +99,7 @@ VIDEO_REPAIR_PROMPT_DIRECTIVES = {
         "Repair the platform-reference gap against a premium Seed Dance-style vertical short-drama clip: "
         "make the first second scroll-stopping, keep the actor face intentionally cast and attractive, "
         "raise phone-frame value, improve set dressing and wardrobe polish, preserve premium lighting and clean color grade, "
-        "and keep the full motion commercially publishable."
+        "stabilize temporal skin texture and micro-expression continuity, and keep the full motion commercially publishable."
     ),
     "refine_final_composition_finish": (
         "Unify the final episode finish: consistent exposure, skin tone, color grade, sharpness, subtitle integration, "
@@ -120,7 +120,7 @@ VIDEO_REPAIR_NEGATIVE_DIRECTIVES = {
     "refine_video_commercial_aesthetic": (
         "cheap filter, low-budget set, muddy lighting, washed-out color grade, cluttered frame, "
         "generic face casting, weak first impression, low mobile frame value, unfinished production design, "
-        "unreadable face on phone screen, commercial aesthetic drop"
+        "unreadable face on phone screen, commercial aesthetic drop, waxy skin in motion, AI gloss, face morphing"
     ),
     "refine_final_composition_finish": (
         "exposure jump between cuts, skin tone mismatch, mixed color grade, sharpness mismatch, "
@@ -139,6 +139,13 @@ def _append_prompt_directive(text: str | None, directive: str | None) -> str:
     if not base:
         return addition
     return f"{base}. {addition}"
+
+
+def _append_end_frame_target(prompt: str | None, end_frame_prompt: str | None) -> str:
+    target = str(end_frame_prompt or "").strip()
+    if not target:
+        return prompt or ""
+    return _append_prompt_directive(prompt, f"End frame target: {target}")
 
 
 def _apply_video_repair_prompt(
@@ -179,6 +186,8 @@ class _ComfyVideoGenerator:
             if self.shot_plan
             else self.scene.image_prompt or self.scene.visual_description
         )
+        if self.shot_plan:
+            prompt = _append_end_frame_target(prompt, self.shot_plan.end_frame_prompt)
         negative_prompt = (
             self.shot_plan.negative_prompt
             if self.shot_plan
@@ -263,8 +272,8 @@ def _apply_video_repair_action(
         )
     if repair_action == "refine_video_commercial_aesthetic":
         return (
-            max(1, min(255, int(motion_bucket_id * 0.92))),
-            max(0.0, min(1.0, round(max(noise_aug_strength * 0.82, noise_aug_strength - 0.002), 4))),
+            max(1, min(255, int(motion_bucket_id * 0.86))),
+            max(0.0, min(1.0, round(max(noise_aug_strength * 0.65, noise_aug_strength - 0.008), 4))),
         )
     if repair_action == "refine_final_composition_finish":
         return (

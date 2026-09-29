@@ -2160,6 +2160,7 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
 
     assert result == str(output)
     assert provider.request.prompt.startswith("directed emotional reaction")
+    assert "End frame target: end frame emotional reaction" in provider.request.prompt
     assert "short-drama micro-expression pass" in provider.request.prompt
     assert "identity drift" in provider.request.negative_prompt
     assert "flat acting" in provider.request.negative_prompt
@@ -2755,13 +2756,16 @@ def test_video_repair_action_stabilizes_commercial_aesthetic_pass():
         "refine_video_commercial_aesthetic",
     )
 
-    assert motion == 110
-    assert noise == 0.018
+    assert motion == 103
+    assert noise == 0.013
     assert "platform-reference gap" in prompt
     assert "scroll-stopping" in prompt
     assert "premium lighting" in prompt
+    assert "temporal skin texture" in prompt
     assert "low mobile frame value" in negative
     assert "washed-out color grade" in negative
+    assert "waxy skin in motion" in negative
+    assert "face morphing" in negative
 
 
 def test_video_repair_action_stabilizes_final_composition_finish():
