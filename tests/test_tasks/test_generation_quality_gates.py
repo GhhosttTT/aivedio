@@ -13,7 +13,7 @@ from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _character_sheet_generation_contract, _complexity_report, _composition_constraint, _feedback_repair_directive, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
-from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _review_final_video_after_postprocess, _scene_review_payload, _select_best_video_candidate, _video_repair_action_from_candidates
+from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _apply_video_repair_prompt, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _review_final_video_after_postprocess, _scene_review_payload, _select_best_video_candidate, _video_repair_action_from_candidates
 
 
 def passed_video_aesthetic_scores(score: int = 5) -> dict:
@@ -2025,6 +2025,51 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
     assert provider.request.noise_aug_strength == 0.02
 
 
+def test_comfy_video_generator_applies_performance_repair_prompt(project_data, tmp_path):
+    _, _, scene, _, _ = project_data
+
+    class FakeProvider:
+        def __init__(self):
+            self.request = None
+
+        def generate_video(self, request):
+            self.request = request
+            Path(request.output_path).write_bytes(b"comfy-video")
+            return GenerationResult("local_comfyui", request.output_path, "video", {})
+
+    provider = FakeProvider()
+    shot_plan = VideoShotPlan(
+        shot_role="dialogue_reaction",
+        action_intensity="low",
+        target_duration_seconds=4.0,
+        fps=8,
+        num_frames=32,
+        motion_bucket_id=92,
+        noise_aug_strength=0.012,
+        director_prompt="directed dialogue reaction",
+        end_frame_prompt="end frame",
+        negative_prompt="identity drift",
+        notes=[],
+    )
+
+    _ComfyVideoGenerator(scene, provider, shot_plan).with_repair_action(
+        "regenerate_video_with_performance_direction"
+    ).generate_video(
+        image_path=str(tmp_path / "source.png"),
+        output_path=str(tmp_path / "scene.mp4"),
+        num_frames=16,
+        fps=8,
+        motion_bucket_id=120,
+        noise_aug_strength=0.02,
+    )
+
+    assert "Strengthen short-drama acting performance" in provider.request.prompt
+    assert "visible reaction to dialogue" in provider.request.prompt
+    assert "flat acting" in provider.request.negative_prompt
+    assert "dead eyes" in provider.request.negative_prompt
+    assert "identity drift" in provider.request.negative_prompt
+
+
 def test_video_generator_routes_external_provider_instead_of_svd(project_data, monkeypatch):
     _, _, scene, _, _ = project_data
     shot_plan = get_video_director_service().plan_scene(scene)
@@ -2484,3 +2529,7 @@ def test_video_repair_action_from_candidates_detects_flat_performance():
 
 def test_unknown_video_repair_action_keeps_parameters_unchanged():
     assert _apply_video_repair_action(150, 0.08, "manual_review") == (150, 0.08)
+
+
+def test_unknown_video_repair_prompt_keeps_text_unchanged():
+    assert _apply_video_repair_prompt("prompt", "negative", "manual_review") == ("prompt", "negative")

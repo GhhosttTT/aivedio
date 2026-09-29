@@ -81,6 +81,59 @@ def _project_video_negative_prompt(scene: Scene, base_negative: str | None) -> s
     return _append_terms(base_negative, style_negative)
 
 
+VIDEO_REPAIR_PROMPT_DIRECTIVES = {
+    "lower_motion_and_regenerate_video": (
+        "Keep the action controlled and cinematic: stable face, stable wardrobe, smooth continuous motion, "
+        "no sudden camera jump, no identity drift, no body warping."
+    ),
+    "increase_motion_and_regenerate_video": (
+        "Add a readable short-drama motion beat: clear body movement, visible reaction timing, subtle camera life, "
+        "and no frozen still-image feeling."
+    ),
+    "regenerate_video_with_performance_direction": (
+        "Strengthen short-drama acting performance: clear facial emotion readable on a phone screen, intentional eye line, "
+        "visible reaction to dialogue, expressive but natural body language, and one readable action intent."
+    ),
+}
+
+VIDEO_REPAIR_NEGATIVE_DIRECTIVES = {
+    "lower_motion_and_regenerate_video": (
+        "identity drift, face morphing, body warping, flicker, random camera jump, unstable wardrobe"
+    ),
+    "increase_motion_and_regenerate_video": (
+        "frozen still image, static pose only, lifeless motion, no body movement, slideshow"
+    ),
+    "regenerate_video_with_performance_direction": (
+        "flat acting, dead eyes, unreadable emotion, no reaction to dialogue, stiff body language, random gesture"
+    ),
+}
+
+
+def _append_prompt_directive(text: str | None, directive: str | None) -> str:
+    base = str(text or "").strip()
+    addition = str(directive or "").strip()
+    if not addition:
+        return base
+    if addition.lower() in base.lower():
+        return base
+    if not base:
+        return addition
+    return f"{base}. {addition}"
+
+
+def _apply_video_repair_prompt(
+    prompt: str | None,
+    negative_prompt: str | None,
+    repair_action: str | None,
+) -> tuple[str, str]:
+    if not repair_action:
+        return prompt or "", negative_prompt or ""
+    return (
+        _append_prompt_directive(prompt, VIDEO_REPAIR_PROMPT_DIRECTIVES.get(repair_action)),
+        _append_terms(negative_prompt, VIDEO_REPAIR_NEGATIVE_DIRECTIVES.get(repair_action)),
+    )
+
+
 class _ComfyVideoGenerator:
     def __init__(self, scene: Scene, provider=None, shot_plan: VideoShotPlan | None = None):
         self.scene = scene
@@ -111,6 +164,11 @@ class _ComfyVideoGenerator:
             if self.shot_plan
             else settings.GENERATION_QUALITY_NEGATIVE_APPEND
         )
+        prompt, negative_prompt = _apply_video_repair_prompt(
+            prompt,
+            negative_prompt,
+            getattr(self, "repair_action", None),
+        )
         negative_prompt = _project_video_negative_prompt(self.scene, negative_prompt)
         seed = abs(hash((self.scene.id, output_path, motion_bucket_id, round(noise_aug_strength, 4)))) % (2 ** 31)
         result = self.provider.generate_video(VideoGenerationRequest(
@@ -132,6 +190,10 @@ class _ComfyVideoGenerator:
 
     def with_end_image(self, end_image: str | None):
         self.end_image = end_image
+        return self
+
+    def with_repair_action(self, repair_action: str | None):
+        self.repair_action = repair_action
         return self
 
 
@@ -655,6 +717,8 @@ def _generate_quality_video_candidates(
             current_noise,
             current_repair_action,
         )
+        if hasattr(svd_service, "with_repair_action"):
+            svd_service.with_repair_action(current_repair_action)
         try:
             for offset in range(1, candidate_count + 1):
                 index = pass_index * candidate_count + offset
