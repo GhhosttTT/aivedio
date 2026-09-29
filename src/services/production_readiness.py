@@ -753,6 +753,12 @@ class ProductionReadinessService:
                 "Improve generated clip lighting, skin texture, phone readability, polish, and repair-artifact quality.",
                 severity="warning",
             ))
+        if checks.get("video_character_distinctiveness_gate_passed") is False:
+            warnings.append(ReadinessIssue(
+                "sample_validation_video_character_distinctiveness_gate_not_passed",
+                "Fix same-face casting, copied facial geometry, unclear role readability, or merged visual identity between different characters.",
+                severity="warning",
+            ))
         if checks.get("video_performance_gate_passed") is not True:
             warnings.append(ReadinessIssue(
                 "sample_validation_video_performance_gate_not_passed",
@@ -823,6 +829,7 @@ class ProductionReadinessService:
                 "video_identity_gate_passed": checks.get("video_identity_gate_passed"),
                 "video_temporal_gate_passed": checks.get("video_temporal_gate_passed"),
                 "video_aesthetic_gate_passed": checks.get("video_aesthetic_gate_passed"),
+                "video_character_distinctiveness_gate_passed": checks.get("video_character_distinctiveness_gate_passed"),
                 "video_performance_gate_passed": checks.get("video_performance_gate_passed"),
                 "baseline_contact_sheet_present": checks.get("baseline_contact_sheet_present"),
                 "baseline_comparison_passed": checks.get("baseline_comparison_passed"),

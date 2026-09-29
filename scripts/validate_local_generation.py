@@ -359,6 +359,17 @@ def _video_aesthetic_gates_passed(video_review_report: dict | None) -> bool:
     return True
 
 
+def _video_character_distinctiveness_gates_passed(video_review_report: dict | None) -> bool:
+    if not isinstance(video_review_report, dict):
+        return True
+    gates = [
+        batch.get("character_distinctiveness_gate")
+        for batch in video_review_report.get("batches", [])
+        if isinstance(batch, dict) and isinstance(batch.get("character_distinctiveness_gate"), dict)
+    ]
+    return all(gate.get("status") == "passed" for gate in gates)
+
+
 def _video_performance_gates_passed(video_review_report: dict | None) -> bool:
     if not isinstance(video_review_report, dict):
         return False
@@ -414,6 +425,9 @@ def _final_video_reviews_passed(final_reviews: list[dict]) -> bool:
             return False
         aesthetic_gate = review.get("video_aesthetic_gate")
         if not isinstance(aesthetic_gate, dict) or aesthetic_gate.get("status") != "passed":
+            return False
+        distinctiveness_gate = review.get("character_distinctiveness_gate")
+        if isinstance(distinctiveness_gate, dict) and distinctiveness_gate.get("status") != "passed":
             return False
         performance_gate = review.get("video_performance_gate")
         if not isinstance(performance_gate, dict) or performance_gate.get("status") != "passed":
@@ -617,6 +631,7 @@ def summarize_validation(output: Path):
         and video_platform_score >= settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE
     )
     checks["video_aesthetic_gate_passed"] = _video_aesthetic_gates_passed(video_review_report)
+    checks["video_character_distinctiveness_gate_passed"] = _video_character_distinctiveness_gates_passed(video_review_report)
     checks["video_performance_gate_passed"] = _video_performance_gates_passed(video_review_report)
     checks["final_normalized_video_review_count"] = len(final_video_reviews)
     checks["final_normalized_video_review_passed"] = _final_video_reviews_passed(final_video_reviews)
@@ -627,6 +642,7 @@ def summarize_validation(output: Path):
         and checks["video_temporal_gate_passed"]
         and checks["video_platform_gate_passed"]
         and checks["video_aesthetic_gate_passed"]
+        and checks["video_character_distinctiveness_gate_passed"]
         and checks["video_performance_gate_passed"]
         and checks["final_normalized_video_review_passed"]
     )
@@ -695,7 +711,7 @@ def summarize_validation(output: Path):
         report["action_items"].append("Improve rendered keyframes until image VLM review passes platform aesthetic, identity, and turnaround gates.")
     if not checks["video_review_passed"]:
         report["action_items"].append(
-            "Run review-video on a generated clip and pass identity/temporal/platform/aesthetic/performance gates; "
+            "Run review-video on a generated clip and pass identity/temporal/platform/aesthetic/character-distinctiveness/performance gates; "
             "fix identity drift, same-face characters, flicker, temporal breaks, low commercial appeal, flat acting, missing video gates, or VLM setup."
         )
     if not checks["final_normalized_video_review_passed"]:
@@ -887,6 +903,7 @@ def _build_acceptance_markdown(package: dict) -> str:
         "video_temporal_gate_passed",
         "video_platform_gate_passed",
         "video_aesthetic_gate_passed",
+        "video_character_distinctiveness_gate_passed",
         "video_performance_gate_passed",
         "baseline_contact_sheet_present",
         "baseline_comparison_passed",
