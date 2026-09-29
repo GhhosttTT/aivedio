@@ -204,6 +204,31 @@ def test_quality_loop_routes_scorecard_video_commercial_focus_to_video_stage():
     assert plan["selected"][0]["scene_number"] == 4
 
 
+def test_quality_loop_routes_scorecard_role_separation_focus_to_image_stage():
+    summary = {
+        "status": "partial_needs_review",
+        "repair_queue": [],
+        "quality_scorecard": {
+            "status": "needs_repair",
+            "production_score": 2.4,
+            "next_focus": {
+                "dimension": "identity",
+                "label": "Character identity and role separation",
+                "suggested_action": "regenerate_keyframe_with_role_separation",
+                "scenes": [8],
+                "evidence": ["same-face casting between the lead and antagonist"],
+            },
+        },
+    }
+
+    plan = build_quality_loop_plan(summary, max_actions=5)
+
+    assert plan["status"] == "can_auto_repair"
+    assert plan["selected"][0]["action"] == "regenerate_keyframe_with_role_separation"
+    assert plan["selected"][0]["stage"] == "image"
+    assert plan["selected"][0]["scene_number"] == 8
+
+
 def test_quality_loop_keeps_scorecard_focus_manual_without_scene_scope():
     summary = {
         "status": "partial_needs_review",

@@ -9,6 +9,7 @@ from src.services.repair_queue import repair_execution_mode
 
 SCORECARD_ACTION_STAGES = {
     "regenerate_keyframe_with_identity_lock": "image",
+    "regenerate_keyframe_with_role_separation": "image",
     "regenerate_character_identity": "character",
     "regenerate_turnaround_album": "character",
     "refine_prompt_composition": "image",

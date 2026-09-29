@@ -179,6 +179,27 @@ def test_generation_quality_scorecard_maps_video_commercial_repair_to_platform_a
     assert scorecard["next_focus"]["suggested_action"] == "refine_video_commercial_aesthetic"
 
 
+def test_generation_quality_scorecard_maps_role_separation_to_identity():
+    scorecard = build_generation_quality_scorecard({
+        "quality_images_scene_7": {
+            "status": "needs_review",
+            "repair_queue": [{
+                "scene_number": 7,
+                "action": "regenerate_keyframe_with_role_separation",
+                "execution": "auto",
+                "reason": "same-face casting and copied facial geometry between two named roles",
+            }],
+        },
+    })
+
+    assert scorecard["status"] == "needs_repair"
+    assert scorecard["dimensions"]["identity"]["status"] == "needs_repair"
+    assert scorecard["dimensions"]["identity"]["scenes"] == [7]
+    assert scorecard["dimensions"]["technical_integrity"]["status"] == "passed"
+    assert scorecard["next_focus"]["dimension"] == "identity"
+    assert scorecard["next_focus"]["suggested_action"] == "regenerate_keyframe_with_role_separation"
+
+
 def test_generation_quality_scorecard_counts_episode_style_consistency_regressions():
     scorecard = build_generation_quality_scorecard({
         "final_composition": {

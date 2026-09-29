@@ -22,6 +22,7 @@ DIMENSION_LABELS = {
 
 ACTION_DIMENSIONS = {
     "regenerate_keyframe_with_identity_lock": "identity",
+    "regenerate_keyframe_with_role_separation": "identity",
     "regenerate_character_identity": "identity",
     "regenerate_turnaround_album": "identity",
     "refine_prompt_composition": "platform_aesthetic",
