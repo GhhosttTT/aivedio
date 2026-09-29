@@ -18,6 +18,7 @@ SCORECARD_ACTION_STAGES = {
     "lower_motion_and_regenerate_video": "video",
     "increase_motion_and_regenerate_video": "video",
     "regenerate_video_with_performance_direction": "video",
+    "refine_video_commercial_aesthetic": "video",
     "split_scene": "script",
     "rewrite_short_drama_story_rhythm": "script",
     "fix_workflow_profile": "workflow",

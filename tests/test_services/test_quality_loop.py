@@ -179,6 +179,31 @@ def test_quality_loop_uses_scorecard_focus_when_repair_queue_is_empty():
     assert plan["selected"][0]["production_score"] == 2.6
 
 
+def test_quality_loop_routes_scorecard_video_commercial_focus_to_video_stage():
+    summary = {
+        "status": "partial_needs_review",
+        "repair_queue": [],
+        "quality_scorecard": {
+            "status": "needs_repair",
+            "production_score": 2.9,
+            "next_focus": {
+                "dimension": "platform_aesthetic",
+                "label": "Mobile short-drama surface quality",
+                "suggested_action": "refine_video_commercial_aesthetic",
+                "scenes": [4],
+                "evidence": ["commercial aesthetic below reference platform threshold"],
+            },
+        },
+    }
+
+    plan = build_quality_loop_plan(summary, max_actions=5)
+
+    assert plan["status"] == "can_auto_repair"
+    assert plan["selected"][0]["action"] == "refine_video_commercial_aesthetic"
+    assert plan["selected"][0]["stage"] == "video"
+    assert plan["selected"][0]["scene_number"] == 4
+
+
 def test_quality_loop_keeps_scorecard_focus_manual_without_scene_scope():
     summary = {
         "status": "partial_needs_review",

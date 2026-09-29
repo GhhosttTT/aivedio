@@ -158,6 +158,27 @@ def test_generation_quality_scorecard_counts_video_performance_regressions():
     assert scorecard["next_focus"]["suggested_action"] == "regenerate_video_with_performance_direction"
 
 
+def test_generation_quality_scorecard_maps_video_commercial_repair_to_platform_aesthetic():
+    scorecard = build_generation_quality_scorecard({
+        "quality_video_scene_6": {
+            "status": "needs_review",
+            "repair_queue": [{
+                "scene_number": 6,
+                "action": "refine_video_commercial_aesthetic",
+                "execution": "auto",
+                "reason": "video commercial aesthetic and production polish below platform threshold",
+            }],
+        },
+    })
+
+    assert scorecard["status"] == "needs_repair"
+    assert scorecard["dimensions"]["platform_aesthetic"]["status"] == "needs_repair"
+    assert scorecard["dimensions"]["platform_aesthetic"]["scenes"] == [6]
+    assert scorecard["dimensions"]["technical_integrity"]["status"] == "passed"
+    assert scorecard["next_focus"]["dimension"] == "platform_aesthetic"
+    assert scorecard["next_focus"]["suggested_action"] == "refine_video_commercial_aesthetic"
+
+
 def test_generation_quality_scorecard_counts_episode_style_consistency_regressions():
     scorecard = build_generation_quality_scorecard({
         "final_composition": {

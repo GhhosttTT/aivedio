@@ -26,6 +26,7 @@ ACTION_DIMENSIONS = {
     "regenerate_turnaround_album": "identity",
     "refine_prompt_composition": "platform_aesthetic",
     "refine_face_aesthetic_detail": "platform_aesthetic",
+    "refine_video_commercial_aesthetic": "platform_aesthetic",
     "refine_project_style_consistency": "episode_style_consistency",
     "regenerate_keyframe_with_prop_constraints": "technical_integrity",
     "lower_motion_and_regenerate_video": "temporal_motion",
