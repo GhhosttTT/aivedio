@@ -147,6 +147,8 @@ def build_repair_queue(report: dict[str, Any], media_type: str) -> list[dict[str
         if report.get("stage") and not candidate.get("stage"):
             candidate["stage"] = report["stage"]
         actions.extend(_actions_for_candidate(candidate, media_type))
+    for candidate in _top_level_gate_candidates(report):
+        actions.extend(_actions_for_candidate(candidate, media_type))
     if report.get("error"):
         action = _classify_evidence(str(report["error"]), media_type, report)
         if action:
@@ -165,6 +167,27 @@ def build_repair_queue(report: dict[str, Any], media_type: str) -> list[dict[str
 def attach_repair_queue(report: dict[str, Any], media_type: str) -> dict[str, Any]:
     report["repair_queue"] = build_repair_queue(report, media_type)
     return report
+
+
+def _top_level_gate_candidates(report: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates = []
+    for gate_name in ("episode_style_consistency_gate",):
+        gate = report.get(gate_name)
+        if not isinstance(gate, dict):
+            continue
+        low = gate.get("low") if isinstance(gate.get("low"), dict) else {}
+        for key, payload in low.items():
+            scene_number = payload.get("scene_number") if isinstance(payload, dict) else None
+            candidates.append({
+                "index": key,
+                "scene": {"scene_number": scene_number} if isinstance(scene_number, int) else {},
+                gate_name: {
+                    "status": "needs_review",
+                    "low": {key: payload},
+                    "missing": [],
+                },
+            })
+    return candidates
 
 
 def _actions_for_candidate(candidate: dict[str, Any], media_type: str) -> list[dict[str, Any]]:
@@ -193,7 +216,14 @@ def _candidate_evidence(candidate: dict[str, Any]) -> list[str]:
             evidence.append(str(key))
         elif isinstance(value, dict):
             evidence.extend(_nested_score_evidence(value))
-    for gate_name in ("platform_aesthetic_gate", "video_aesthetic_gate", "turnaround_gate", "character_distinctiveness_gate", "video_performance_gate"):
+    for gate_name in (
+        "platform_aesthetic_gate",
+        "video_aesthetic_gate",
+        "episode_style_consistency_gate",
+        "turnaround_gate",
+        "character_distinctiveness_gate",
+        "video_performance_gate",
+    ):
         gate = candidate.get(gate_name) if isinstance(candidate.get(gate_name), dict) else {}
         evidence.extend(_gate_evidence(gate, gate_name))
     evidence.extend(_technical_metric_evidence(candidate))

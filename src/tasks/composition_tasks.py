@@ -392,6 +392,9 @@ def _project_final_review_payload(project: Project, scenes: list[Scene]) -> dict
 def _composition_review_error(report: dict) -> str | None:
     if not settings.GENERATION_REQUIRE_VIDEO_REVIEW:
         return None
+    episode_style_gate = report.get("episode_style_consistency_gate")
+    if isinstance(episode_style_gate, dict) and episode_style_gate.get("status") != "passed":
+        return "final composed episode style consistency gate failed"
     if report.get("status") != "passed":
         return f"composition review status={report.get('status') or 'unknown'}"
     if float(report.get("average") or 0) < settings.GENERATION_VIDEO_MIN_SCORE:
@@ -433,6 +436,9 @@ def _review_final_composed_video(project: Project, scenes: list[Scene], final_vi
     )
     report["path"] = str(report_path)
     report["stage"] = "final_composition"
+    style_gate = _episode_style_consistency_gate(scenes)
+    if style_gate:
+        report["episode_style_consistency_gate"] = style_gate
     error = _composition_review_error(report)
     if error:
         report["error"] = error
@@ -441,6 +447,113 @@ def _review_final_composed_video(project: Project, scenes: list[Scene], final_vi
         raise ValueError("Final composed video is not production-ready: " + error)
     write_report(report_path, report)
     return report
+
+
+def _episode_style_consistency_gate(scenes: list[Scene]) -> dict | None:
+    """Aggregate keyframe style evidence across the composed episode."""
+    scene_scores = []
+    missing_reports = []
+    min_score = settings.GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE
+    style_features = ("style_consistency", "color_grade", "lighting_quality", "production_polish")
+
+    for scene in scenes:
+        report = _read_scene_image_quality_report(scene)
+        if not report:
+            if _scene_image_path(scene) is not None:
+                missing_reports.append(getattr(scene, "scene_number", None))
+            continue
+        candidate = _selected_image_candidate(report)
+        gate = candidate.get("platform_aesthetic_gate") if isinstance(candidate.get("platform_aesthetic_gate"), dict) else {}
+        scores = gate.get("scores") if isinstance(gate.get("scores"), dict) else {}
+        feature_scores = {}
+        for feature in style_features:
+            item = scores.get(feature)
+            if isinstance(item, dict) and isinstance(item.get("score"), (int, float)):
+                feature_scores[feature] = {
+                    "score": float(item["score"]),
+                    "evidence": str(item.get("evidence") or "feature reviewed"),
+                }
+        if feature_scores:
+            scene_scores.append({
+                "scene_number": getattr(scene, "scene_number", None),
+                "features": feature_scores,
+                "average": round(sum(item["score"] for item in feature_scores.values()) / len(feature_scores), 2),
+            })
+
+    if not scene_scores and not missing_reports:
+        return None
+
+    low = {}
+    for item in scene_scores:
+        scene_number = item.get("scene_number")
+        for feature, payload in item["features"].items():
+            if payload["score"] < min_score:
+                low[f"scene_{scene_number}_{feature}"] = {
+                    "score": payload["score"],
+                    "evidence": (
+                        f"style drift scene {scene_number}: {feature} score {payload['score']}; "
+                        f"{payload['evidence']}"
+                    ),
+                    "scene_number": scene_number,
+                    "dimension": feature,
+                }
+    for scene_number in missing_reports:
+        low[f"scene_{scene_number}_missing_style_report"] = {
+            "score": 0.0,
+            "evidence": f"style drift cannot be ruled out because scene {scene_number} has no image quality report",
+            "scene_number": scene_number,
+            "dimension": "style_consistency",
+        }
+
+    average = 0.0
+    if scene_scores:
+        average = round(sum(item["average"] for item in scene_scores) / len(scene_scores), 2)
+    return {
+        "status": "passed" if not low else "needs_review",
+        "min_score": min_score,
+        "average": average,
+        "scenes_reviewed": len(scene_scores),
+        "missing_reports": [item for item in missing_reports if item is not None],
+        "scores": scene_scores,
+        "low": low,
+        "missing": [],
+    }
+
+
+def _read_scene_image_quality_report(scene: Scene) -> dict | None:
+    image_path = _scene_image_path(scene)
+    if image_path is None:
+        return None
+    path = Path(image_path).with_suffix(".quality.json")
+    if not path.is_file():
+        return None
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return report if isinstance(report, dict) else None
+
+
+def _scene_image_path(scene: Scene) -> str | Path | None:
+    image_path = getattr(scene, "image_path", None)
+    return image_path if isinstance(image_path, (str, Path)) else None
+
+
+def _selected_image_candidate(report: dict) -> dict:
+    postprocess = report.get("postprocess_review")
+    if isinstance(postprocess, dict):
+        return postprocess
+    best = report.get("best_candidate")
+    if isinstance(best, dict):
+        return best
+    candidates = report.get("candidates") if isinstance(report.get("candidates"), list) else []
+    for candidate in candidates:
+        if isinstance(candidate, dict) and candidate.get("status") == "passed":
+            return candidate
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            return candidate
+    return {}
 
 
 def _parse_srt_time(time_str: str) -> float:

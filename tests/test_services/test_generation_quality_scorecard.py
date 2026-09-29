@@ -123,3 +123,32 @@ def test_generation_quality_scorecard_counts_video_performance_regressions():
     assert scorecard["dimensions"]["acting_performance"]["scenes"] == [4]
     assert scorecard["next_focus"]["dimension"] == "acting_performance"
     assert scorecard["next_focus"]["suggested_action"] == "regenerate_video_with_performance_direction"
+
+
+def test_generation_quality_scorecard_counts_episode_style_consistency_regressions():
+    scorecard = build_generation_quality_scorecard({
+        "final_composition": {
+            "status": "needs_review",
+            "episode_style_consistency_gate": {
+                "status": "needs_review",
+                "low": {
+                    "scene_2_style_consistency": {
+                        "score": 2,
+                        "evidence": "style drift scene 2: random color grade",
+                    },
+                },
+            },
+            "repair_queue": [{
+                "scene_number": 2,
+                "action": "refine_project_style_consistency",
+                "execution": "auto",
+                "reason": "style drift scene 2: random color grade",
+            }],
+        },
+    })
+
+    assert scorecard["status"] == "needs_repair"
+    assert scorecard["dimensions"]["episode_style_consistency"]["status"] == "needs_repair"
+    assert scorecard["dimensions"]["episode_style_consistency"]["scenes"] == [2]
+    assert scorecard["next_focus"]["dimension"] == "episode_style_consistency"
+    assert scorecard["next_focus"]["suggested_action"] == "refine_project_style_consistency"

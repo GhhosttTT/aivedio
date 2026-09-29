@@ -13,6 +13,7 @@ DIMENSION_LABELS = {
     "technical_integrity": "Rendering and visual integrity",
     "story_atomicity": "Atomic shot design",
     "workflow_assets": "Production setup and control assets",
+    "episode_style_consistency": "Episode visual style continuity",
 }
 
 ACTION_DIMENSIONS = {
@@ -21,6 +22,7 @@ ACTION_DIMENSIONS = {
     "regenerate_turnaround_album": "identity",
     "refine_prompt_composition": "platform_aesthetic",
     "refine_face_aesthetic_detail": "platform_aesthetic",
+    "refine_project_style_consistency": "episode_style_consistency",
     "regenerate_keyframe_with_prop_constraints": "technical_integrity",
     "lower_motion_and_regenerate_video": "temporal_motion",
     "increase_motion_and_regenerate_video": "temporal_motion",
@@ -55,6 +57,7 @@ FEATURE_DIMENSIONS = {
     "background_separation": "platform_aesthetic",
     "background_stability": "temporal_motion",
     "production_polish": "platform_aesthetic",
+    "style_consistency": "episode_style_consistency",
     "repair_artifacts_absent": "technical_integrity",
     "artifact_absence": "technical_integrity",
     "motion_smoothness": "temporal_motion",
@@ -93,6 +96,7 @@ def build_generation_quality_scorecard(reports: dict[str, dict[str, Any]]) -> di
             if isinstance(item, dict):
                 repair_queue_total += 1
                 _add_repair_item(dimensions, item, report_name)
+        _add_candidate_findings(dimensions, report, report_name)
         for candidate in report.get("candidates") or []:
             if isinstance(candidate, dict):
                 candidate_count += 1
@@ -161,7 +165,14 @@ def _add_candidate_findings(dimensions: dict[str, dict[str, Any]], candidate: di
                 if isinstance(nested_value, dict) and isinstance(nested_value.get("score"), (int, float)) and nested_value["score"] <= 3:
                     dimension = FEATURE_DIMENSIONS.get(nested_key, SCORE_DIMENSIONS.get(key, "technical_integrity"))
                     _add_score_finding(dimensions, dimension, candidate, report_name, nested_key, nested_value)
-    for gate_name in ("platform_aesthetic_gate", "video_aesthetic_gate", "turnaround_gate", "character_distinctiveness_gate", "video_performance_gate"):
+    for gate_name in (
+        "platform_aesthetic_gate",
+        "video_aesthetic_gate",
+        "episode_style_consistency_gate",
+        "turnaround_gate",
+        "character_distinctiveness_gate",
+        "video_performance_gate",
+    ):
         gate = candidate.get(gate_name) if isinstance(candidate.get(gate_name), dict) else {}
         _add_gate_findings(dimensions, gate, candidate, report_name)
 
@@ -203,7 +214,7 @@ def _add_gate_findings(
         else:
             continue
         for feature, payload in iterator:
-            dimension = FEATURE_DIMENSIONS.get(str(feature), "technical_integrity")
+            dimension = _feature_dimension(str(feature))
             target = dimensions[dimension]
             target["issue_count"] += 1
             target["source_reports"].add(report_name)
@@ -217,6 +228,14 @@ def _add_gate_findings(
             else:
                 evidence = str(feature)
             _append_evidence(target, f"{feature}: {evidence}")
+
+
+def _feature_dimension(feature: str) -> str:
+    if feature in FEATURE_DIMENSIONS:
+        return FEATURE_DIMENSIONS[feature]
+    if "style_consistency" in feature or "color_grade" in feature or "lighting" in feature:
+        return "episode_style_consistency"
+    return "technical_integrity"
 
 
 def _append_evidence(target: dict[str, Any], evidence: str) -> None:

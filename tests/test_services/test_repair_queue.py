@@ -82,6 +82,29 @@ def test_repair_queue_maps_style_drift_to_project_style_consistency_repair():
     assert queue[0]["execution"] == "auto"
 
 
+def test_repair_queue_expands_top_level_episode_style_gate_by_scene():
+    report = {
+        "status": "needs_review",
+        "episode_style_consistency_gate": {
+            "status": "needs_review",
+            "low": {
+                "scene_2_style_consistency": {
+                    "score": 2,
+                    "evidence": "style drift scene 2: random color grade",
+                    "scene_number": 2,
+                },
+            },
+        },
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "refine_project_style_consistency"
+    assert queue[0]["stage"] == "image"
+    assert queue[0]["scene_number"] == 2
+    assert queue[0]["execution"] == "auto"
+
+
 def test_repair_queue_maps_video_identity_drift_to_motion_repair():
     report = {
         "status": "needs_review",

@@ -201,6 +201,57 @@ def test_final_composed_video_review_blocks_failed_episode_gate(tmp_path, monkey
     assert written["repair_queue"][0]["execution"] == "auto"
 
 
+def test_final_composed_video_review_blocks_episode_style_drift(tmp_path, monkeypatch):
+    final_video = tmp_path / "final.mp4"
+    final_video.write_bytes(b"final video")
+    image = tmp_path / "scene_001.png"
+    image.write_bytes(b"image")
+    image.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "passed",
+        "postprocess_review": {
+            "status": "passed",
+            "platform_aesthetic_gate": {
+                "status": "needs_review",
+                "scores": {
+                    "style_consistency": {"score": 2.0, "evidence": "random color grade versus earlier shots"},
+                    "color_grade": {"score": 2.5, "evidence": "cold grade breaks the episode look"},
+                    "lighting_quality": {"score": 4.2, "evidence": "usable key light"},
+                    "production_polish": {"score": 4.1, "evidence": "clean set"},
+                },
+                "low": {
+                    "style_consistency": {"score": 2.0, "evidence": "random color grade versus earlier shots"},
+                },
+                "missing": [],
+            },
+        },
+    }), encoding="utf-8")
+    project = Mock(id=7, name="premium-drama")
+    scenes = [Mock(
+        scene_number=3,
+        character_name="Alice",
+        visual_description="Alice confronts Bob",
+        image_prompt="Alice close-up",
+        image_path=str(image),
+        dialogue="你为什么骗我",
+        audio_path=None,
+        subtitle_path=None,
+    )]
+
+    class FakeReviewService:
+        def review_video(self, *_args, **_kwargs):
+            return passed_composition_review()
+
+    monkeypatch.setattr(composition_tasks, "GenerationReviewService", FakeReviewService)
+
+    with pytest.raises(ValueError, match="style consistency gate failed"):
+        composition_tasks._review_final_composed_video(project, scenes, str(final_video))
+    written = json.loads(final_video.with_suffix(".composition_review.json").read_text(encoding="utf-8"))
+    assert written["episode_style_consistency_gate"]["status"] == "needs_review"
+    assert written["repair_queue"][0]["action"] == "refine_project_style_consistency"
+    assert written["repair_queue"][0]["scene_number"] == 3
+    assert written["repair_queue"][0]["execution"] == "auto"
+
+
 def test_draft_tasks_cannot_publish_an_unreviewed_final_video(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("ENABLE_DRAFT_MEDIA_FALLBACK", "true")
