@@ -200,6 +200,39 @@ def test_generation_quality_scorecard_maps_role_separation_to_identity():
     assert scorecard["next_focus"]["suggested_action"] == "regenerate_keyframe_with_role_separation"
 
 
+def test_generation_quality_scorecard_routes_character_distinctiveness_gate_to_role_separation():
+    scorecard = build_generation_quality_scorecard({
+        "video_review": {
+            "status": "needs_review",
+            "batches": [{
+                "scene": {"scene_number": 9},
+                "character_distinctiveness_gate": {
+                    "status": "needs_review",
+                    "low": {
+                        "no_same_face_casting": {
+                            "score": 2,
+                            "evidence": "two roles share copied facial geometry",
+                        },
+                        "role_readability": {
+                            "score": 3,
+                            "evidence": "lead and antagonist are hard to separate on phone",
+                        },
+                    },
+                    "missing": [],
+                },
+            }],
+        },
+    })
+
+    assert scorecard["status"] == "needs_repair"
+    assert scorecard["repair_queue_total"] == 0
+    assert scorecard["dimensions"]["identity"]["status"] == "needs_repair"
+    assert scorecard["dimensions"]["identity"]["scenes"] == [9]
+    assert scorecard["dimensions"]["technical_integrity"]["status"] == "passed"
+    assert scorecard["next_focus"]["dimension"] == "identity"
+    assert scorecard["next_focus"]["suggested_action"] == "regenerate_keyframe_with_role_separation"
+
+
 def test_generation_quality_scorecard_counts_episode_style_consistency_regressions():
     scorecard = build_generation_quality_scorecard({
         "final_composition": {

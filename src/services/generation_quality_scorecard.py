@@ -107,6 +107,23 @@ FEATURE_DIMENSIONS = {
     "viewer_scroll_stop_appeal": "platform_aesthetic",
     "platform_reference": "platform_aesthetic",
     "short_drama_reference": "platform_aesthetic",
+    "no_same_face_casting": "identity",
+    "role_readability": "identity",
+    "face_geometry_separation": "identity",
+    "hair_separation": "identity",
+    "wardrobe_separation": "identity",
+    "merged_visual_identity": "identity",
+    "copied_facial_geometry": "identity",
+}
+
+FEATURE_ACTIONS = {
+    "no_same_face_casting": "regenerate_keyframe_with_role_separation",
+    "role_readability": "regenerate_keyframe_with_role_separation",
+    "face_geometry_separation": "regenerate_keyframe_with_role_separation",
+    "hair_separation": "regenerate_keyframe_with_role_separation",
+    "wardrobe_separation": "regenerate_keyframe_with_role_separation",
+    "merged_visual_identity": "regenerate_keyframe_with_role_separation",
+    "copied_facial_geometry": "regenerate_keyframe_with_role_separation",
 }
 
 DEFAULT_DIMENSION_ACTIONS = {
@@ -292,6 +309,9 @@ def _add_gate_findings(
                 evidence = str(payload.get("evidence") or feature)
             else:
                 evidence = str(feature)
+            action = FEATURE_ACTIONS.get(str(feature))
+            if action:
+                target["actions"][action] = target["actions"].get(action, 0) + 1
             _append_evidence(target, f"{feature}: {evidence}")
 
 
