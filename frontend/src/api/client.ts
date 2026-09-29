@@ -337,7 +337,32 @@ export interface QualityLoopPlan {
 export interface QualityLoopPlanResponse {
     project_id: number;
     summary_status?: string;
+    quality_scorecard?: QualityScorecard;
     plan: QualityLoopPlan;
+}
+
+export interface QualityScorecardDimension {
+    dimension: string;
+    label?: string;
+    status?: string;
+    score?: number;
+    issue_count?: number;
+    scenes?: number[];
+    evidence?: string[];
+}
+
+export interface QualityScorecard {
+    status?: string;
+    production_score?: number;
+    repair_queue_total?: number;
+    weakest_dimensions?: QualityScorecardDimension[];
+    next_focus?: {
+        dimension?: string;
+        label?: string;
+        suggested_action?: string;
+        scenes?: number[];
+        evidence?: string[];
+    } | null;
 }
 
 export interface RepairQueueAutoRunResponse {
@@ -468,6 +493,7 @@ export interface ProductionReadinessReport {
             status: string;
             path: string;
             required_status: string;
+            quality_scorecard?: QualityScorecard;
             checks?: {
                 render_profile?: Record<string, unknown>;
                 render_profile_passed?: boolean;
@@ -491,6 +517,8 @@ export interface ProductionReadinessReport {
                 manual_blocking_issues_passed?: boolean;
                 repair_queue_empty?: boolean;
                 manual_review_passed?: boolean;
+                quality_scorecard_production_score?: number | null;
+                quality_scorecard_next_focus?: QualityScorecard['next_focus'];
             };
             action_items?: string[];
         };

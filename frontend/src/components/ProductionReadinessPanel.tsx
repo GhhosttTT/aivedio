@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, RefreshCw, ShieldAlert } from 'lucide-react';
-import type { ProductionReadinessReport } from '../api/client';
+import type { ProductionReadinessReport, QualityScorecard } from '../api/client';
 
 export function ProductionReadinessPanel({
     report,
@@ -33,6 +33,8 @@ export function ProductionReadinessPanel({
         ...(workflowProfile?.quality_budget_issues || []),
     ];
     const sampleValidation = report?.checks.sample_validation;
+    const qualityScorecard = sampleValidation?.quality_scorecard;
+    const scorecardFocus = sampleValidation?.checks?.quality_scorecard_next_focus || qualityScorecard?.next_focus;
     return (
         <section className={`wb-panel wb-readiness ${blocked ? 'blocked' : warning ? 'needs_review' : 'ready'}`}>
             <div className="wb-row wb-between">
@@ -58,8 +60,38 @@ export function ProductionReadinessPanel({
                 <Metric label="审核门槛" value={reviewer ? `${reviewer.image_review_required && reviewer.video_review_required ? '已开启' : '未完全开启'}` : '未检查'}/>
                 <Metric label="Workflow" value={workflowProfile ? workflowProfile.status : '未检查'}/>
                 <Metric label="样片验证" value={sampleValidation ? sampleValidation.status : '未检查'}/>
+                <Metric label="样片质量分" value={qualityScorecard ? formatScore(qualityScorecard.production_score) : '未检查'}/>
                 <Metric label="视频引擎" value={report?.checks.video_engine?.status || '未预检'}/>
             </div>
+            {qualityScorecard && (
+                <div className="wb-summary-actions">
+                    <div className="wb-row wb-between">
+                        <div>
+                            <h3>样片质量分数卡</h3>
+                            <p className="wb-muted">
+                                {qualityScorecard.status || 'unknown'} · production_score {formatScore(qualityScorecard.production_score)}
+                            </p>
+                        </div>
+                        {scorecardFocus?.suggested_action && <span className="wb-badge">{labelScorecardAction(scorecardFocus.suggested_action)}</span>}
+                    </div>
+                    <div className="wb-grid compact">
+                        <Metric label="最弱维度" value={scorecardFocus?.dimension || '无'}/>
+                        <Metric label="建议动作" value={scorecardFocus?.suggested_action ? labelScorecardAction(scorecardFocus.suggested_action) : '无'}/>
+                        <Metric label="涉及分镜" value={formatScenes(scorecardFocus?.scenes)}/>
+                        <Metric label="返修数" value={String(qualityScorecard.repair_queue_total ?? 0)}/>
+                    </div>
+                    {qualityScorecard.weakest_dimensions?.slice(0, 3).map((item) => (
+                        <div className={`wb-issue ${item.status === 'passed' ? 'warning' : 'blocker'}`} key={item.dimension}>
+                            <span>{item.dimension}</span>
+                            <p>
+                                {formatScore(item.score)} / {item.issue_count ?? 0} 项问题
+                                {item.scenes?.length ? ` · 分镜 ${item.scenes.join(', ')}` : ''}
+                                {item.evidence?.length ? ` · ${item.evidence.slice(0, 2).join('；')}` : ''}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+            )}
             {workflowProfile && (
                 <div className="wb-summary-actions">
                     <h3>Workflow 生产能力</h3>
@@ -102,4 +134,31 @@ export function ProductionReadinessPanel({
 
 function Metric({label, value}: {label: string; value: string}) {
     return <div className="wb-kv"><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function formatScore(value: QualityScorecard['production_score'] | undefined): string {
+    return typeof value === 'number' ? `${value.toFixed(1)}/5` : '未评分';
+}
+
+function formatScenes(scenes: number[] | undefined): string {
+    return scenes?.length ? scenes.join(', ') : '无';
+}
+
+function labelScorecardAction(action: string): string {
+    const labels: Record<string, string> = {
+        refine_prompt_composition: '优化构图/质感',
+        refine_face_aesthetic_detail: '优化五官皮肤细节',
+        regenerate_keyframe_with_identity_lock: '锁定身份重生关键帧',
+        regenerate_keyframe_with_role_separation: '强化角色区分',
+        lower_motion_and_regenerate_video: '降低运动重生视频',
+        increase_motion_and_regenerate_video: '提高运动重生视频',
+        regenerate_video_with_performance_direction: '强化表演方向',
+        refine_video_commercial_aesthetic: '优化视频商业质感',
+        refine_final_composition_finish: '统一最终成片精修',
+        refine_dialogue_audio_delivery: '优化对白音频',
+        rewrite_short_drama_story_rhythm: '重写短剧节奏',
+        refreeze_spatial_plan: '重做空间计划',
+        fix_workflow_profile: '修复 Workflow Profile',
+    };
+    return labels[action] || action;
 }
