@@ -858,6 +858,26 @@ def test_validation_summary_requires_manual_case_dimension_scores(tmp_path):
     assert any("case dimension_scores" in item for item in report["action_items"])
 
 
+def test_validation_summary_converts_low_manual_identity_dimension_to_repair_queue(tmp_path):
+    manual_review = passed_manual_review(*PRODUCTION_CASE_IDS)
+    manual_review["cases"][0]["dimension_scores"]["identity_match"] = 3.5
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "image_review.json", passed_image_review(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", manual_review)
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["manual_case_dimension_review_passed"] is False
+    assert report["checks"]["repair_queue_empty"] is False
+    assert report["repair_queue"][0]["action"] == "regenerate_keyframe_with_identity_lock"
+    assert report["repair_queue"][0]["scene_number"] == 1
+
+
 def test_validation_summary_blocks_low_manual_clip_dimension_score(tmp_path):
     manual_review = passed_manual_review(*PRODUCTION_CASE_IDS)
     manual_review["clip"]["dimension_scores"]["acting_performance"] = 3.5
@@ -879,6 +899,9 @@ def test_validation_summary_blocks_low_manual_clip_dimension_score(tmp_path):
         "score": 3.5,
     }]
     assert report["checks"]["manual_clip_review_passed"] is False
+    assert report["checks"]["repair_queue_empty"] is False
+    assert report["repair_queue"][0]["action"] == "regenerate_video_with_performance_direction"
+    assert report["repair_queue"][0]["stage"] == "video"
     assert any("clip dimension_scores" in item for item in report["action_items"])
 
 

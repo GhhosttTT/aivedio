@@ -54,6 +54,22 @@ REQUIRED_MANUAL_CLIP_DIMENSIONS = {
     "composition_continuity": "frame, crop, camera direction, and scene continuity hold through the clip",
 }
 
+MANUAL_CASE_DIMENSION_REPAIR_HINTS = {
+    "identity_match": "identity drift face drift changed wardrobe character distinctiveness",
+    "phone_readability": "phone_readability crop composition face prop action clarity",
+    "platform_aesthetic": "platform score commercial aesthetic lighting skin_texture production value",
+    "visual_integrity": "visual_integrity artifact hand finger prop anatomy random text",
+    "story_match": "story_match composition prompt alignment visual scene intent",
+}
+
+MANUAL_CLIP_DIMENSION_REPAIR_HINTS = {
+    "identity_stability": "identity drift face drift changed wardrobe temporal stability",
+    "temporal_motion": "temporal motion flicker camera jump warped body melting",
+    "acting_performance": "video performance acting no reaction dialogue_reaction body_language gaze_intent",
+    "commercial_aesthetic": "video performance commercial aesthetic platform score production value lighting",
+    "composition_continuity": "temporal camera jump composition continuity crop screen direction",
+}
+
 
 def _review_models_endpoint() -> str:
     endpoint = settings.LOCAL_REVIEW_BASE_URL.rstrip("/")
@@ -357,6 +373,26 @@ def _manual_issue_reasons(item: dict) -> list[str]:
     return [reason for reason in reasons if reason and reason.strip()]
 
 
+def _manual_dimension_issue_reasons(
+    item: dict,
+    required: dict[str, str],
+    repair_hints: dict[str, str],
+    item_kind: str,
+) -> list[str]:
+    scores = _dimension_scores(item)
+    reasons = []
+    for dimension, description in required.items():
+        hint = repair_hints.get(dimension, dimension)
+        if dimension not in scores:
+            continue
+        score = scores[dimension]
+        if score < 4:
+            reasons.append(
+                f"manual {item_kind} dimension {dimension} score {score:g} below 4: {description}; repair focus {hint}"
+            )
+    return reasons
+
+
 def _render_scene_by_case_id(render_report: dict | None) -> dict[str, dict]:
     if not isinstance(render_report, dict):
         return {}
@@ -378,6 +414,12 @@ def _manual_repair_queue(manual_review: dict | None, render_report: dict | None 
         if not isinstance(case, dict):
             continue
         reasons = _manual_issue_reasons(case)
+        reasons.extend(_manual_dimension_issue_reasons(
+            case,
+            REQUIRED_MANUAL_CASE_DIMENSIONS,
+            MANUAL_CASE_DIMENSION_REPAIR_HINTS,
+            "case",
+        ))
         if not reasons:
             continue
         if not isinstance(case.get("scene"), dict) and case.get("id") is not None:
@@ -402,7 +444,15 @@ def _manual_repair_queue(manual_review: dict | None, render_report: dict | None 
         }
         queue.extend(build_repair_queue(report, "image"))
     clip = _manual_clip_review(manual_review)
-    clip_reasons = _manual_issue_reasons({"id": "clip", **clip}) if clip else []
+    clip_reasons = []
+    if clip:
+        clip_reasons = _manual_issue_reasons({"id": "clip", **clip})
+        clip_reasons.extend(_manual_dimension_issue_reasons(
+            clip,
+            REQUIRED_MANUAL_CLIP_DIMENSIONS,
+            MANUAL_CLIP_DIMENSION_REPAIR_HINTS,
+            "clip",
+        ))
     if clip_reasons:
         report = {
             "status": "needs_review",
