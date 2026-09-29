@@ -81,6 +81,7 @@ def compose_final_video_task(
         _require_passed_scene_videos(scenes)
         _require_passed_scene_audio(scenes)
         _require_scene_subtitles(scenes)
+        _require_audio_video_duration_alignment(scenes, video_composer)
 
         # 收集所有分镜的视频和音频路径
         video_paths = []
@@ -365,6 +366,49 @@ def _require_scene_subtitles(scenes: list[Scene]) -> None:
         raise ValueError("Missing subtitle for spoken-dialogue scenes: " + ", ".join(missing))
     if failed:
         raise ValueError("Scene subtitles are not production-ready: " + "; ".join(failed))
+
+
+def _require_audio_video_duration_alignment(
+    scenes: list[Scene],
+    video_composer,
+    tolerance_seconds: float = 1.0,
+    tolerance_ratio: float = 0.15,
+) -> None:
+    video_total = 0.0
+    audio_total = 0.0
+    video_count = 0
+    audio_count = 0
+    failed = []
+    for scene in scenes:
+        if scene.video_path:
+            duration = video_composer._get_duration(scene.video_path)
+            if duration <= 0:
+                failed.append(f"{scene.scene_number}: video duration is unreadable")
+            else:
+                video_total += duration
+                video_count += 1
+        if has_spoken_dialogue(scene.dialogue):
+            if scene.audio_path:
+                duration = video_composer._get_duration(scene.audio_path)
+                if duration <= 0 and scene.audio_duration:
+                    duration = float(scene.audio_duration)
+                if duration <= 0:
+                    failed.append(f"{scene.scene_number}: audio duration is unreadable")
+                else:
+                    audio_total += duration
+                    audio_count += 1
+    if failed:
+        raise ValueError("Scene media durations are not production-ready: " + "; ".join(failed))
+    if not video_count or not audio_count:
+        return
+    allowed_delta = max(tolerance_seconds, video_total * tolerance_ratio)
+    delta = abs(video_total - audio_total)
+    if delta > allowed_delta:
+        raise ValueError(
+            "Scene audio/video duration mismatch before composition: "
+            f"video_total={video_total:.2f}s, audio_total={audio_total:.2f}s, "
+            f"delta={delta:.2f}s, allowed={allowed_delta:.2f}s"
+        )
 
 
 def _srt_has_timing(content: str) -> bool:

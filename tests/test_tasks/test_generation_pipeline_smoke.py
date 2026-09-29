@@ -145,6 +145,35 @@ def test_composition_skips_subtitle_quality_for_no_dialogue_scene():
     composition_tasks._require_scene_subtitles([scene])
 
 
+def test_composition_blocks_audio_video_duration_mismatch():
+    service = Mock()
+    service._get_duration.side_effect = [4.0, 1.0]
+    scene = Mock(
+        scene_number=1,
+        dialogue="你为什么骗我",
+        video_path="scene_001.mp4",
+        audio_path="scene_001.mp3",
+        audio_duration=1.0,
+    )
+
+    with pytest.raises(ValueError, match="duration mismatch"):
+        composition_tasks._require_audio_video_duration_alignment([scene], service)
+
+
+def test_composition_accepts_audio_video_duration_within_tolerance():
+    service = Mock()
+    service._get_duration.side_effect = [4.0, 3.5]
+    scene = Mock(
+        scene_number=1,
+        dialogue="你为什么骗我",
+        video_path="scene_001.mp4",
+        audio_path="scene_001.mp3",
+        audio_duration=3.5,
+    )
+
+    composition_tasks._require_audio_video_duration_alignment([scene], service)
+
+
 def test_composition_requires_final_normalized_video_review(tmp_path):
     video = tmp_path / "scene_001.mp4"
     video.write_bytes(b"fake video")
