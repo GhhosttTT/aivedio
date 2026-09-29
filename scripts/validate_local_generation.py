@@ -1106,6 +1106,122 @@ def _collect_validation_evidence(output: Path) -> dict:
     }
 
 
+def _blank_scores(required: dict[str, str]) -> dict[str, None]:
+    return {key: None for key in required}
+
+
+def _build_manual_review_markdown(template: dict) -> str:
+    lines = [
+        "# Manual Review Template",
+        "",
+        f"- Generated at: `{template['generated_at']}`",
+        f"- Save completed JSON as: `{template['target_path']}`",
+        "",
+        "## Case Scores",
+        "",
+        "| Case | Image | identity_match | phone_readability | platform_aesthetic | visual_integrity | story_match | Decision |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for case in template["cases"]:
+        scores = case["dimension_scores"]
+        lines.append(
+            "| {id} | {image} | {identity_match} | {phone_readability} | {platform_aesthetic} | {visual_integrity} | {story_match} | {decision} |".format(
+                id=case.get("id", ""),
+                image=case.get("image") or "",
+                identity_match=scores.get("identity_match", ""),
+                phone_readability=scores.get("phone_readability", ""),
+                platform_aesthetic=scores.get("platform_aesthetic", ""),
+                visual_integrity=scores.get("visual_integrity", ""),
+                story_match=scores.get("story_match", ""),
+                decision=case.get("decision", ""),
+            )
+        )
+    clip = template["clip"]
+    clip_scores = clip["dimension_scores"]
+    lines.extend([
+        "",
+        "## Clip Scores",
+        "",
+        f"- Candidate video: `{clip.get('candidate_video') or ''}`",
+        f"- Seed Dance contact sheet: `{clip.get('seed_dance_contact_sheet') or ''}`",
+        "",
+        "| identity_stability | temporal_motion | acting_performance | commercial_aesthetic | composition_continuity | Decision |",
+        "| --- | --- | --- | --- | --- | --- |",
+        "| {identity_stability} | {temporal_motion} | {acting_performance} | {commercial_aesthetic} | {composition_continuity} | {decision} |".format(
+            identity_stability=clip_scores.get("identity_stability", ""),
+            temporal_motion=clip_scores.get("temporal_motion", ""),
+            acting_performance=clip_scores.get("acting_performance", ""),
+            commercial_aesthetic=clip_scores.get("commercial_aesthetic", ""),
+            composition_continuity=clip_scores.get("composition_continuity", ""),
+            decision=clip.get("decision", ""),
+        ),
+        "",
+        "## Required Dimensions",
+        "",
+    ])
+    for key, description in REQUIRED_MANUAL_CASE_DIMENSIONS.items():
+        lines.append(f"- case `{key}`: {description}")
+    for key, description in REQUIRED_MANUAL_CLIP_DIMENSIONS.items():
+        lines.append(f"- clip `{key}`: {description}")
+    return "\n".join(lines) + "\n"
+
+
+def build_manual_review_template(output: Path) -> dict:
+    render_report = _read_json(output / "render.json")
+    baseline_report = _read_json(output / "seed_dance_baseline_comparison.json")
+    rendered_cases = render_report.get("cases", []) if isinstance(render_report, dict) else []
+    cases = []
+    for index, case in enumerate(rendered_cases, start=1):
+        if not isinstance(case, dict):
+            continue
+        scene = case.get("scene") if isinstance(case.get("scene"), dict) else {}
+        cases.append({
+            "id": str(case.get("id") or index),
+            "image": case.get("image"),
+            "scene_number": scene.get("scene_number") or index,
+            "visual_description": scene.get("visual_description") or case.get("prompt") or "",
+            "reference_requirements": scene.get("reference_requirements", []),
+            "score": None,
+            "decision": "pending",
+            "dimension_scores": _blank_scores(REQUIRED_MANUAL_CASE_DIMENSIONS),
+            "issue_tags": [],
+            "blocking_issues": [],
+            "note": "",
+        })
+    contact_sheet = None
+    if isinstance(baseline_report, dict):
+        contact_sheet = baseline_report.get("contact_sheet_path")
+    template = {
+        "status": "template",
+        "generated_at": round(time.time()),
+        "target_path": str(output / "manual_review.json"),
+        "instructions": [
+            "Fill every case score and dimension_scores field with 0-5 numeric scores.",
+            "Use decision=accept only when every required case dimension is >= 4 and no blocking issue remains.",
+            "Set clip watched_full_clip and watched_seed_dance_contact_sheet to true only after full visual review.",
+            "Use issue_tags or blocking_issues to trigger targeted repair suggestions.",
+        ],
+        "required_case_dimensions": REQUIRED_MANUAL_CASE_DIMENSIONS,
+        "required_clip_dimensions": REQUIRED_MANUAL_CLIP_DIMENSIONS,
+        "cases": cases,
+        "clip": {
+            "score": None,
+            "decision": "pending",
+            "dimension_scores": _blank_scores(REQUIRED_MANUAL_CLIP_DIMENSIONS),
+            "watched_full_clip": False,
+            "watched_seed_dance_contact_sheet": False,
+            "seed_dance_contact_sheet": contact_sheet,
+            "candidate_video": None,
+            "issue_tags": [],
+            "blocking_issues": [],
+            "note": "",
+        },
+    }
+    write_report(output / "manual_review_template.json", template)
+    (output / "manual_review_template.md").write_text(_build_manual_review_markdown(template), encoding="utf-8")
+    return template
+
+
 def _collect_repair_queue(*reports) -> list[dict]:
     queue = []
     for report in reports:
@@ -1366,6 +1482,7 @@ def build_acceptance_package(output: Path) -> dict:
     composition_reviews = _composition_reviews(composition_reports)
     baseline_report = _read_json(output / "seed_dance_baseline_comparison.json")
     manual_review = _read_json(output / "manual_review.json")
+    manual_review_template = build_manual_review_template(output)
     repair_queue = _validation_repair_queue(output, summary)
     summary_for_loop = {**summary, "repair_queue": repair_queue}
     quality_loop_plan = build_quality_loop_plan(summary_for_loop, max_actions=5)
@@ -1383,6 +1500,13 @@ def build_acceptance_package(output: Path) -> dict:
             "cases": image_review_report.get("cases", []) if isinstance(image_review_report, dict) else [],
         },
         "manual_review": manual_section,
+        "manual_review_template": {
+            "path": str(output / "manual_review_template.json"),
+            "markdown_path": str(output / "manual_review_template.md"),
+            "case_count": len(manual_review_template["cases"]),
+            "required_case_dimensions": manual_review_template["required_case_dimensions"],
+            "required_clip_dimensions": manual_review_template["required_clip_dimensions"],
+        },
         "video_review": {
             "status": video_review_report.get("status") if isinstance(video_review_report, dict) else None,
             "gate_scores": summary.get("checks", {}).get("video_gate_scores", {}),
@@ -1452,7 +1576,7 @@ def build_quality_loop_package(output: Path, max_actions: int = 5) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["preflight", "preflight-video-workflow", "preflight-production-video", "render-images", "review-images", "review-video", "compare-baseline", "summarize", "quality-loop", "acceptance-package"], nargs="?", default="preflight")
+    parser.add_argument("mode", choices=["preflight", "preflight-video-workflow", "preflight-production-video", "render-images", "review-images", "review-video", "compare-baseline", "summarize", "manual-review-template", "quality-loop", "acceptance-package"], nargs="?", default="preflight")
     parser.add_argument("--base-url", help="ComfyUI address on the GPU machine")
     parser.add_argument("--cases", default="examples/local_generation_cases.json")
     parser.add_argument("--output", type=Path, default=Path("storage/validation"))
@@ -1506,11 +1630,13 @@ def main():
     elif args.mode == "compare-baseline":
         if not args.candidate or not args.baseline:
             parser.error("compare-baseline needs --candidate and --baseline")
-        report = compare_video_baseline(Path(args.candidate), Path(args.baseline))
+        report = compare_video_baseline(Path(args.candidate), Path(args.baseline), artifact_dir=args.output)
         write_report(args.output / "seed_dance_baseline_comparison.json", report)
     elif args.mode == "summarize":
         report = summarize_validation(args.output)
         write_report(args.output / "validation_summary.json", report)
+    elif args.mode == "manual-review-template":
+        report = build_manual_review_template(args.output)
     elif args.mode == "quality-loop":
         report = build_quality_loop_package(args.output, max_actions=args.max_actions)
     else:
@@ -1519,7 +1645,7 @@ def main():
     return 0 if report["status"] in {
         "ready_for_live_test", "rendered_pending_human_review", "passed",
         "ready_for_seed_dance_candidate", "can_auto_repair", "setup_required",
-        "manual_review_required", "ready",
+        "manual_review_required", "ready", "template",
     } else 1
 
 

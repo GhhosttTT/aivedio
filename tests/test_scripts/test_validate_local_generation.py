@@ -1,4 +1,5 @@
 import json
+import sys
 
 from scripts import validate_local_generation as validator
 from src.services import video_engine_preflight
@@ -558,6 +559,65 @@ def test_validation_summary_requires_manual_scores(tmp_path):
     assert report["status"] == "partial_needs_review"
     assert report["checks"]["manual_review_present"] is False
     assert any("manual_review.json" in item for item in report["action_items"])
+
+
+def test_manual_review_template_writes_dimension_scaffold(tmp_path):
+    write_json(tmp_path / "render.json", rendered_cases("discovery", "reaction"))
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", {
+        "status": "passed",
+        "contact_sheet_path": str(tmp_path / "seed_dance_contact_sheet.png"),
+    })
+
+    template = validator.build_manual_review_template(tmp_path)
+
+    assert template["status"] == "template"
+    assert template["target_path"].endswith("manual_review.json")
+    assert len(template["cases"]) == 2
+    assert template["cases"][0]["dimension_scores"] == {
+        "identity_match": None,
+        "phone_readability": None,
+        "platform_aesthetic": None,
+        "visual_integrity": None,
+        "story_match": None,
+    }
+    assert template["clip"]["dimension_scores"]["acting_performance"] is None
+    assert template["clip"]["seed_dance_contact_sheet"].endswith("seed_dance_contact_sheet.png")
+    assert (tmp_path / "manual_review_template.json").is_file()
+    markdown = (tmp_path / "manual_review_template.md").read_text(encoding="utf-8")
+    assert "Manual Review Template" in markdown
+    assert "identity_match" in markdown
+
+
+def test_compare_baseline_cli_writes_contact_sheet_to_output(tmp_path, monkeypatch, capsys):
+    seen = {}
+
+    def fake_compare(candidate, baseline, artifact_dir=None):
+        seen["candidate"] = candidate
+        seen["baseline"] = baseline
+        seen["artifact_dir"] = artifact_dir
+        return {
+            "kind": "seed_dance_baseline_comparison",
+            "status": "passed",
+            "contact_sheet_path": str(artifact_dir / "seed_dance_contact_sheet.png"),
+        }
+
+    monkeypatch.setattr(validator, "compare_video_baseline", fake_compare)
+    monkeypatch.setattr(sys, "argv", [
+        "validate_local_generation.py",
+        "compare-baseline",
+        "--output",
+        str(tmp_path),
+        "--candidate",
+        "candidate.mp4",
+        "--baseline",
+        "baseline.mp4",
+    ])
+
+    assert validator.main() == 0
+    capsys.readouterr()
+    assert seen["artifact_dir"] == tmp_path
+    report = json.loads((tmp_path / "seed_dance_baseline_comparison.json").read_text(encoding="utf-8"))
+    assert report["contact_sheet_path"].endswith("seed_dance_contact_sheet.png")
 
 
 def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
