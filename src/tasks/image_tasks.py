@@ -699,7 +699,7 @@ def _review_feedback(reports: list[dict]) -> str:
                 for nested_key, nested_value in value.items():
                     if isinstance(nested_value, dict) and nested_value.get("score", 5) <= 2:
                         feedback.append(nested_value.get("evidence", nested_key))
-        for gate_name in ("platform_aesthetic_gate", "turnaround_gate"):
+        for gate_name in ("platform_aesthetic_gate", "platform_reference_gate", "turnaround_gate"):
             gate = report.get(gate_name) if isinstance(report.get(gate_name), dict) else {}
             low = gate.get("low") if isinstance(gate.get("low"), dict) else {}
             for key, value in low.items():
@@ -754,6 +754,31 @@ def _feedback_repair_directive(feedback: str) -> tuple[str, str]:
             ("production_polish", "low production value", "looks cheap", "low-budget set", "low budget set", "messy wardrobe"),
             "premium short-drama production polish, styled but believable wardrobe, clean practical set dressing",
             "low production value, cheap costume, messy wardrobe, messy set dressing, low-budget set dressing",
+        ),
+        (
+            ("seed_dance_gap", "platform_reference", "platform reference", "seed dance gap", "quality gap versus"),
+            "close the Seed Dance-style platform reference gap with premium short-drama casting, lighting, wardrobe, and frame value",
+            "generic AI portrait, amateur set, low-budget visual value, weak commercial short-drama look",
+        ),
+        (
+            ("premium_casting", "premium casting", "weak casting", "generic ai portrait"),
+            "intentionally cast premium drama face, attractive but distinct actor features, expressive eyes and clear role appeal",
+            "generic AI face, bland casting impression, same-face beauty, lifeless eyes",
+        ),
+        (
+            ("mobile_frame_value", "phone-frame", "mobile frame", "flat mobile framing"),
+            "phone-first vertical frame with strong subject scale, readable emotion, clear face, and immediate story value",
+            "flat mobile framing, decorative empty frame, tiny subject, unreadable mobile composition",
+        ),
+        (
+            ("production_design", "production-designed", "low-budget locations", "set and wardrobe"),
+            "production-designed practical location, styled wardrobe, purposeful props, believable premium set dressing",
+            "low-budget location, bare set, messy set dressing, random props, cheap wardrobe",
+        ),
+        (
+            ("viewer_scroll_stop_appeal", "scroll-stop", "scroll stop", "first-second"),
+            "scroll-stopping first-frame appeal with visible drama tension, expressive face, and a premium hook image",
+            "undramatic frame, weak first impression, no visual hook, passive pose",
         ),
         (
             ("repair_artifacts_absent", "repair scar", "upscale artifact", "artifact"),

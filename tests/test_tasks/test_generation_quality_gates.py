@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Character, Project, Scene, Task, TaskStatus, User
-from src.services.generation_review import VIDEO_AESTHETIC_FEATURES, VIDEO_PERFORMANCE_FEATURES, fingerprint, write_report, ReviewError
+from src.services.generation_review import PLATFORM_REFERENCE_FEATURES, VIDEO_AESTHETIC_FEATURES, VIDEO_PERFORMANCE_FEATURES, fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName, GenerationResult
 from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _character_sheet_generation_contract, _complexity_report, _composition_constraint, _feedback_repair_directive, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
@@ -27,6 +27,13 @@ def passed_video_performance_scores(score: int = 5) -> dict:
     return {
         feature: {"score": score, "evidence": "acting reads like a short-drama performance"}
         for feature in VIDEO_PERFORMANCE_FEATURES
+    }
+
+
+def passed_platform_reference_scores(score: int = 5) -> dict:
+    return {
+        feature: {"score": score, "evidence": "passes premium platform reference gate"}
+        for feature in PLATFORM_REFERENCE_FEATURES
     }
 
 
@@ -754,6 +761,7 @@ def test_image_generation_reviews_postprocessed_final_image(tmp_path, monkeypatc
                     "production_polish": {"score": 5, "evidence": "premium look"},
                     "repair_artifacts_absent": {"score": 5, "evidence": "no repair scar"},
                 },
+                "platform_reference_scores": passed_platform_reference_scores(),
             },
             "metrics": {"technical_score": 4.6},
         }
@@ -836,6 +844,7 @@ def test_postprocess_review_blocks_degraded_final_image(tmp_path, monkeypatch):
                     "production_polish": {"score": 5, "evidence": "premium look"},
                     "repair_artifacts_absent": {"score": 5, "evidence": "no repair scar"},
                 },
+                "platform_reference_scores": passed_platform_reference_scores(),
             },
             "metrics": {"technical_score": 4.6},
         }
@@ -2458,6 +2467,46 @@ def test_feedback_repair_directive_maps_seed_dance_profile_defects():
     assert "styled but believable wardrobe" in prompt
     assert "AI generated gloss" in negative
     assert "messy wardrobe" in negative
+
+
+def test_review_feedback_reads_image_platform_reference_gate():
+    feedback = _review_feedback([
+        {
+            "average": 2,
+            "platform_reference_gate": {
+                "low": {
+                    "seed_dance_gap": {
+                        "score": 2,
+                        "evidence": "large Seed Dance gap versus premium keyframe reference",
+                    },
+                    "viewer_scroll_stop_appeal": {
+                        "score": 2,
+                        "evidence": "first frame lacks scroll-stop appeal",
+                    },
+                }
+            },
+        }
+    ])
+
+    assert "seed_dance_gap" in feedback
+    assert "viewer_scroll_stop_appeal" in feedback
+
+
+def test_feedback_repair_directive_maps_platform_reference_defects():
+    prompt, negative = _feedback_repair_directive(
+        "seed_dance_gap: large quality gap versus reference; premium_casting: generic AI portrait; "
+        "mobile_frame_value: flat mobile framing; production_design: low-budget locations; "
+        "viewer_scroll_stop_appeal: weak first-second hook"
+    )
+
+    assert "close the Seed Dance-style platform reference gap" in prompt
+    assert "intentionally cast premium drama face" in prompt
+    assert "phone-first vertical frame" in prompt
+    assert "production-designed practical location" in prompt
+    assert "scroll-stopping first-frame appeal" in prompt
+    assert "generic AI portrait" in negative
+    assert "flat mobile framing" in negative
+    assert "low-budget location" in negative
 
 
 def test_repair_action_from_reports_promotes_auto_image_repair():

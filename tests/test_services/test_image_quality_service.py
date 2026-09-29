@@ -8,10 +8,12 @@ from src.services.image_quality_service import (
     CHARACTER_DISTINCTIVENESS_FEATURES,
     IMAGE_REVIEW_RUBRIC,
     PLATFORM_AESTHETIC_FEATURES,
+    PLATFORM_REFERENCE_FEATURES,
     ImageQualitySelector,
     candidate_output_path,
     image_selection_score,
     platform_aesthetic_gate,
+    platform_reference_gate,
 )
 from src.services.turnaround_quality import TURNAROUND_FEATURES
 
@@ -28,6 +30,13 @@ def passed_platform_aesthetic_scores(score: int = 5) -> dict:
     }
 
 
+def passed_platform_reference_scores(score: int = 5) -> dict:
+    return {
+        feature: {"score": score, "evidence": "passes premium platform reference keyframe gate"}
+        for feature in PLATFORM_REFERENCE_FEATURES
+    }
+
+
 def test_candidate_output_path_keeps_final_extension():
     assert candidate_output_path("scene.png", 3) == "scene.candidate_03.png"
 
@@ -41,6 +50,8 @@ def test_image_review_rubric_checks_mobile_short_drama_aesthetics():
     assert "profile_prompt" in IMAGE_REVIEW_RUBRIC
     assert "profile_negative_prompt" in IMAGE_REVIEW_RUBRIC
     assert "character_distinctiveness_scores" in IMAGE_REVIEW_RUBRIC
+    assert "platform_reference_scores" in IMAGE_REVIEW_RUBRIC
+    assert "Seed Dance-style vertical" in IMAGE_REVIEW_RUBRIC
 
 
 def test_platform_aesthetic_gate_quantifies_short_drama_surface_quality(monkeypatch):
@@ -64,6 +75,27 @@ def test_platform_aesthetic_gate_quantifies_short_drama_surface_quality(monkeypa
 
     assert gate["status"] == "needs_review"
     assert set(gate["low"]) == {"skin_texture", "lighting_quality", "production_polish"}
+
+
+def test_platform_reference_gate_quantifies_seed_dance_keyframe_gap(monkeypatch):
+    monkeypatch.setattr("src.services.image_quality_service.settings.GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
+    candidate = {
+        "platform_score": 4.7,
+        "review": {
+            "platform_reference_scores": {
+                "seed_dance_gap": {"score": 2, "evidence": "large gap versus premium reference"},
+                "premium_casting": {"score": 3, "evidence": "generic AI portrait"},
+                "mobile_frame_value": {"score": 4, "evidence": "phone readable"},
+                "production_design": {"score": 2, "evidence": "low-budget location"},
+                "viewer_scroll_stop_appeal": {"score": 5, "evidence": "strong hook"},
+            }
+        },
+    }
+
+    gate = platform_reference_gate(candidate)
+
+    assert gate["status"] == "needs_review"
+    assert set(gate["low"]) == {"seed_dance_gap", "premium_casting", "production_design"}
 
 
 def test_select_best_promotes_best_candidate(tmp_path):
@@ -104,6 +136,7 @@ def test_select_best_prefers_identity_safe_candidate_over_higher_average(tmp_pat
                 "facial_identity": {"score": 2, "evidence": "face drift"},
                 "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
                 "platform_aesthetic_scores": passed_platform_aesthetic_scores(),
+                "platform_reference_scores": passed_platform_reference_scores(),
             },
         },
         {
@@ -118,6 +151,7 @@ def test_select_best_prefers_identity_safe_candidate_over_higher_average(tmp_pat
                 "facial_identity": {"score": 4, "evidence": "face matches"},
                 "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
                 "platform_aesthetic_scores": passed_platform_aesthetic_scores(),
+                "platform_reference_scores": passed_platform_reference_scores(),
             },
         },
     ], final, tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0)
@@ -156,6 +190,7 @@ def test_select_best_prefers_character_distinctiveness_over_higher_average(tmp_p
         "facial_identity": {"score": 5, "evidence": "faces match their anchors"},
         "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
         "platform_aesthetic_scores": passed_platform_aesthetic_scores(),
+        "platform_reference_scores": passed_platform_reference_scores(),
     }
     weak_distinctiveness = {
         feature: {"score": 5, "evidence": "passes"}
@@ -219,6 +254,7 @@ def test_select_best_rejects_missing_character_distinctiveness_scores_for_multi_
                     "facial_identity": {"score": 5, "evidence": "faces match"},
                     "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
                     "platform_aesthetic_scores": passed_platform_aesthetic_scores(),
+                    "platform_reference_scores": passed_platform_reference_scores(),
                 },
             },
         ], tmp_path / "final.png", tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0)
@@ -329,6 +365,7 @@ def test_select_best_uses_platform_aesthetic_breakdown(tmp_path, monkeypatch):
                 "facial_identity": {"score": 5, "evidence": "face matches"},
                 "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
                 "platform_aesthetic_scores": low_breakdown,
+                "platform_reference_scores": passed_platform_reference_scores(),
             },
         },
         {
@@ -343,6 +380,7 @@ def test_select_best_uses_platform_aesthetic_breakdown(tmp_path, monkeypatch):
                 "facial_identity": {"score": 4, "evidence": "face matches"},
                 "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
                 "platform_aesthetic_scores": high_breakdown,
+                "platform_reference_scores": passed_platform_reference_scores(),
             },
         },
     ], final, tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0)
@@ -350,6 +388,74 @@ def test_select_best_uses_platform_aesthetic_breakdown(tmp_path, monkeypatch):
     assert report["best_index"] == 2
     assert report["candidates"][1]["platform_aesthetic_gate"]["status"] == "needs_review"
     assert final.read_bytes() == second.read_bytes()
+
+
+def test_select_best_prefers_passing_platform_reference_gate(tmp_path, monkeypatch):
+    first = tmp_path / "generic.png"
+    second = tmp_path / "premium.png"
+    final = tmp_path / "final.png"
+    make_image(first, (90, 90, 90))
+    make_image(second, (130, 130, 130))
+    monkeypatch.setattr("src.services.image_quality_service.settings.GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.services.image_quality_service.settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE", 4.0)
+    weak_reference = passed_platform_reference_scores(5)
+    weak_reference["seed_dance_gap"] = {"score": 2, "evidence": "large gap versus Seed Dance keyframe reference"}
+    strong_reference = passed_platform_reference_scores(4)
+
+    shared_review = {
+        "composition": {"score": 5, "evidence": "strong framing"},
+        "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+        "visual_integrity": {"score": 5, "evidence": "clean render"},
+        "facial_identity": {"score": 5, "evidence": "face matches"},
+        "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+        "platform_aesthetic_scores": passed_platform_aesthetic_scores(4),
+    }
+    selector = ImageQualitySelector(reviewer=object())
+    report = selector.select_best([
+        {
+            "index": 1,
+            "path": str(first),
+            "average": 4.9,
+            "status": "passed",
+            "review": {**shared_review, "platform_reference_scores": weak_reference},
+        },
+        {
+            "index": 2,
+            "path": str(second),
+            "average": 4.2,
+            "status": "passed",
+            "review": {**shared_review, "platform_reference_scores": strong_reference},
+        },
+    ], final, tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0, require_vlm=True)
+
+    assert report["best_index"] == 2
+    assert report["best_platform_reference_gate"]["status"] == "passed"
+    assert report["candidates"][1]["platform_reference_gate"]["status"] == "needs_review"
+    assert final.read_bytes() == second.read_bytes()
+
+
+def test_select_best_requires_platform_reference_breakdown_when_vlm_required(tmp_path):
+    image = tmp_path / "candidate.png"
+    make_image(image, (120, 120, 120))
+    selector = ImageQualitySelector(reviewer=object())
+
+    with pytest.raises(ReviewError, match="platform reference feature scores"):
+        selector.select_best([
+            {
+                "index": 1,
+                "path": str(image),
+                "average": 4.6,
+                "status": "passed",
+                "review": {
+                    "composition": {"score": 5, "evidence": "strong framing"},
+                    "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+                    "visual_integrity": {"score": 5, "evidence": "clean render"},
+                    "facial_identity": {"score": 5, "evidence": "face matches"},
+                    "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                    "platform_aesthetic_scores": passed_platform_aesthetic_scores(),
+                },
+            },
+        ], tmp_path / "final.png", tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0, require_vlm=True)
 
 
 def test_select_best_uses_technical_score_when_review_scores_tie(tmp_path, monkeypatch):
@@ -367,6 +473,7 @@ def test_select_best_uses_technical_score_when_review_scores_tie(tmp_path, monke
         "facial_identity": {"score": 4, "evidence": "face matches"},
         "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
         "platform_aesthetic_scores": passed_platform_aesthetic_scores(4),
+        "platform_reference_scores": passed_platform_reference_scores(4),
     }
     selector = ImageQualitySelector(reviewer=object())
     report = selector.select_best([
@@ -595,3 +702,37 @@ def test_review_candidate_accepts_platform_aesthetic_scores(tmp_path):
     assert report["status"] == "passed"
     assert report["platform_aesthetic_gate"]["status"] == "passed"
     assert report["review"]["platform_aesthetic_scores"]["skin_texture"]["score"] == 4
+
+
+def test_review_candidate_accepts_platform_reference_scores(tmp_path):
+    image = tmp_path / "candidate.png"
+    make_image(image, (120, 120, 120))
+
+    class FakeReviewer:
+        def evaluate(self, instruction, _payload, schema, images=()):
+            assert "platform_reference_scores" in instruction
+            return schema.model_validate({
+                "prompt_alignment": {"score": 4, "evidence": "matches"},
+                "composition": {"score": 4, "evidence": "single readable subject"},
+                "aesthetic_quality": {"score": 4, "evidence": "commercial look"},
+                "visual_integrity": {"score": 4, "evidence": "clean render"},
+                "facial_identity": {"score": 4, "evidence": "face matches"},
+                "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
+                "platform_reference_scores": {
+                    feature: {"score": 4, "evidence": "passes premium platform reference comparison"}
+                    for feature in PLATFORM_REFERENCE_FEATURES
+                },
+                "reviewed_images": [1],
+                "issues": [],
+            })
+
+    report = ImageQualitySelector(reviewer=FakeReviewer()).review_candidate(
+        1,
+        image,
+        {"scene_number": 1, "visual_description": "Alice stands in the office doorway"},
+        "Alice in an office doorway",
+    )
+
+    assert report["status"] == "passed"
+    assert report["platform_reference_gate"]["status"] == "passed"
+    assert report["review"]["platform_reference_scores"]["seed_dance_gap"]["score"] == 4

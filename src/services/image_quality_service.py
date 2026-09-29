@@ -16,7 +16,16 @@ from PIL import Image, ImageFilter, ImageStat
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from src.config import settings
-from src.services.generation_review import Issue, ReviewError, Score, decision, file_hash, get_local_reviewer, write_report
+from src.services.generation_review import (
+    Issue,
+    PLATFORM_REFERENCE_FEATURES,
+    ReviewError,
+    Score,
+    decision,
+    file_hash,
+    get_local_reviewer,
+    write_report,
+)
 from src.services.repair_queue import attach_repair_queue
 from src.services.turnaround_quality import attach_turnaround_quality_gate
 
@@ -30,6 +39,7 @@ class ImageReview(BaseModel):
     facial_identity: Score
     identity_consistency: Score
     platform_aesthetic_scores: dict[str, Score] | None = None
+    platform_reference_scores: dict[str, Score] | None = None
     character_distinctiveness_scores: dict[str, Score] | None = None
     turnaround_feature_scores: dict[str, Score] | None = None
     reviewed_images: list[StrictInt]
@@ -64,6 +74,12 @@ Also return platform_aesthetic_scores with these keys: skin_texture, lighting_qu
 phone_readability, background_separation, production_polish, repair_artifacts_absent. Score each 0-5 with concrete
 visual evidence. Penalize plastic skin, muddy light, over-saturated filters, tiny unreadable faces, messy background,
 low production value, visible face repair scars, and upscale artifacts.
+Also return platform_reference_scores with these keys: seed_dance_gap, premium_casting, mobile_frame_value,
+production_design, viewer_scroll_stop_appeal. Score the still image against a premium Seed Dance-style vertical
+short-drama keyframe: attractive and intentionally cast actor face, phone-first frame value, production-designed
+set and wardrobe, first-second scroll-stop appeal, and the visible quality gap versus a top commercial short-drama
+platform reference. Penalize generic AI portraits, low-budget locations, weak casting impression, decorative but
+undramatic frames, flat mobile framing, and any image that would not anchor a premium generated video shot.
 When scene.platform_aesthetic_contract is present, use its image_features and review_instruction as the required
 platform polish checklist. Treat profile_prompt as the target look and profile_negative_prompt as defects that must
 be penalized when visible, including AI gloss, plastic texture, same-face casting, and cheap filter artifacts.
@@ -172,6 +188,58 @@ def attach_platform_aesthetic_gate(candidate: dict[str, Any]) -> None:
         candidate["platform_score"] = min(float(current_platform), candidate["platform_aesthetic_score"])
     else:
         candidate["platform_score"] = candidate["platform_aesthetic_score"]
+
+
+def platform_reference_gate(candidate: dict[str, Any]) -> dict[str, Any] | None:
+    review = candidate.get("review") if isinstance(candidate.get("review"), dict) else {}
+    supplied = review.get("platform_reference_scores")
+    if not isinstance(supplied, dict):
+        return None
+    scores = {}
+    missing = []
+    min_score = settings.GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE
+    for feature in PLATFORM_REFERENCE_FEATURES:
+        item = supplied.get(feature)
+        score = item.get("score") if isinstance(item, dict) else None
+        evidence = item.get("evidence") if isinstance(item, dict) else ""
+        if isinstance(score, (int, float)):
+            scores[feature] = {
+                "score": _clamp_score(float(score)),
+                "evidence": str(evidence or "platform reference feature reviewed"),
+            }
+        else:
+            missing.append(feature)
+            scores[feature] = {
+                "score": 0.0,
+                "evidence": "platform reference feature was not reviewed by the local VLM",
+            }
+    average = _clamp_score(sum(item["score"] for item in scores.values()) / len(scores))
+    low = {
+        feature: item
+        for feature, item in scores.items()
+        if item["score"] < min_score
+    }
+    return {
+        "status": "passed" if not missing and not low else "needs_review",
+        "min_score": min_score,
+        "average": average,
+        "scores": scores,
+        "missing": missing,
+        "low": low,
+    }
+
+
+def attach_platform_reference_gate(candidate: dict[str, Any]) -> None:
+    gate = platform_reference_gate(candidate)
+    if not gate:
+        return
+    candidate["platform_reference_gate"] = gate
+    candidate["platform_reference_score"] = gate["average"] if gate["status"] == "passed" else 0.0
+    current_platform = candidate.get("platform_score")
+    if isinstance(current_platform, (int, float)):
+        candidate["platform_score"] = min(float(current_platform), candidate["platform_reference_score"])
+    else:
+        candidate["platform_score"] = candidate["platform_reference_score"]
 
 
 def _requires_character_distinctiveness(scene: dict[str, Any]) -> bool:
@@ -316,11 +384,22 @@ def _candidate_distinctiveness_score(candidate: dict[str, Any]) -> float | None:
     return float(score) if isinstance(score, (int, float)) else None
 
 
+def _candidate_platform_reference_score(candidate: dict[str, Any]) -> float | None:
+    score = candidate.get("platform_reference_score")
+    return float(score) if isinstance(score, (int, float)) else None
+
+
+def _platform_reference_gate_passes(candidate: dict[str, Any]) -> bool:
+    gate = candidate.get("platform_reference_gate")
+    return not isinstance(gate, dict) or gate.get("status") == "passed"
+
+
 def image_selection_score(candidate: dict[str, Any]) -> float:
     platform_score = candidate.get("platform_score")
     average = candidate.get("average")
     technical_score = _candidate_technical_score(candidate)
     distinctiveness_score = _candidate_distinctiveness_score(candidate)
+    reference_score = _candidate_platform_reference_score(candidate)
     if not isinstance(platform_score, (int, float)):
         platform_score = average if isinstance(average, (int, float)) else technical_score
     if not isinstance(average, (int, float)):
@@ -329,9 +408,11 @@ def image_selection_score(candidate: dict[str, Any]) -> float:
         technical_score = platform_score if isinstance(platform_score, (int, float)) else average
     if not isinstance(distinctiveness_score, (int, float)):
         distinctiveness_score = platform_score if isinstance(platform_score, (int, float)) else average
+    if not isinstance(reference_score, (int, float)):
+        reference_score = platform_score if isinstance(platform_score, (int, float)) else average
     values = [
         value
-        for value in (platform_score, average, technical_score, distinctiveness_score)
+        for value in (platform_score, average, technical_score, distinctiveness_score, reference_score)
         if isinstance(value, (int, float))
     ]
     if not values:
@@ -342,11 +423,13 @@ def image_selection_score(candidate: dict[str, Any]) -> float:
     distinctiveness_value = float(
         distinctiveness_score if isinstance(distinctiveness_score, (int, float)) else platform_value
     )
+    reference_value = float(reference_score if isinstance(reference_score, (int, float)) else platform_value)
     return _clamp_score(
-        platform_value * 0.45
-        + average_value * 0.20
-        + technical_value * 0.15
-        + distinctiveness_value * 0.20
+        platform_value * 0.35
+        + average_value * 0.18
+        + technical_value * 0.12
+        + distinctiveness_value * 0.15
+        + reference_value * 0.20
     )
 
 
@@ -415,6 +498,7 @@ class ImageQualitySelector:
             if platform_score is not None:
                 report["platform_score"] = platform_score
             attach_platform_aesthetic_gate(report)
+            attach_platform_reference_gate(report)
             attach_scene_turnaround_gate(report, review_scene)
             attach_character_distinctiveness_gate(report, review_scene)
         except Exception as exc:
@@ -453,12 +537,14 @@ class ImageQualitySelector:
                 if platform_score is not None:
                     candidate["platform_score"] = platform_score
             attach_platform_aesthetic_gate(candidate)
+            attach_platform_reference_gate(candidate)
             attach_character_distinctiveness_gate(candidate, scene)
             candidate["selection_score"] = image_selection_score(candidate)
         ranked = sorted(
             candidates,
             key=lambda item: (
                 1 if _identity_gate(item, min_identity_score)[0] else 0,
+                1 if _platform_reference_gate_passes(item) else 0,
                 item.get("selection_score", 0),
                 item.get("platform_score", item.get("average", 0)),
                 item.get("average", 0),
@@ -469,6 +555,7 @@ class ImageQualitySelector:
         identity_ok, identity_scores = _identity_gate(best, min_identity_score)
         platform_score = best.get("platform_score")
         aesthetic_gate = best.get("platform_aesthetic_gate")
+        reference_gate = best.get("platform_reference_gate")
         distinctiveness_gate = best.get("character_distinctiveness_gate")
         report = {
             "kind": "image_candidate_selection",
@@ -483,6 +570,7 @@ class ImageQualitySelector:
             "min_platform_score": min_platform_score,
             "best_identity_scores": identity_scores,
             "best_platform_aesthetic_gate": aesthetic_gate,
+            "best_platform_reference_gate": reference_gate,
             "best_character_distinctiveness_gate": distinctiveness_gate,
             "require_vlm": require_vlm,
             "candidates": ranked,
@@ -502,6 +590,12 @@ class ImageQualitySelector:
         elif isinstance(aesthetic_gate, dict) and aesthetic_gate.get("status") != "passed":
             report["status"] = "needs_review"
             report["error"] = "Best image platform aesthetic feature gate did not pass"
+        elif require_vlm and not isinstance(reference_gate, dict):
+            report["status"] = "needs_review"
+            report["error"] = "Best image is missing platform reference feature scores from local VLM review"
+        elif isinstance(reference_gate, dict) and reference_gate.get("status") != "passed":
+            report["status"] = "needs_review"
+            report["error"] = "Best image platform reference gate did not pass"
         elif isinstance(distinctiveness_gate, dict) and distinctiveness_gate.get("status") != "passed":
             report["status"] = "needs_review"
             report["error"] = "Best image character distinctiveness gate did not pass"

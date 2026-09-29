@@ -430,6 +430,35 @@ def test_repair_queue_maps_seed_dance_profile_defects_to_aesthetic_repair():
     assert queue[0]["scene_number"] == 5
 
 
+def test_repair_queue_maps_image_platform_reference_gap_to_composition_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 2,
+            "scene": {"scene_number": 9},
+            "platform_reference_gate": {
+                "status": "needs_review",
+                "low": {
+                    "seed_dance_gap": {
+                        "score": 2,
+                        "evidence": "large Seed Dance gap with weak premium casting and low mobile frame value",
+                    },
+                    "viewer_scroll_stop_appeal": {
+                        "score": 2,
+                        "evidence": "first frame lacks scroll stop appeal",
+                    },
+                },
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "image")
+
+    assert queue[0]["action"] == "refine_prompt_composition"
+    assert queue[0]["execution"] == "auto"
+    assert queue[0]["scene_number"] == 9
+
+
 def test_repair_queue_routes_face_repair_scars_to_workflow_setup():
     queue = build_repair_queue({
         "status": "needs_review",

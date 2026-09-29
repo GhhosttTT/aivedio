@@ -129,6 +129,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 `GENERATION_IMAGE_MIN_SCORE` 是晋级门槛。建议先用 4.0，人工校准后再提高。
 `GENERATION_IMAGE_PLATFORM_MIN_SCORE` 是图片短剧平台观感门槛，会对商业美观、构图、画面完整性、脸部身份和整体身份加权；平均分够但塑料感、廉价滤镜、脏光或平台观感差的候选不会晋级。
 `GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE` 是平台美学子项门槛。VLM 返回 `platform_aesthetic_scores` 时，系统会分别检查肤质、灯光、色彩、手机可读性、背景分离、制作质感和修复痕迹；任一关键项低分会拉低候选平台分，避免“总分看起来够但画面廉价”的图被选中。
+同一个图片子项门槛也用于关键帧 `platform_reference_scores`。VLM 需要返回 `seed_dance_gap`、`premium_casting`、`mobile_frame_value`、`production_design` 和 `viewer_scroll_stop_appeal`；系统会写入图片候选的 `platform_reference_gate`，并在 `GENERATION_REQUIRE_IMAGE_REVIEW=true` 时要求这组评分存在且通过。失败候选会进入关键帧返修队列，把 Seed Dance 差距、演员质感、手机画面价值、制作设计和首帧停留吸引力写入下一轮生成约束。
 `GENERATION_TURNAROUND_FEATURE_MIN_SCORE` 是角色三视图立体画册的五官/轮廓门槛。正面会检查脸型、眼睛、鼻子、嘴、发型、独特标记、体型和正面服装；侧面会检查 90 度侧脸、鼻梁剪影、发型轮廓、体型和侧面服装；背面会检查背面角度、发型后轮廓、服装背影和不能露正脸。
 `GENERATION_IMAGE_POSTPROCESS_COMMAND` 是入选关键帧后的本地精修命令，可接 FaceDetailer、CodeFormer/GFPGAN、高清化、超分或 ComfyUI 二段工作流。示例命令只是占位，需要替换为目标机器实际存在的脚本、ComfyUI API 包装器或批处理命令。命令支持 `{input}`、`{output}`、`{prompt}`、`{negative_prompt}`、`{reference}` 占位符。开启 `GENERATION_REQUIRE_IMAGE_POSTPROCESS=true` 后，精修命令未配置、失败、未产出图像或输出与输入完全一致都会阻断该镜头，避免“生产 profile 写了 face_repair/upscale，但实际没有跑精修”。生产就绪检查也会阻断 `GENERATION_REQUIRE_IMAGE_POSTPROCESS=false` 或命令为空的配置。
 `GENERATION_REQUIRE_IMAGE_REVIEW=true` 时，本地 VLM 不可用会直接拦截图片，不会只靠技术指标放行。开发调试可以临时设为 false；最终生产就绪检查会把 false 作为 blocker，不允许声称达到生产视觉质量。
@@ -144,7 +145,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 视频候选选择除了平均分，还会单独检查身份和时间稳定性。`GENERATION_VIDEO_IDENTITY_MIN_SCORE=4.0` 要求 `facial_identity` 和 `identity_consistency` 都达到 4 分；`GENERATION_VIDEO_TEMPORAL_MIN_SCORE=4.0` 要求 `temporal_consistency` 达到 4 分。若一个候选平均分更高但脸漂或同脸，它会排在身份稳定候选之后；若正式审核开启且所有候选身份/时间门槛都失败，任务会进入失败并写入返修队列。
 视频还会计算 `GENERATION_VIDEO_PLATFORM_MIN_SCORE`，把剧情匹配、构图、商业美观、画面完整性、脸部身份、整体身份和时间连续性合成短剧平台分。这个分数用于拦截“技术上可用但不像红果/短剧平台成片”的候选，例如塑料皮肤、廉价滤镜、脏光、随机文字/水印、修复痕迹或手机屏幕上表情不可读。
 `GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE` 是视频平台美学子项门槛。VLM 返回 `video_aesthetic_scores` 时，系统会检查肤质稳定、灯光一致、色彩一致、手机可读性、动作顺滑、背景稳定和无闪烁修复痕迹；低分子项会拉低视频候选平台分。
-同一个门槛也用于 `platform_reference_scores`。VLM 需要返回 `seed_dance_gap`、`premium_casting`、`mobile_frame_value`、`production_design` 和 `viewer_scroll_stop_appeal`，系统会把它写入 `platform_reference_gate`；单镜头候选、最终归一化视频和整片合成审核都会要求该门槛通过，避免“基础分合格但明显不像高质短剧平台成片”的视频进入发布链路。
+同一个视频子项门槛也用于视频 `platform_reference_scores`。VLM 需要返回 `seed_dance_gap`、`premium_casting`、`mobile_frame_value`、`production_design` 和 `viewer_scroll_stop_appeal`，系统会把它写入视频 `platform_reference_gate`；单镜头候选、最终归一化视频和整片合成审核都会要求该门槛通过，避免“基础分合格但明显不像高质短剧平台成片”的视频进入发布链路。
 当这些平台参考项失败并进入 `refine_video_commercial_aesthetic` 返修时，系统会提高视频候选数和精修轮数，并把 Seed Dance 差距、首秒停留、演员质感、手机画面价值、制作设计写入下一轮视频生成与 workflow 能力提示。
 
 若配置 `COMFYUI_VIDEO_WORKFLOW_PATH`，视频阶段会改用本地 ComfyUI 图生视频 API workflow，适合接入 Wan、AnimateDiff、VideoHelperSuite 或其他本地视频节点。工作流 JSON 可使用 `{prompt}`、`{negative_prompt}`、`{reference_image}`、`{width}`、`{height}`、`{duration_seconds}`、`{fps}`、`{seed}`、`{output_prefix}`、`{motion_bucket_id}`、`{noise_aug_strength}` 占位符；执行时系统会上传当前关键帧并替换这些值。低分精修轮会把 motion/noise 下调，因此工作流应把这两个占位符接到对应的视频采样节点。留空时继续使用内置 SVD 服务。
@@ -154,7 +155,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 情节审核：检查全部分镜编号，必须每个编号恰好出现一次。独立 critic 请求可使用同一本地文本模型，属于第二次审稿，不等同于独立模型的交叉验证。
 
 关键帧审核：每个候选图保存独立评分。基础技术评分可以离线运行，本地 VLM 评分需要 `llama-server` 的 OpenAI 兼容接口可用。
-图片 VLM 评分包含剧情匹配、构图、美观、画面完整性、脸部身份、整体身份一致性。`facial_identity` 会单独比较脸型、眼睛、鼻子、嘴、发型、年龄感和角色独特特征；多人镜头会把每个可见角色的 name/appearance 作为结构化证据送入审核，避免只凭提示词里一段长文本判断。若 VLM 返回 `platform_aesthetic_scores`，系统还会单独记录肤质、灯光、色彩、手机可读性、背景分离、制作质感、修复痕迹这些短剧平台观感维度。
+图片 VLM 评分包含剧情匹配、构图、美观、画面完整性、脸部身份、整体身份一致性。`facial_identity` 会单独比较脸型、眼睛、鼻子、嘴、发型、年龄感和角色独特特征；多人镜头会把每个可见角色的 name/appearance 作为结构化证据送入审核，避免只凭提示词里一段长文本判断。若 VLM 返回 `platform_aesthetic_scores`，系统还会单独记录肤质、灯光、色彩、手机可读性、背景分离、制作质感、修复痕迹这些短剧平台观感维度。若 VLM 返回图片 `platform_reference_scores`，系统会单独记录 Seed Dance 差距、演员/角色质感、手机画面价值、制作设计和首帧停留吸引力；生产图片审核开启后，缺少这组评分或任一关键项低分都会阻断关键帧晋级。
 整部片子的视觉风格也需要冻结：调用 `POST /api/projects/{project_id}/freeze-visual-style`，保存项目级风格画册，包括统一色彩、光线、肤质、商业短剧质感、场景装饰一致性和负向风格漂移约束。后续关键帧和视频导演提示词都会引用这份资产包；若主题、分镜视觉描述、地点或时间段变化，生产就绪检查会要求重新冻结。
 角色定妆应先做三视图立体画册：可调用 `POST /api/projects/{project_id}/characters/{character_id}/generate-turnaround-album` 为正面、侧面、背面分别生成多张候选并择优；也可手工准备三张参考图后调用 `POST /api/projects/{project_id}/characters/{character_id}/freeze-turnaround-album`。系统会保存每个视图的路径、hash 和控制提示，用来锁定脸部、发型轮廓、身体比例、服装正侧背细节。生成三视图时，本地 VLM 若返回 `turnaround_feature_scores`，系统会按视角和五官/轮廓维度写入 `turnaround_gate`；正式环境开启 `GENERATION_REQUIRE_IMAGE_REVIEW=true` 后，未通过这些维度会阻断三视图生成。任一视图或身份档案变化后，生产就绪检查会要求重新冻结。
 生产前应先冻结角色定妆包：先生成或上传角色参考图，再生成身份方案，最后调用 `POST /api/projects/{project_id}/characters/{character_id}/freeze-asset-pack`。冻结包会保存身份档案 hash、参考图路径和参考图 hash。后续只要修改身份方案或替换参考图，生产就绪检查会要求重新冻结，避免未审批的新脸进入成片生成。
@@ -169,7 +170,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 视频 `facial_identity` 会在抽帧之间比较脸型、五官、发型和角色外貌锚点，专门暴露脸在运动中变人、同脸化或五官漂移的问题。
 时间连续性会检查同一人物的脸、发型、服装、体型和相对站位是否稳定，动作推进是否合理，是否出现闪烁、变形、突然多出或消失的人，以及无关镜头跳变。
 若 VLM 返回 `video_aesthetic_scores`，系统会单独记录肤质稳定、光色稳定、手机可读性、动作顺滑、背景稳定和修复痕迹这些成片观感维度，避免单帧看起来尚可但连续视频廉价或闪烁的候选晋级。
-若 VLM 返回 `platform_reference_scores`，系统会单独记录 Seed Dance 差距、演员/角色质感、手机画面价值、制作设计和首秒停留吸引力。这个门槛在单镜头 `.quality.json`、最终归一化视频和 `.composition_review.json` 中都会被检查，失败时会进入视频商业美学返修队列。
+若 VLM 返回视频 `platform_reference_scores`，系统会单独记录 Seed Dance 差距、演员/角色质感、手机画面价值、制作设计和首秒停留吸引力。这个门槛在单镜头 `.quality.json`、最终归一化视频和 `.composition_review.json` 中都会被检查，失败时会进入视频商业美学返修队列。
 基础 VLM 决策门槛为平均分至少 4、各项至少 3、无 major/critical 问题。生产候选选择在此基础上加严：图片候选的 `facial_identity` 和 `identity_consistency` 默认必须达到 4 分；视频候选的 `facial_identity`、`identity_consistency` 和 `temporal_consistency` 默认必须达到 4 分。任一批失败，整个镜头不能通过。
 文件损坏、模型离线、JSON 无效、漏审或重复帧号会记录 `error`，不会生成默认高分。
 

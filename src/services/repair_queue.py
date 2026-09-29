@@ -123,6 +123,9 @@ ACTION_RULES = [
             "skin_texture", "lighting_quality", "lighting_consistency", "color_grade", "color_grade_consistency",
             "phone_readability", "background_separation", "production_polish", "ai generated gloss", "ai gloss",
             "wax museum face", "over-beautified", "low-budget set", "low budget set", "messy wardrobe",
+            "platform_reference", "platform reference", "seed_dance_gap", "seed dance gap",
+            "viewer_scroll_stop_appeal", "scroll stop", "premium casting", "premium_casting",
+            "mobile_frame_value", "production_design",
         ),
         "refine_prompt_composition",
         "Tighten composition, lighting, crop, and visual clarity before regenerating candidates.",
@@ -280,6 +283,7 @@ def _candidate_evidence(candidate: dict[str, Any]) -> list[str]:
             evidence.extend(_nested_score_evidence(value))
     for gate_name in (
         "platform_aesthetic_gate",
+        "platform_reference_gate",
         "video_aesthetic_gate",
         "episode_style_consistency_gate",
         "episode_continuity_gate",
