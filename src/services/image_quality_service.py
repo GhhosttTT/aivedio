@@ -221,6 +221,31 @@ def _identity_gate(candidate: dict[str, Any], min_score: float) -> tuple[bool, d
     return all(score >= min_score for score in scores.values()), scores
 
 
+def _candidate_technical_score(candidate: dict[str, Any]) -> float | None:
+    metrics = candidate.get("metrics") if isinstance(candidate.get("metrics"), dict) else {}
+    score = metrics.get("technical_score")
+    return float(score) if isinstance(score, (int, float)) else None
+
+
+def image_selection_score(candidate: dict[str, Any]) -> float:
+    platform_score = candidate.get("platform_score")
+    average = candidate.get("average")
+    technical_score = _candidate_technical_score(candidate)
+    if not isinstance(platform_score, (int, float)):
+        platform_score = average if isinstance(average, (int, float)) else technical_score
+    if not isinstance(average, (int, float)):
+        average = platform_score if isinstance(platform_score, (int, float)) else technical_score
+    if not isinstance(technical_score, (int, float)):
+        technical_score = platform_score if isinstance(platform_score, (int, float)) else average
+    values = [value for value in (platform_score, average, technical_score) if isinstance(value, (int, float))]
+    if not values:
+        return 0.0
+    platform_value = float(platform_score if isinstance(platform_score, (int, float)) else values[0])
+    average_value = float(average if isinstance(average, (int, float)) else platform_value)
+    technical_value = float(technical_score if isinstance(technical_score, (int, float)) else platform_value)
+    return _clamp_score(platform_value * 0.55 + average_value * 0.25 + technical_value * 0.20)
+
+
 class ImageQualitySelector:
     def __init__(self, reviewer=None):
         self.reviewer = reviewer or get_local_reviewer()
@@ -322,10 +347,12 @@ class ImageQualitySelector:
                 if platform_score is not None:
                     candidate["platform_score"] = platform_score
             attach_platform_aesthetic_gate(candidate)
+            candidate["selection_score"] = image_selection_score(candidate)
         ranked = sorted(
             candidates,
             key=lambda item: (
                 1 if _identity_gate(item, min_identity_score)[0] else 0,
+                item.get("selection_score", 0),
                 item.get("platform_score", item.get("average", 0)),
                 item.get("average", 0),
             ),
@@ -341,6 +368,8 @@ class ImageQualitySelector:
             "best_index": best["index"],
             "best_average": best.get("average", 0),
             "best_platform_score": platform_score,
+            "best_technical_score": _candidate_technical_score(best),
+            "best_selection_score": best.get("selection_score"),
             "min_average": min_average,
             "min_identity_score": min_identity_score,
             "min_platform_score": min_platform_score,

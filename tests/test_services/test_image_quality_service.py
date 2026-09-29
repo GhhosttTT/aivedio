@@ -9,6 +9,7 @@ from src.services.image_quality_service import (
     PLATFORM_AESTHETIC_FEATURES,
     ImageQualitySelector,
     candidate_output_path,
+    image_selection_score,
     platform_aesthetic_gate,
 )
 from src.services.turnaround_quality import TURNAROUND_FEATURES
@@ -247,6 +248,56 @@ def test_select_best_uses_platform_aesthetic_breakdown(tmp_path, monkeypatch):
     assert report["best_index"] == 2
     assert report["candidates"][1]["platform_aesthetic_gate"]["status"] == "needs_review"
     assert final.read_bytes() == second.read_bytes()
+
+
+def test_select_best_uses_technical_score_when_review_scores_tie(tmp_path, monkeypatch):
+    weak = tmp_path / "weak.png"
+    strong = tmp_path / "strong.png"
+    final = tmp_path / "final.png"
+    make_image(weak, (45, 45, 45))
+    make_image(strong, (128, 128, 128))
+    monkeypatch.setattr("src.services.image_quality_service.settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE", 4.0)
+
+    shared_review = {
+        "composition": {"score": 4, "evidence": "usable framing"},
+        "aesthetic_quality": {"score": 4, "evidence": "commercial lighting"},
+        "visual_integrity": {"score": 4, "evidence": "clean render"},
+        "facial_identity": {"score": 4, "evidence": "face matches"},
+        "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
+        "platform_aesthetic_scores": passed_platform_aesthetic_scores(4),
+    }
+    selector = ImageQualitySelector(reviewer=object())
+    report = selector.select_best([
+        {
+            "index": 1,
+            "path": str(weak),
+            "average": 4.3,
+            "status": "passed",
+            "metrics": {"technical_score": 2.1},
+            "review": shared_review,
+        },
+        {
+            "index": 2,
+            "path": str(strong),
+            "average": 4.3,
+            "status": "passed",
+            "metrics": {"technical_score": 4.8},
+            "review": shared_review,
+        },
+    ], final, tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0)
+
+    assert report["best_index"] == 2
+    assert report["best_technical_score"] == 4.8
+    assert report["best_selection_score"] > report["candidates"][1]["selection_score"]
+    assert final.read_bytes() == strong.read_bytes()
+
+
+def test_image_selection_score_blends_platform_average_and_technical_metrics():
+    strong = image_selection_score({"platform_score": 4.4, "average": 4.4, "metrics": {"technical_score": 4.8}})
+    weak = image_selection_score({"platform_score": 4.4, "average": 4.4, "metrics": {"technical_score": 2.0}})
+
+    assert strong > weak
+    assert strong <= 5.0
 
 
 def test_select_best_rejects_when_vlm_is_required_but_missing(tmp_path):
