@@ -185,3 +185,36 @@ def test_generation_quality_scorecard_counts_episode_continuity_regressions():
     assert scorecard["dimensions"]["spatial_continuity"]["status"] == "needs_repair"
     assert scorecard["next_focus"]["dimension"] == "spatial_continuity"
     assert scorecard["next_focus"]["suggested_action"] == "refreeze_spatial_plan"
+
+
+def test_generation_quality_scorecard_counts_final_composition_finish_regressions():
+    scorecard = build_generation_quality_scorecard({
+        "final_composition": {
+            "status": "needs_review",
+            "batches": [{
+                "final_composition_finishing_gate": {
+                    "status": "needs_review",
+                    "low": {
+                        "exposure_uniformity": {
+                            "score": 2,
+                            "evidence": "exposure jumps between cuts",
+                        },
+                        "skin_tone_uniformity": {
+                            "score": 2,
+                            "evidence": "skin tone jumps after concat",
+                        },
+                    },
+                },
+            }],
+            "repair_queue": [{
+                "action": "refine_final_composition_finish",
+                "execution": "auto",
+                "reason": "exposure jumps between cuts",
+            }],
+        },
+    })
+
+    assert scorecard["status"] == "needs_repair"
+    assert scorecard["dimensions"]["final_composition_finish"]["status"] == "needs_repair"
+    assert scorecard["next_focus"]["dimension"] == "final_composition_finish"
+    assert scorecard["next_focus"]["suggested_action"] == "refine_final_composition_finish"

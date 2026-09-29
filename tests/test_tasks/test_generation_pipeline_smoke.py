@@ -113,6 +113,7 @@ def passed_composition_review():
             "character_distinctiveness_gate": {"status": "passed"},
             "video_performance_gate": {"status": "passed"},
             "episode_continuity_gate": {"status": "passed"},
+            "final_composition_finishing_gate": {"status": "passed"},
             "review": {
                 "facial_identity": {"score": 4.2, "evidence": "faces match"},
                 "identity_consistency": {"score": 4.2, "evidence": "identity stable"},
@@ -166,6 +167,8 @@ def test_final_composed_video_review_payload_tracks_episode_context(tmp_path, mo
     assert captured["payload"]["scene_number"] == "final_composition"
     assert captured["payload"]["shot_plan"]["shot_role"] == "final_composed_short_drama"
     assert captured["payload"]["platform_aesthetic_contract"]["video_features"]
+    assert "final_composition_finishing_scores" not in captured["payload"]
+    assert captured["payload"]["composition_contract"]["finishing_features"]
     assert captured["payload"]["scenes"][0]["has_audio"] is True
     assert captured["payload"]["scenes"][0]["has_subtitle"] is True
     assert {item["name"] for item in captured["payload"]["visible_characters"]} == {"Alice", "Bob"}
@@ -288,6 +291,44 @@ def test_final_composed_video_review_blocks_episode_continuity_drift(tmp_path, m
     assert written["error"] == "composition review batch 1 episode continuity gate failed"
     assert written["repair_queue"][0]["action"] == "refreeze_spatial_plan"
     assert written["repair_queue"][0]["execution"] == "setup_required"
+
+
+def test_final_composed_video_review_blocks_mixed_finishing_polish(tmp_path, monkeypatch):
+    final_video = tmp_path / "final.mp4"
+    final_video.write_bytes(b"final video")
+    project = Mock(id=7, name="premium-drama")
+    scenes = [Mock(
+        scene_number=2,
+        character_name="Alice",
+        visual_description="Alice confronts Bob in a luxury office",
+        image_prompt="Alice medium shot",
+        dialogue="你到底瞒了我多久",
+        audio_path=None,
+        subtitle_path=str(tmp_path / "scene2.srt"),
+    )]
+    failed = passed_composition_review()
+    failed["batches"][0]["final_composition_finishing_gate"] = {
+        "status": "needs_review",
+        "low": {
+            "exposure_uniformity": {"score": 2, "evidence": "exposure jumps between cuts"},
+            "skin_tone_uniformity": {"score": 2, "evidence": "skin tone jumps after concat"},
+            "color_grade_uniformity": {"score": 2, "evidence": "mixed generated clips with inconsistent color grade"},
+        },
+        "missing": [],
+    }
+
+    class FakeReviewService:
+        def review_video(self, *_args, **_kwargs):
+            return failed
+
+    monkeypatch.setattr(composition_tasks, "GenerationReviewService", FakeReviewService)
+
+    with pytest.raises(ValueError, match="final composition finishing gate failed"):
+        composition_tasks._review_final_composed_video(project, scenes, str(final_video))
+    written = json.loads(final_video.with_suffix(".composition_review.json").read_text(encoding="utf-8"))
+    assert written["error"] == "composition review batch 1 final composition finishing gate failed"
+    assert written["repair_queue"][0]["action"] == "refine_final_composition_finish"
+    assert written["repair_queue"][0]["execution"] == "auto"
 
 
 def test_draft_tasks_cannot_publish_an_unreviewed_final_video(tmp_path, monkeypatch):

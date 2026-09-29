@@ -229,6 +229,36 @@ def test_repair_queue_maps_video_commercial_aesthetic_to_video_aesthetic_repair(
     assert queue[0]["scene_number"] == 8
 
 
+def test_repair_queue_maps_final_composition_finish_to_episode_polish_repair():
+    report = {
+        "status": "needs_review",
+        "stage": "final_composition",
+        "batches": [{
+            "status": "needs_review",
+            "final_composition_finishing_gate": {
+                "status": "needs_review",
+                "low": {
+                    "exposure_uniformity": {
+                        "score": 2,
+                        "evidence": "final_composition_finishing exposure_uniformity failed: exposure jumps between cuts",
+                    },
+                    "color_grade_uniformity": {
+                        "score": 2,
+                        "evidence": "color_grade_uniformity failed: mixed generated clips with inconsistent color grade",
+                    },
+                },
+                "missing": [],
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "refine_final_composition_finish"
+    assert queue[0]["stage"] == "video"
+    assert queue[0]["execution"] == "auto"
+
+
 def test_repair_queue_reads_final_composition_batches():
     report = {
         "status": "needs_review",

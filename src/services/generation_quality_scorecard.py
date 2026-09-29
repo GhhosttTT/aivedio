@@ -15,6 +15,7 @@ DIMENSION_LABELS = {
     "spatial_continuity": "Shot continuity and screen direction",
     "workflow_assets": "Production setup and control assets",
     "episode_style_consistency": "Episode visual style continuity",
+    "final_composition_finish": "Final episode finishing polish",
 }
 
 ACTION_DIMENSIONS = {
@@ -31,6 +32,7 @@ ACTION_DIMENSIONS = {
     "split_scene": "story_atomicity",
     "fix_workflow_profile": "workflow_assets",
     "refreeze_spatial_plan": "spatial_continuity",
+    "refine_final_composition_finish": "final_composition_finish",
     "start_local_reviewer": "workflow_assets",
     "manual_review": "technical_integrity",
 }
@@ -72,6 +74,12 @@ FEATURE_DIMENSIONS = {
     "character_position_continuity": "spatial_continuity",
     "prop_continuity": "spatial_continuity",
     "cut_smoothness": "spatial_continuity",
+    "exposure_uniformity": "final_composition_finish",
+    "skin_tone_uniformity": "final_composition_finish",
+    "color_grade_uniformity": "final_composition_finish",
+    "sharpness_uniformity": "final_composition_finish",
+    "subtitle_visual_integration": "final_composition_finish",
+    "overall_finish_polish": "final_composition_finish",
 }
 
 
@@ -176,6 +184,7 @@ def _add_candidate_findings(dimensions: dict[str, dict[str, Any]], candidate: di
         "video_aesthetic_gate",
         "episode_style_consistency_gate",
         "episode_continuity_gate",
+        "final_composition_finishing_gate",
         "turnaround_gate",
         "character_distinctiveness_gate",
         "video_performance_gate",

@@ -10,7 +10,12 @@ from src.tasks.celery_app import celery_app
 from src.database.database import get_db
 from src.database.models import Project, ProjectStatus, Scene, Task as TaskModel, TaskStatus
 from src.config import settings
-from src.services.generation_review import GenerationReviewService, VIDEO_AESTHETIC_FEATURES, write_report
+from src.services.generation_review import (
+    FINAL_COMPOSITION_FINISHING_FEATURES,
+    GenerationReviewService,
+    VIDEO_AESTHETIC_FEATURES,
+    write_report,
+)
 from src.services.repair_queue import attach_repair_queue
 from src.services.video_composer import get_video_composer
 from src.services.subtitle_generator import get_subtitle_generator
@@ -380,11 +385,13 @@ def _project_final_review_payload(project: Project, scenes: list[Scene]) -> dict
             "must_check": [
                 "scene order is coherent",
                 "cuts do not create jarring identity or position jumps",
+                "exposure, skin tone, color grade, and sharpness feel unified after concat",
                 "dialogue reaction beats are readable",
                 "burned subtitles are readable and do not cover faces",
                 "audio and lip/action timing feel aligned",
                 "the full clip is publishable on a mobile short-drama feed",
             ],
+            "finishing_features": list(FINAL_COMPOSITION_FINISHING_FEATURES),
         },
     }
 
@@ -424,6 +431,8 @@ def _composition_review_error(report: dict) -> str | None:
             return f"composition review batch {index} performance gate failed"
         if not _gate_status_passed(batch, "episode_continuity_gate"):
             return f"composition review batch {index} episode continuity gate failed"
+        if not _gate_status_passed(batch, "final_composition_finishing_gate"):
+            return f"composition review batch {index} final composition finishing gate failed"
     return None
 
 

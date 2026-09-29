@@ -200,6 +200,12 @@ ACTION_BUDGETS = {
             "min_candidates": 5,
             "profile": "video_commercial_aesthetic_recovery",
         },
+        "refine_final_composition_finish": {
+            "candidate_multiplier": 2.0,
+            "extra_refinement_passes": 2,
+            "min_candidates": 6,
+            "profile": "final_composition_finishing_recovery",
+        },
     },
 }
 

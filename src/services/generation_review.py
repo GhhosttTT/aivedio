@@ -58,6 +58,7 @@ class FrameReview(BaseModel):
     character_distinctiveness_scores: dict[str, Score] | None = None
     video_performance_scores: dict[str, Score] | None = None
     episode_continuity_scores: dict[str, Score] | None = None
+    final_composition_finishing_scores: dict[str, Score] | None = None
     reviewed_frames: list[StrictInt]
     issues: list[Issue]
 
@@ -93,6 +94,15 @@ EPISODE_CONTINUITY_FEATURES = (
     "character_position_continuity",
     "prop_continuity",
     "cut_smoothness",
+)
+
+FINAL_COMPOSITION_FINISHING_FEATURES = (
+    "exposure_uniformity",
+    "skin_tone_uniformity",
+    "color_grade_uniformity",
+    "sharpness_uniformity",
+    "subtitle_visual_integration",
+    "overall_finish_polish",
 )
 
 
@@ -342,6 +352,44 @@ def episode_continuity_gate(review: dict, scene: dict) -> dict | None:
     }
 
 
+def final_composition_finishing_gate(review: dict, scene: dict) -> dict | None:
+    if not _requires_episode_continuity(scene):
+        return None
+    supplied = review.get("final_composition_finishing_scores") if isinstance(review, dict) else None
+    scores = {}
+    missing = []
+    min_score = settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE
+    for feature in FINAL_COMPOSITION_FINISHING_FEATURES:
+        item = supplied.get(feature) if isinstance(supplied, dict) else None
+        score = item.get("score") if isinstance(item, dict) else None
+        evidence = item.get("evidence") if isinstance(item, dict) else ""
+        if isinstance(score, (int, float)):
+            scores[feature] = {
+                "score": _clamp_score(float(score)),
+                "evidence": str(evidence or "final composition finishing feature reviewed"),
+            }
+        else:
+            missing.append(feature)
+            scores[feature] = {
+                "score": 0.0,
+                "evidence": "final composition finishing feature was not reviewed by the local VLM",
+            }
+    average = _clamp_score(sum(item["score"] for item in scores.values()) / len(scores))
+    low = {
+        feature: item
+        for feature, item in scores.items()
+        if item["score"] < min_score
+    }
+    return {
+        "status": "passed" if not missing and not low else "needs_review",
+        "min_score": min_score,
+        "average": average,
+        "scores": scores,
+        "missing": missing,
+        "low": low,
+    }
+
+
 def attach_video_aesthetic_gate(batch: dict) -> None:
     review = batch.get("review") if isinstance(batch.get("review"), dict) else {}
     gate = video_aesthetic_gate(review)
@@ -381,6 +429,15 @@ def attach_episode_continuity_gate(batch: dict, scene: dict) -> None:
         return
     batch["episode_continuity_gate"] = gate
     batch["episode_continuity_score"] = gate["average"] if gate["status"] == "passed" else 0.0
+
+
+def attach_final_composition_finishing_gate(batch: dict, scene: dict) -> None:
+    review = batch.get("review") if isinstance(batch.get("review"), dict) else {}
+    gate = final_composition_finishing_gate(review, scene)
+    if not gate:
+        return
+    batch["final_composition_finishing_gate"] = gate
+    batch["final_composition_finishing_score"] = gate["average"] if gate["status"] == "passed" else 0.0
 
 
 def _encoded_images(images) -> list[str]:
@@ -603,6 +660,11 @@ class GenerationReviewService:
                     "scene_order_coherence, screen_direction_continuity, character_position_continuity, prop_continuity, cut_smoothness. "
                     "Score whether the final assembled episode keeps coherent shot order, screen direction, actor positions, props, "
                     "and smooth cuts across scene boundaries without jumpy geography or continuity breaks. "
+                    "When scene.shot_plan.shot_role is final_composed_short_drama, also return final_composition_finishing_scores with these keys: "
+                    "exposure_uniformity, skin_tone_uniformity, color_grade_uniformity, sharpness_uniformity, subtitle_visual_integration, overall_finish_polish. "
+                    "Score whether the full assembled episode has a unified finishing pass: exposure does not jump between cuts, "
+                    "skin tone and color grade feel consistent, sharpness/detail does not collapse on some shots, burned subtitles integrate cleanly, "
+                    "and the overall finish looks like one polished mobile short-drama episode rather than mixed generated clips. "
                     "Temporal consistency must check whether the same characters keep stable faces, hair, wardrobe, body shape, and relative positions; "
                     "whether motion progresses plausibly without flicker, warping, sudden missing or extra "
                     "people, or unrelated camera jumps; and whether action continuity matches the scene. "
@@ -622,6 +684,7 @@ class GenerationReviewService:
                 attach_video_character_distinctiveness_gate(batch, scene)
                 attach_video_performance_gate(batch, scene)
                 attach_episode_continuity_gate(batch, scene)
+                attach_final_composition_finishing_gate(batch, scene)
                 batches.append(batch)
             report["batches"] = batches
             report["status"] = "passed" if all(b["status"] == "passed" for b in batches) else "needs_review"

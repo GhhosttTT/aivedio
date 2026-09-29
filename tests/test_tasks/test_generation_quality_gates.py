@@ -2590,6 +2590,20 @@ def test_video_repair_action_stabilizes_commercial_aesthetic_pass():
     assert "washed-out color grade" in negative
 
 
+def test_video_repair_action_stabilizes_final_composition_finish():
+    motion, noise = _apply_video_repair_action(120, 0.04, "refine_final_composition_finish")
+    prompt, negative = _apply_video_repair_prompt(
+        "directed short-drama episode",
+        "identity drift",
+        "refine_final_composition_finish",
+    )
+
+    assert motion == 105
+    assert noise == 0.037
+    assert "Unify the final episode finish" in prompt
+    assert "skin tone mismatch" in negative
+
+
 def test_video_repair_action_from_candidates_detects_flat_performance():
     action = _video_repair_action_from_candidates([
         {

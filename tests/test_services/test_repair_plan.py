@@ -139,3 +139,22 @@ def test_repair_execution_plan_handles_video_commercial_aesthetic_rerun(tmp_path
     assert item["parameter_hints"]["commercial_aesthetic_required"] is True
     assert item["parameter_hints"]["stabilize_motion_for_aesthetic_polish"] is True
     assert item["parameter_hints"]["preserve_identity"] is True
+
+
+def test_repair_execution_plan_handles_final_composition_finish_rerun(tmp_path):
+    plan = build_repair_execution_plan(
+        tmp_path,
+        [{
+            "action": "refine_final_composition_finish",
+            "execution": "auto",
+            "stage": "video",
+            "reason": "exposure jumps between cuts and skin tone mismatch",
+        }],
+    )
+
+    item = plan["auto"][0]
+    assert item["action"] == "refine_final_composition_finish"
+    assert item["parameter_hints"]["unify_exposure"] is True
+    assert item["parameter_hints"]["unify_skin_tone"] is True
+    assert item["parameter_hints"]["check_subtitle_safe_area"] is True
+    assert any("final_or_refinished_episode.mp4" in command for command in plan["rerun_validation_commands"])

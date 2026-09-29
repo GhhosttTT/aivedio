@@ -19,6 +19,17 @@ ACTION_RULES = [
     ),
     (
         (
+            "final composition finishing", "final_composition_finishing", "exposure_uniformity",
+            "skin_tone_uniformity", "color_grade_uniformity", "sharpness_uniformity",
+            "subtitle_visual_integration", "overall_finish_polish", "finishing pass",
+            "mixed generated clips", "exposure jumps", "skin tone jumps", "subtitle integration",
+        ),
+        "refine_final_composition_finish",
+        "Rerun final composition finishing with unified exposure, skin tone, color grade, sharpness, subtitle integration, and publishable polish.",
+        "video",
+    ),
+    (
+        (
             "same-face casting", "same-face characters", "same face characters", "same-face cast",
             "no_same_face_casting", "copied facial geometry", "copied face geometry",
             "merged visual identity", "merged facial geometry", "role_readability",
@@ -228,6 +239,7 @@ def _candidate_evidence(candidate: dict[str, Any]) -> list[str]:
         "turnaround_gate",
         "character_distinctiveness_gate",
         "video_performance_gate",
+        "final_composition_finishing_gate",
     ):
         gate = candidate.get(gate_name) if isinstance(candidate.get(gate_name), dict) else {}
         evidence.extend(_gate_evidence(gate, gate_name))
@@ -346,6 +358,25 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
     if media_type == "video" and any(
         term in text
         for term in (
+            "final composition finishing", "final_composition_finishing", "exposure_uniformity",
+            "skin_tone_uniformity", "color_grade_uniformity", "sharpness_uniformity",
+            "subtitle_visual_integration", "overall_finish_polish", "finishing pass",
+            "mixed generated clips", "exposure jumps", "skin tone jumps",
+        )
+    ):
+        return {
+            "priority": _priority(text),
+            "stage": "video",
+            "action": "refine_final_composition_finish",
+            "execution": _execution_mode("refine_final_composition_finish"),
+            "reason": evidence[:240],
+            "recommendation": "Rerun final composition finishing with unified exposure, skin tone, color grade, sharpness, subtitle integration, and publishable polish.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
+    if media_type == "video" and any(
+        term in text
+        for term in (
             "video aesthetic", "video_aesthetic", "commercial_aesthetic", "commercial aesthetic",
             "platform score", "production value", "production polish", "commercial polish",
             "color_grade", "lighting_quality", "lighting consistency", "phone-frame polish",
@@ -413,6 +444,7 @@ def _execution_mode(action: str) -> str:
         "increase_motion_and_regenerate_video",
         "regenerate_video_with_performance_direction",
         "refine_video_commercial_aesthetic",
+        "refine_final_composition_finish",
     }:
         return "auto"
     if action in {"regenerate_turnaround_album", "regenerate_character_identity", "refreeze_spatial_plan", "fix_workflow_profile", "start_local_reviewer"}:

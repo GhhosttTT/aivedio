@@ -10,6 +10,7 @@ import pytest
 from src.services.generation_review import (
     CHARACTER_DISTINCTIVENESS_FEATURES,
     EPISODE_CONTINUITY_FEATURES,
+    FINAL_COMPOSITION_FINISHING_FEATURES,
     FrameReview,
     StoryReview,
     GenerationReviewService,
@@ -18,6 +19,7 @@ from src.services.generation_review import (
     VIDEO_AESTHETIC_FEATURES,
     VIDEO_PERFORMANCE_FEATURES,
     decision,
+    final_composition_finishing_gate,
     require_passed,
     video_aesthetic_gate,
     video_character_distinctiveness_gate,
@@ -205,6 +207,32 @@ def test_episode_continuity_gate_quantifies_final_composition_jump_cuts(monkeypa
     }
 
 
+def test_final_composition_finishing_gate_quantifies_mixed_clip_finish(monkeypatch):
+    monkeypatch.setattr("src.services.generation_review.settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
+    review = {
+        "final_composition_finishing_scores": {
+            "exposure_uniformity": {"score": 2, "evidence": "exposure jumps between cuts"},
+            "skin_tone_uniformity": {"score": 3, "evidence": "skin tone shifts after concat"},
+            "color_grade_uniformity": {"score": 2, "evidence": "mixed color grade looks like different clips"},
+            "sharpness_uniformity": {"score": 4, "evidence": "detail mostly stable"},
+            "subtitle_visual_integration": {"score": 4, "evidence": "subtitles avoid faces"},
+            "overall_finish_polish": {"score": 3, "evidence": "episode lacks one unified finishing pass"},
+        }
+    }
+
+    gate = final_composition_finishing_gate(review, {
+        "shot_plan": {"shot_role": "final_composed_short_drama"},
+    })
+
+    assert gate["status"] == "needs_review"
+    assert set(gate["low"]) == {
+        "exposure_uniformity",
+        "skin_tone_uniformity",
+        "color_grade_uniformity",
+        "overall_finish_polish",
+    }
+
+
 def test_frame_review_accepts_video_aesthetic_scores(tmp_path, monkeypatch):
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"test video bytes")
@@ -332,6 +360,39 @@ def test_frame_review_accepts_episode_continuity_scores_for_final_composition(tm
     assert result["batches"][0]["episode_continuity_gate"]["status"] == "passed"
     assert result["batches"][0]["review"]["episode_continuity_scores"]["cut_smoothness"]["score"] == 4
     assert "episode_continuity_scores" in reviewer.evaluate.call_args.args[0]
+
+
+def test_frame_review_accepts_final_composition_finishing_scores(tmp_path, monkeypatch):
+    video = tmp_path / "final.mp4"
+    video.write_bytes(b"test video bytes")
+    frames = [{"index": i, "timestamp": i, "path": str(tmp_path / f"{i}.jpg")} for i in range(3)]
+    monkeypatch.setattr(GenerationReviewService, "sample_frames", lambda *args: frames)
+    data = {key: {"score": 4, "evidence": "visible subject matches the keyframe"} for key in (
+        "story_match", "composition", "aesthetic_quality", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
+    data["episode_continuity_scores"] = {
+        feature: {"score": 4, "evidence": "continuity passes"}
+        for feature in EPISODE_CONTINUITY_FEATURES
+    }
+    data["final_composition_finishing_scores"] = {
+        feature: {"score": 4, "evidence": "finish passes"}
+        for feature in FINAL_COMPOSITION_FINISHING_FEATURES
+    }
+    reviewer = Mock()
+    reviewer.evaluate.return_value = FrameReview(**data, reviewed_frames=[0, 1, 2], issues=[])
+
+    result = GenerationReviewService(reviewer).review_video(
+        str(video),
+        {
+            "scene_number": "final_composition",
+            "shot_plan": {"shot_role": "final_composed_short_drama"},
+        },
+        tmp_path / "final_review.json",
+    )
+
+    assert result["status"] == "passed"
+    assert result["batches"][0]["final_composition_finishing_gate"]["status"] == "passed"
+    assert result["batches"][0]["review"]["final_composition_finishing_scores"]["skin_tone_uniformity"]["score"] == 4
+    assert "final_composition_finishing_scores" in reviewer.evaluate.call_args.args[0]
 
 
 def test_temporal_inconsistency_blocks_video_review(tmp_path, monkeypatch):
