@@ -220,6 +220,40 @@ def test_generation_quality_scorecard_counts_final_composition_finish_regression
     assert scorecard["next_focus"]["suggested_action"] == "refine_final_composition_finish"
 
 
+def test_generation_quality_scorecard_counts_dialogue_audio_regressions():
+    scorecard = build_generation_quality_scorecard({
+        "audio_scene_2": {
+            "status": "needs_review",
+            "scene": {"scene_number": 2},
+            "dialogue_audio_quality_gate": {
+                "status": "needs_review",
+                "low": {
+                    "tts_emotion_match": {
+                        "score": 2,
+                        "evidence": "flat tts delivery on confrontation line",
+                    },
+                    "speech_pacing": {
+                        "score": 2,
+                        "evidence": "speech timing is too rushed",
+                    },
+                },
+            },
+            "repair_queue": [{
+                "scene_number": 2,
+                "action": "refine_dialogue_audio_delivery",
+                "execution": "auto",
+                "reason": "flat tts delivery",
+            }],
+        },
+    })
+
+    assert scorecard["status"] == "needs_repair"
+    assert scorecard["dimensions"]["dialogue_audio"]["status"] == "needs_repair"
+    assert scorecard["dimensions"]["dialogue_audio"]["scenes"] == [2]
+    assert scorecard["next_focus"]["dimension"] == "dialogue_audio"
+    assert scorecard["next_focus"]["suggested_action"] == "refine_dialogue_audio_delivery"
+
+
 def test_generation_quality_scorecard_counts_story_rhythm_regressions():
     scorecard = build_generation_quality_scorecard({
         "story_room_quality": {

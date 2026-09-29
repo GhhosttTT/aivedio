@@ -79,6 +79,35 @@ def test_quality_loop_selects_face_aesthetic_detail_repair():
     assert plan["selected"][0]["action"] == "refine_face_aesthetic_detail"
 
 
+def test_quality_loop_selects_audio_before_video_for_same_priority():
+    plan = build_quality_loop_plan({
+        "repair_queue": {
+            "items": [
+                {
+                    "scene_number": 2,
+                    "priority": "high",
+                    "stage": "video",
+                    "action": "regenerate_video_with_performance_direction",
+                    "execution": "auto",
+                },
+                {
+                    "scene_number": 3,
+                    "priority": "high",
+                    "stage": "audio",
+                    "action": "refine_dialogue_audio_delivery",
+                    "execution": "auto",
+                },
+            ]
+        }
+    }, max_actions=5)
+
+    assert plan["status"] == "can_auto_repair"
+    assert [item["action"] for item in plan["selected"]] == [
+        "refine_dialogue_audio_delivery",
+        "regenerate_video_with_performance_direction",
+    ]
+
+
 def test_quality_loop_accepts_flat_validation_repair_queue():
     summary = {
         "status": "partial_needs_review",

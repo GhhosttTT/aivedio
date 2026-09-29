@@ -17,6 +17,7 @@ DIMENSION_LABELS = {
     "workflow_assets": "Production setup and control assets",
     "episode_style_consistency": "Episode visual style continuity",
     "final_composition_finish": "Final episode finishing polish",
+    "dialogue_audio": "Dialogue audio delivery and timing",
 }
 
 ACTION_DIMENSIONS = {
@@ -35,6 +36,7 @@ ACTION_DIMENSIONS = {
     "fix_workflow_profile": "workflow_assets",
     "refreeze_spatial_plan": "spatial_continuity",
     "refine_final_composition_finish": "final_composition_finish",
+    "refine_dialogue_audio_delivery": "dialogue_audio",
     "start_local_reviewer": "workflow_assets",
     "manual_review": "technical_integrity",
 }
@@ -90,6 +92,12 @@ FEATURE_DIMENSIONS = {
     "sharpness_uniformity": "final_composition_finish",
     "subtitle_visual_integration": "final_composition_finish",
     "overall_finish_polish": "final_composition_finish",
+    "dialogue_audio_present": "dialogue_audio",
+    "tts_emotion_match": "dialogue_audio",
+    "speech_pacing": "dialogue_audio",
+    "audio_duration": "dialogue_audio",
+    "subtitle_sync": "dialogue_audio",
+    "voice_delivery": "dialogue_audio",
 }
 
 
@@ -195,6 +203,7 @@ def _add_candidate_findings(dimensions: dict[str, dict[str, Any]], candidate: di
         "episode_style_consistency_gate",
         "episode_continuity_gate",
         "final_composition_finishing_gate",
+        "dialogue_audio_quality_gate",
         "turnaround_gate",
         "character_distinctiveness_gate",
         "video_performance_gate",

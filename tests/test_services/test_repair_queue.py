@@ -259,6 +259,35 @@ def test_repair_queue_maps_final_composition_finish_to_episode_polish_repair():
     assert queue[0]["execution"] == "auto"
 
 
+def test_repair_queue_maps_dialogue_audio_gate_to_audio_repair():
+    report = {
+        "status": "needs_review",
+        "dialogue_audio_quality_gate": {
+            "status": "needs_review",
+            "low": {
+                "tts_emotion_match": {
+                    "score": 2,
+                    "evidence": "dialogue audio tts_emotion_match is neutral on an emotional short-drama line",
+                    "scene_number": 3,
+                },
+                "speech_pacing": {
+                    "score": 2,
+                    "evidence": "dialogue audio speech_pacing out of range",
+                    "scene_number": 3,
+                },
+            },
+            "missing": [],
+        },
+    }
+
+    queue = build_repair_queue(report, "audio")
+
+    assert queue[0]["action"] == "refine_dialogue_audio_delivery"
+    assert queue[0]["stage"] == "audio"
+    assert queue[0]["execution"] == "auto"
+    assert queue[0]["scene_number"] == 3
+
+
 def test_repair_queue_reads_final_composition_batches():
     report = {
         "status": "needs_review",

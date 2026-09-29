@@ -158,6 +158,35 @@ class TestCreateProductionTask:
         with pytest.raises(ValueError, match="Production readiness is not ready"):
             orchestrator.create_production_task(project_id=sample_project.id)
 
+    def test_create_scene_repair_task_handles_dialogue_audio_repair(
+        self, orchestrator, sample_project, sample_scenes, monkeypatch
+    ):
+        chain = Mock()
+        chain.freeze.return_value.id = "audio-repair-task-id"
+        generate = Mock(return_value=chain)
+        monkeypatch.setattr("src.services.task_orchestrator.generate_audio_task.si", generate)
+        scene = sample_scenes[0]
+        scene.audio_path = "old.mp3"
+        scene.audio_duration = 1.5
+        scene.subtitle_path = "old.srt"
+        scene.video_path = "keep-video.mp4"
+        orchestrator.db.commit()
+
+        celery_task_id = orchestrator.create_scene_repair_task(
+            sample_project.id,
+            scene.scene_number,
+            "refine_dialogue_audio_delivery",
+        )
+
+        assert celery_task_id == "audio-repair-task-id"
+        assert generate.call_args.kwargs["repair_action"] == "refine_dialogue_audio_delivery"
+        orchestrator.db.refresh(scene)
+        assert scene.audio_path is None
+        assert scene.audio_duration is None
+        assert scene.subtitle_path is None
+        assert scene.video_path == "keep-video.mp4"
+        chain.apply_async.assert_called_once()
+
 
 class TestCalculateTotalSteps:
     """测试计算总步骤数"""

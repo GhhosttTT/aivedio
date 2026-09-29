@@ -177,6 +177,9 @@ class TaskOrchestrator:
             "refine_video_commercial_aesthetic",
             "refine_final_composition_finish",
         }
+        audio_actions = {
+            "refine_dialogue_audio_delivery",
+        }
         blocked_actions = {
             "regenerate_character_identity": "请先在角色参考页重新生成身份方案和参考图，再重做关键帧。",
             "rewrite_short_drama_story_rhythm": "请先重写短剧剧本节奏：开头钩子、冲突升级、反转、结尾钩子、情绪递进和原子镜头，再重新生成。",
@@ -186,23 +189,24 @@ class TaskOrchestrator:
         }
         if action in blocked_actions:
             raise ValueError(blocked_actions[action])
-        if action not in image_actions | video_actions:
+        if action not in image_actions | video_actions | audio_actions:
             raise ValueError(f"不支持的返工动作: {action}")
         if action in video_actions and not scene.image_path:
             raise ValueError("视频返工需要先有已通过的关键帧，请先重做关键帧。")
-        profile_report = ProductionWorkflowProfileService().validate_profile()
-        if profile_report.get("status") != "valid":
-            details = []
-            if profile_report.get("missing"):
-                details.append("missing=" + ",".join(profile_report["missing"]))
-            if profile_report.get("stale"):
-                details.append("stale=" + ",".join(profile_report["stale"]))
-            if profile_report.get("missing_capabilities"):
-                details.append("capabilities=" + ",".join(profile_report["missing_capabilities"]))
-            raise ValueError(
-                "返工生成需要先通过本机 ComfyUI 生产 workflow profile 校验"
-                + (": " + "; ".join(details) if details else "")
-            )
+        if action not in audio_actions:
+            profile_report = ProductionWorkflowProfileService().validate_profile()
+            if profile_report.get("status") != "valid":
+                details = []
+                if profile_report.get("missing"):
+                    details.append("missing=" + ",".join(profile_report["missing"]))
+                if profile_report.get("stale"):
+                    details.append("stale=" + ",".join(profile_report["stale"]))
+                if profile_report.get("missing_capabilities"):
+                    details.append("capabilities=" + ",".join(profile_report["missing_capabilities"]))
+                raise ValueError(
+                    "返工生成需要先通过本机 ComfyUI 生产 workflow profile 校验"
+                    + (": " + "; ".join(details) if details else "")
+                )
 
         task_model = TaskModel(
             project_id=project_id,
@@ -226,10 +230,24 @@ class TaskOrchestrator:
                 task_model.id,
                 repair_action=action,
             )
-        else:
+        elif action in video_actions:
             scene.video_path = None
             task = generate_video_task.si(
                 scene.id,
+                project_id,
+                task_model.id,
+                repair_action=action,
+            )
+        else:
+            if not scene.dialogue:
+                raise ValueError("音频返工需要分镜有对白。")
+            scene.audio_path = None
+            scene.audio_duration = None
+            scene.subtitle_path = None
+            task = generate_audio_task.si(
+                scene.id,
+                scene.dialogue,
+                scene.character_name or "default",
                 project_id,
                 task_model.id,
                 repair_action=action,

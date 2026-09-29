@@ -41,6 +41,17 @@ ACTION_RULES = [
     ),
     (
         (
+            "dialogue audio", "dialogue_audio", "dialogue_audio_quality", "dialogue_audio_quality_gate",
+            "tts_emotion_match", "speech_pacing", "speech timing", "audio duration",
+            "audio_duration", "audio missing", "missing audio", "flat tts", "monotone tts",
+            "voice delivery", "dialogue delivery", "subtitle timing", "subtitle_sync",
+        ),
+        "refine_dialogue_audio_delivery",
+        "Regenerate dialogue audio with short-drama emotion, pacing, and subtitle timing constraints.",
+        "audio",
+    ),
+    (
+        (
             "same-face casting", "same-face characters", "same face characters", "same-face cast",
             "no_same_face_casting", "copied facial geometry", "copied face geometry",
             "merged visual identity", "merged facial geometry", "role_readability",
@@ -197,7 +208,7 @@ def attach_repair_queue(report: dict[str, Any], media_type: str) -> dict[str, An
 
 def _top_level_gate_candidates(report: dict[str, Any]) -> list[dict[str, Any]]:
     candidates = []
-    for gate_name in ("episode_style_consistency_gate",):
+    for gate_name in ("episode_style_consistency_gate", "dialogue_audio_quality_gate"):
         gate = report.get(gate_name)
         if not isinstance(gate, dict):
             continue
@@ -276,6 +287,7 @@ def _candidate_evidence(candidate: dict[str, Any]) -> list[str]:
         "character_distinctiveness_gate",
         "video_performance_gate",
         "final_composition_finishing_gate",
+        "dialogue_audio_quality_gate",
         "story_room_quality_gate",
     ):
         gate = candidate.get(gate_name) if isinstance(candidate.get(gate_name), dict) else {}
@@ -482,6 +494,7 @@ def _execution_mode(action: str) -> str:
         "regenerate_video_with_performance_direction",
         "refine_video_commercial_aesthetic",
         "refine_final_composition_finish",
+        "refine_dialogue_audio_delivery",
     }:
         return "auto"
     if action in {

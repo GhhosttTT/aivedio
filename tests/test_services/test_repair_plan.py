@@ -160,6 +160,25 @@ def test_repair_execution_plan_handles_final_composition_finish_rerun(tmp_path):
     assert any("final_or_refinished_episode.mp4" in command for command in plan["rerun_validation_commands"])
 
 
+def test_repair_execution_plan_handles_dialogue_audio_rerun(tmp_path):
+    plan = build_repair_execution_plan(
+        tmp_path,
+        [{
+            "action": "refine_dialogue_audio_delivery",
+            "execution": "auto",
+            "stage": "audio",
+            "scene_number": 5,
+            "reason": "flat tts delivery and rushed speech pacing",
+        }],
+    )
+
+    item = plan["auto"][0]
+    assert item["action"] == "refine_dialogue_audio_delivery"
+    assert item["parameter_hints"]["force_short_drama_emotion"] is True
+    assert item["parameter_hints"]["retime_subtitles_after_audio"] is True
+    assert item["parameter_hints"]["avoid_flat_tts_delivery"] is True
+
+
 def test_repair_execution_plan_handles_story_rhythm_rewrite(tmp_path):
     plan = build_repair_execution_plan(
         tmp_path,

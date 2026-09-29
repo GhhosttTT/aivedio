@@ -214,6 +214,20 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 f"python -m scripts.validate_local_generation compare-baseline --output {output_path} --candidate <final_or_refinished_episode.mp4> --baseline <seed_dance_reference.mp4>",
                 f"python -m scripts.validate_local_generation summarize --output {output_path}",
             ]
+        elif action == "refine_dialogue_audio_delivery":
+            entry["rerun_strategy"] = (
+                "Regenerate affected dialogue audio with stronger short-drama emotion, pacing, and subtitle timing, then rerun composition review."
+            )
+            entry["parameter_hints"] = {
+                "repair_action": "refine_dialogue_audio_delivery",
+                "force_short_drama_emotion": True,
+                "retime_subtitles_after_audio": True,
+                "check_dialogue_duration": True,
+                "avoid_flat_tts_delivery": True,
+            }
+            commands = [
+                f"python -m scripts.validate_local_generation summarize --output {output_path}",
+            ]
         elif action == "rewrite_short_drama_story_rhythm":
             entry["rerun_strategy"] = (
                 "Rewrite the shooting script before GPU generation: visible early hook, recurring escalation, mid/final reversal, ending hook, dialogue/reaction drive, emotional progression, and atomic visual beats."

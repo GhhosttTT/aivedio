@@ -23,7 +23,7 @@ def auto_repair_candidates(repair_queue: dict[str, Any], max_actions: int) -> tu
     selected before video repairs because accepted video depends on the keyframe.
     """
     priority_rank = {"high": 0, "medium": 1, "low": 2}
-    stage_rank = {"image": 0, "keyframe": 0, "video": 1}
+    stage_rank = {"image": 0, "keyframe": 0, "audio": 1, "video": 2}
     items = [
         dict(item)
         for item in repair_queue.get("items", [])
