@@ -94,3 +94,21 @@ def test_seed_dance_profile_adds_stricter_visual_contract(tmp_path, monkeypatch)
     assert contract["quality_profile"] == "seed_dance_reference"
     assert "Seed Dance reference target" in contract["profile_prompt"]
     assert "AI generated gloss" in contract["profile_negative_prompt"]
+
+
+def test_shot_aesthetic_profile_changes_by_scene_scale():
+    service = VisualStyleAssetService()
+
+    close_up = service.shot_aesthetic_profile({"visual_description": "女主哭泣特写，眼神凝视镜头"})
+    two_shot = service.shot_aesthetic_profile(
+        {"visual_description": "Alice and Bob argue in an office doorway"},
+        visible_count=2,
+    )
+    prop = service.shot_aesthetic_profile({"visual_description": "女主把关键照片递给男主"})
+
+    assert close_up["id"] == "close_up"
+    assert "phone-readable face" in close_up["prompt"]
+    assert two_shot["id"] == "two_shot"
+    assert "both actors readable" in two_shot["prompt"]
+    assert prop["id"] == "prop_interaction"
+    assert "hand-object contact" in prop["prompt"]

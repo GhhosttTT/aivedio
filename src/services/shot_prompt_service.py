@@ -173,15 +173,24 @@ class ShotPromptService:
         except ShotPlanningError as exc:
             if "exceeds" not in str(exc):
                 raise
+
+            def strip_allowed_suffixes(value: str) -> str:
+                for suffix in (
+                    settings.POSITIVE_PROMPT_SUFFIX,
+                    settings.GENERATION_QUALITY_PROMPT_APPEND,
+                    cls.PRODUCTION_STYLE_PROMPT,
+                ):
+                    suffix = (suffix or "").strip()
+                    if suffix and value.endswith(suffix):
+                        value = value[: -len(suffix)].rstrip(" ,")
+                return value
+
             base_prompt = prompt
-            for suffix in (
-                settings.POSITIVE_PROMPT_SUFFIX,
-                settings.GENERATION_QUALITY_PROMPT_APPEND,
-                cls.PRODUCTION_STYLE_PROMPT,
-            ):
-                suffix = (suffix or "").strip()
-                if suffix and base_prompt.endswith(suffix):
-                    base_prompt = base_prompt[: -len(suffix)].rstrip(" ,")
+            base_prompt = strip_allowed_suffixes(base_prompt)
+            profile_marker = ". Shot aesthetic profile "
+            if profile_marker in base_prompt:
+                base_prompt = base_prompt.split(profile_marker, 1)[0].rstrip(" ,.")
+            base_prompt = strip_allowed_suffixes(base_prompt)
             cls.validate_prompt(base_prompt)
             return " ".join(prompt.strip().strip('"').split())
 

@@ -64,6 +64,70 @@ class VisualStyleAssetService:
         "background_stability",
         "artifact_absence",
     )
+    SHOT_AESTHETIC_PROFILES = {
+        "close_up": {
+            "prompt": (
+                "Shot aesthetic profile close_up: premium phone-readable face, clean catchlights, natural pores, "
+                "subtle facial asymmetry, soft commercial key light, uncluttered background falloff"
+            ),
+            "negative": (
+                "tiny face, dead eyes, waxy close-up, airbrushed skin, distorted eyes, harsh nose shadow, "
+                "face cropped by frame edge"
+            ),
+            "review_focus": ["skin_texture", "phone_readability", "repair_artifacts_absent"],
+        },
+        "two_shot": {
+            "prompt": (
+                "Shot aesthetic profile two_shot: both actors readable on a vertical phone frame, separated faces, "
+                "clear eyelines, balanced over-shoulder or frame-left frame-right blocking, distinct wardrobe silhouettes"
+            ),
+            "negative": (
+                "merged bodies, copied face geometry, same-face casting, crossed eyelines, one actor hidden, "
+                "crowded two-shot composition"
+            ),
+            "review_focus": ["phone_readability", "background_separation", "production_polish"],
+        },
+        "full_body": {
+            "prompt": (
+                "Shot aesthetic profile full_body: head-to-toe silhouette, natural body proportion, readable hands, "
+                "clean floor contact, wardrobe shape preserved, premium set depth"
+            ),
+            "negative": (
+                "broken legs, floating feet, fused fingers, cropped shoes, distorted body proportion, limp pose"
+            ),
+            "review_focus": ["visual_integrity", "production_polish", "background_separation"],
+        },
+        "establishing": {
+            "prompt": (
+                "Shot aesthetic profile establishing: premium short-drama location value, clean production-designed set, "
+                "layered foreground and background, coherent practical lighting, subject remains readable"
+            ),
+            "negative": (
+                "empty generic background, low-budget set, dirty clutter, flat wall, random strangers, unreadable subject"
+            ),
+            "review_focus": ["lighting_quality", "color_grade", "background_separation"],
+        },
+        "prop_interaction": {
+            "prompt": (
+                "Shot aesthetic profile prop_interaction: important prop visible and attractive, natural hand-object contact, "
+                "clear gesture, readable fingers, prop color and position preserved"
+            ),
+            "negative": (
+                "disappearing prop, floating object, broken fingers, fused fingers, unclear hand contact, changing prop"
+            ),
+            "review_focus": ["visual_integrity", "phone_readability", "production_polish"],
+        },
+        "reaction": {
+            "prompt": (
+                "Shot aesthetic profile reaction: expressive but natural short-drama reaction, readable eyes, controlled emotion, "
+                "subtle head angle, clean face light, stable wardrobe"
+            ),
+            "negative": (
+                "flat acting still, dead eyes, exaggerated cartoon expression, unreadable emotion, random gesture"
+            ),
+            "review_focus": ["skin_texture", "phone_readability", "production_polish"],
+        },
+    }
 
     def freeze_project_style(
         self,
@@ -149,6 +213,18 @@ class VisualStyleAssetService:
             "negative_style_prompt": negative_prompt,
         }
 
+    def shot_aesthetic_profile(self, scene: Scene | dict | None = None, *, visible_count: int | None = None) -> dict:
+        """Return shot-scale visual constraints for production short-drama generation."""
+        text = self._scene_text(scene)
+        profile_id = self._shot_profile_id(text, visible_count)
+        profile = self.SHOT_AESTHETIC_PROFILES[profile_id]
+        return {
+            "id": profile_id,
+            "prompt": profile["prompt"],
+            "negative_prompt": profile["negative"],
+            "review_focus": list(profile["review_focus"]),
+        }
+
     def build_current_manifest(self, project: Project, scenes: Iterable[Scene]) -> dict:
         scene_items = [
             {
@@ -222,6 +298,47 @@ class VisualStyleAssetService:
         if addition.lower() in base.lower():
             return base
         return base.rstrip(" .") + ". " + addition
+
+    @staticmethod
+    def _scene_text(scene: Scene | dict | None) -> str:
+        if scene is None:
+            return ""
+        if isinstance(scene, dict):
+            values = [
+                scene.get("visual_description"),
+                scene.get("description"),
+                scene.get("image_prompt"),
+                scene.get("dialogue"),
+                scene.get("shot_role"),
+            ]
+        else:
+            values = [
+                getattr(scene, "visual_description", ""),
+                getattr(scene, "image_prompt", ""),
+                getattr(scene, "dialogue", ""),
+            ]
+        return " ".join(str(value or "") for value in values).lower()
+
+    def _shot_profile_id(self, text: str, visible_count: int | None) -> str:
+        if self._contains_any(text, ("close-up", "close up", "特写", "脸部", "眼神", "哭泣", "凝视")):
+            return "close_up"
+        if visible_count is not None and visible_count >= 2:
+            return "two_shot"
+        if self._contains_any(text, ("two-shot", "two shot", "双人", "对峙", "面对面")):
+            return "two_shot"
+        if self._contains_any(text, ("full body", "head-to-toe", "全身", "从头到脚")):
+            return "full_body"
+        if self._contains_any(text, ("手机", "信", "纸条", "钥匙", "照片", "杯", "phone", "letter", "note", "key", "photo", "cup")):
+            return "prop_interaction"
+        if self._contains_any(text, ("哭", "笑", "怒", "震惊", "愣住", "沉默", "reaction", "smile", "cry", "angry", "shock", "stare")):
+            return "reaction"
+        if self._contains_any(text, ("wide", "全景", "街景", "房间", "办公室", "豪宅", "location", "room", "office")):
+            return "establishing"
+        return "reaction"
+
+    @staticmethod
+    def _contains_any(text: str, terms: Iterable[str]) -> bool:
+        return any(term.lower() in text for term in terms)
 
     @staticmethod
     def _quality_profile() -> str:

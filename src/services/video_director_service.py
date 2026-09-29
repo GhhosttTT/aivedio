@@ -79,6 +79,9 @@ class VideoDirectorService:
         dialogue = (scene.dialogue or "").strip()
         visible = list(visible_characters or [])
         visual_style = self._visual_style_prompt(project_id)
+        shot_aesthetic = self._shot_aesthetic_profile(scene, visible_count=len(visible))
+        if shot_aesthetic.get("prompt"):
+            visual_style = self._append_sentence(visual_style, shot_aesthetic["prompt"])
         shot_role = self._shot_role(visual, prompt, dialogue)
         action_intensity = self._action_intensity(visual, prompt)
         duration = self._target_duration(dialogue, shot_role)
@@ -88,7 +91,7 @@ class VideoDirectorService:
         spatial_plan = self._spatial_plan(prompt or visual, shot_role, visible)
         director_prompt = self._director_prompt(prompt or visual, shot_role, action_intensity, visible, spatial_plan, visual_style)
         end_frame_prompt = self._end_frame_prompt(prompt or visual, shot_role, action_intensity, visible, spatial_plan, visual_style)
-        negative_prompt = self._negative_prompt(project_id)
+        negative_prompt = self._negative_prompt(project_id, shot_aesthetic)
         notes = [
             "single continuous shot",
             "preserve the source keyframe identity and layout",
@@ -295,7 +298,7 @@ class VideoDirectorService:
             f"{visual_style} Same scene, same wardrobe, same props, no new people, cinematic short-drama keyframe."
         )
 
-    def _negative_prompt(self, project_id: int | None = None) -> str:
+    def _negative_prompt(self, project_id: int | None = None, shot_aesthetic: dict | None = None) -> str:
         base = settings.GENERATION_QUALITY_NEGATIVE_APPEND
         if project_id is not None:
             try:
@@ -310,6 +313,8 @@ class VideoDirectorService:
             "melting hands, changing clothes, changing room, disappearing prop, unreadable action, "
             "random camera jump, slideshow, still image only"
         )
+        if isinstance(shot_aesthetic, dict) and shot_aesthetic.get("negative_prompt"):
+            video_terms = f"{video_terms}, {shot_aesthetic['negative_prompt']}"
         return f"{base}, {video_terms}" if base else video_terms
 
     def _visual_style_prompt(self, project_id: int | None) -> str:
@@ -320,6 +325,25 @@ class VideoDirectorService:
             return VisualStyleAssetService().generation_prompt_for_project(project_id)
         except Exception:
             return ""
+
+    def _shot_aesthetic_profile(self, scene, visible_count: int | None = None) -> dict:
+        try:
+            from src.services.visual_style_assets import VisualStyleAssetService
+            return VisualStyleAssetService().shot_aesthetic_profile(scene, visible_count=visible_count)
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _append_sentence(base: str | None, addition: str | None) -> str:
+        base = str(base or "").strip()
+        addition = str(addition or "").strip()
+        if not addition:
+            return base
+        if not base:
+            return addition
+        if addition.lower() in base.lower():
+            return base
+        return base.rstrip(" .") + ". " + addition
 
     def _identity_prompt(self, visible_characters: list[dict], prefix: str = " Visible character identity anchors") -> str:
         if not visible_characters:

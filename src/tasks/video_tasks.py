@@ -246,6 +246,10 @@ def _scene_review_payload(scene: Scene, project_id: int | None = None, db=None) 
         from src.tasks.image_tasks import _character_sheet_generation_contract, _visible_character_payload
         visible_characters = _visible_character_payload(scene, project_id, db)
         character_sheet_contract = _character_sheet_generation_contract(visible_characters)
+    shot_aesthetic_profile = style_service.shot_aesthetic_profile(
+        scene,
+        visible_count=len(visible_characters),
+    )
     return {
         "scene_number": scene.scene_number,
         "description": scene.visual_description,
@@ -257,6 +261,7 @@ def _scene_review_payload(scene: Scene, project_id: int | None = None, db=None) 
         "character_sheet_references": character_sheet_contract["references"],
         "identity_contrast_matrix": character_sheet_contract["identity_contrast_matrix"],
         "platform_aesthetic_contract": style_service.platform_aesthetic_contract(project_id),
+        "shot_aesthetic_profile": shot_aesthetic_profile,
     }
 
 

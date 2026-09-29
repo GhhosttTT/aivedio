@@ -290,6 +290,8 @@ def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=Non
     style_service = VisualStyleAssetService()
     visual_style = style_service.generation_prompt_for_project(project_id)
     style_negative = style_service.generation_negative_for_project(project_id)
+    shot_aesthetic_profile = style_service.shot_aesthetic_profile(scene, visible_count=len(characters))
+    style_negative = _append_terms(style_negative, shot_aesthetic_profile["negative_prompt"])
     complexity = _complexity_report(scene, project_id, db)
     if settings.GENERATION_BLOCK_COMPLEX_SHOTS and complexity["status"] == "needs_split":
         raise ValueError("Shot is too complex for one stable generation: " + "; ".join(complexity["reasons"]))
@@ -304,7 +306,10 @@ def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=Non
         appearance_with_layout = " ".join(layout_parts)
     prompt_with_layout = f"{prompt}\n" + "\n".join(layout_parts)
     artifact = Path(get_scene_image_path(project_id, scene.id)).with_suffix(".prompt.json")
-    source_hash = compiler.source_hash(f"{prompt_with_layout}\n{style_negative}", appearance_with_layout)
+    source_hash = compiler.source_hash(
+        f"{prompt_with_layout}\n{shot_aesthetic_profile['prompt']}\n{style_negative}",
+        appearance_with_layout,
+    )
     if artifact.is_file():
         cached = json.loads(artifact.read_text(encoding="utf-8"))
         if cached.get("source_hash") == source_hash and cached.get("version") == 1:
@@ -324,6 +329,14 @@ def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=Non
             _append_terms(compiled.negative_prompt, style_negative),
             compiled.source_hash,
             compiled.word_count,
+            compiled.version,
+        )
+    if shot_aesthetic_profile["prompt"]:
+        compiled = CompiledShot(
+            _append_sentence_once(compiled.prompt, shot_aesthetic_profile["prompt"]),
+            compiled.negative_prompt,
+            compiled.source_hash,
+            len(_append_sentence_once(compiled.prompt, shot_aesthetic_profile["prompt"]).split()),
             compiled.version,
         )
     write_report(artifact, compiled.to_dict())
@@ -762,12 +775,16 @@ def _generate_quality_candidates(
         feedback = _review_feedback(reports) if pass_index else ""
         base_prompt = request.prompt
         platform_contract = scene_payload.get("platform_aesthetic_contract")
+        shot_profile = scene_payload.get("shot_aesthetic_profile")
         platform_prompt = ""
         platform_negative = ""
         if isinstance(platform_contract, dict):
             platform_prompt = str(platform_contract.get("prompt") or "")
             platform_negative = str(platform_contract.get("negative_prompt") or "")
         base_prompt = _append_sentence_once(base_prompt, platform_prompt)
+        if isinstance(shot_profile, dict):
+            base_prompt = _append_sentence_once(base_prompt, str(shot_profile.get("prompt") or ""))
+            platform_negative = _append_terms(platform_negative, str(shot_profile.get("negative_prompt") or ""))
         sheet_contract = str(scene_payload.get("character_sheet_contract") or "").strip()
         base_prompt = _append_sentence_once(base_prompt, sheet_contract)
         prompt = _append_terms(base_prompt, settings.GENERATION_QUALITY_PROMPT_APPEND)
@@ -820,6 +837,7 @@ def _generate_quality_candidates(
                 "visible_characters": scene_payload.get("visible_characters", []),
                 "identity_contrast_matrix": scene_payload.get("identity_contrast_matrix", {}),
                 "platform_aesthetic_contract": scene_payload.get("platform_aesthetic_contract", {}),
+                "shot_aesthetic_profile": scene_payload.get("shot_aesthetic_profile", {}),
             }
             report["request"] = {
                 "seed": candidate_request.seed,
@@ -832,6 +850,7 @@ def _generate_quality_candidates(
                 "character_sheet_references": scene_payload.get("character_sheet_references", []),
                 "identity_contrast_matrix": scene_payload.get("identity_contrast_matrix", {}),
                 "platform_aesthetic_contract": scene_payload.get("platform_aesthetic_contract", {}),
+                "shot_aesthetic_profile": scene_payload.get("shot_aesthetic_profile", {}),
                 "refinement_pass": pass_index,
                 "feedback": feedback,
                 "repair_action": current_repair_action,
@@ -930,14 +949,20 @@ def generate_image_task(
         reference_image = _get_reference_image(character, project_id, scene)
         visible_characters = _visible_character_payload(scene, project_id, db)
         character_sheet_contract = _character_sheet_generation_contract(visible_characters)
-        platform_aesthetic_contract = VisualStyleAssetService().platform_aesthetic_contract(project_id)
+        style_service = VisualStyleAssetService()
+        platform_aesthetic_contract = style_service.platform_aesthetic_contract(project_id)
+        shot_aesthetic_profile = style_service.shot_aesthetic_profile(scene, visible_count=len(visible_characters))
         enhanced_prompt = compiled.prompt
         if character_sheet_contract["prompt"]:
             enhanced_prompt = f"{enhanced_prompt}. {character_sheet_contract['prompt']}."
+        enhanced_prompt = _append_sentence_once(enhanced_prompt, shot_aesthetic_profile["prompt"])
         repair_action = kwargs.get("repair_action")
         enhanced_prompt, negative_prompt = _apply_image_repair_action(
             enhanced_prompt,
-            _append_terms(compiled.negative_prompt, character_sheet_contract["negative"]),
+            _append_terms(
+                _append_terms(compiled.negative_prompt, character_sheet_contract["negative"]),
+                shot_aesthetic_profile["negative_prompt"],
+            ),
             repair_action,
         )
 
@@ -968,6 +993,7 @@ def generate_image_task(
                 "character_sheet_references": character_sheet_contract["references"],
                 "identity_contrast_matrix": character_sheet_contract["identity_contrast_matrix"],
                 "platform_aesthetic_contract": platform_aesthetic_contract,
+                "shot_aesthetic_profile": shot_aesthetic_profile,
                 "repair_action": repair_action,
             }
             final_image_path, quality_report = _generate_quality_candidates(

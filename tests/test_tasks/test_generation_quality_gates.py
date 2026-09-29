@@ -267,6 +267,15 @@ def test_video_review_payload_carries_platform_aesthetic_contract(project_data):
     assert "Platform aesthetic contract" in payload["platform_aesthetic_contract"]["prompt"]
     assert "phone_readability" in payload["platform_aesthetic_contract"]["image_features"]
     assert "motion_smoothness" in payload["platform_aesthetic_contract"]["video_features"]
+    assert payload["shot_aesthetic_profile"]["id"] in {
+        "close_up",
+        "two_shot",
+        "full_body",
+        "establishing",
+        "prop_interaction",
+        "reaction",
+    }
+    assert payload["shot_aesthetic_profile"]["prompt"]
 
 
 def test_seed_dance_profile_reaches_video_review_payload(project_data, monkeypatch):
@@ -299,6 +308,8 @@ def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_dat
     assert plan.num_frames >= 25
     assert "Visible character identity anchors" in plan.director_prompt
     assert "Spatial continuity contract" in plan.director_prompt
+    assert "Shot aesthetic profile prop_interaction" in plan.director_prompt
+    assert "Shot aesthetic profile prop_interaction" in plan.end_frame_prompt
     assert plan.spatial_plan["shot_scale"] in {"medium shot", "medium two-shot", "wide establishing shot", "close-up"}
     assert plan.spatial_plan["character_positions"]["Alice"] == "center foreground"
     assert set(plan.spatial_plan["control_references"]) == {
@@ -308,6 +319,7 @@ def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_dat
     }
     assert "End frame:" in plan.end_frame_prompt
     assert "identity drift" in plan.negative_prompt
+    assert "disappearing prop" in plan.negative_prompt
 
 
 def test_video_director_normalize_clip_uses_production_frame_contract(tmp_path, monkeypatch):
@@ -921,7 +933,17 @@ def test_image_repair_action_is_recorded_in_candidate_request(tmp_path, monkeypa
     _, report = _generate_quality_candidates(
         provider,
         request,
-        {"scene_number": 1, "visual_description": "A woman opens a letter", "repair_action": "refine_prompt_composition"},
+        {
+            "scene_number": 1,
+            "visual_description": "A woman opens a letter",
+            "repair_action": "refine_prompt_composition",
+            "shot_aesthetic_profile": {
+                "id": "prop_interaction",
+                "prompt": "Shot aesthetic profile prop_interaction: important prop visible",
+                "negative_prompt": "disappearing prop",
+                "review_focus": ["visual_integrity"],
+            },
+        },
         reference_image=None,
         repair_action="refine_prompt_composition",
     )
@@ -931,8 +953,12 @@ def test_image_repair_action_is_recorded_in_candidate_request(tmp_path, monkeypa
     candidate_request = report["candidates"][0]["request"]
     assert candidate_request["repair_action"] == "refine_prompt_composition"
     assert candidate_request["repair_parameter_profile"]["reason"] == "composition_aesthetic_repair"
+    assert candidate_request["shot_aesthetic_profile"]["id"] == "prop_interaction"
+    assert "important prop visible" in provider.requests[0].prompt
+    assert "disappearing prop" in provider.requests[0].negative_prompt
     assert report["candidates"][0]["scene"]["scene_number"] == 1
     assert report["candidates"][0]["scene"]["repair_action"] == "refine_prompt_composition"
+    assert report["candidates"][0]["scene"]["shot_aesthetic_profile"]["id"] == "prop_interaction"
     assert report["candidates"][0]["provider_metadata"]["workflow"]["steps"] == 45
     assert report["candidates"][0]["provider_metadata"]["workflow"]["sampler_name"] == "dpmpp_2m"
 
