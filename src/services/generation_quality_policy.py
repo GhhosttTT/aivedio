@@ -188,10 +188,25 @@ VIDEO_REPAIR_PIPELINE_STAGES = {
         "capabilities": ["performance_direction", "candidate_review"],
     },
     "refine_video_commercial_aesthetic": {
-        "stages": ["commercial_lighting_pass", "phone_readability_pass", "skin_texture_motion_review"],
-        "prompt": "repair pipeline: commercial short-drama lighting, phone-readable face, stable skin texture, polished mobile frame",
-        "negative": "muddy low-budget lighting, cheap filter, unreadable face on phone screen, AI generated gloss in motion",
-        "capabilities": ["aesthetic_polish", "temporal_identity", "candidate_review"],
+        "stages": [
+            "platform_reference_gap_repair",
+            "commercial_lighting_pass",
+            "premium_casting_pass",
+            "mobile_frame_value_pass",
+            "production_design_pass",
+            "scroll_stop_review",
+            "skin_texture_motion_review",
+        ],
+        "prompt": (
+            "repair pipeline: close the Seed Dance platform-reference gap, premium casting impression, "
+            "commercial short-drama lighting, phone-readable face, high-value mobile frame, production design polish, "
+            "scroll-stopping first second, stable skin texture"
+        ),
+        "negative": (
+            "muddy low-budget lighting, cheap filter, generic casting, weak first impression, low mobile frame value, "
+            "unfinished production design, unreadable face on phone screen, AI generated gloss in motion"
+        ),
+        "capabilities": ["aesthetic_polish", "platform_reference_review", "production_design", "temporal_identity", "candidate_review"],
     },
     "refine_final_composition_finish": {
         "stages": ["episode_finish_polish", "cut_continuity_review", "subtitle_integration_review"],
@@ -261,9 +276,9 @@ ACTION_BUDGETS = {
             "profile": "performance_direction_recovery",
         },
         "refine_video_commercial_aesthetic": {
-            "candidate_multiplier": 1.8,
-            "extra_refinement_passes": 2,
-            "min_candidates": 5,
+            "candidate_multiplier": 2.2,
+            "extra_refinement_passes": 3,
+            "min_candidates": 6,
             "profile": "video_commercial_aesthetic_recovery",
         },
         "refine_final_composition_finish": {

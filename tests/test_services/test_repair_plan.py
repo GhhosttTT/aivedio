@@ -164,11 +164,18 @@ def test_repair_execution_plan_handles_video_commercial_aesthetic_rerun(tmp_path
     item = plan["auto"][0]
     assert item["action"] == "refine_video_commercial_aesthetic"
     assert item["parameter_hints"]["commercial_aesthetic_required"] is True
+    assert item["parameter_hints"]["platform_reference_required"] is True
+    assert item["parameter_hints"]["seed_dance_gap_required"] is True
+    assert item["parameter_hints"]["scroll_stop_appeal_required"] is True
+    assert item["parameter_hints"]["premium_casting_required"] is True
+    assert item["parameter_hints"]["production_design_required"] is True
     assert item["parameter_hints"]["stabilize_motion_for_aesthetic_polish"] is True
     assert item["parameter_hints"]["preserve_identity"] is True
-    assert "commercial_lighting_pass" in item["quality_pipeline"]["stages"]
-    assert "phone_readability_pass" in item["quality_pipeline"]["stages"]
+    assert "platform_reference_gap_repair" in item["quality_pipeline"]["stages"]
+    assert "premium_casting_pass" in item["quality_pipeline"]["stages"]
+    assert "scroll_stop_review" in item["quality_pipeline"]["stages"]
     assert "aesthetic_polish" in item["parameter_hints"]["required_workflow_capabilities"]
+    assert "platform_reference_review" in item["parameter_hints"]["required_workflow_capabilities"]
 
 
 def test_repair_execution_plan_handles_final_composition_finish_rerun(tmp_path):

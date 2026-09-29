@@ -96,8 +96,10 @@ VIDEO_REPAIR_PROMPT_DIRECTIVES = {
         "visible reaction to dialogue, expressive but natural body language, and one readable action intent."
     ),
     "refine_video_commercial_aesthetic": (
-        "Upgrade the clip's commercial short-drama look: polished phone-frame composition, stable premium lighting, "
-        "clean color grade, attractive face readability, and high-end production value across the full motion."
+        "Repair the platform-reference gap against a premium Seed Dance-style vertical short-drama clip: "
+        "make the first second scroll-stopping, keep the actor face intentionally cast and attractive, "
+        "raise phone-frame value, improve set dressing and wardrobe polish, preserve premium lighting and clean color grade, "
+        "and keep the full motion commercially publishable."
     ),
     "refine_final_composition_finish": (
         "Unify the final episode finish: consistent exposure, skin tone, color grade, sharpness, subtitle integration, "
@@ -117,6 +119,7 @@ VIDEO_REPAIR_NEGATIVE_DIRECTIVES = {
     ),
     "refine_video_commercial_aesthetic": (
         "cheap filter, low-budget set, muddy lighting, washed-out color grade, cluttered frame, "
+        "generic face casting, weak first impression, low mobile frame value, unfinished production design, "
         "unreadable face on phone screen, commercial aesthetic drop"
     ),
     "refine_final_composition_finish": (

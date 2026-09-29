@@ -117,8 +117,8 @@ def test_commercial_aesthetic_video_budget_uses_heavier_video_polish_profile(mon
 
     budget = video_quality_budget("refine_video_commercial_aesthetic")
 
-    assert budget.candidate_count == 6
-    assert budget.refinement_passes == 4
+    assert budget.candidate_count == 7
+    assert budget.refinement_passes == 5
     assert budget.action_profile == "video_commercial_aesthetic_recovery"
 
 
@@ -156,11 +156,15 @@ def test_video_quality_pipeline_adds_commercial_aesthetic_repair():
 
     assert pipeline.repair_action == "refine_video_commercial_aesthetic"
     assert "micro_expression_pass" in pipeline.stages
-    assert "commercial_lighting_pass" in pipeline.stages
-    assert "phone_readability_pass" in pipeline.stages
+    assert "platform_reference_gap_repair" in pipeline.stages
+    assert "premium_casting_pass" in pipeline.stages
+    assert "scroll_stop_review" in pipeline.stages
     assert "aesthetic_polish" in pipeline.required_capabilities
-    assert "commercial short-drama lighting" in pipeline.prompt_directive
+    assert "platform_reference_review" in pipeline.required_capabilities
+    assert "Seed Dance platform-reference gap" in pipeline.prompt_directive
+    assert "scroll-stopping first second" in pipeline.prompt_directive
     assert "AI generated gloss in motion" in pipeline.negative_directive
+    assert "generic casting" in pipeline.negative_directive
 
 
 def test_base_generation_budget_keeps_configured_values(monkeypatch):

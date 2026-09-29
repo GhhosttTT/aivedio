@@ -184,7 +184,7 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
             ]
         elif action == "refine_video_commercial_aesthetic":
             entry["rerun_strategy"] = (
-                "Regenerate the affected clip with stricter commercial short-drama lighting, color grade, phone-frame composition, and production polish constraints."
+                "Regenerate the affected clip with stricter platform-reference, commercial short-drama lighting, color grade, phone-frame composition, and production polish constraints."
             )
             entry["parameter_hints"] = {
                 "repair_action": "refine_video_commercial_aesthetic",
@@ -193,6 +193,11 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "increase_video_candidates": True,
                 "preserve_identity": True,
                 "commercial_aesthetic_required": True,
+                "platform_reference_required": True,
+                "seed_dance_gap_required": True,
+                "scroll_stop_appeal_required": True,
+                "premium_casting_required": True,
+                "production_design_required": True,
             }
             _attach_video_pipeline_hint(entry, action, {"shot_role": "emotion_reaction"})
             commands = [

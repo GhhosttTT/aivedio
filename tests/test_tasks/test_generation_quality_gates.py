@@ -2698,8 +2698,10 @@ def test_video_repair_action_stabilizes_commercial_aesthetic_pass():
 
     assert motion == 110
     assert noise == 0.018
-    assert "commercial short-drama look" in prompt
+    assert "platform-reference gap" in prompt
+    assert "scroll-stopping" in prompt
     assert "premium lighting" in prompt
+    assert "low mobile frame value" in negative
     assert "washed-out color grade" in negative
 
 
