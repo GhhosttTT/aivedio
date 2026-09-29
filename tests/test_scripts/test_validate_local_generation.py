@@ -933,6 +933,52 @@ def test_validation_summary_blocks_failed_final_normalized_video_review(tmp_path
     assert any("final normalized video review" in item for item in report["action_items"])
 
 
+def test_validation_summary_blocks_failed_final_composition_review(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery"))
+    write_json(tmp_path / "final.composition_review.json", {
+        "status": "needs_review",
+        "average": 3.1,
+        "stage": "final_composition",
+        "error": "composition review batch 1 performance gate failed",
+        "batches": [{
+            "status": "needs_review",
+            "average": 3.1,
+            "video_aesthetic_gate": {"status": "passed", "low": {}, "missing": []},
+            "character_distinctiveness_gate": {"status": "passed", "low": {}, "missing": []},
+            "video_performance_gate": {
+                "status": "needs_review",
+                "low": {
+                    "emotion_readability": {
+                        "score": 2,
+                        "evidence": "flat acting across the composed episode",
+                    },
+                },
+            },
+        }],
+        "repair_queue": [{
+            "action": "regenerate_video_with_performance_direction",
+            "execution": "auto",
+            "stage": "video",
+            "reason": "flat acting across the composed episode",
+        }],
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["composition_review_count"] == 1
+    assert report["checks"]["composition_review_passed"] is False
+    assert report["checks"]["video_review_passed"] is False
+    assert report["repair_queue"][0]["action"] == "regenerate_video_with_performance_direction"
+    assert any("final composed episode review" in item for item in report["action_items"])
+
+
 def test_validation_summary_blocks_low_video_identity_gate(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
@@ -1052,6 +1098,38 @@ def test_acceptance_package_includes_final_normalized_video_reviews(tmp_path):
     assert package["evidence_files"]["quality_reports"]["count"] == 1
     assert package["video_review"]["final_normalized_reviews"][0]["source_report"] == "scene_1.quality.json"
     assert package["video_review"]["final_normalized_reviews"][0]["status"] == "passed"
+
+
+def test_acceptance_package_includes_final_composition_reviews(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery"))
+    write_json(tmp_path / "final.composition_review.json", {
+        "status": "passed",
+        "average": 4.5,
+        "stage": "final_composition",
+        "batches": [{
+            "status": "passed",
+            "average": 4.5,
+            "video_aesthetic_gate": {"status": "passed", "low": {}, "missing": []},
+            "character_distinctiveness_gate": {"status": "passed", "low": {}, "missing": []},
+            "video_performance_gate": {"status": "passed", "low": {}, "missing": []},
+        }],
+    })
+
+    package = validator.build_acceptance_package(tmp_path)
+
+    assert package["status"] == "ready_for_seed_dance_candidate"
+    assert package["checks"]["composition_review_count"] == 1
+    assert package["checks"]["composition_review_passed"] is True
+    assert package["evidence_files"]["composition_reviews"]["count"] == 1
+    assert package["video_review"]["composition_reviews"][0]["source_report"] == "final.composition_review.json"
+    markdown = (tmp_path / "acceptance_package.md").read_text(encoding="utf-8")
+    assert "composition_review_passed" in markdown
 
 
 def test_acceptance_package_surfaces_missing_manual_review_and_setup_actions(tmp_path):
