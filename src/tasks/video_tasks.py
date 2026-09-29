@@ -728,8 +728,8 @@ def _generate_quality_video_candidates(
     repair_action: str | None = None,
 ) -> tuple[str, dict]:
     budget = video_quality_budget(repair_action)
-    candidate_count = budget.candidate_count
-    refinement_passes = max(0, min(budget.refinement_passes, 4))
+    max_refinement_passes = max(0, min(budget.refinement_passes, 4))
+    strongest_budget = budget
     reviewer = GenerationReviewService()
     reference = _reference_for_scene(scene, project_id, db)
     scene_payload = _scene_review_payload(scene, project_id, db)
@@ -748,11 +748,17 @@ def _generate_quality_video_candidates(
     from src.services.svd_service import cleanup_svd_service
     current_motion = motion_bucket_id
     current_noise = noise_aug_strength
-    for pass_index in range(refinement_passes + 1):
+    pass_index = 0
+    next_candidate_index = 1
+    while pass_index <= max_refinement_passes:
         generated = []
         current_repair_action = repair_action or (
             _video_repair_action_from_candidates(candidates) if pass_index else None
         )
+        pass_budget = video_quality_budget(current_repair_action)
+        if pass_budget.candidate_count >= strongest_budget.candidate_count:
+            strongest_budget = pass_budget
+        max_refinement_passes = max(max_refinement_passes, max(0, min(pass_budget.refinement_passes, 4)))
         quality_pipeline = video_quality_pipeline(shot_plan_payload, current_repair_action)
         pass_scene = {
             **candidate_scene,
@@ -767,8 +773,9 @@ def _generate_quality_video_candidates(
         if hasattr(svd_service, "with_repair_action"):
             svd_service.with_repair_action(current_repair_action)
         try:
-            for offset in range(1, candidate_count + 1):
-                index = pass_index * candidate_count + offset
+            for offset in range(1, pass_budget.candidate_count + 1):
+                index = next_candidate_index
+                next_candidate_index += 1
                 candidate_path = _candidate_video_path(output_path, index)
                 motion, noise = _video_variant_params(pass_motion, pass_noise, offset)
                 generated_path = svd_service.generate_video(
@@ -797,7 +804,7 @@ def _generate_quality_video_candidates(
                         "identity_contrast_matrix": scene_payload.get("identity_contrast_matrix", {}),
                         "platform_aesthetic_contract": scene_payload.get("platform_aesthetic_contract", {}),
                         "repair_action": current_repair_action,
-                        "quality_budget": budget.as_dict(),
+                        "quality_budget": pass_budget.as_dict(),
                         "quality_pipeline": quality_pipeline.as_dict(),
                     },
                     "shot_plan": shot_plan_payload,
@@ -883,13 +890,14 @@ def _generate_quality_video_candidates(
         if all(candidate.get("status") == "error" for candidate in pass_candidates):
             break
         current_motion, current_noise = _refined_video_base_params(pass_motion, pass_noise)
+        pass_index += 1
     if all(candidate.get("status") == "error" for candidate in candidates):
         report = {
             "kind": "video_candidate_selection",
             "status": "review_unavailable",
             "selected_path": candidates[0]["path"],
             "candidates": candidates,
-            "quality_budget": budget.as_dict(),
+            "quality_budget": strongest_budget.as_dict(),
         }
         attach_repair_queue(report, "video")
         write_report(Path(output_path).with_suffix(".quality.json"), report)
@@ -898,7 +906,7 @@ def _generate_quality_video_candidates(
         candidates,
         output_path,
         Path(output_path).with_suffix(".quality.json"),
-        quality_budget=budget.as_dict(),
+        quality_budget=strongest_budget.as_dict(),
     )
 
 

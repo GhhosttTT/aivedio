@@ -1675,10 +1675,13 @@ def test_video_refinement_converts_motion_failure_into_repair_action(project_dat
         num_frames=16, fps=8, motion_bucket_id=150, noise_aug_strength=0.08,
     )
 
-    assert len(fake_svd.requests) == 2
+    assert len(fake_svd.requests) == 5
     assert fake_svd.requests[1]["motion_bucket_id"] < int(fake_svd.requests[0]["motion_bucket_id"] * 0.72)
     assert fake_svd.requests[1]["noise_aug_strength"] < round(fake_svd.requests[0]["noise_aug_strength"] * 0.6, 4)
+    assert report["quality_budget"]["repair_action"] == "lower_motion_and_regenerate_video"
+    assert report["quality_budget"]["candidate_count"] == 4
     assert report["candidates"][0]["request"]["repair_action"] == "lower_motion_and_regenerate_video"
+    assert report["candidates"][0]["request"]["quality_budget"]["candidate_count"] == 4
     assert report["status"] == "passed"
 
 
@@ -2445,12 +2448,16 @@ def test_quality_refinement_converts_review_failure_into_repair_action(tmp_path,
 
     repaired_request = fake_provider.requests[1]
     repaired_candidate = report["candidates"][0]
+    assert len(fake_provider.requests) == 5
     assert "balanced composition" in repaired_request.prompt
     assert "cinematic lighting" in repaired_request.prompt
     assert "tasteful commercial color grade" in repaired_request.prompt
     assert "bad crop" in repaired_request.negative_prompt
     assert "cheap filter look" in repaired_request.negative_prompt
+    assert report["quality_budget"]["repair_action"] == "refine_prompt_composition"
+    assert report["quality_budget"]["candidate_count"] == 4
     assert repaired_candidate["request"]["repair_action"] == "refine_prompt_composition"
+    assert repaired_candidate["request"]["quality_budget"]["candidate_count"] == 4
     assert repaired_candidate["request"]["repair_parameter_profile"]["reason"] == "composition_aesthetic_repair"
 
 

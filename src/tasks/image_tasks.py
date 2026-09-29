@@ -790,13 +790,15 @@ def _generate_quality_candidates(
     repair_action: str | None = None,
 ) -> tuple[str, dict]:
     budget = image_quality_budget(repair_action)
-    candidate_count = budget.candidate_count
-    refinement_passes = max(0, min(budget.refinement_passes, 4))
+    max_refinement_passes = max(0, min(budget.refinement_passes, 4))
+    strongest_budget = budget
     selector = ImageQualitySelector()
     reports = []
     best_report = None
 
-    for pass_index in range(refinement_passes + 1):
+    pass_index = 0
+    next_candidate_index = 1
+    while pass_index <= max_refinement_passes:
         pass_reports = []
         feedback = _review_feedback(reports) if pass_index else ""
         base_prompt = request.prompt
@@ -812,6 +814,10 @@ def _generate_quality_candidates(
             base_prompt = _append_sentence_once(base_prompt, str(shot_profile.get("prompt") or ""))
             platform_negative = _append_terms(platform_negative, str(shot_profile.get("negative_prompt") or ""))
         current_repair_action = repair_action or (_repair_action_from_reports(reports) if pass_index else None)
+        pass_budget = image_quality_budget(current_repair_action)
+        if pass_budget.candidate_count >= strongest_budget.candidate_count:
+            strongest_budget = pass_budget
+        max_refinement_passes = max(max_refinement_passes, max(0, min(pass_budget.refinement_passes, 4)))
         quality_pipeline = image_quality_pipeline(shot_profile if isinstance(shot_profile, dict) else None, current_repair_action)
         base_prompt = _append_sentence_once(base_prompt, quality_pipeline.prompt_directive)
         platform_negative = _append_terms(platform_negative, quality_pipeline.negative_directive)
@@ -829,8 +835,9 @@ def _generate_quality_candidates(
             if feedback_negative:
                 negative_prompt = _append_terms(negative_prompt, feedback_negative)
         prompt, negative_prompt = _apply_image_repair_action(prompt, negative_prompt, current_repair_action)
-        for index in range(candidate_count):
-            candidate_index = pass_index * candidate_count + index + 1
+        for index in range(pass_budget.candidate_count):
+            candidate_index = next_candidate_index
+            next_candidate_index += 1
             output_path = candidate_output_path(request.output_path, candidate_index)
             repair_profile = _repair_parameter_profile(current_repair_action)
             steps, cfg = _quality_parameters(index, pass_index, request.steps, request.cfg_scale, current_repair_action)
@@ -886,7 +893,7 @@ def _generate_quality_candidates(
                 "feedback": feedback,
                 "repair_action": current_repair_action,
                 "repair_parameter_profile": repair_profile,
-                "quality_budget": budget.as_dict(),
+                "quality_budget": pass_budget.as_dict(),
             }
             report["path"] = result.output_path
             pass_reports.append(report)
@@ -894,13 +901,14 @@ def _generate_quality_candidates(
         best_report = max(pass_reports if best_report is None else reports, key=lambda item: item.get("average", 0))
         if best_report.get("average", 0) >= settings.GENERATION_IMAGE_MIN_SCORE and best_report.get("status") != "technical_only":
             break
+        pass_index += 1
 
     selection = selector.select_best(
         reports,
         request.output_path,
         Path(request.output_path).with_suffix(".quality.json"),
     )
-    selection["quality_budget"] = budget.as_dict()
+    selection["quality_budget"] = strongest_budget.as_dict()
     postprocess_report = ImagePostprocessor().process(
         request.output_path,
         prompt=request.prompt,
