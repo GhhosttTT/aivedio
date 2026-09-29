@@ -308,6 +308,46 @@ def test_render_images_uses_production_quality_profile(tmp_path, monkeypatch):
     assert report["cases"][0]["request"]["enable_parameter_optimization"] is True
 
 
+def test_render_images_applies_repair_action_constraints(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeClient:
+        def close(self):
+            return None
+
+    class FakeComfyUIService:
+        def __init__(self, *args, **kwargs):
+            self.client = FakeClient()
+
+        def generate_image(self, **kwargs):
+            calls.append(kwargs)
+            path = tmp_path / "repair.png"
+            path.write_bytes(b"image")
+            (tmp_path / "repair.workflow.json").write_text(json.dumps({
+                "8": {"class_type": "KSampler", "inputs": {"steps": kwargs["steps"], "cfg": kwargs["cfg_scale"], "seed": 321}},
+            }), encoding="utf-8")
+            return str(path)
+
+    monkeypatch.setattr(validator, "ComfyUIService", FakeComfyUIService)
+    monkeypatch.setattr(validator.settings, "GENERATION_STEP_VARIATION", 0)
+    monkeypatch.setattr(validator.settings, "GENERATION_CFG_VARIATION", 0)
+
+    report = validator.render_images(
+        [{"id": "face", "prompt": "premium short drama close-up", "seed": 321}],
+        tmp_path,
+        repair_action="refine_face_aesthetic_detail",
+    )
+
+    assert report["status"] == "rendered_pending_human_review"
+    assert calls[0]["steps"] == validator.settings.GENERATION_STEPS + 12
+    assert calls[0]["cfg_scale"] == round(validator.settings.GENERATION_CFG - 0.35, 2)
+    assert "natural skin texture" in calls[0]["prompt"]
+    assert "plastic skin" in calls[0]["negative_prompt"]
+    assert report["render_profile"]["repair_action"] == "refine_face_aesthetic_detail"
+    assert report["cases"][0]["request"]["repair_action"] == "refine_face_aesthetic_detail"
+    assert report["cases"][0]["request"]["repair_parameter_profile"]["reason"] == "face_aesthetic_detail_repair"
+
+
 def test_review_images_builds_repair_queue_for_failed_keyframes(tmp_path, monkeypatch):
     write_json(tmp_path / "render.json", {
         "status": "rendered_pending_human_review",

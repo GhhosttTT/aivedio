@@ -26,6 +26,7 @@ from src.services.shot_prompt_service import ShotPromptService
 from src.services.repair_queue import attach_repair_queue
 from src.services.repair_plan import build_repair_execution_plan
 from src.services.quality_loop import build_quality_loop_plan
+from src.tasks.image_tasks import _apply_image_repair_action, _quality_parameters, _repair_parameter_profile
 from scripts.compare_video_baseline import compare as compare_video_baseline
 
 
@@ -101,7 +102,15 @@ def render_images(
     reference=None,
     quality_mode: str = "ultra",
     optimization_mode: str = "quality",
+    repair_action: str | None = None,
 ):
+    steps, cfg_scale = _quality_parameters(
+        0,
+        0,
+        settings.GENERATION_STEPS,
+        settings.GENERATION_CFG,
+        repair_action=repair_action,
+    )
     report = {
         "status": "error",
         "quality_accepted": False,
@@ -110,11 +119,13 @@ def render_images(
             "optimization_mode": optimization_mode,
             "width": settings.GENERATION_WIDTH,
             "height": settings.GENERATION_HEIGHT,
-            "base_steps": settings.GENERATION_STEPS,
-            "base_cfg": settings.GENERATION_CFG,
+            "base_steps": steps,
+            "base_cfg": cfg_scale,
             "uses_reference": bool(reference),
             "prompt_optimization": True,
             "parameter_optimization": quality_mode in {"high_quality", "ultra"},
+            "repair_action": repair_action,
+            "repair_parameter_profile": _repair_parameter_profile(repair_action),
         },
         "cases": [],
     }
@@ -124,15 +135,20 @@ def render_images(
             if not str(case["id"]).replace("_", "").isalnum():
                 raise ValueError("Case ID must be alphanumeric")
             compiled = ShotPromptService().compile(case["prompt"])
+            prompt, negative_prompt = _apply_image_repair_action(
+                compiled.prompt,
+                compiled.negative_prompt,
+                repair_action,
+            )
             path = output / (case["id"] + ".png")
             case_reference = case.get("reference_image") or case.get("reference") or reference
             started = time.monotonic()
             image = service.generate_image(
-                prompt=compiled.prompt, negative_prompt=compiled.negative_prompt,
+                prompt=prompt, negative_prompt=negative_prompt,
                 output_path=str(path), seed=case["seed"], reference_image=case_reference,
                 use_ipadapter=bool(case_reference), width=settings.GENERATION_WIDTH,
-                height=settings.GENERATION_HEIGHT, steps=settings.GENERATION_STEPS,
-                cfg_scale=settings.GENERATION_CFG,
+                height=settings.GENERATION_HEIGHT, steps=steps,
+                cfg_scale=cfg_scale,
                 quality_mode=quality_mode,
                 optimization_mode=optimization_mode,
                 enable_prompt_optimization=True,
@@ -143,21 +159,24 @@ def render_images(
                 "image": image,
                 "seed": case["seed"],
                 "source_prompt": case["prompt"],
-                "prompt": compiled.prompt,
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
                 "scene": case.get("scene", {}),
                 "elapsed_seconds": round(time.monotonic() - started, 2),
                 "actual_workflow": _extract_workflow_image_metadata(image),
                 "request": {
                     "width": settings.GENERATION_WIDTH,
                     "height": settings.GENERATION_HEIGHT,
-                    "steps": settings.GENERATION_STEPS,
-                    "cfg_scale": settings.GENERATION_CFG,
+                    "steps": steps,
+                    "cfg_scale": cfg_scale,
                     "quality_mode": quality_mode,
                     "optimization_mode": optimization_mode,
                     "reference_image": case_reference,
                     "use_ipadapter": bool(case_reference),
                     "enable_prompt_optimization": True,
                     "enable_parameter_optimization": quality_mode in {"high_quality", "ultra"},
+                    "repair_action": repair_action,
+                    "repair_parameter_profile": _repair_parameter_profile(repair_action),
                 },
             })
             write_report(output / "render.json", report)
@@ -1043,6 +1062,12 @@ def main():
     parser.add_argument("--description", help="Expected scene content for frame review")
     parser.add_argument("--quality-mode", default="ultra", choices=["fast", "normal", "high_quality", "ultra"], help="Image quality mode for render-images")
     parser.add_argument("--optimization-mode", default="quality", choices=["quality", "realism", "artistic", "balanced"], help="Prompt optimization mode for render-images")
+    parser.add_argument("--repair-action", choices=[
+        "regenerate_keyframe_with_identity_lock",
+        "refine_prompt_composition",
+        "refine_face_aesthetic_detail",
+        "regenerate_keyframe_with_prop_constraints",
+    ], help="Apply targeted image repair constraints during render-images")
     parser.add_argument("--max-actions", type=int, default=5, help="Maximum automatic repairs to select for quality-loop")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -1063,6 +1088,7 @@ def main():
             args.reference,
             quality_mode=args.quality_mode,
             optimization_mode=args.optimization_mode,
+            repair_action=args.repair_action,
         )
     elif args.mode == "review-images":
         report = review_images(args.output, args.reference)

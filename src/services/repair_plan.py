@@ -38,7 +38,7 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "optimization_mode": "quality",
             }
             commands = [
-                f"python -m scripts.validate_local_generation render-images --output {output_path} --quality-mode ultra --optimization-mode quality",
+                _render_images_command(output_path, action),
                 f"python -m scripts.validate_local_generation review-images --output {output_path}",
                 f"python -m scripts.validate_local_generation summarize --output {output_path}",
             ]
@@ -53,7 +53,7 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "increase_image_candidates": True,
             }
             commands = [
-                f"python -m scripts.validate_local_generation render-images --output {output_path} --quality-mode ultra --optimization-mode quality",
+                _render_images_command(output_path, action),
                 f"python -m scripts.validate_local_generation review-images --output {output_path}",
                 f"python -m scripts.validate_local_generation summarize --output {output_path}",
             ]
@@ -69,7 +69,7 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "natural_face_texture_required": True,
             }
             commands = [
-                f"python -m scripts.validate_local_generation render-images --output {output_path} --quality-mode ultra --optimization-mode quality",
+                _render_images_command(output_path, action),
                 f"python -m scripts.validate_local_generation review-images --output {output_path}",
                 f"python -m scripts.validate_local_generation summarize --output {output_path}",
             ]
@@ -83,7 +83,7 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "increase_image_candidates": True,
             }
             commands = [
-                f"python -m scripts.validate_local_generation render-images --output {output_path} --quality-mode ultra --optimization-mode quality",
+                _render_images_command(output_path, action),
                 f"python -m scripts.validate_local_generation review-images --output {output_path}",
                 f"python -m scripts.validate_local_generation summarize --output {output_path}",
             ]
@@ -113,3 +113,11 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 plan["rerun_validation_commands"].append(command)
                 command_set.add(command)
     return plan
+
+
+def _render_images_command(output_path: Path, repair_action: str) -> str:
+    return (
+        "python -m scripts.validate_local_generation render-images "
+        f"--output {output_path} --quality-mode ultra --optimization-mode quality "
+        f"--repair-action {repair_action}"
+    )
