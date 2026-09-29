@@ -22,6 +22,7 @@ from src.services.video_engine_preflight import (
     scan_placeholders as _scan_placeholders,
 )
 from src.services.generation_review import GenerationReviewService, platform_video_score, write_report
+from src.services.generation_quality_scorecard import build_generation_quality_scorecard
 from src.services.shot_prompt_service import ShotPromptService
 from src.services.repair_queue import attach_repair_queue, build_repair_queue
 from src.services.repair_plan import build_repair_execution_plan
@@ -1164,6 +1165,11 @@ def summarize_validation(output: Path):
     checks["repair_queue_empty"] = not repair_queue
     if repair_queue:
         report["action_items"].append("Resolve all repair_queue actions before accepting the sample as production-quality.")
+    report["quality_scorecard"] = build_generation_quality_scorecard(
+        _quality_scorecard_reports(output, report, repair_queue)
+    )
+    checks["quality_scorecard_production_score"] = report["quality_scorecard"].get("production_score")
+    checks["quality_scorecard_next_focus"] = report["quality_scorecard"].get("next_focus")
 
     if all(checks[key] for key in (
         "environment_ready", "video_workflow_ready", "images_rendered",
@@ -1583,6 +1589,34 @@ def _build_acceptance_markdown(package: dict) -> str:
         for command in commands:
             lines.append(f"- `{command}`")
     loop_plan = package.get("quality_loop_plan", {})
+    scorecard = package.get("quality_scorecard", {})
+    if scorecard:
+        next_focus = scorecard.get("next_focus") or {}
+        weakest = scorecard.get("weakest_dimensions") or []
+        lines.extend([
+            "",
+            "## Quality Scorecard",
+            "",
+            f"- Status: `{scorecard.get('status')}`",
+            f"- Production score: `{scorecard.get('production_score')}`",
+            f"- Next focus: `{next_focus.get('dimension') or ''}` -> `{next_focus.get('suggested_action') or ''}`",
+        ])
+        if weakest:
+            lines.extend([
+                "",
+                "| Dimension | Score | Issues | Scenes | Evidence |",
+                "| --- | --- | --- | --- | --- |",
+            ])
+            for item in weakest[:5]:
+                lines.append(
+                    "| {dimension} | {score} | {issues} | {scenes} | {evidence} |".format(
+                        dimension=item.get("dimension", ""),
+                        score=item.get("score", ""),
+                        issues=item.get("issue_count", ""),
+                        scenes=", ".join(str(scene) for scene in item.get("scenes", [])),
+                        evidence="; ".join(str(evidence) for evidence in item.get("evidence", [])[:2]),
+                    )
+                )
     if loop_plan:
         lines.extend([
             "",
@@ -1653,6 +1687,11 @@ def build_acceptance_package(output: Path) -> dict:
     manual_review = _read_json(output / "manual_review.json")
     manual_review_template = build_manual_review_template(output)
     repair_queue = _validation_repair_queue(output, summary)
+    quality_scorecard = summary.get("quality_scorecard")
+    if not isinstance(quality_scorecard, dict):
+        quality_scorecard = build_generation_quality_scorecard(
+            _quality_scorecard_reports(output, summary, repair_queue)
+        )
     summary_for_loop = {**summary, "repair_queue": repair_queue}
     quality_loop_plan = build_quality_loop_plan(summary_for_loop, max_actions=5)
     manual_section = _manual_review_section(summary, render_report, manual_review)
@@ -1685,6 +1724,7 @@ def build_acceptance_package(output: Path) -> dict:
         },
         "seed_dance_baseline": baseline_report if isinstance(baseline_report, dict) else None,
         "calibration_recommendations": summary.get("calibration_recommendations", []),
+        "quality_scorecard": quality_scorecard,
         "repair_queue": repair_queue,
         "repair_execution_plan": build_repair_execution_plan(output, repair_queue),
         "quality_loop_plan": quality_loop_plan,
@@ -1702,6 +1742,32 @@ def build_acceptance_package(output: Path) -> dict:
     write_report(output / "acceptance_package.json", package)
     (output / "acceptance_package.md").write_text(_build_acceptance_markdown(package), encoding="utf-8")
     return package
+
+
+def _quality_scorecard_reports(output: Path, summary: dict | None = None, repair_queue: list[dict] | None = None) -> dict[str, dict]:
+    reports: dict[str, dict] = {}
+    known = {
+        "render": _read_json(output / "render.json"),
+        "image_review": _read_json(output / "image_review.json"),
+        "video_review": _read_json(output / "video_review.json"),
+        "seed_dance_baseline_comparison": _read_json(output / "seed_dance_baseline_comparison.json"),
+        "manual_review": _read_json(output / "manual_review.json"),
+    }
+    for name, report in known.items():
+        if isinstance(report, dict):
+            reports[name] = report
+    for path, report in _quality_reports(output).items():
+        if isinstance(report, dict):
+            reports[f"quality:{Path(path).name}"] = report
+    for path, report in _composition_review_reports(output).items():
+        if isinstance(report, dict):
+            reports[f"composition:{Path(path).name}"] = report
+    if isinstance(summary, dict):
+        reports["validation_summary"] = {
+            "status": summary.get("status"),
+            "repair_queue": repair_queue if repair_queue is not None else summary.get("repair_queue", []),
+        }
+    return reports
 
 
 def _validation_repair_queue(output: Path, summary: dict | None = None) -> list[dict]:
@@ -1729,12 +1795,18 @@ def _validation_repair_queue(output: Path, summary: dict | None = None) -> list[
 def build_quality_loop_package(output: Path, max_actions: int = 5) -> dict:
     summary = _read_json(output / "validation_summary.json") or summarize_validation(output)
     repair_queue = _validation_repair_queue(output, summary)
+    quality_scorecard = summary.get("quality_scorecard")
+    if not isinstance(quality_scorecard, dict):
+        quality_scorecard = build_generation_quality_scorecard(
+            _quality_scorecard_reports(output, summary, repair_queue)
+        )
     plan = build_quality_loop_plan({**summary, "repair_queue": repair_queue}, max_actions=max_actions)
     package = {
         "status": plan["status"],
         "generated_at": round(time.time()),
         "summary_path": str(output / "validation_summary.json"),
         "repair_queue_total": len(repair_queue),
+        "quality_scorecard": quality_scorecard,
         "plan": plan,
         "repair_execution_plan": build_repair_execution_plan(output, repair_queue),
         "selected_repair_execution_plan": build_repair_execution_plan(output, plan["selected"]),

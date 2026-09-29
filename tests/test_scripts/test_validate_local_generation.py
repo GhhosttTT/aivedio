@@ -1443,9 +1443,11 @@ def test_acceptance_package_writes_json_and_markdown(tmp_path):
     assert [case["id"] for case in package["manual_review"]["cases"]] == list(PRODUCTION_CASE_IDS)
     assert package["evidence_files"]["render"]["present"] is True
     assert package["evidence_files"]["image_review"]["present"] is True
+    assert package["quality_scorecard"]["status"] == "clean"
     assert (tmp_path / "acceptance_package.json").is_file()
     markdown = (tmp_path / "acceptance_package.md").read_text(encoding="utf-8")
     assert "Local Generation Acceptance Package" in markdown
+    assert "Quality Scorecard" in markdown
     assert "Full Clip Review" in markdown
     assert "discovery" in markdown
     assert "ready_for_seed_dance_candidate" in markdown
@@ -1641,6 +1643,8 @@ def test_quality_loop_package_repairs_image_platform_reference_gate(tmp_path):
     package = validator.build_quality_loop_package(tmp_path, max_actions=1)
 
     assert package["status"] == "can_auto_repair"
+    assert package["quality_scorecard"]["next_focus"]["dimension"] == "platform_aesthetic"
+    assert package["quality_scorecard"]["next_focus"]["suggested_action"] == "refine_prompt_composition"
     assert package["plan"]["selected"][0]["action"] == "refine_prompt_composition"
     assert package["plan"]["selected"][0]["scene_number"] == 3
     assert package["selected_repair_execution_plan"]["auto"][0]["parameter_hints"]["repair_action"] == "refine_prompt_composition"
