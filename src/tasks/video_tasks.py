@@ -889,6 +889,10 @@ def _generate_quality_video_candidates(
             break
         if all(candidate.get("status") == "error" for candidate in pass_candidates):
             break
+        if pass_index >= max_refinement_passes and max_refinement_passes < 4:
+            next_repair_action = repair_action or _video_repair_action_from_candidates(candidates)
+            if next_repair_action:
+                max_refinement_passes = pass_index + 1
         current_motion, current_noise = _refined_video_base_params(pass_motion, pass_noise)
         pass_index += 1
     if all(candidate.get("status") == "error" for candidate in candidates):

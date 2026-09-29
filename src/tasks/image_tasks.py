@@ -901,6 +901,10 @@ def _generate_quality_candidates(
         best_report = max(pass_reports if best_report is None else reports, key=lambda item: item.get("average", 0))
         if best_report.get("average", 0) >= settings.GENERATION_IMAGE_MIN_SCORE and best_report.get("status") != "technical_only":
             break
+        if pass_index >= max_refinement_passes and max_refinement_passes < 4:
+            next_repair_action = repair_action or _repair_action_from_reports(reports)
+            if next_repair_action and any(report.get("status") != "error" for report in pass_reports):
+                max_refinement_passes = pass_index + 1
         pass_index += 1
 
     selection = selector.select_best(
