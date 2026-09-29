@@ -923,6 +923,12 @@ def _build_acceptance_markdown(package: dict) -> str:
             lines.append("- Manual decisions required:")
             for item in manual_actions:
                 lines.append(f"  - `{item.get('action', '')}`: {item.get('reason', '')}")
+        selected_plan = package.get("selected_repair_execution_plan", {})
+        selected_commands = selected_plan.get("rerun_validation_commands") or []
+        if selected_commands:
+            lines.append("- Commands for selected repairs:")
+            for command in selected_commands:
+                lines.append(f"  - `{command}`")
     lines.extend([
         "",
         "## Blocking Action Items",
@@ -945,6 +951,7 @@ def build_acceptance_package(output: Path) -> dict:
     manual_review = _read_json(output / "manual_review.json")
     repair_queue = _validation_repair_queue(output, summary)
     summary_for_loop = {**summary, "repair_queue": repair_queue}
+    quality_loop_plan = build_quality_loop_plan(summary_for_loop, max_actions=5)
     manual_section = _manual_review_section(summary, render_report, manual_review)
     package = {
         "status": summary.get("status", "needs_action"),
@@ -969,7 +976,8 @@ def build_acceptance_package(output: Path) -> dict:
         "calibration_recommendations": summary.get("calibration_recommendations", []),
         "repair_queue": repair_queue,
         "repair_execution_plan": build_repair_execution_plan(output, repair_queue),
-        "quality_loop_plan": build_quality_loop_plan(summary_for_loop, max_actions=5),
+        "quality_loop_plan": quality_loop_plan,
+        "selected_repair_execution_plan": build_repair_execution_plan(output, quality_loop_plan["selected"]),
         "human_review_checklist": [
             "Confirm every rendered case image matches the intended character, wardrobe, scene, and camera angle.",
             "Reject same-face characters, face drift, broken hands, unreadable expressions, bad crops, and random text/watermarks.",
@@ -1014,6 +1022,7 @@ def build_quality_loop_package(output: Path, max_actions: int = 5) -> dict:
         "repair_queue_total": len(repair_queue),
         "plan": plan,
         "repair_execution_plan": build_repair_execution_plan(output, repair_queue),
+        "selected_repair_execution_plan": build_repair_execution_plan(output, plan["selected"]),
     }
     write_report(output / "validation_summary.json", summary)
     write_report(output / "quality_loop_plan.json", package)

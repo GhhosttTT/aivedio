@@ -943,11 +943,13 @@ def test_acceptance_package_includes_repair_rerun_plan(tmp_path):
     assert loop_plan["status"] == "can_auto_repair"
     assert loop_plan["selected"][0]["action"] == "lower_motion_and_regenerate_video"
     assert loop_plan["selected"][0]["scene_number"] == 1
+    assert package["selected_repair_execution_plan"]["auto"][0]["action"] == "lower_motion_and_regenerate_video"
     assert any("review-video" in command for command in plan["rerun_validation_commands"])
     assert any("compare-baseline" in command for command in plan["rerun_validation_commands"])
     markdown = (tmp_path / "acceptance_package.md").read_text(encoding="utf-8")
     assert "Repair Rerun Plan" in markdown
     assert "Next Quality Loop" in markdown
+    assert "Commands for selected repairs" in markdown
     assert "lower_motion_and_regenerate_video" in markdown
     assert "review-video" in markdown
 
@@ -984,6 +986,9 @@ def test_quality_loop_package_writes_direct_next_repair_plan(tmp_path):
     assert package["plan"]["selected"][0]["action"] == "refine_face_aesthetic_detail"
     assert package["plan"]["skipped"][0]["reason"] == "max_actions_reached"
     assert package["repair_execution_plan"]["auto"][0]["action"] == "refine_face_aesthetic_detail"
+    assert len(package["repair_execution_plan"]["auto"]) == 2
+    assert package["selected_repair_execution_plan"]["auto"][0]["action"] == "refine_face_aesthetic_detail"
+    assert len(package["selected_repair_execution_plan"]["auto"]) == 1
     assert (tmp_path / "quality_loop_plan.json").is_file()
 
 
