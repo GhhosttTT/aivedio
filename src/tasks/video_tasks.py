@@ -9,7 +9,7 @@ from src.database.database import get_db
 from src.database.models import Scene
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import ImageGenerationRequest, VideoGenerationRequest, get_generation_provider
-from src.services.generation_quality_policy import video_quality_budget
+from src.services.generation_quality_policy import video_quality_budget, video_quality_pipeline
 from src.services.generation_review import (
     GenerationReviewService,
     ReviewError,
@@ -180,6 +180,12 @@ class _ComfyVideoGenerator:
             if self.shot_plan
             else settings.GENERATION_QUALITY_NEGATIVE_APPEND
         )
+        pipeline = video_quality_pipeline(
+            self.shot_plan.as_dict() if self.shot_plan else None,
+            getattr(self, "repair_action", None),
+        )
+        prompt = _append_prompt_directive(prompt, pipeline.prompt_directive)
+        negative_prompt = _append_terms(negative_prompt, pipeline.negative_directive)
         prompt, negative_prompt = _apply_video_repair_prompt(
             prompt,
             negative_prompt,
@@ -727,6 +733,8 @@ def _generate_quality_video_candidates(
     reviewer = GenerationReviewService()
     reference = _reference_for_scene(scene, project_id, db)
     scene_payload = _scene_review_payload(scene, project_id, db)
+    shot_plan_payload = shot_plan.as_dict() if shot_plan else None
+    base_quality_pipeline = video_quality_pipeline(shot_plan_payload, repair_action)
     candidate_scene = {
         "scene_number": scene.scene_number,
         "description": scene.visual_description,
@@ -734,8 +742,8 @@ def _generate_quality_video_candidates(
         "repair_action": repair_action,
         "visible_characters": scene_payload.get("visible_characters", []),
         "identity_contrast_matrix": scene_payload.get("identity_contrast_matrix", {}),
+        "quality_pipeline": base_quality_pipeline.as_dict(),
     }
-    shot_plan_payload = shot_plan.as_dict() if shot_plan else None
     candidates = []
     from src.services.svd_service import cleanup_svd_service
     current_motion = motion_bucket_id
@@ -745,6 +753,12 @@ def _generate_quality_video_candidates(
         current_repair_action = repair_action or (
             _video_repair_action_from_candidates(candidates) if pass_index else None
         )
+        quality_pipeline = video_quality_pipeline(shot_plan_payload, current_repair_action)
+        pass_scene = {
+            **candidate_scene,
+            "repair_action": current_repair_action,
+            "quality_pipeline": quality_pipeline.as_dict(),
+        }
         pass_motion, pass_noise = _apply_video_repair_action(
             current_motion,
             current_noise,
@@ -771,7 +785,7 @@ def _generate_quality_video_candidates(
                     "path": generated_path,
                     "motion_bucket_id": motion,
                     "noise_aug_strength": noise,
-                    "scene": candidate_scene,
+                    "scene": dict(pass_scene),
                     "request": {
                         "image_path": scene.image_path,
                         "num_frames": num_frames,
@@ -784,8 +798,10 @@ def _generate_quality_video_candidates(
                         "platform_aesthetic_contract": scene_payload.get("platform_aesthetic_contract", {}),
                         "repair_action": current_repair_action,
                         "quality_budget": budget.as_dict(),
+                        "quality_pipeline": quality_pipeline.as_dict(),
                     },
                     "shot_plan": shot_plan_payload,
+                    "quality_pipeline": quality_pipeline.as_dict(),
                     "repair_action": current_repair_action,
                 })
         finally:
@@ -806,6 +822,7 @@ def _generate_quality_video_candidates(
                     "motion_bucket_id": generated_candidate["motion_bucket_id"],
                     "noise_aug_strength": generated_candidate["noise_aug_strength"],
                     "repair_action": current_repair_action,
+                    "quality_pipeline": quality_pipeline.as_dict(),
                 },
                 review_path,
                 reference,
@@ -846,6 +863,7 @@ def _generate_quality_video_candidates(
                 candidate["repair_action"] = current_repair_action
             if shot_plan_payload:
                 candidate["shot_plan"] = shot_plan_payload
+            candidate["quality_pipeline"] = quality_pipeline.as_dict()
             if review.get("error"):
                 candidate["error"] = review["error"]
             _attach_video_technical_metrics(candidate)

@@ -1735,6 +1735,9 @@ def test_video_repair_generation_expands_quality_budget(project_data, tmp_path, 
     assert report["quality_budget"]["reason"] == "repair_generation_budget"
     assert report["quality_budget"]["action_profile"] == "temporal_identity_stabilization"
     assert report["candidates"][0]["request"]["quality_budget"]["repair_action"] == "lower_motion_and_regenerate_video"
+    assert report["candidates"][0]["request"]["quality_pipeline"]["repair_action"] == "lower_motion_and_regenerate_video"
+    assert "temporal_identity_stabilization" in report["candidates"][0]["request"]["quality_pipeline"]["stages"]
+    assert report["candidates"][0]["scene"]["quality_pipeline"]["repair_action"] == "lower_motion_and_regenerate_video"
 
 
 def test_video_candidate_selection_prefers_passing_performance_gate(tmp_path, monkeypatch):
@@ -2043,8 +2046,10 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
     )
 
     assert result == str(output)
-    assert provider.request.prompt == "directed emotional reaction"
+    assert provider.request.prompt.startswith("directed emotional reaction")
+    assert "short-drama micro-expression pass" in provider.request.prompt
     assert "identity drift" in provider.request.negative_prompt
+    assert "flat acting" in provider.request.negative_prompt
     assert "random color grade" in provider.request.negative_prompt
     assert "plastic skin" in provider.request.negative_prompt
     assert provider.request.reference_image.endswith("source.png")

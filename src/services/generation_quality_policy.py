@@ -96,6 +96,39 @@ SHOT_PIPELINE_STAGES = {
     },
 }
 
+VIDEO_PIPELINE_STAGES = {
+    "action": {
+        "stages": ["motion_planning", "temporal_identity_lock", "action_readability_pass", "final_vlm_review"],
+        "prompt": "video pipeline: readable action arc, stable limbs, temporal identity lock, no chaotic motion, final VLM review",
+        "negative": "chaotic action, unreadable movement, body warping, random camera jump, identity drift during action",
+        "capabilities": ["motion_control", "temporal_identity", "candidate_review"],
+    },
+    "prop_interaction": {
+        "stages": ["motion_planning", "hand_prop_continuity", "temporal_identity_lock", "final_vlm_review"],
+        "prompt": "video pipeline: hand and prop continuity, stable object contact, readable interaction timing, final VLM review",
+        "negative": "disappearing prop, fused fingers in motion, floating object, changed prop between frames",
+        "capabilities": ["motion_control", "prop_continuity", "candidate_review"],
+    },
+    "emotion_reaction": {
+        "stages": ["performance_direction", "micro_expression_pass", "face_temporal_lock", "final_vlm_review"],
+        "prompt": "video pipeline: short-drama micro-expression pass, stable face over time, readable emotional reaction, final VLM review",
+        "negative": "flat acting, dead eyes, face morphing, waxy face in motion, unreadable emotion",
+        "capabilities": ["performance_direction", "temporal_identity", "candidate_review"],
+    },
+    "dialogue_reaction": {
+        "stages": ["performance_direction", "dialogue_reaction_pass", "face_temporal_lock", "final_vlm_review"],
+        "prompt": "video pipeline: dialogue reaction timing, natural breathing, subtle eye movement, stable face, final VLM review",
+        "negative": "no reaction to dialogue, stiff frozen face, dead eyes, face morphing during speech beat",
+        "capabilities": ["performance_direction", "temporal_identity", "candidate_review"],
+    },
+    "establishing": {
+        "stages": ["camera_drift_control", "background_stability", "color_grade_lock", "final_vlm_review"],
+        "prompt": "video pipeline: gentle camera drift, stable room geometry, locked color grade, final VLM review",
+        "negative": "background wobble, changing room geometry, random camera jump, color grade flicker",
+        "capabilities": ["camera_control", "background_stability", "candidate_review"],
+    },
+}
+
 REPAIR_PIPELINE_STAGES = {
     "regenerate_keyframe_with_identity_lock": {
         "stages": ["identity_reference", "face_detail", "identity_vlm_review"],
@@ -132,6 +165,39 @@ REPAIR_PIPELINE_STAGES = {
         "prompt": "repair pipeline: hand and prop constraint pass with prop VLM review",
         "negative": "changed prop after repair, fused fingers, disappearing object",
         "capabilities": ["pose_control", "candidate_review"],
+    },
+}
+
+VIDEO_REPAIR_PIPELINE_STAGES = {
+    "lower_motion_and_regenerate_video": {
+        "stages": ["temporal_identity_stabilization", "motion_smoothing", "flicker_review"],
+        "prompt": "repair pipeline: reduce motion chaos, stabilize face and wardrobe frame to frame, smooth temporal artifacts before acceptance",
+        "negative": "flicker after repair, identity drift after motion repair, sudden camera jump, warped body between frames",
+        "capabilities": ["motion_control", "temporal_identity", "candidate_review"],
+    },
+    "increase_motion_and_regenerate_video": {
+        "stages": ["motion_floor_recovery", "action_readability_pass", "performance_review"],
+        "prompt": "repair pipeline: recover short-drama motion floor, add one readable body or camera beat, avoid still-image slideshow",
+        "negative": "frozen still image, slideshow, lifeless motion, no body movement",
+        "capabilities": ["motion_control", "performance_direction", "candidate_review"],
+    },
+    "regenerate_video_with_performance_direction": {
+        "stages": ["performance_direction", "emotion_readability_pass", "dialogue_reaction_review"],
+        "prompt": "repair pipeline: direct the acting beat, readable gaze intent, emotional reaction, and dialogue response before acceptance",
+        "negative": "flat acting after repair, dead eyes, no dialogue reaction, stiff body language",
+        "capabilities": ["performance_direction", "candidate_review"],
+    },
+    "refine_video_commercial_aesthetic": {
+        "stages": ["commercial_lighting_pass", "phone_readability_pass", "skin_texture_motion_review"],
+        "prompt": "repair pipeline: commercial short-drama lighting, phone-readable face, stable skin texture, polished mobile frame",
+        "negative": "muddy low-budget lighting, cheap filter, unreadable face on phone screen, AI generated gloss in motion",
+        "capabilities": ["aesthetic_polish", "temporal_identity", "candidate_review"],
+    },
+    "refine_final_composition_finish": {
+        "stages": ["episode_finish_polish", "cut_continuity_review", "subtitle_integration_review"],
+        "prompt": "repair pipeline: final episode finish, consistent exposure and color grade across cuts, subtitle integration review",
+        "negative": "exposure jump after final repair, skin tone mismatch, mixed color grade, subtitle covering faces",
+        "capabilities": ["episode_continuity", "aesthetic_polish", "candidate_review"],
     },
 }
 
@@ -258,6 +324,36 @@ def image_quality_pipeline(
         negative_directive=", ".join(dict.fromkeys(part for part in negative_parts if part)),
         required_capabilities=sorted(capabilities),
         shot_profile_id=profile_id,
+        repair_action=repair_action,
+    )
+
+
+def video_quality_pipeline(
+    shot_plan: dict | None = None,
+    repair_action: str | None = None,
+) -> QualityPipeline:
+    shot_role = None
+    if isinstance(shot_plan, dict):
+        shot_role = str(shot_plan.get("shot_role") or "").strip() or None
+    base = VIDEO_PIPELINE_STAGES.get(shot_role or "", VIDEO_PIPELINE_STAGES["dialogue_reaction"])
+    stages = list(base["stages"])
+    prompt_parts = [base["prompt"]]
+    negative_parts = [base["negative"]]
+    capabilities = set(base["capabilities"])
+    if repair_action:
+        repair = VIDEO_REPAIR_PIPELINE_STAGES.get(repair_action)
+        if repair:
+            stages.extend(repair["stages"])
+            prompt_parts.append(repair["prompt"])
+            negative_parts.append(repair["negative"])
+            capabilities.update(repair["capabilities"])
+    stages = list(dict.fromkeys(stages))
+    return QualityPipeline(
+        stages=stages,
+        prompt_directive=". ".join(dict.fromkeys(part for part in prompt_parts if part)),
+        negative_directive=", ".join(dict.fromkeys(part for part in negative_parts if part)),
+        required_capabilities=sorted(capabilities),
+        shot_profile_id=shot_role,
         repair_action=repair_action,
     )
 

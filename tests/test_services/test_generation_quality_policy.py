@@ -1,4 +1,9 @@
-from src.services.generation_quality_policy import image_quality_budget, image_quality_pipeline, video_quality_budget
+from src.services.generation_quality_policy import (
+    image_quality_budget,
+    image_quality_pipeline,
+    video_quality_budget,
+    video_quality_pipeline,
+)
 
 
 def test_repair_image_budget_increases_candidates_and_refinement(monkeypatch):
@@ -130,6 +135,32 @@ def test_final_composition_finish_video_budget_uses_heavy_finishing_profile(monk
     assert budget.candidate_count == 6
     assert budget.refinement_passes == 4
     assert budget.action_profile == "final_composition_finishing_recovery"
+
+
+def test_video_quality_pipeline_uses_dialogue_performance_contract():
+    pipeline = video_quality_pipeline({"shot_role": "dialogue_reaction"})
+
+    assert pipeline.shot_profile_id == "dialogue_reaction"
+    assert "dialogue_reaction_pass" in pipeline.stages
+    assert "face_temporal_lock" in pipeline.stages
+    assert "performance_direction" in pipeline.required_capabilities
+    assert "dialogue reaction timing" in pipeline.prompt_directive
+    assert "face morphing" in pipeline.negative_directive
+
+
+def test_video_quality_pipeline_adds_commercial_aesthetic_repair():
+    pipeline = video_quality_pipeline(
+        {"shot_role": "emotion_reaction"},
+        "refine_video_commercial_aesthetic",
+    )
+
+    assert pipeline.repair_action == "refine_video_commercial_aesthetic"
+    assert "micro_expression_pass" in pipeline.stages
+    assert "commercial_lighting_pass" in pipeline.stages
+    assert "phone_readability_pass" in pipeline.stages
+    assert "aesthetic_polish" in pipeline.required_capabilities
+    assert "commercial short-drama lighting" in pipeline.prompt_directive
+    assert "AI generated gloss in motion" in pipeline.negative_directive
 
 
 def test_base_generation_budget_keeps_configured_values(monkeypatch):
