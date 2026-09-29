@@ -55,3 +55,21 @@ def test_repair_execution_plan_handles_increase_motion_video_rerun(tmp_path):
     assert item["action"] == "increase_motion_and_regenerate_video"
     assert item["parameter_hints"]["raise_motion_bucket_id"] is True
     assert item["parameter_hints"]["raise_noise_aug_strength_slightly"] is True
+
+
+def test_repair_execution_plan_handles_performance_video_rerun(tmp_path):
+    plan = build_repair_execution_plan(
+        tmp_path,
+        [{
+            "action": "regenerate_video_with_performance_direction",
+            "execution": "auto",
+            "stage": "video",
+            "scene_number": 5,
+            "reason": "flat acting and unreadable emotion",
+        }],
+    )
+
+    item = plan["auto"][0]
+    assert item["action"] == "regenerate_video_with_performance_direction"
+    assert item["parameter_hints"]["strengthen_shot_plan_performance"] is True
+    assert item["parameter_hints"]["preserve_identity"] is True

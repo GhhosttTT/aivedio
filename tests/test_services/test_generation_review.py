@@ -15,10 +15,12 @@ from src.services.generation_review import (
     LlamaCppReviewer,
     ReviewError,
     VIDEO_AESTHETIC_FEATURES,
+    VIDEO_PERFORMANCE_FEATURES,
     decision,
     require_passed,
     video_aesthetic_gate,
     video_character_distinctiveness_gate,
+    video_performance_gate,
 )
 
 
@@ -151,6 +153,32 @@ def test_video_character_distinctiveness_gate_quantifies_same_face_risk(monkeypa
     }
 
 
+def test_video_performance_gate_quantifies_flat_short_drama_acting(monkeypatch):
+    monkeypatch.setattr("src.services.generation_review.settings.GENERATION_VIDEO_PERFORMANCE_MIN_SCORE", 4.0)
+    review = {
+        "video_performance_scores": {
+            "emotion_readability": {"score": 2, "evidence": "emotion is unreadable on phone"},
+            "gaze_intent": {"score": 3, "evidence": "dead eyes with no target"},
+            "dialogue_reaction": {"score": 2, "evidence": "no reaction to the line"},
+            "body_language": {"score": 4, "evidence": "posture supports conflict"},
+            "action_intent": {"score": 4, "evidence": "gesture is readable"},
+        }
+    }
+
+    gate = video_performance_gate(review, {
+        "scene_number": 1,
+        "dialogue": "你为什么骗我",
+        "shot_plan": {"shot_role": "dialogue_reaction"},
+    })
+
+    assert gate["status"] == "needs_review"
+    assert set(gate["low"]) == {
+        "emotion_readability",
+        "gaze_intent",
+        "dialogue_reaction",
+    }
+
+
 def test_frame_review_accepts_video_aesthetic_scores(tmp_path, monkeypatch):
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"test video bytes")
@@ -215,6 +243,36 @@ def test_frame_review_accepts_character_distinctiveness_scores(tmp_path, monkeyp
     assert result["batches"][0]["character_distinctiveness_gate"]["status"] == "passed"
     assert result["batches"][0]["review"]["character_distinctiveness_scores"]["no_same_face_casting"]["score"] == 4
     assert "character_distinctiveness_scores" in reviewer.evaluate.call_args.args[0]
+
+
+def test_frame_review_accepts_video_performance_scores(tmp_path, monkeypatch):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"test video bytes")
+    frames = [{"index": i, "timestamp": i, "path": str(tmp_path / f"{i}.jpg")} for i in range(3)]
+    monkeypatch.setattr(GenerationReviewService, "sample_frames", lambda *args: frames)
+    data = {key: {"score": 4, "evidence": "visible subject matches the keyframe"} for key in (
+        "story_match", "composition", "aesthetic_quality", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
+    data["video_performance_scores"] = {
+        feature: {"score": 4, "evidence": "acting reads clearly"}
+        for feature in VIDEO_PERFORMANCE_FEATURES
+    }
+    reviewer = Mock()
+    reviewer.evaluate.return_value = FrameReview(**data, reviewed_frames=[0, 1, 2], issues=[])
+
+    result = GenerationReviewService(reviewer).review_video(
+        str(video),
+        {
+            "scene_number": 1,
+            "dialogue": "你为什么骗我",
+            "shot_plan": {"shot_role": "dialogue_reaction"},
+        },
+        tmp_path / "frames.json",
+    )
+
+    assert result["status"] == "passed"
+    assert result["batches"][0]["video_performance_gate"]["status"] == "passed"
+    assert result["batches"][0]["review"]["video_performance_scores"]["gaze_intent"]["score"] == 4
+    assert "video_performance_scores" in reviewer.evaluate.call_args.args[0]
 
 
 def test_temporal_inconsistency_blocks_video_review(tmp_path, monkeypatch):

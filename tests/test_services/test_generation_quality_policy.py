@@ -48,6 +48,21 @@ def test_increase_motion_video_budget_uses_motion_floor_profile(monkeypatch):
     assert budget.action_profile == "motion_floor_recovery"
 
 
+def test_performance_video_budget_uses_performance_direction_profile(monkeypatch):
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_VIDEO_CANDIDATES", 2)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 1)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_MAX_VIDEO_CANDIDATES", 8)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_VIDEO_CANDIDATE_MULTIPLIER", 1.5)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES", 1)
+
+    budget = video_quality_budget("regenerate_video_with_performance_direction")
+
+    assert budget.candidate_count == 5
+    assert budget.refinement_passes == 4
+    assert budget.action_profile == "performance_direction_recovery"
+
+
 def test_base_generation_budget_keeps_configured_values(monkeypatch):
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_CANDIDATES", 5)

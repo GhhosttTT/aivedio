@@ -87,6 +87,16 @@ ACTION_RULES = [
         "video",
     ),
     (
+        (
+            "video performance", "video_performance", "emotion_readability", "gaze_intent",
+            "dialogue_reaction", "body_language", "action_intent", "flat acting",
+            "unreadable emotion", "dead eyes", "no reaction", "acting", "performance",
+        ),
+        "regenerate_video_with_performance_direction",
+        "Regenerate the clip with stronger shot-plan acting direction, readable emotion, intentional gaze, dialogue reaction, and body language.",
+        "video",
+    ),
+    (
         ("unreadable action", "too complex", "multi-action", "needs_split", "split"),
         "split_scene",
         "Split this scene into simpler atomic shots before running production generation.",
@@ -147,7 +157,7 @@ def _candidate_evidence(candidate: dict[str, Any]) -> list[str]:
             evidence.append(str(key))
         elif isinstance(value, dict):
             evidence.extend(_nested_score_evidence(value))
-    for gate_name in ("platform_aesthetic_gate", "video_aesthetic_gate", "turnaround_gate", "character_distinctiveness_gate"):
+    for gate_name in ("platform_aesthetic_gate", "video_aesthetic_gate", "turnaround_gate", "character_distinctiveness_gate", "video_performance_gate"):
         gate = candidate.get(gate_name) if isinstance(candidate.get(gate_name), dict) else {}
         evidence.extend(_gate_evidence(gate, gate_name))
     evidence.extend(_technical_metric_evidence(candidate))
@@ -244,6 +254,24 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
             "candidate_index": candidate.get("index"),
             "scene_number": _scene_number(candidate),
         }
+    if media_type == "video" and any(
+        term in text
+        for term in (
+            "video performance", "video_performance", "emotion_readability", "gaze_intent",
+            "dialogue_reaction", "body_language", "action_intent", "flat acting",
+            "unreadable emotion", "dead eyes", "no reaction", "acting", "performance",
+        )
+    ):
+        return {
+            "priority": _priority(text),
+            "stage": "video",
+            "action": "regenerate_video_with_performance_direction",
+            "execution": _execution_mode("regenerate_video_with_performance_direction"),
+            "reason": evidence[:240],
+            "recommendation": "Regenerate the clip with stronger shot-plan acting direction, readable emotion, intentional gaze, dialogue reaction, and body language.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
     if any(term in text for term in ("after face repair", "face repair scar", "distorted face repair")):
         return {
             "priority": _priority(text),
@@ -292,6 +320,7 @@ def _execution_mode(action: str) -> str:
         "refine_face_aesthetic_detail",
         "lower_motion_and_regenerate_video",
         "increase_motion_and_regenerate_video",
+        "regenerate_video_with_performance_direction",
     }:
         return "auto"
     if action in {"regenerate_turnaround_album", "regenerate_character_identity", "refreeze_spatial_plan", "fix_workflow_profile", "start_local_reviewer"}:

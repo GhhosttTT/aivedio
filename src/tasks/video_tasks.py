@@ -15,6 +15,7 @@ from src.services.generation_review import (
     ReviewError,
     attach_video_aesthetic_gate,
     attach_video_character_distinctiveness_gate,
+    attach_video_performance_gate,
     platform_video_score,
     write_report,
 )
@@ -167,6 +168,11 @@ def _apply_video_repair_action(
             max(1, min(255, int(motion_bucket_id * 1.22))),
             max(0.0, min(1.0, round(max(noise_aug_strength * 1.15, noise_aug_strength + 0.006), 4))),
         )
+    if repair_action == "regenerate_video_with_performance_direction":
+        return (
+            max(1, min(255, int(motion_bucket_id * 1.08))),
+            max(0.0, min(1.0, round(max(noise_aug_strength * 1.08, noise_aug_strength + 0.004), 4))),
+        )
     return motion_bucket_id, noise_aug_strength
 
 
@@ -311,6 +317,29 @@ def _video_character_distinctiveness_gate_summary(review_report: dict, scene: di
     }
 
 
+def _video_performance_gate_summary(review_report: dict, scene: dict | None = None) -> dict | None:
+    scene = scene or review_report.get("scene") or {}
+    for batch in review_report.get("batches") or []:
+        if isinstance(batch, dict) and "video_performance_gate" not in batch:
+            attach_video_performance_gate(batch, scene)
+    gates = [
+        batch.get("video_performance_gate")
+        for batch in review_report.get("batches") or []
+        if isinstance(batch.get("video_performance_gate"), dict)
+    ]
+    if not gates:
+        return None
+    failed = [gate for gate in gates if gate.get("status") != "passed"]
+    selected = failed[0] if failed else min(gates, key=lambda item: item.get("average", 5))
+    return {
+        "status": "needs_review" if failed else "passed",
+        "min_score": selected.get("min_score"),
+        "average": selected.get("average"),
+        "low": selected.get("low", {}),
+        "missing": selected.get("missing", []),
+    }
+
+
 def _video_aesthetic_gate_passes(candidate: dict) -> bool:
     gate = candidate.get("video_aesthetic_gate")
     if not isinstance(gate, dict):
@@ -320,6 +349,13 @@ def _video_aesthetic_gate_passes(candidate: dict) -> bool:
 
 def _video_character_distinctiveness_gate_passes(candidate: dict) -> bool:
     gate = candidate.get("character_distinctiveness_gate")
+    if not isinstance(gate, dict):
+        return True
+    return gate.get("status") == "passed"
+
+
+def _video_performance_gate_passes(candidate: dict) -> bool:
+    gate = candidate.get("video_performance_gate")
     if not isinstance(gate, dict):
         return True
     return gate.get("status") == "passed"
@@ -353,6 +389,7 @@ def _video_selection_score(candidate: dict) -> float:
     average = candidate.get("average")
     technical_score = candidate.get("technical_score")
     distinctiveness_score = candidate.get("character_distinctiveness_score")
+    performance_score = candidate.get("video_performance_score")
     if not isinstance(platform_score, (int, float)):
         platform_score = average if isinstance(average, (int, float)) else 0.0
     if not isinstance(average, (int, float)):
@@ -361,13 +398,16 @@ def _video_selection_score(candidate: dict) -> float:
         technical_score = platform_score
     if not isinstance(distinctiveness_score, (int, float)):
         distinctiveness_score = platform_score
+    if not isinstance(performance_score, (int, float)):
+        performance_score = platform_score
     return round(
         max(0.0, min(
             5.0,
-            float(platform_score) * 0.45
-            + float(average) * 0.20
-            + float(technical_score) * 0.15
-            + float(distinctiveness_score) * 0.20,
+            float(platform_score) * 0.35
+            + float(average) * 0.18
+            + float(technical_score) * 0.12
+            + float(distinctiveness_score) * 0.17
+            + float(performance_score) * 0.18,
         )),
         2,
     )
@@ -387,11 +427,12 @@ def _review_final_video_after_postprocess(
     reviewer = GenerationReviewService()
     scene_payload = _scene_review_payload(scene, project_id, db)
     shot_plan_payload = shot_plan.as_dict() if shot_plan else None
+    review_scene_payload = {**scene_payload, "shot_plan": shot_plan_payload}
     review_path = Path(video_path).with_suffix(".final_review.json")
     review = reviewer.review_video(
         video_path,
         {
-            **scene_payload,
+            **review_scene_payload,
             "shot_plan": shot_plan_payload,
             "final_stage": "postprocess_normalized_clip",
         },
@@ -414,16 +455,21 @@ def _review_final_video_after_postprocess(
     aesthetic_gate = _video_aesthetic_gate_summary(review)
     if aesthetic_gate:
         final_review["video_aesthetic_gate"] = aesthetic_gate
-    distinctiveness_gate = _video_character_distinctiveness_gate_summary(review, scene_payload)
+    distinctiveness_gate = _video_character_distinctiveness_gate_summary(review, review_scene_payload)
     if distinctiveness_gate:
         final_review["character_distinctiveness_gate"] = distinctiveness_gate
         final_review["character_distinctiveness_score"] = distinctiveness_gate.get("average", 0)
+    performance_gate = _video_performance_gate_summary(review, review_scene_payload)
+    if performance_gate:
+        final_review["video_performance_gate"] = performance_gate
+        final_review["video_performance_score"] = performance_gate.get("average", 0)
     if review.get("error"):
         final_review["error"] = review["error"]
     quality_report["final_video_review"] = final_review
     gate_ok, gate_scores = _video_gate_passes(final_review)
     aesthetic_ok = _video_aesthetic_gate_passes(final_review)
     distinctiveness_ok = _video_character_distinctiveness_gate_passes(final_review)
+    performance_ok = _video_performance_gate_passes(final_review)
     platform_score = final_review.get("platform_score")
     if (
         settings.GENERATION_REQUIRE_VIDEO_REVIEW
@@ -433,6 +479,7 @@ def _review_final_video_after_postprocess(
             or not gate_ok
             or not aesthetic_ok
             or not distinctiveness_ok
+            or not performance_ok
             or (
                 isinstance(platform_score, (int, float))
                 and platform_score < settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE
@@ -463,6 +510,7 @@ def _video_repair_action_from_candidates(candidates: list[dict]) -> str | None:
         if item.get("execution") == "auto" and item.get("action") in {
             "lower_motion_and_regenerate_video",
             "increase_motion_and_regenerate_video",
+            "regenerate_video_with_performance_direction",
         }:
             return str(item["action"])
     return None
@@ -483,6 +531,7 @@ def _select_best_video_candidate(
             1 if _video_gate_passes(item)[0] else 0,
             1 if _video_aesthetic_gate_passes(item) else 0,
             1 if _video_character_distinctiveness_gate_passes(item) else 0,
+            1 if _video_performance_gate_passes(item) else 0,
             item.get("selection_score", 0),
             item.get("platform_score", item.get("average", 0)),
             item.get("average", 0),
@@ -495,6 +544,8 @@ def _select_best_video_candidate(
     aesthetic_gate = best.get("video_aesthetic_gate")
     distinctiveness_gate_ok = _video_character_distinctiveness_gate_passes(best)
     distinctiveness_gate = best.get("character_distinctiveness_gate")
+    performance_gate_ok = _video_performance_gate_passes(best)
+    performance_gate = best.get("video_performance_gate")
     platform_score = best.get("platform_score")
     report = {
         "kind": "video_candidate_selection",
@@ -505,6 +556,7 @@ def _select_best_video_candidate(
             and gate_ok
             and aesthetic_gate_ok
             and distinctiveness_gate_ok
+            and performance_gate_ok
         ) else "needs_review",
         "selected_path": best["path"],
         "selected_average": best.get("average", 0),
@@ -518,6 +570,7 @@ def _select_best_video_candidate(
         "selected_gate_scores": gate_scores,
         "selected_video_aesthetic_gate": aesthetic_gate,
         "selected_character_distinctiveness_gate": distinctiveness_gate,
+        "selected_video_performance_gate": performance_gate,
         "candidates": ranked,
     }
     if quality_budget:
@@ -540,6 +593,8 @@ def _select_best_video_candidate(
         report["error"] = "Selected video aesthetic feature gate did not pass"
     elif isinstance(distinctiveness_gate, dict) and distinctiveness_gate.get("status") != "passed":
         report["error"] = "Selected video character distinctiveness gate did not pass"
+    elif isinstance(performance_gate, dict) and performance_gate.get("status") != "passed":
+        report["error"] = "Selected video performance gate did not pass"
     if report["status"] != "passed" and settings.GENERATION_REQUIRE_VIDEO_REVIEW:
         attach_repair_queue(report, "video")
         write_report(report_path, report)
@@ -683,6 +738,13 @@ def _generate_quality_video_candidates(
             if distinctiveness_gate:
                 candidate["character_distinctiveness_gate"] = distinctiveness_gate
                 candidate["character_distinctiveness_score"] = distinctiveness_gate.get("average", 0)
+            performance_gate = _video_performance_gate_summary(review, {
+                **scene_payload,
+                "shot_plan": shot_plan_payload,
+            })
+            if performance_gate:
+                candidate["video_performance_gate"] = performance_gate
+                candidate["video_performance_score"] = performance_gate.get("average", 0)
             if current_repair_action:
                 candidate["repair_action"] = current_repair_action
             if shot_plan_payload:
@@ -699,6 +761,7 @@ def _generate_quality_video_candidates(
             and _video_gate_passes(candidate)[0]
             and _video_aesthetic_gate_passes(candidate)
             and _video_character_distinctiveness_gate_passes(candidate)
+            and _video_performance_gate_passes(candidate)
             for candidate in candidates
         ):
             break

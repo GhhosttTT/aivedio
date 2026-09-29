@@ -171,6 +171,7 @@ class TaskOrchestrator:
         video_actions = {
             "lower_motion_and_regenerate_video",
             "increase_motion_and_regenerate_video",
+            "regenerate_video_with_performance_direction",
         }
         blocked_actions = {
             "regenerate_character_identity": "请先在角色参考页重新生成身份方案和参考图，再重做关键帧。",

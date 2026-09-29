@@ -77,6 +77,12 @@ ACTION_BUDGETS = {
             "min_candidates": 4,
             "profile": "motion_floor_recovery",
         },
+        "regenerate_video_with_performance_direction": {
+            "candidate_multiplier": 1.6,
+            "extra_refinement_passes": 2,
+            "min_candidates": 4,
+            "profile": "performance_direction_recovery",
+        },
     },
 }
 

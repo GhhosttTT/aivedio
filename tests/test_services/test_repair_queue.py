@@ -101,6 +101,31 @@ def test_repair_queue_classifies_video_motion_failures():
     assert queue[0]["execution"] == "auto"
 
 
+def test_repair_queue_maps_video_performance_gate_to_performance_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 3,
+            "scene": {"scene_number": 8},
+            "video_performance_gate": {
+                "status": "needs_review",
+                "low": {
+                    "emotion_readability": {"score": 2, "evidence": "flat acting and unreadable emotion"},
+                    "dialogue_reaction": {"score": 2, "evidence": "no reaction to dialogue"},
+                },
+                "missing": [],
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "regenerate_video_with_performance_direction"
+    assert queue[0]["stage"] == "video"
+    assert queue[0]["execution"] == "auto"
+    assert queue[0]["scene_number"] == 8
+
+
 def test_repair_queue_maps_low_image_technical_metrics_to_composition_repair():
     report = {
         "status": "needs_review",

@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Character, Project, Scene, Task, TaskStatus, User
-from src.services.generation_review import VIDEO_AESTHETIC_FEATURES, fingerprint, write_report, ReviewError
+from src.services.generation_review import VIDEO_AESTHETIC_FEATURES, VIDEO_PERFORMANCE_FEATURES, fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName, GenerationResult
 from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _character_sheet_generation_contract, _complexity_report, _composition_constraint, _feedback_repair_directive, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
@@ -20,6 +20,13 @@ def passed_video_aesthetic_scores(score: int = 5) -> dict:
     return {
         feature: {"score": score, "evidence": "passes short-drama aesthetic gate"}
         for feature in VIDEO_AESTHETIC_FEATURES
+    }
+
+
+def passed_video_performance_scores(score: int = 5) -> dict:
+    return {
+        feature: {"score": score, "evidence": "acting reads like a short-drama performance"}
+        for feature in VIDEO_PERFORMANCE_FEATURES
     }
 
 
@@ -1013,7 +1020,10 @@ def test_video_generation_selects_best_reviewed_candidate(project_data, tmp_path
                 "status": "passed",
                 "average": 4.7,
                 "batches": [{
-                    "review": {"video_aesthetic_scores": passed_video_aesthetic_scores()}
+                    "review": {
+                        "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                        "video_performance_scores": passed_video_performance_scores(),
+                    }
                 }],
             }
 
@@ -1696,6 +1706,56 @@ def test_video_repair_generation_expands_quality_budget(project_data, tmp_path, 
     assert report["candidates"][0]["request"]["quality_budget"]["repair_action"] == "lower_motion_and_regenerate_video"
 
 
+def test_video_candidate_selection_prefers_passing_performance_gate(tmp_path, monkeypatch):
+    weak = tmp_path / "weak.mp4"
+    strong = tmp_path / "strong.mp4"
+    weak.write_bytes(b"weak")
+    strong.write_bytes(b"strong")
+    monkeypatch.setattr("src.tasks.video_tasks.video_candidate_metrics", lambda _path: {"technical_score": 4.5})
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE", 4.0)
+
+    final_path, report = _select_best_video_candidate(
+        [
+            {
+                "index": 1,
+                "path": str(weak),
+                "status": "passed",
+                "average": 4.8,
+                "platform_score": 4.8,
+                "gate_scores": {"facial_identity": 5, "identity_consistency": 5, "temporal_consistency": 5},
+                "video_aesthetic_gate": {"status": "passed", "average": 5},
+                "video_performance_gate": {
+                    "status": "needs_review",
+                    "average": 0,
+                    "low": {"emotion_readability": {"score": 2, "evidence": "flat acting"}},
+                    "missing": [],
+                },
+                "video_performance_score": 0,
+            },
+            {
+                "index": 2,
+                "path": str(strong),
+                "status": "passed",
+                "average": 4.2,
+                "platform_score": 4.2,
+                "gate_scores": {"facial_identity": 4.2, "identity_consistency": 4.2, "temporal_consistency": 4.2},
+                "video_aesthetic_gate": {"status": "passed", "average": 4.2},
+                "video_performance_gate": {"status": "passed", "average": 4.2, "low": {}, "missing": []},
+                "video_performance_score": 4.2,
+            },
+        ],
+        str(tmp_path / "final.mp4"),
+        tmp_path / "quality.json",
+    )
+
+    assert final_path.endswith("final.mp4")
+    assert Path(final_path).read_bytes() == b"strong"
+    assert report["selected_path"] == str(strong)
+    assert report["selected_video_performance_gate"]["status"] == "passed"
+
+
 def test_video_candidate_report_records_character_sheet_reference(project_data, tmp_path, monkeypatch):
     from PIL import Image
     from src.services.character_identity_service import CharacterIdentityService
@@ -1790,6 +1850,68 @@ def test_final_normalized_video_is_reviewed_before_acceptance(project_data, tmp_
     assert report["final_video_review"]["status"] == "passed"
     assert report["final_video_review"]["video_aesthetic_gate"]["status"] == "passed"
     assert json.loads(video.with_suffix(".quality.json").read_text(encoding="utf-8"))["final_video_review"]["status"] == "passed"
+
+
+def test_final_normalized_video_review_blocks_flat_performance(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    video = tmp_path / "scene.mp4"
+    Path(scene.image_path).write_bytes(b"image")
+    video.write_bytes(b"video")
+    db.commit()
+
+    class FakeReviewService:
+        def review_video(self, _video, _payload, _report_path, _reference=None):
+            return {
+                "status": "passed",
+                "average": 4.6,
+                "batches": [{
+                    "review": {
+                        "facial_identity": {"score": 5, "evidence": "face matches"},
+                        "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                        "temporal_consistency": {"score": 5, "evidence": "motion stable"},
+                        "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                        "video_performance_scores": {
+                            "emotion_readability": {"score": 2, "evidence": "flat acting and unreadable emotion"},
+                            "gaze_intent": {"score": 3, "evidence": "dead eyes"},
+                            "dialogue_reaction": {"score": 2, "evidence": "no reaction to dialogue"},
+                            "body_language": {"score": 4, "evidence": "posture is readable"},
+                            "action_intent": {"score": 4, "evidence": "gesture is readable"},
+                        },
+                    }
+                }],
+            }
+
+    shot_plan = VideoShotPlan(
+        shot_role="dialogue_reaction",
+        action_intensity="low",
+        target_duration_seconds=4.0,
+        fps=8,
+        num_frames=32,
+        motion_bucket_id=96,
+        noise_aug_strength=0.012,
+        director_prompt="dialogue reaction",
+        end_frame_prompt="end frame",
+        negative_prompt="identity drift",
+        notes=[],
+    )
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PERFORMANCE_MIN_SCORE", 4.0)
+
+    with pytest.raises(ReviewError, match="Final normalized video failed"):
+        _review_final_video_after_postprocess(
+            str(video),
+            scene,
+            project.id,
+            db,
+            quality_report={"kind": "video_candidate_selection", "status": "passed"},
+            shot_plan=shot_plan,
+        )
+
+    report = json.loads(video.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert report["final_video_review"]["video_performance_gate"]["status"] == "needs_review"
+    assert report["repair_queue"][0]["action"] == "regenerate_video_with_performance_direction"
 
 
 def test_final_normalized_video_review_blocks_temporal_regression(project_data, tmp_path, monkeypatch):
@@ -2330,6 +2452,34 @@ def test_video_repair_action_raises_motion_floor():
 
     assert motion == 146
     assert noise == 0.026
+
+
+def test_video_repair_action_raises_performance_direction_slightly():
+    motion, noise = _apply_video_repair_action(120, 0.02, "regenerate_video_with_performance_direction")
+
+    assert motion == 129
+    assert noise == 0.024
+
+
+def test_video_repair_action_from_candidates_detects_flat_performance():
+    action = _video_repair_action_from_candidates([
+        {
+            "index": 1,
+            "status": "needs_review",
+            "average": 4.4,
+            "scene": {"scene_number": 1},
+            "video_performance_gate": {
+                "status": "needs_review",
+                "low": {
+                    "emotion_readability": {"score": 2, "evidence": "flat acting and unreadable emotion"},
+                    "dialogue_reaction": {"score": 2, "evidence": "no reaction to dialogue"},
+                },
+                "missing": [],
+            },
+        }
+    ])
+
+    assert action == "regenerate_video_with_performance_direction"
 
 
 def test_unknown_video_repair_action_keeps_parameters_unchanged():

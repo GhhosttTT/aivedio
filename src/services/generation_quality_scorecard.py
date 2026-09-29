@@ -9,6 +9,7 @@ DIMENSION_LABELS = {
     "identity": "Character identity and role separation",
     "platform_aesthetic": "Mobile short-drama surface quality",
     "temporal_motion": "Video motion and temporal stability",
+    "acting_performance": "Acting, emotion, and dialogue reaction",
     "technical_integrity": "Rendering and visual integrity",
     "story_atomicity": "Atomic shot design",
     "workflow_assets": "Production setup and control assets",
@@ -23,6 +24,7 @@ ACTION_DIMENSIONS = {
     "regenerate_keyframe_with_prop_constraints": "technical_integrity",
     "lower_motion_and_regenerate_video": "temporal_motion",
     "increase_motion_and_regenerate_video": "temporal_motion",
+    "regenerate_video_with_performance_direction": "acting_performance",
     "split_scene": "story_atomicity",
     "fix_workflow_profile": "workflow_assets",
     "refreeze_spatial_plan": "workflow_assets",
@@ -39,6 +41,7 @@ SCORE_DIMENSIONS = {
     "story_match": "story_atomicity",
     "visual_integrity": "technical_integrity",
     "temporal_consistency": "temporal_motion",
+    "video_performance_scores": "acting_performance",
 }
 
 FEATURE_DIMENSIONS = {
@@ -55,6 +58,11 @@ FEATURE_DIMENSIONS = {
     "repair_artifacts_absent": "technical_integrity",
     "artifact_absence": "technical_integrity",
     "motion_smoothness": "temporal_motion",
+    "emotion_readability": "acting_performance",
+    "gaze_intent": "acting_performance",
+    "dialogue_reaction": "acting_performance",
+    "body_language": "acting_performance",
+    "action_intent": "acting_performance",
 }
 
 
@@ -153,7 +161,7 @@ def _add_candidate_findings(dimensions: dict[str, dict[str, Any]], candidate: di
                 if isinstance(nested_value, dict) and isinstance(nested_value.get("score"), (int, float)) and nested_value["score"] <= 3:
                     dimension = FEATURE_DIMENSIONS.get(nested_key, SCORE_DIMENSIONS.get(key, "technical_integrity"))
                     _add_score_finding(dimensions, dimension, candidate, report_name, nested_key, nested_value)
-    for gate_name in ("platform_aesthetic_gate", "video_aesthetic_gate", "turnaround_gate"):
+    for gate_name in ("platform_aesthetic_gate", "video_aesthetic_gate", "turnaround_gate", "character_distinctiveness_gate", "video_performance_gate"):
         gate = candidate.get(gate_name) if isinstance(candidate.get(gate_name), dict) else {}
         _add_gate_findings(dimensions, gate, candidate, report_name)
 

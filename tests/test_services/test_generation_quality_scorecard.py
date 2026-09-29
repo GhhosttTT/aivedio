@@ -93,3 +93,33 @@ def test_generation_quality_scorecard_counts_final_video_review_regressions():
     assert scorecard["dimensions"]["temporal_motion"]["status"] == "needs_repair"
     assert scorecard["dimensions"]["temporal_motion"]["scenes"] == [3]
     assert scorecard["next_focus"]["dimension"] == "temporal_motion"
+
+
+def test_generation_quality_scorecard_counts_video_performance_regressions():
+    scorecard = build_generation_quality_scorecard({
+        "quality_scene_4": {
+            "status": "needs_review",
+            "final_video_review": {
+                "status": "needs_review",
+                "scene": {"scene_number": 4},
+                "video_performance_gate": {
+                    "low": {
+                        "emotion_readability": {"score": 2, "evidence": "flat acting"},
+                        "dialogue_reaction": {"score": 2, "evidence": "no reaction to dialogue"},
+                    }
+                },
+            },
+            "repair_queue": [{
+                "scene_number": 4,
+                "action": "regenerate_video_with_performance_direction",
+                "execution": "auto",
+                "reason": "flat acting and unreadable emotion",
+            }],
+        },
+    })
+
+    assert scorecard["status"] == "needs_repair"
+    assert scorecard["dimensions"]["acting_performance"]["status"] == "needs_repair"
+    assert scorecard["dimensions"]["acting_performance"]["scenes"] == [4]
+    assert scorecard["next_focus"]["dimension"] == "acting_performance"
+    assert scorecard["next_focus"]["suggested_action"] == "regenerate_video_with_performance_direction"
