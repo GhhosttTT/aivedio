@@ -3,6 +3,17 @@ import json
 from scripts import validate_local_generation as validator
 from src.services import video_engine_preflight
 
+PRODUCTION_CASE_IDS = ("establishing", "discovery", "prop", "reaction", "reverse_shot", "stylized")
+
+CASE_CATEGORIES = {
+    "establishing": ["establishing"],
+    "discovery": ["single_character_identity", "prop_story_evidence"],
+    "prop": ["prop_story_evidence"],
+    "reaction": ["single_character_identity", "reaction_closeup"],
+    "reverse_shot": ["distinct_role_reverse_shot"],
+    "stylized": ["single_character_identity", "stylized_generated_source"],
+}
+
 
 def write_json(path, payload):
     path.write_text(json.dumps(payload), encoding="utf-8")
@@ -22,6 +33,7 @@ def rendered_cases(*ids, render_profile=None):
                 "id": item,
                 "image": f"{item}.png",
                 "scene": {"scene_number": index + 1, "visual_description": f"{item} validation scene"},
+                "validation_categories": CASE_CATEGORIES.get(item, []),
                 "actual_workflow": {"steps": 45, "cfg": 7.0, "sampler_name": "dpmpp_2m"},
             }
             for index, item in enumerate(ids)
@@ -131,6 +143,9 @@ def test_default_validation_cases_carry_scene_review_context():
     ]
     assert all(case["scene"]["visible_characters"] for case in character_cases)
     assert any(case["scene"]["visible_characters"][0]["name"] == "Victor" for case in character_cases)
+    coverage = validator._sample_coverage({"cases": cases})
+    assert coverage["passed"] is True
+    assert coverage["missing"] == []
 
 
 def test_installed_review_models_reads_openai_models(monkeypatch):
@@ -529,16 +544,16 @@ def test_validation_summary_requires_manual_scores(tmp_path):
 def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
-    write_json(tmp_path / "render.json", rendered_cases("discovery", "reaction"))
-    write_json(tmp_path / "image_review.json", passed_image_review("discovery", "reaction"))
+    write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "image_review.json", passed_image_review(*PRODUCTION_CASE_IDS))
     write_json(tmp_path / "video_review.json", passed_video_review())
     write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
-    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery", "reaction"))
+    write_json(tmp_path / "manual_review.json", passed_manual_review(*PRODUCTION_CASE_IDS))
 
     report = validator.summarize_validation(tmp_path)
 
     assert report["status"] == "ready_for_seed_dance_candidate"
-    assert report["checks"]["manual_average_score"] == 4.25
+    assert report["checks"]["manual_average_score"] == 4.08
     assert report["checks"]["baseline_comparison_passed"] is True
     assert report["checks"]["baseline_contact_sheet_present"] is True
     assert report["checks"]["video_identity_gate_passed"] is True
@@ -548,6 +563,8 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     assert report["checks"]["video_character_distinctiveness_gate_passed"] is True
     assert report["checks"]["render_profile_passed"] is True
     assert report["checks"]["render_workflow_parameters_passed"] is True
+    assert report["checks"]["sample_coverage_passed"] is True
+    assert report["checks"]["sample_coverage"]["missing"] == []
     assert report["checks"]["image_review_passed"] is True
     assert report["checks"]["image_review_covers_rendered_cases"] is True
     assert report["checks"]["image_review_missing_case_ids"] == []
@@ -556,6 +573,24 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     assert report["checks"]["manual_blocking_issues_passed"] is True
     assert report["checks"]["repair_queue_empty"] is True
     assert report["action_items"] == []
+
+
+def test_validation_summary_requires_production_sample_coverage(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery", "reaction"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery", "reaction"))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery", "reaction"))
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["sample_coverage_passed"] is False
+    assert "establishing" in report["checks"]["sample_coverage"]["missing"]
+    assert "distinct_role_reverse_shot" in report["checks"]["sample_coverage"]["missing"]
+    assert any("missing coverage" in item for item in report["action_items"])
 
 
 def test_validation_summary_requires_image_review(tmp_path):
@@ -1107,11 +1142,11 @@ def test_validation_summary_recommends_targeted_calibration(tmp_path):
 def test_acceptance_package_writes_json_and_markdown(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
-    write_json(tmp_path / "render.json", rendered_cases("discovery", "reaction"))
-    write_json(tmp_path / "image_review.json", passed_image_review("discovery", "reaction"))
+    write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "image_review.json", passed_image_review(*PRODUCTION_CASE_IDS))
     write_json(tmp_path / "video_review.json", passed_video_review())
     write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
-    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery", "reaction"))
+    write_json(tmp_path / "manual_review.json", passed_manual_review(*PRODUCTION_CASE_IDS))
 
     package = validator.build_acceptance_package(tmp_path)
 
@@ -1119,7 +1154,7 @@ def test_acceptance_package_writes_json_and_markdown(tmp_path):
     assert package["required_status"] == "ready_for_seed_dance_candidate"
     assert package["manual_review"]["missing_case_ids"] == []
     assert package["manual_review"]["clip"]["passed"] is True
-    assert [case["id"] for case in package["manual_review"]["cases"]] == ["discovery", "reaction"]
+    assert [case["id"] for case in package["manual_review"]["cases"]] == list(PRODUCTION_CASE_IDS)
     assert package["evidence_files"]["render"]["present"] is True
     assert package["evidence_files"]["image_review"]["present"] is True
     assert (tmp_path / "acceptance_package.json").is_file()
@@ -1133,11 +1168,11 @@ def test_acceptance_package_writes_json_and_markdown(tmp_path):
 def test_acceptance_package_includes_final_normalized_video_reviews(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
-    write_json(tmp_path / "render.json", rendered_cases("discovery"))
-    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "image_review.json", passed_image_review(*PRODUCTION_CASE_IDS))
     write_json(tmp_path / "video_review.json", passed_video_review())
     write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
-    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery"))
+    write_json(tmp_path / "manual_review.json", passed_manual_review(*PRODUCTION_CASE_IDS))
     write_json(tmp_path / "scene_1.quality.json", {
         "status": "passed",
         "final_video_review": {
@@ -1167,11 +1202,11 @@ def test_acceptance_package_includes_final_normalized_video_reviews(tmp_path):
 def test_acceptance_package_includes_final_composition_reviews(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
-    write_json(tmp_path / "render.json", rendered_cases("discovery"))
-    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "image_review.json", passed_image_review(*PRODUCTION_CASE_IDS))
     write_json(tmp_path / "video_review.json", passed_video_review())
     write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
-    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery"))
+    write_json(tmp_path / "manual_review.json", passed_manual_review(*PRODUCTION_CASE_IDS))
     write_json(tmp_path / "final.composition_review.json", {
         "status": "passed",
         "average": 4.5,

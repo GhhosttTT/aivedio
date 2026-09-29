@@ -726,6 +726,23 @@ class ProductionReadinessService:
                 "Rerun local validation samples and verify actual ComfyUI workflow parameters are recorded for every rendered case.",
                 severity="warning",
             ))
+        if checks.get("sample_coverage_passed") is not True:
+            sample_coverage = checks.get("sample_coverage") if isinstance(checks.get("sample_coverage"), dict) else {}
+            missing = sample_coverage.get("missing")
+            missing_note = (
+                f" Missing coverage ids: {', '.join(str(item) for item in missing)}."
+                if isinstance(missing, list) and missing
+                else ""
+            )
+            warnings.append(ReadinessIssue(
+                "sample_validation_coverage_missing",
+                (
+                    "Expand real GPU validation samples to cover establishing, identity, reaction close-up, "
+                    "second-role distinctiveness, prop evidence, and stylized generated-source cases."
+                    + missing_note
+                ),
+                severity="warning",
+            ))
         if checks.get("image_review_passed") is not True:
             missing_image_cases = checks.get("image_review_missing_case_ids")
             missing_note = (
@@ -833,6 +850,8 @@ class ProductionReadinessService:
                 "render_profile": checks.get("render_profile"),
                 "render_profile_passed": checks.get("render_profile_passed"),
                 "render_workflow_parameters_passed": checks.get("render_workflow_parameters_passed"),
+                "sample_coverage": checks.get("sample_coverage"),
+                "sample_coverage_passed": checks.get("sample_coverage_passed"),
                 "image_review_present": checks.get("image_review_present"),
                 "image_review_covers_rendered_cases": checks.get("image_review_covers_rendered_cases"),
                 "image_review_missing_case_ids": checks.get("image_review_missing_case_ids"),

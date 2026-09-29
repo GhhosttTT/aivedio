@@ -29,6 +29,15 @@ from src.services.quality_loop import build_quality_loop_plan
 from src.tasks.image_tasks import _apply_image_repair_action, _quality_parameters, _repair_parameter_profile
 from scripts.compare_video_baseline import compare as compare_video_baseline
 
+REQUIRED_SAMPLE_COVERAGE = {
+    "establishing": "empty or environment establishing shot",
+    "single_character_identity": "single-character identity and wardrobe lock shot",
+    "reaction_closeup": "close-up reaction with readable expression and face detail",
+    "distinct_role_reverse_shot": "second-role or reverse-shot identity distinctiveness shot",
+    "prop_story_evidence": "story-critical prop readability shot",
+    "stylized_generated_source": "stylized or fully generated source-look shot",
+}
+
 
 def _review_models_endpoint() -> str:
     endpoint = settings.LOCAL_REVIEW_BASE_URL.rstrip("/")
@@ -174,6 +183,7 @@ def render_images(
                 "prompt": prompt,
                 "negative_prompt": negative_prompt,
                 "scene": case.get("scene", {}),
+                "validation_categories": case.get("validation_categories", []),
                 "elapsed_seconds": round(time.monotonic() - started, 2),
                 "actual_workflow": _extract_workflow_image_metadata(image),
                 "request": {
@@ -632,6 +642,54 @@ def _render_workflow_parameters_passed(render_report: dict | None) -> bool:
     return True
 
 
+def _sample_case_categories(case: dict) -> set[str]:
+    categories = case.get("validation_categories") if isinstance(case.get("validation_categories"), list) else []
+    detected = {str(item) for item in categories if str(item).strip()}
+    case_id = str(case.get("id") or "").lower()
+    prompt = str(case.get("prompt") or case.get("source_prompt") or "").lower()
+    scene = case.get("scene") if isinstance(case.get("scene"), dict) else {}
+    description = str(scene.get("visual_description") or "").lower()
+    requirements = " ".join(str(item).lower() for item in scene.get("reference_requirements", []) or [])
+    visible_characters = scene.get("visible_characters", []) if isinstance(scene.get("visible_characters"), list) else []
+    text = " ".join([case_id, prompt, description, requirements])
+
+    if case_id == "establishing" or "empty office" in text or "establishing" in text:
+        detected.add("establishing")
+    if len(visible_characters) == 1 and any(term in text for term in ("single", "only visible", "only person", "readable face", "identity")):
+        detected.add("single_character_identity")
+    if case_id == "reaction" or "reaction" in text or "shocked" in text or "close-up" in text or "close up" in text:
+        detected.add("reaction_closeup")
+    if case_id in {"reverse_shot", "opponent", "second_role"} or any(term in text for term in ("reverse shot", "opposing role", "distinct from", "must not share")):
+        detected.add("distinct_role_reverse_shot")
+    if case_id == "prop" or any(term in text for term in ("prop", "red envelope", "key", "phone", "letter", "evidence")):
+        detected.add("prop_story_evidence")
+    if case_id == "stylized" or any(term in text for term in ("animation style", "stylized", "anime", "cartoon", "generated source")):
+        detected.add("stylized_generated_source")
+    return detected
+
+
+def _sample_coverage(render_report: dict | None) -> dict:
+    cases = render_report.get("cases", []) if isinstance(render_report, dict) else []
+    covered: set[str] = set()
+    by_case: dict[str, list[str]] = {}
+    for case in cases:
+        if not isinstance(case, dict):
+            continue
+        categories = _sample_case_categories(case)
+        case_id = str(case.get("id") or "")
+        if case_id:
+            by_case[case_id] = sorted(categories)
+        covered.update(categories)
+    missing = [key for key in REQUIRED_SAMPLE_COVERAGE if key not in covered]
+    return {
+        "required": REQUIRED_SAMPLE_COVERAGE,
+        "covered": sorted(covered),
+        "missing": missing,
+        "by_case": by_case,
+        "passed": not missing,
+    }
+
+
 def _baseline_contact_sheet_present(baseline_report: dict | None, output: Path) -> bool:
     if not isinstance(baseline_report, dict):
         return False
@@ -751,6 +809,8 @@ def summarize_validation(output: Path):
         and render_profile.get("parameter_optimization") is True
     )
     checks["render_workflow_parameters_passed"] = _render_workflow_parameters_passed(render_report)
+    checks["sample_coverage"] = _sample_coverage(render_report)
+    checks["sample_coverage_passed"] = checks["sample_coverage"]["passed"]
     image_review_cases = image_review_report.get("cases", []) if isinstance(image_review_report, dict) else []
     image_review_case_ids = _case_ids(image_review_cases)
     missing_image_review_case_ids = sorted(rendered_case_ids - image_review_case_ids)
@@ -851,6 +911,15 @@ def summarize_validation(output: Path):
         report["action_items"].append("Rerun render-images with --quality-mode ultra --optimization-mode quality before accepting sample quality.")
     elif not checks["render_workflow_parameters_passed"]:
         report["action_items"].append("Rerun render-images and verify every case records actual ComfyUI workflow steps for the production quality profile.")
+    if checks["images_rendered"] and not checks["sample_coverage_passed"]:
+        missing_labels = [
+            REQUIRED_SAMPLE_COVERAGE[key]
+            for key in checks["sample_coverage"]["missing"]
+        ]
+        report["action_items"].append(
+            "Expand validation cases before accepting sample quality; missing coverage: "
+            + "; ".join(missing_labels)
+        )
     if not checks["image_review_present"]:
         report["action_items"].append("Run review-images so local llama.cpp VLM checks every rendered keyframe before accepting sample quality.")
     elif not checks["image_review_covers_rendered_cases"]:
@@ -913,6 +982,7 @@ def summarize_validation(output: Path):
     if all(checks[key] for key in (
         "environment_ready", "video_workflow_ready", "images_rendered",
         "render_profile_passed", "render_workflow_parameters_passed",
+        "sample_coverage_passed",
         "image_review_passed", "video_review_passed", "baseline_comparison_passed", "manual_review_passed",
         "repair_queue_empty",
     )):
@@ -1059,6 +1129,7 @@ def _build_acceptance_markdown(package: dict) -> str:
         "images_rendered",
         "render_profile_passed",
         "render_workflow_parameters_passed",
+        "sample_coverage_passed",
         "image_review_passed",
         "image_review_covers_rendered_cases",
         "video_review_passed",
