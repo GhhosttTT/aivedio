@@ -63,6 +63,7 @@ def test_composition_accepts_passed_video_quality_report(tmp_path):
             },
             "platform_score": 4.2,
             "video_aesthetic_gate": {"status": "passed"},
+            "platform_reference_gate": {"status": "passed"},
             "character_distinctiveness_gate": {"status": "passed"},
             "video_performance_gate": {"status": "passed"},
         },
@@ -194,12 +195,38 @@ def test_composition_blocks_failed_final_normalized_video_gate(tmp_path):
             "average": 4.4,
             "platform_score": 4.2,
             "video_aesthetic_gate": {"status": "passed"},
+            "platform_reference_gate": {"status": "passed"},
             "video_performance_gate": {"status": "needs_review"},
         },
     }), encoding="utf-8")
     scene = Mock(scene_number=1, video_path=str(video))
 
     with pytest.raises(ValueError, match="final normalized video performance gate failed"):
+        composition_tasks._require_passed_scene_videos([scene])
+
+
+def test_composition_blocks_failed_final_normalized_platform_reference_gate(tmp_path):
+    video = tmp_path / "scene_001.mp4"
+    video.write_bytes(b"fake video")
+    video.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "passed",
+        "final_video_review": {
+            "status": "passed",
+            "average": 4.4,
+            "platform_score": 4.2,
+            "video_aesthetic_gate": {"status": "passed"},
+            "platform_reference_gate": {
+                "status": "needs_review",
+                "low": {
+                    "seed_dance_gap": {"score": 2, "evidence": "large visible gap against reference"},
+                },
+            },
+            "video_performance_gate": {"status": "passed"},
+        },
+    }), encoding="utf-8")
+    scene = Mock(scene_number=1, video_path=str(video))
+
+    with pytest.raises(ValueError, match="final normalized video platform reference gate failed"):
         composition_tasks._require_passed_scene_videos([scene])
 
 
@@ -212,6 +239,7 @@ def passed_composition_review():
             "average": 4.4,
             "platform_score": 4.2,
             "video_aesthetic_gate": {"status": "passed"},
+            "platform_reference_gate": {"status": "passed"},
             "character_distinctiveness_gate": {"status": "passed"},
             "video_performance_gate": {"status": "passed"},
             "episode_continuity_gate": {"status": "passed"},
@@ -355,6 +383,43 @@ def test_final_composed_video_review_blocks_episode_style_drift(tmp_path, monkey
     assert written["episode_style_consistency_gate"]["status"] == "needs_review"
     assert written["repair_queue"][0]["action"] == "refine_project_style_consistency"
     assert written["repair_queue"][0]["scene_number"] == 3
+    assert written["repair_queue"][0]["execution"] == "auto"
+
+
+def test_final_composed_video_review_blocks_platform_reference_gap(tmp_path, monkeypatch):
+    final_video = tmp_path / "final.mp4"
+    final_video.write_bytes(b"final video")
+    project = Mock(id=7, name="premium-drama")
+    scenes = [Mock(
+        scene_number=1,
+        character_name="Alice",
+        visual_description="Alice confronts Bob in a luxury office",
+        image_prompt="Alice close-up",
+        dialogue="你为什么骗我",
+        audio_path=None,
+        subtitle_path=None,
+    )]
+    failed = passed_composition_review()
+    failed["batches"][0]["platform_reference_gate"] = {
+        "status": "needs_review",
+        "low": {
+            "seed_dance_gap": {"score": 2, "evidence": "final episode looks cheap beside the reference"},
+            "viewer_scroll_stop_appeal": {"score": 2, "evidence": "opening impression is weak"},
+        },
+        "missing": [],
+    }
+
+    class FakeReviewService:
+        def review_video(self, *_args, **_kwargs):
+            return failed
+
+    monkeypatch.setattr(composition_tasks, "GenerationReviewService", FakeReviewService)
+
+    with pytest.raises(ValueError, match="platform reference gate failed"):
+        composition_tasks._review_final_composed_video(project, scenes, str(final_video))
+    written = json.loads(final_video.with_suffix(".composition_review.json").read_text(encoding="utf-8"))
+    assert written["error"] == "composition review batch 1 platform reference gate failed"
+    assert written["repair_queue"][0]["action"] == "refine_video_commercial_aesthetic"
     assert written["repair_queue"][0]["execution"] == "auto"
 
 

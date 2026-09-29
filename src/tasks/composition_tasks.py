@@ -468,6 +468,8 @@ def _final_video_review_error(report: dict) -> str | None:
         return f"final normalized video platform score={platform_score} below {settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE}"
     if not _gate_status_passed(review, "video_aesthetic_gate"):
         return "final normalized video aesthetic gate failed"
+    if not _gate_status_passed(review, "platform_reference_gate"):
+        return "final normalized video platform reference gate failed"
     if not _optional_gate_status_passed(review, "character_distinctiveness_gate"):
         return "final normalized video character distinctiveness gate failed"
     if not _gate_status_passed(review, "video_performance_gate"):
@@ -560,6 +562,8 @@ def _composition_review_error(report: dict) -> str | None:
             return f"composition review batch {index} platform score={platform_score} below {settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE}"
         if not _gate_status_passed(batch, "video_aesthetic_gate"):
             return f"composition review batch {index} aesthetic gate failed"
+        if not _gate_status_passed(batch, "platform_reference_gate"):
+            return f"composition review batch {index} platform reference gate failed"
         if not _optional_gate_status_passed(batch, "character_distinctiveness_gate"):
             return f"composition review batch {index} character distinctiveness gate failed"
         if not _gate_status_passed(batch, "video_performance_gate"):
