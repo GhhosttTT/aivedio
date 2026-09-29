@@ -40,6 +40,7 @@ REQUIRED_SAMPLE_COVERAGE = {
 
 REQUIRED_MANUAL_CASE_DIMENSIONS = {
     "identity_match": "character identity, wardrobe, and face match the intended role",
+    "character_distinctiveness": "different characters remain visually separable with no same-face casting",
     "phone_readability": "face, prop, and action read clearly on a vertical phone screen",
     "platform_aesthetic": "lighting, skin texture, color, and composition meet premium short-drama expectations",
     "visual_integrity": "hands, props, anatomy, text, and artifacts are clean enough for production",
@@ -51,11 +52,13 @@ REQUIRED_MANUAL_CLIP_DIMENSIONS = {
     "temporal_motion": "motion is smooth enough with no major flicker, warping, or frozen-frame feel",
     "acting_performance": "emotion, gaze, dialogue reaction, and body language are readable",
     "commercial_aesthetic": "overall look is polished enough against the Seed Dance contact sheet",
+    "seed_dance_gap": "visible gap against the Seed Dance contact sheet is small enough for a serious candidate",
     "composition_continuity": "frame, crop, camera direction, and scene continuity hold through the clip",
 }
 
 MANUAL_CASE_DIMENSION_REPAIR_HINTS = {
     "identity_match": "identity drift face drift changed wardrobe wrong view angle",
+    "character_distinctiveness": "same-face casting copied facial geometry role separation identity contrast",
     "phone_readability": "phone_readability crop composition face prop action clarity",
     "platform_aesthetic": "platform score commercial aesthetic lighting skin_texture production value",
     "visual_integrity": "visual_integrity artifact hand finger prop anatomy random text",
@@ -67,6 +70,7 @@ MANUAL_CLIP_DIMENSION_REPAIR_HINTS = {
     "temporal_motion": "temporal motion flicker camera jump warped body melting",
     "acting_performance": "video performance acting no reaction dialogue_reaction body_language gaze_intent",
     "commercial_aesthetic": "video aesthetic commercial_aesthetic platform score production value lighting color_grade",
+    "seed_dance_gap": "seed dance baseline gap commercial aesthetic platform score production value motion identity",
     "composition_continuity": "temporal camera jump composition continuity crop screen direction",
 }
 
@@ -1071,8 +1075,8 @@ def summarize_validation(output: Path):
         )
     elif not checks["manual_case_dimension_review_passed"]:
         report["action_items"].append(
-            "Add or improve manual_review.json case dimension_scores for identity_match, phone_readability, "
-            "platform_aesthetic, visual_integrity, and story_match; every rendered case needs scores >= 4."
+            "Add or improve manual_review.json case dimension_scores for identity_match, character_distinctiveness, "
+            "phone_readability, platform_aesthetic, visual_integrity, and story_match; every rendered case needs scores >= 4."
         )
     elif report.get("manual_failures"):
         report["action_items"].append("Improve prompts/workflow/model settings for manual cases below 4 before scaling up.")
@@ -1081,7 +1085,8 @@ def summarize_validation(output: Path):
     elif checks["manual_clip_review_present"] and not checks["manual_clip_dimension_review_passed"]:
         report["action_items"].append(
             "Add or improve manual_review.json clip dimension_scores for identity_stability, temporal_motion, "
-            "acting_performance, commercial_aesthetic, and composition_continuity; every clip dimension needs score >= 4."
+            "acting_performance, commercial_aesthetic, seed_dance_gap, and composition_continuity; "
+            "every clip dimension needs score >= 4."
         )
     elif checks["manual_clip_review_present"] and not checks["manual_clip_review_passed"]:
         report["action_items"].append("Improve the generated clip until human clip review score is at least 4 and decision is accept.")
@@ -1169,16 +1174,17 @@ def _build_manual_review_markdown(template: dict) -> str:
         "",
         "## Case Scores",
         "",
-        "| Case | Image | identity_match | phone_readability | platform_aesthetic | visual_integrity | story_match | Decision |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Case | Image | identity_match | character_distinctiveness | phone_readability | platform_aesthetic | visual_integrity | story_match | Decision |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for case in template["cases"]:
         scores = case["dimension_scores"]
         lines.append(
-            "| {id} | {image} | {identity_match} | {phone_readability} | {platform_aesthetic} | {visual_integrity} | {story_match} | {decision} |".format(
+            "| {id} | {image} | {identity_match} | {character_distinctiveness} | {phone_readability} | {platform_aesthetic} | {visual_integrity} | {story_match} | {decision} |".format(
                 id=case.get("id", ""),
                 image=case.get("image") or "",
                 identity_match=scores.get("identity_match", ""),
+                character_distinctiveness=scores.get("character_distinctiveness", ""),
                 phone_readability=scores.get("phone_readability", ""),
                 platform_aesthetic=scores.get("platform_aesthetic", ""),
                 visual_integrity=scores.get("visual_integrity", ""),
@@ -1195,13 +1201,14 @@ def _build_manual_review_markdown(template: dict) -> str:
         f"- Candidate video: `{clip.get('candidate_video') or ''}`",
         f"- Seed Dance contact sheet: `{clip.get('seed_dance_contact_sheet') or ''}`",
         "",
-        "| identity_stability | temporal_motion | acting_performance | commercial_aesthetic | composition_continuity | Decision |",
-        "| --- | --- | --- | --- | --- | --- |",
-        "| {identity_stability} | {temporal_motion} | {acting_performance} | {commercial_aesthetic} | {composition_continuity} | {decision} |".format(
+        "| identity_stability | temporal_motion | acting_performance | commercial_aesthetic | seed_dance_gap | composition_continuity | Decision |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| {identity_stability} | {temporal_motion} | {acting_performance} | {commercial_aesthetic} | {seed_dance_gap} | {composition_continuity} | {decision} |".format(
             identity_stability=clip_scores.get("identity_stability", ""),
             temporal_motion=clip_scores.get("temporal_motion", ""),
             acting_performance=clip_scores.get("acting_performance", ""),
             commercial_aesthetic=clip_scores.get("commercial_aesthetic", ""),
+            seed_dance_gap=clip_scores.get("seed_dance_gap", ""),
             composition_continuity=clip_scores.get("composition_continuity", ""),
             decision=clip.get("decision", ""),
         ),
@@ -1415,15 +1422,16 @@ def _build_acceptance_markdown(package: dict) -> str:
         "",
         "## Manual Case Dimensions",
         "",
-        "| Case | identity_match | phone_readability | platform_aesthetic | visual_integrity | story_match |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Case | identity_match | character_distinctiveness | phone_readability | platform_aesthetic | visual_integrity | story_match |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ])
     for case in manual.get("cases", []):
         scores = case.get("dimension_scores") if isinstance(case.get("dimension_scores"), dict) else {}
         lines.append(
-            "| {id} | {identity_match} | {phone_readability} | {platform_aesthetic} | {visual_integrity} | {story_match} |".format(
+            "| {id} | {identity_match} | {character_distinctiveness} | {phone_readability} | {platform_aesthetic} | {visual_integrity} | {story_match} |".format(
                 id=case.get("id", ""),
                 identity_match=scores.get("identity_match", ""),
+                character_distinctiveness=scores.get("character_distinctiveness", ""),
                 phone_readability=scores.get("phone_readability", ""),
                 platform_aesthetic=scores.get("platform_aesthetic", ""),
                 visual_integrity=scores.get("visual_integrity", ""),
@@ -1447,13 +1455,14 @@ def _build_acceptance_markdown(package: dict) -> str:
         "",
         "## Manual Clip Dimensions",
         "",
-        "| identity_stability | temporal_motion | acting_performance | commercial_aesthetic | composition_continuity |",
-        "| --- | --- | --- | --- | --- |",
-        "| {identity_stability} | {temporal_motion} | {acting_performance} | {commercial_aesthetic} | {composition_continuity} |".format(
+        "| identity_stability | temporal_motion | acting_performance | commercial_aesthetic | seed_dance_gap | composition_continuity |",
+        "| --- | --- | --- | --- | --- | --- |",
+        "| {identity_stability} | {temporal_motion} | {acting_performance} | {commercial_aesthetic} | {seed_dance_gap} | {composition_continuity} |".format(
             identity_stability=(clip.get("dimension_scores") or {}).get("identity_stability", ""),
             temporal_motion=(clip.get("dimension_scores") or {}).get("temporal_motion", ""),
             acting_performance=(clip.get("dimension_scores") or {}).get("acting_performance", ""),
             commercial_aesthetic=(clip.get("dimension_scores") or {}).get("commercial_aesthetic", ""),
+            seed_dance_gap=(clip.get("dimension_scores") or {}).get("seed_dance_gap", ""),
             composition_continuity=(clip.get("dimension_scores") or {}).get("composition_continuity", ""),
         ),
     ])

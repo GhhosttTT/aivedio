@@ -828,8 +828,8 @@ class ProductionReadinessService:
             warnings.append(ReadinessIssue(
                 "sample_validation_manual_case_dimensions_not_passed",
                 (
-                    "Complete manual case dimension_scores for identity_match, phone_readability, "
-                    "platform_aesthetic, visual_integrity, and story_match with every score >= 4."
+                    "Complete manual case dimension_scores for identity_match, character_distinctiveness, "
+                    "phone_readability, platform_aesthetic, visual_integrity, and story_match with every score >= 4."
                 ),
                 severity="warning",
             ))
@@ -838,7 +838,8 @@ class ProductionReadinessService:
                 "sample_validation_manual_clip_dimensions_not_passed",
                 (
                     "Complete manual clip dimension_scores for identity_stability, temporal_motion, "
-                    "acting_performance, commercial_aesthetic, and composition_continuity with every score >= 4."
+                    "acting_performance, commercial_aesthetic, seed_dance_gap, and composition_continuity "
+                    "with every score >= 4."
                 ),
                 severity="warning",
             ))

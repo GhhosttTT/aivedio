@@ -118,6 +118,7 @@ def passed_manual_review(*ids):
                 "decision": "accept",
                 "dimension_scores": {
                     "identity_match": 4.3,
+                    "character_distinctiveness": 4.2,
                     "phone_readability": 4.2,
                     "platform_aesthetic": 4.1,
                     "visual_integrity": 4.2,
@@ -135,6 +136,7 @@ def passed_manual_review(*ids):
                 "temporal_motion": 4.1,
                 "acting_performance": 4.0,
                 "commercial_aesthetic": 4.1,
+                "seed_dance_gap": 4.0,
                 "composition_continuity": 4.2,
             },
             "watched_full_clip": True,
@@ -575,12 +577,14 @@ def test_manual_review_template_writes_dimension_scaffold(tmp_path):
     assert len(template["cases"]) == 2
     assert template["cases"][0]["dimension_scores"] == {
         "identity_match": None,
+        "character_distinctiveness": None,
         "phone_readability": None,
         "platform_aesthetic": None,
         "visual_integrity": None,
         "story_match": None,
     }
     assert template["clip"]["dimension_scores"]["acting_performance"] is None
+    assert template["clip"]["dimension_scores"]["seed_dance_gap"] is None
     assert template["clip"]["seed_dance_contact_sheet"].endswith("seed_dance_contact_sheet.png")
     assert (tmp_path / "manual_review_template.json").is_file()
     markdown = (tmp_path / "manual_review_template.md").read_text(encoding="utf-8")
@@ -908,6 +912,46 @@ def test_validation_summary_blocks_low_manual_clip_dimension_score(tmp_path):
 def test_validation_summary_converts_low_manual_commercial_aesthetic_dimension_to_video_repair(tmp_path):
     manual_review = passed_manual_review(*PRODUCTION_CASE_IDS)
     manual_review["clip"]["dimension_scores"]["commercial_aesthetic"] = 3.2
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "image_review.json", passed_image_review(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", manual_review)
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["manual_clip_dimension_review_passed"] is False
+    assert report["checks"]["repair_queue_empty"] is False
+    assert report["repair_queue"][0]["action"] == "refine_video_commercial_aesthetic"
+    assert report["repair_queue"][0]["stage"] == "video"
+
+
+def test_validation_summary_converts_low_manual_distinctiveness_dimension_to_role_repair(tmp_path):
+    manual_review = passed_manual_review(*PRODUCTION_CASE_IDS)
+    manual_review["cases"][0]["dimension_scores"]["character_distinctiveness"] = 3.1
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "image_review.json", passed_image_review(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", manual_review)
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["manual_case_dimension_review_passed"] is False
+    assert report["checks"]["repair_queue_empty"] is False
+    assert report["repair_queue"][0]["action"] == "regenerate_keyframe_with_role_separation"
+    assert report["repair_queue"][0]["scene_number"] == 1
+
+
+def test_validation_summary_blocks_low_manual_seed_dance_gap_dimension(tmp_path):
+    manual_review = passed_manual_review(*PRODUCTION_CASE_IDS)
+    manual_review["clip"]["dimension_scores"]["seed_dance_gap"] = 3.3
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
