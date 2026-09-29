@@ -125,6 +125,36 @@ def test_generation_quality_scorecard_routes_video_platform_reference_to_video_a
     assert scorecard["next_focus"]["suggested_action"] == "refine_video_commercial_aesthetic"
 
 
+def test_generation_quality_scorecard_routes_nested_video_aesthetic_scores_to_video_repair():
+    scorecard = build_generation_quality_scorecard({
+        "video_review": {
+            "status": "needs_review",
+            "batches": [{
+                "scene": {"scene_number": 13},
+                "review": {
+                    "video_aesthetic_scores": {
+                        "production_polish": {
+                            "score": 2,
+                            "evidence": "clip still reads like a cheap generated render",
+                        },
+                        "lighting_quality": {
+                            "score": 3,
+                            "evidence": "lighting lacks short-drama platform polish",
+                        },
+                    },
+                },
+            }],
+        },
+    })
+
+    assert scorecard["status"] == "needs_repair"
+    assert scorecard["repair_queue_total"] == 0
+    assert scorecard["dimensions"]["platform_aesthetic"]["status"] == "needs_repair"
+    assert scorecard["dimensions"]["platform_aesthetic"]["scenes"] == [13]
+    assert scorecard["next_focus"]["dimension"] == "platform_aesthetic"
+    assert scorecard["next_focus"]["suggested_action"] == "refine_video_commercial_aesthetic"
+
+
 def test_generation_quality_scorecard_counts_final_video_review_regressions():
     scorecard = build_generation_quality_scorecard({
         "quality_scene_3": {

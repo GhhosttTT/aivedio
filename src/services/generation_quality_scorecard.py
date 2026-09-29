@@ -59,6 +59,11 @@ SCORE_ACTIONS = {
     "visual_integrity": "regenerate_keyframe_with_prop_constraints",
 }
 
+PLATFORM_AESTHETIC_SCORE_KEYS = {
+    "aesthetic_quality",
+    "composition",
+}
+
 FEATURE_DIMENSIONS = {
     "skin_texture": "platform_aesthetic",
     "skin_texture_stability": "platform_aesthetic",
@@ -303,7 +308,7 @@ def _add_score_finding(
     if scene_number is not None:
         target["scenes"].add(scene_number)
     evidence = str(value.get("evidence") or key).strip()
-    action = SCORE_ACTIONS.get(key)
+    action = _score_action(key, candidate, report_name)
     if action:
         target["actions"][action] = target["actions"].get(action, 0) + 1
     _append_evidence(target, f"{key}: {evidence}")
@@ -358,6 +363,22 @@ def _feature_action(feature: str, gate_name: str, candidate: dict[str, Any], rep
     if feature in PLATFORM_AESTHETIC_FEATURES and gate_name == "video_aesthetic_gate":
         return "refine_video_commercial_aesthetic"
     return FEATURE_ACTIONS.get(feature)
+
+
+def _score_action(key: str, candidate: dict[str, Any], report_name: str) -> str | None:
+    if key in SCORE_ACTIONS:
+        return SCORE_ACTIONS[key]
+    if key in PLATFORM_REFERENCE_FEATURES:
+        if _is_video_context(candidate, report_name, ""):
+            return "refine_video_commercial_aesthetic"
+        return "refine_prompt_composition"
+    if key in PLATFORM_AESTHETIC_FEATURES or key in PLATFORM_AESTHETIC_SCORE_KEYS:
+        if _is_video_context(candidate, report_name, ""):
+            return "refine_video_commercial_aesthetic"
+        return "refine_prompt_composition"
+    if key in {"motion_smoothness", "background_stability", "temporal_consistency"}:
+        return "lower_motion_and_regenerate_video"
+    return None
 
 
 def _is_video_context(candidate: dict[str, Any], report_name: str, gate_name: str) -> bool:
