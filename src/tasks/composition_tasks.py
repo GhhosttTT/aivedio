@@ -10,7 +10,8 @@ from src.tasks.celery_app import celery_app
 from src.database.database import get_db
 from src.database.models import Project, ProjectStatus, Scene, Task as TaskModel, TaskStatus
 from src.config import settings
-from src.services.generation_review import GenerationReviewService, VIDEO_AESTHETIC_FEATURES
+from src.services.generation_review import GenerationReviewService, VIDEO_AESTHETIC_FEATURES, write_report
+from src.services.repair_queue import attach_repair_queue
 from src.services.video_composer import get_video_composer
 from src.services.subtitle_generator import get_subtitle_generator
 from src.utils.storage import get_project_final_video_path
@@ -431,9 +432,14 @@ def _review_final_composed_video(project: Project, scenes: list[Scene], final_vi
         report_path,
     )
     report["path"] = str(report_path)
+    report["stage"] = "final_composition"
     error = _composition_review_error(report)
     if error:
+        report["error"] = error
+        attach_repair_queue(report, "video")
+        write_report(report_path, report)
         raise ValueError("Final composed video is not production-ready: " + error)
+    write_report(report_path, report)
     return report
 
 

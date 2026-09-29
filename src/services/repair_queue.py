@@ -116,11 +116,16 @@ def build_repair_queue(report: dict[str, Any], media_type: str) -> list[dict[str
 
     actions: list[dict[str, Any]] = []
     for candidate in report.get("candidates", []) or []:
-        evidence_items = _candidate_evidence(candidate)
-        for evidence in evidence_items:
-            action = _classify_evidence(str(evidence), media_type, candidate)
-            if action:
-                actions.append(action)
+        actions.extend(_actions_for_candidate(candidate, media_type))
+    for batch in report.get("batches", []) or []:
+        if not isinstance(batch, dict):
+            continue
+        candidate = dict(batch)
+        if isinstance(report.get("scene"), dict) and not isinstance(candidate.get("scene"), dict):
+            candidate["scene"] = report["scene"]
+        if report.get("stage") and not candidate.get("stage"):
+            candidate["stage"] = report["stage"]
+        actions.extend(_actions_for_candidate(candidate, media_type))
     if report.get("error"):
         action = _classify_evidence(str(report["error"]), media_type, report)
         if action:
@@ -139,6 +144,16 @@ def build_repair_queue(report: dict[str, Any], media_type: str) -> list[dict[str
 def attach_repair_queue(report: dict[str, Any], media_type: str) -> dict[str, Any]:
     report["repair_queue"] = build_repair_queue(report, media_type)
     return report
+
+
+def _actions_for_candidate(candidate: dict[str, Any], media_type: str) -> list[dict[str, Any]]:
+    actions = []
+    evidence_items = _candidate_evidence(candidate)
+    for evidence in evidence_items:
+        action = _classify_evidence(str(evidence), media_type, candidate)
+        if action:
+            actions.append(action)
+    return actions
 
 
 def _candidate_evidence(candidate: dict[str, Any]) -> list[str]:
@@ -349,6 +364,14 @@ def _scene_number(candidate: dict[str, Any]) -> int | None:
 def _first_scene_number(report: dict[str, Any]) -> int | None:
     for candidate in report.get("candidates", []) or []:
         if isinstance(candidate, dict):
+            scene_number = _scene_number(candidate)
+            if isinstance(scene_number, int):
+                return scene_number
+    for batch in report.get("batches", []) or []:
+        if isinstance(batch, dict):
+            candidate = dict(batch)
+            if isinstance(report.get("scene"), dict) and not isinstance(candidate.get("scene"), dict):
+                candidate["scene"] = report["scene"]
             scene_number = _scene_number(candidate)
             if isinstance(scene_number, int):
                 return scene_number

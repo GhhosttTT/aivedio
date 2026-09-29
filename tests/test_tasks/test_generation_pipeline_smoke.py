@@ -194,6 +194,11 @@ def test_final_composed_video_review_blocks_failed_episode_gate(tmp_path, monkey
 
     with pytest.raises(ValueError, match="composition review batch 1 performance gate failed"):
         composition_tasks._review_final_composed_video(project, scenes, str(final_video))
+    written = json.loads(final_video.with_suffix(".composition_review.json").read_text(encoding="utf-8"))
+    assert written["stage"] == "final_composition"
+    assert written["error"] == "composition review batch 1 performance gate failed"
+    assert written["repair_queue"][0]["action"] == "regenerate_video_with_performance_direction"
+    assert written["repair_queue"][0]["execution"] == "auto"
 
 
 def test_draft_tasks_cannot_publish_an_unreviewed_final_video(tmp_path, monkeypatch):

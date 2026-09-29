@@ -126,6 +126,45 @@ def test_repair_queue_maps_video_performance_gate_to_performance_repair():
     assert queue[0]["scene_number"] == 8
 
 
+def test_repair_queue_reads_final_composition_batches():
+    report = {
+        "status": "needs_review",
+        "stage": "final_composition",
+        "scene": {"scene_number": "final_composition"},
+        "batches": [{
+            "status": "needs_review",
+            "video_performance_gate": {
+                "status": "needs_review",
+                "low": {
+                    "emotion_readability": {
+                        "score": 2,
+                        "evidence": "flat acting across the composed episode",
+                    },
+                    "gaze_intent": {
+                        "score": 2,
+                        "evidence": "dead eyes in the final confrontation",
+                    },
+                },
+            },
+            "review": {
+                "video_performance_scores": {
+                    "dialogue_reaction": {
+                        "score": 2,
+                        "evidence": "no reaction to dialogue after the cut",
+                    },
+                },
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "regenerate_video_with_performance_direction"
+    assert queue[0]["stage"] == "video"
+    assert queue[0]["execution"] == "auto"
+    assert queue[0]["scene_number"] is None
+
+
 def test_repair_queue_maps_low_image_technical_metrics_to_composition_repair():
     report = {
         "status": "needs_review",
