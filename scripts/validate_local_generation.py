@@ -943,15 +943,7 @@ def build_acceptance_package(output: Path) -> dict:
     final_video_reviews = _final_video_reviews(quality_reports)
     baseline_report = _read_json(output / "seed_dance_baseline_comparison.json")
     manual_review = _read_json(output / "manual_review.json")
-    repair_queue = _collect_repair_queue(
-        render_report,
-        image_review_report,
-        video_review_report,
-        *quality_reports.values(),
-        baseline_report,
-        manual_review,
-        summary,
-    )
+    repair_queue = _validation_repair_queue(output, summary)
     summary_for_loop = {**summary, "repair_queue": repair_queue}
     manual_section = _manual_review_section(summary, render_report, manual_review)
     package = {
@@ -993,9 +985,44 @@ def build_acceptance_package(output: Path) -> dict:
     return package
 
 
+def _validation_repair_queue(output: Path, summary: dict | None = None) -> list[dict]:
+    render_report = _read_json(output / "render.json")
+    image_review_report = _read_json(output / "image_review.json")
+    video_review_report = _read_json(output / "video_review.json")
+    quality_reports = _quality_reports(output)
+    baseline_report = _read_json(output / "seed_dance_baseline_comparison.json")
+    manual_review = _read_json(output / "manual_review.json")
+    return _collect_repair_queue(
+        render_report,
+        image_review_report,
+        video_review_report,
+        *quality_reports.values(),
+        baseline_report,
+        manual_review,
+        summary,
+    )
+
+
+def build_quality_loop_package(output: Path, max_actions: int = 5) -> dict:
+    summary = _read_json(output / "validation_summary.json") or summarize_validation(output)
+    repair_queue = _validation_repair_queue(output, summary)
+    plan = build_quality_loop_plan({**summary, "repair_queue": repair_queue}, max_actions=max_actions)
+    package = {
+        "status": plan["status"],
+        "generated_at": round(time.time()),
+        "summary_path": str(output / "validation_summary.json"),
+        "repair_queue_total": len(repair_queue),
+        "plan": plan,
+        "repair_execution_plan": build_repair_execution_plan(output, repair_queue),
+    }
+    write_report(output / "validation_summary.json", summary)
+    write_report(output / "quality_loop_plan.json", package)
+    return package
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["preflight", "preflight-video-workflow", "preflight-production-video", "render-images", "review-images", "review-video", "compare-baseline", "summarize", "acceptance-package"], nargs="?", default="preflight")
+    parser.add_argument("mode", choices=["preflight", "preflight-video-workflow", "preflight-production-video", "render-images", "review-images", "review-video", "compare-baseline", "summarize", "quality-loop", "acceptance-package"], nargs="?", default="preflight")
     parser.add_argument("--base-url", help="ComfyUI address on the GPU machine")
     parser.add_argument("--cases", default="examples/local_generation_cases.json")
     parser.add_argument("--output", type=Path, default=Path("storage/validation"))
@@ -1007,6 +1034,7 @@ def main():
     parser.add_argument("--description", help="Expected scene content for frame review")
     parser.add_argument("--quality-mode", default="ultra", choices=["fast", "normal", "high_quality", "ultra"], help="Image quality mode for render-images")
     parser.add_argument("--optimization-mode", default="quality", choices=["quality", "realism", "artistic", "balanced"], help="Prompt optimization mode for render-images")
+    parser.add_argument("--max-actions", type=int, default=5, help="Maximum automatic repairs to select for quality-loop")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     if args.mode == "preflight":
@@ -1044,12 +1072,15 @@ def main():
     elif args.mode == "summarize":
         report = summarize_validation(args.output)
         write_report(args.output / "validation_summary.json", report)
+    elif args.mode == "quality-loop":
+        report = build_quality_loop_package(args.output, max_actions=args.max_actions)
     else:
         report = build_acceptance_package(args.output)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["status"] in {
         "ready_for_live_test", "rendered_pending_human_review", "passed",
-        "ready_for_seed_dance_candidate",
+        "ready_for_seed_dance_candidate", "can_auto_repair", "setup_required",
+        "manual_review_required", "ready",
     } else 1
 
 

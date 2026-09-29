@@ -950,3 +950,58 @@ def test_acceptance_package_includes_repair_rerun_plan(tmp_path):
     assert "Next Quality Loop" in markdown
     assert "lower_motion_and_regenerate_video" in markdown
     assert "review-video" in markdown
+
+
+def test_quality_loop_package_writes_direct_next_repair_plan(tmp_path):
+    write_json(tmp_path / "validation_summary.json", {"status": "partial_needs_review"})
+    write_json(tmp_path / "video_review.json", {
+        "status": "needs_review",
+        "repair_queue": [
+            {
+                "action": "refine_face_aesthetic_detail",
+                "execution": "auto",
+                "stage": "image",
+                "scene_number": 1,
+                "priority": "high",
+                "reason": "plastic skin",
+            },
+            {
+                "action": "lower_motion_and_regenerate_video",
+                "execution": "auto",
+                "stage": "video",
+                "scene_number": 2,
+                "priority": "high",
+                "reason": "stutter",
+            },
+        ],
+    })
+
+    package = validator.build_quality_loop_package(tmp_path, max_actions=1)
+
+    assert package["status"] == "can_auto_repair"
+    assert package["repair_queue_total"] == 2
+    assert len(package["plan"]["selected"]) == 1
+    assert package["plan"]["selected"][0]["action"] == "refine_face_aesthetic_detail"
+    assert package["plan"]["skipped"][0]["reason"] == "max_actions_reached"
+    assert package["repair_execution_plan"]["auto"][0]["action"] == "refine_face_aesthetic_detail"
+    assert (tmp_path / "quality_loop_plan.json").is_file()
+
+
+def test_quality_loop_package_surfaces_setup_required_without_auto_actions(tmp_path):
+    write_json(tmp_path / "validation_summary.json", {"status": "partial_needs_review"})
+    write_json(tmp_path / "image_review.json", {
+        "status": "needs_review",
+        "repair_queue": [{
+            "action": "regenerate_turnaround_album",
+            "execution": "setup_required",
+            "stage": "character",
+            "scene_number": 1,
+            "reason": "turnaround mismatch",
+        }],
+    })
+
+    package = validator.build_quality_loop_package(tmp_path)
+
+    assert package["status"] == "setup_required"
+    assert package["plan"]["setup_required"][0]["action"] == "regenerate_turnaround_album"
+    assert package["plan"]["selected"] == []
