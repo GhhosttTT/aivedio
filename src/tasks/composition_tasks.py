@@ -9,6 +9,7 @@ from typing import Optional
 from src.tasks.celery_app import celery_app
 from src.database.database import get_db
 from src.database.models import Project, ProjectStatus, Scene, Task as TaskModel, TaskStatus
+from src.config import settings
 from src.services.video_composer import get_video_composer
 from src.services.subtitle_generator import get_subtitle_generator
 from src.utils.storage import get_project_final_video_path
@@ -277,10 +278,54 @@ def _require_passed_scene_videos(scenes: list[Scene]) -> None:
             continue
         if report.get("status") != "passed":
             failed.append(f"{scene.scene_number}: video quality status={report.get('status') or 'unknown'}")
+            continue
+        final_review_error = _final_video_review_error(report)
+        if final_review_error:
+            failed.append(f"{scene.scene_number}: {final_review_error}")
     if missing:
         raise ValueError("Missing generated video for scenes: " + ", ".join(missing))
     if failed:
         raise ValueError("Scene videos are not production-ready: " + "; ".join(failed))
+
+
+def _gate_status_passed(review: dict, key: str) -> bool:
+    gate = review.get(key)
+    return isinstance(gate, dict) and gate.get("status") == "passed"
+
+
+def _optional_gate_status_passed(review: dict, key: str) -> bool:
+    gate = review.get(key)
+    return not isinstance(gate, dict) or gate.get("status") == "passed"
+
+
+def _final_video_review_error(report: dict) -> str | None:
+    if not settings.GENERATION_REQUIRE_VIDEO_REVIEW:
+        return None
+    review = report.get("final_video_review")
+    if not isinstance(review, dict):
+        return "missing final normalized video review"
+    if review.get("status") != "passed":
+        return f"final normalized video review status={review.get('status') or 'unknown'}"
+    if float(review.get("average") or 0) < settings.GENERATION_VIDEO_MIN_SCORE:
+        return f"final normalized video average={review.get('average') or 0} below {settings.GENERATION_VIDEO_MIN_SCORE}"
+    gate_scores = review.get("gate_scores") if isinstance(review.get("gate_scores"), dict) else {}
+    if gate_scores:
+        if float(gate_scores.get("facial_identity") or 0) < settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE:
+            return "final normalized video facial identity gate failed"
+        if float(gate_scores.get("identity_consistency") or 0) < settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE:
+            return "final normalized video identity consistency gate failed"
+        if float(gate_scores.get("temporal_consistency") or 0) < settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE:
+            return "final normalized video temporal gate failed"
+    platform_score = review.get("platform_score")
+    if isinstance(platform_score, (int, float)) and platform_score < settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE:
+        return f"final normalized video platform score={platform_score} below {settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE}"
+    if not _gate_status_passed(review, "video_aesthetic_gate"):
+        return "final normalized video aesthetic gate failed"
+    if not _optional_gate_status_passed(review, "character_distinctiveness_gate"):
+        return "final normalized video character distinctiveness gate failed"
+    if not _gate_status_passed(review, "video_performance_gate"):
+        return "final normalized video performance gate failed"
+    return None
 
 
 def _parse_srt_time(time_str: str) -> float:

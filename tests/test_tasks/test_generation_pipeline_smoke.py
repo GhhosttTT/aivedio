@@ -51,10 +51,54 @@ def test_composition_requires_passed_video_quality_report(tmp_path):
 def test_composition_accepts_passed_video_quality_report(tmp_path):
     video = tmp_path / "scene_001.mp4"
     video.write_bytes(b"fake video")
-    video.with_suffix(".quality.json").write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+    video.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "passed",
+        "final_video_review": {
+            "status": "passed",
+            "average": 4.4,
+            "gate_scores": {
+                "facial_identity": 4.2,
+                "identity_consistency": 4.2,
+                "temporal_consistency": 4.1,
+            },
+            "platform_score": 4.2,
+            "video_aesthetic_gate": {"status": "passed"},
+            "character_distinctiveness_gate": {"status": "passed"},
+            "video_performance_gate": {"status": "passed"},
+        },
+    }), encoding="utf-8")
     scene = Mock(scene_number=1, video_path=str(video))
 
     composition_tasks._require_passed_scene_videos([scene])
+
+
+def test_composition_requires_final_normalized_video_review(tmp_path):
+    video = tmp_path / "scene_001.mp4"
+    video.write_bytes(b"fake video")
+    video.with_suffix(".quality.json").write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+    scene = Mock(scene_number=1, video_path=str(video))
+
+    with pytest.raises(ValueError, match="missing final normalized video review"):
+        composition_tasks._require_passed_scene_videos([scene])
+
+
+def test_composition_blocks_failed_final_normalized_video_gate(tmp_path):
+    video = tmp_path / "scene_001.mp4"
+    video.write_bytes(b"fake video")
+    video.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "passed",
+        "final_video_review": {
+            "status": "passed",
+            "average": 4.4,
+            "platform_score": 4.2,
+            "video_aesthetic_gate": {"status": "passed"},
+            "video_performance_gate": {"status": "needs_review"},
+        },
+    }), encoding="utf-8")
+    scene = Mock(scene_number=1, video_path=str(video))
+
+    with pytest.raises(ValueError, match="final normalized video performance gate failed"):
+        composition_tasks._require_passed_scene_videos([scene])
 
 
 def test_draft_tasks_cannot_publish_an_unreviewed_final_video(tmp_path, monkeypatch):
