@@ -55,6 +55,7 @@ class FrameReview(BaseModel):
     identity_consistency: Score
     temporal_consistency: Score
     video_aesthetic_scores: dict[str, Score] | None = None
+    character_distinctiveness_scores: dict[str, Score] | None = None
     reviewed_frames: list[StrictInt]
     issues: list[Issue]
 
@@ -66,6 +67,14 @@ VIDEO_AESTHETIC_FEATURES = (
     "motion_smoothness",
     "background_stability",
     "artifact_absence",
+)
+
+CHARACTER_DISTINCTIVENESS_FEATURES = (
+    "face_geometry_separation",
+    "hair_separation",
+    "wardrobe_separation",
+    "role_readability",
+    "no_same_face_casting",
 )
 
 
@@ -175,6 +184,56 @@ def video_aesthetic_gate(review: dict) -> dict | None:
     }
 
 
+def _requires_character_distinctiveness(scene: dict) -> bool:
+    visible = [
+        item
+        for item in scene.get("visible_characters", []) or []
+        if isinstance(item, dict) and str(item.get("name") or item.get("appearance") or "").strip()
+    ]
+    if len(visible) >= 2:
+        return True
+    matrix = scene.get("identity_contrast_matrix")
+    return isinstance(matrix, dict) and bool(matrix.get("pairs"))
+
+
+def video_character_distinctiveness_gate(review: dict, scene: dict) -> dict | None:
+    if not _requires_character_distinctiveness(scene):
+        return None
+    supplied = review.get("character_distinctiveness_scores") if isinstance(review, dict) else None
+    scores = {}
+    missing = []
+    min_score = settings.GENERATION_VIDEO_CHARACTER_DISTINCTIVENESS_MIN_SCORE
+    for feature in CHARACTER_DISTINCTIVENESS_FEATURES:
+        item = supplied.get(feature) if isinstance(supplied, dict) else None
+        score = item.get("score") if isinstance(item, dict) else None
+        evidence = item.get("evidence") if isinstance(item, dict) else ""
+        if isinstance(score, (int, float)):
+            scores[feature] = {
+                "score": _clamp_score(float(score)),
+                "evidence": str(evidence or "character distinctiveness feature reviewed"),
+            }
+        else:
+            missing.append(feature)
+            scores[feature] = {
+                "score": 0.0,
+                "evidence": "character distinctiveness feature was not reviewed by the local VLM",
+            }
+    average = _clamp_score(sum(item["score"] for item in scores.values()) / len(scores))
+    low = {
+        feature: item
+        for feature, item in scores.items()
+        if item["score"] < min_score
+    }
+    return {
+        "status": "passed" if not missing and not low else "needs_review",
+        "min_score": min_score,
+        "average": average,
+        "scores": scores,
+        "missing": missing,
+        "low": low,
+    }
+
+
 def attach_video_aesthetic_gate(batch: dict) -> None:
     review = batch.get("review") if isinstance(batch.get("review"), dict) else {}
     gate = video_aesthetic_gate(review)
@@ -187,6 +246,15 @@ def attach_video_aesthetic_gate(batch: dict) -> None:
         batch["platform_score"] = min(float(current_platform), batch["video_aesthetic_score"])
     else:
         batch["platform_score"] = batch["video_aesthetic_score"]
+
+
+def attach_video_character_distinctiveness_gate(batch: dict, scene: dict) -> None:
+    review = batch.get("review") if isinstance(batch.get("review"), dict) else {}
+    gate = video_character_distinctiveness_gate(review, scene)
+    if not gate:
+        return
+    batch["character_distinctiveness_gate"] = gate
+    batch["character_distinctiveness_score"] = gate["average"] if gate["status"] == "passed" else 0.0
 
 
 def _encoded_images(images) -> list[str]:
@@ -396,6 +464,10 @@ class GenerationReviewService:
                     "platform polish checklist and return video_aesthetic_scores for every listed feature. Treat profile_prompt as "
                     "the target look and profile_negative_prompt as visible defects to penalize, including AI gloss, plastic texture, "
                     "same-face casting, cheap filter artifacts, and low-budget set dressing. "
+                    "When two or more visible characters are present, also return character_distinctiveness_scores with these keys: "
+                    "face_geometry_separation, hair_separation, wardrobe_separation, role_readability, no_same_face_casting. "
+                    "Score each 0-5 across sampled video frames with concrete visual evidence. Penalize same-face casting, "
+                    "copied facial geometry, near-identical hairstyles, swapped wardrobe, merged bodies, or unclear role separation. "
                     "Temporal consistency must check whether the same characters keep stable faces, hair, wardrobe, body shape, and relative positions; "
                     "whether motion progresses plausibly without flicker, warping, sudden missing or extra "
                     "people, or unrelated camera jumps; and whether action continuity matches the scene. "
@@ -412,6 +484,7 @@ class GenerationReviewService:
                 if score is not None:
                     batch["platform_score"] = score
                 attach_video_aesthetic_gate(batch)
+                attach_video_character_distinctiveness_gate(batch, scene)
                 batches.append(batch)
             report["batches"] = batches
             report["status"] = "passed" if all(b["status"] == "passed" for b in batches) else "needs_review"

@@ -6,6 +6,8 @@ VideoComposer 属性测试
 import pytest
 import os
 import tempfile
+import time
+import shutil
 from hypothesis import given, strategies as st, settings, assume
 from unittest.mock import Mock, patch, MagicMock
 
@@ -24,9 +26,17 @@ class TestVideoComposerProperties:
         yield
         
         # 清理临时文件
-        import shutil
         if os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
+            last_error = None
+            for attempt in range(5):
+                try:
+                    shutil.rmtree(self.temp_dir)
+                    break
+                except PermissionError as exc:
+                    last_error = exc
+                    time.sleep(0.05 * (attempt + 1))
+            else:
+                raise last_error
 
     def _touch_files(self, paths):
         for path in paths:

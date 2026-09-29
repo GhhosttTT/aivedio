@@ -8,8 +8,17 @@ import httpx
 import pytest
 
 from src.services.generation_review import (
-    FrameReview, StoryReview, GenerationReviewService, LlamaCppReviewer,
-    ReviewError, VIDEO_AESTHETIC_FEATURES, decision, require_passed, video_aesthetic_gate,
+    CHARACTER_DISTINCTIVENESS_FEATURES,
+    FrameReview,
+    StoryReview,
+    GenerationReviewService,
+    LlamaCppReviewer,
+    ReviewError,
+    VIDEO_AESTHETIC_FEATURES,
+    decision,
+    require_passed,
+    video_aesthetic_gate,
+    video_character_distinctiveness_gate,
 )
 
 
@@ -115,6 +124,33 @@ def test_video_aesthetic_gate_quantifies_short_drama_motion_surface(monkeypatch)
     }
 
 
+def test_video_character_distinctiveness_gate_quantifies_same_face_risk(monkeypatch):
+    monkeypatch.setattr("src.services.generation_review.settings.GENERATION_VIDEO_CHARACTER_DISTINCTIVENESS_MIN_SCORE", 4.0)
+    review = {
+        "character_distinctiveness_scores": {
+            "face_geometry_separation": {"score": 2, "evidence": "copied facial geometry"},
+            "hair_separation": {"score": 4, "evidence": "hair is distinct"},
+            "wardrobe_separation": {"score": 4, "evidence": "wardrobe is distinct"},
+            "role_readability": {"score": 3, "evidence": "roles are unclear in motion"},
+            "no_same_face_casting": {"score": 2, "evidence": "same-face casting appears across frames"},
+        }
+    }
+
+    gate = video_character_distinctiveness_gate(review, {
+        "visible_characters": [
+            {"name": "Alice", "appearance": "sharp eyes"},
+            {"name": "Bob", "appearance": "round eyes"},
+        ],
+    })
+
+    assert gate["status"] == "needs_review"
+    assert set(gate["low"]) == {
+        "face_geometry_separation",
+        "role_readability",
+        "no_same_face_casting",
+    }
+
+
 def test_frame_review_accepts_video_aesthetic_scores(tmp_path, monkeypatch):
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"test video bytes")
@@ -147,6 +183,38 @@ def test_frame_review_accepts_video_aesthetic_scores(tmp_path, monkeypatch):
     assert "scene.platform_aesthetic_contract" in reviewer.evaluate.call_args.args[0]
     assert "profile_prompt" in reviewer.evaluate.call_args.args[0]
     assert "profile_negative_prompt" in reviewer.evaluate.call_args.args[0]
+
+
+def test_frame_review_accepts_character_distinctiveness_scores(tmp_path, monkeypatch):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"test video bytes")
+    frames = [{"index": i, "timestamp": i, "path": str(tmp_path / f"{i}.jpg")} for i in range(3)]
+    monkeypatch.setattr(GenerationReviewService, "sample_frames", lambda *args: frames)
+    data = {key: {"score": 4, "evidence": "visible subject matches the keyframe"} for key in (
+        "story_match", "composition", "aesthetic_quality", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
+    data["character_distinctiveness_scores"] = {
+        feature: {"score": 4, "evidence": "characters stay visually distinct"}
+        for feature in CHARACTER_DISTINCTIVENESS_FEATURES
+    }
+    reviewer = Mock()
+    reviewer.evaluate.return_value = FrameReview(**data, reviewed_frames=[0, 1, 2], issues=[])
+
+    result = GenerationReviewService(reviewer).review_video(
+        str(video),
+        {
+            "scene_number": 1,
+            "visible_characters": [
+                {"name": "Alice", "appearance": "sharp eyes and black bob"},
+                {"name": "Bob", "appearance": "round eyes and short crop"},
+            ],
+        },
+        tmp_path / "frames.json",
+    )
+
+    assert result["status"] == "passed"
+    assert result["batches"][0]["character_distinctiveness_gate"]["status"] == "passed"
+    assert result["batches"][0]["review"]["character_distinctiveness_scores"]["no_same_face_casting"]["score"] == 4
+    assert "character_distinctiveness_scores" in reviewer.evaluate.call_args.args[0]
 
 
 def test_temporal_inconsistency_blocks_video_review(tmp_path, monkeypatch):

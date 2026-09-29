@@ -1279,6 +1279,89 @@ def test_video_selection_uses_aesthetic_breakdown(project_data, tmp_path, monkey
     }
 
 
+def test_video_selection_prefers_character_distinctiveness(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    scene.visual_description = "Alice and Bob argue in a premium office doorway"
+    project.script = json.dumps({
+        "scenes": [{"scene_number": scene.scene_number, "characters": ["Alice", "Bob"]}]
+    })
+    from src.database.models import Character
+    from src.services.character_identity_service import CharacterIdentityService
+    identity_service = CharacterIdentityService()
+    alice = identity_service.build_identity_spec("Alice", "lead", project_id=project.id)
+    bob = identity_service.build_identity_spec("Bob", "rival", project_id=project.id, existing_specs=[alice])
+    db.add(Character(project_id=project.id, name="Alice", appearance=alice["identity_anchor"], visual_description=json.dumps(alice)))
+    db.add(Character(project_id=project.id, name="Bob", appearance=bob["identity_anchor"], visual_description=json.dumps(bob)))
+    Path(scene.image_path).write_bytes(b"image")
+    db.commit()
+
+    class FakeSVD:
+        def generate_video(self, **kwargs):
+            marker = b"same-face-video" if kwargs["output_path"].endswith("candidate_01.mp4") else b"distinct-video"
+            Path(kwargs["output_path"]).write_bytes(marker)
+            return kwargs["output_path"]
+
+    weak_distinctiveness = {
+        "face_geometry_separation": {"score": 2, "evidence": "copied facial geometry"},
+        "hair_separation": {"score": 4, "evidence": "hair mostly separate"},
+        "wardrobe_separation": {"score": 4, "evidence": "wardrobe mostly separate"},
+        "role_readability": {"score": 3, "evidence": "roles are unclear during motion"},
+        "no_same_face_casting": {"score": 2, "evidence": "same-face casting between Alice and Bob"},
+    }
+    strong_distinctiveness = {
+        feature: {"score": 4, "evidence": "characters remain visually distinct"}
+        for feature in weak_distinctiveness
+    }
+    video_aesthetic_scores = {
+        "skin_texture_stability": {"score": 4, "evidence": "skin stable"},
+        "lighting_consistency": {"score": 4, "evidence": "lighting stable"},
+        "color_grade_consistency": {"score": 4, "evidence": "color stable"},
+        "phone_readability": {"score": 4, "evidence": "faces readable"},
+        "motion_smoothness": {"score": 4, "evidence": "motion smooth"},
+        "background_stability": {"score": 4, "evidence": "background stable"},
+        "artifact_absence": {"score": 4, "evidence": "no artifacts"},
+    }
+
+    class FakeReviewService:
+        def review_video(self, _video, payload, _report_path, _reference=None):
+            assert payload["visible_characters"]
+            assert payload["identity_contrast_matrix"]["pairs"]
+            review = {
+                "story_match": {"score": 5, "evidence": "scene matches"},
+                "composition": {"score": 5, "evidence": "strong framing"},
+                "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+                "visual_integrity": {"score": 5, "evidence": "clean render"},
+                "facial_identity": {"score": 5, "evidence": "faces match"},
+                "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                "temporal_consistency": {"score": 5, "evidence": "motion stable"},
+                "video_aesthetic_scores": video_aesthetic_scores,
+                "character_distinctiveness_scores": (
+                    weak_distinctiveness if payload["candidate_index"] == 1 else strong_distinctiveness
+                ),
+            }
+            return {"status": "passed", "average": 4.9 if payload["candidate_index"] == 1 else 4.3, "batches": [{"review": review}]}
+
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_CANDIDATES", 2)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_CHARACTER_DISTINCTIVENESS_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    final_path, report = _generate_quality_video_candidates(
+        FakeSVD(), scene, project.id, str(tmp_path / "scene.mp4"), db,
+        num_frames=16, fps=8, motion_bucket_id=127, noise_aug_strength=0.02,
+    )
+
+    assert Path(final_path).read_bytes() == b"distinct-video"
+    assert report["status"] == "passed"
+    assert report["candidates"][0]["index"] == 2
+    assert report["selected_character_distinctiveness_gate"]["status"] == "passed"
+    assert report["candidates"][1]["character_distinctiveness_gate"]["status"] == "needs_review"
+    assert report["candidates"][1]["scene"]["identity_contrast_matrix"]["pairs"]
+
+
 def test_video_selection_uses_technical_score_when_review_scores_tie(tmp_path, monkeypatch):
     weak = tmp_path / "weak.mp4"
     strong = tmp_path / "strong.mp4"
