@@ -429,6 +429,8 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
             "video aesthetic", "video_aesthetic", "commercial_aesthetic", "commercial aesthetic",
             "platform score", "production value", "production polish", "commercial polish",
             "color_grade", "lighting_quality", "lighting consistency", "phone-frame polish",
+            "platform_reference", "platform reference", "seed_dance_gap", "seed dance gap",
+            "viewer_scroll_stop_appeal", "scroll stop", "premium casting", "mobile_frame_value",
         )
     ):
         return {

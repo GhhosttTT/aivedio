@@ -55,6 +55,7 @@ class FrameReview(BaseModel):
     identity_consistency: Score
     temporal_consistency: Score
     video_aesthetic_scores: dict[str, Score] | None = None
+    platform_reference_scores: dict[str, Score] | None = None
     character_distinctiveness_scores: dict[str, Score] | None = None
     video_performance_scores: dict[str, Score] | None = None
     episode_continuity_scores: dict[str, Score] | None = None
@@ -70,6 +71,14 @@ VIDEO_AESTHETIC_FEATURES = (
     "motion_smoothness",
     "background_stability",
     "artifact_absence",
+)
+
+PLATFORM_REFERENCE_FEATURES = (
+    "seed_dance_gap",
+    "premium_casting",
+    "mobile_frame_value",
+    "production_design",
+    "viewer_scroll_stop_appeal",
 )
 
 CHARACTER_DISTINCTIVENESS_FEATURES = (
@@ -195,6 +204,44 @@ def video_aesthetic_gate(review: dict) -> dict | None:
             scores[feature] = {
                 "score": 0.0,
                 "evidence": "video aesthetic feature was not reviewed by the local VLM",
+            }
+    average = _clamp_score(sum(item["score"] for item in scores.values()) / len(scores))
+    low = {
+        feature: item
+        for feature, item in scores.items()
+        if item["score"] < min_score
+    }
+    return {
+        "status": "passed" if not missing and not low else "needs_review",
+        "min_score": min_score,
+        "average": average,
+        "scores": scores,
+        "missing": missing,
+        "low": low,
+    }
+
+
+def platform_reference_gate(review: dict) -> dict | None:
+    supplied = review.get("platform_reference_scores") if isinstance(review, dict) else None
+    if not isinstance(supplied, dict):
+        return None
+    scores = {}
+    missing = []
+    min_score = settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE
+    for feature in PLATFORM_REFERENCE_FEATURES:
+        item = supplied.get(feature)
+        score = item.get("score") if isinstance(item, dict) else None
+        evidence = item.get("evidence") if isinstance(item, dict) else ""
+        if isinstance(score, (int, float)):
+            scores[feature] = {
+                "score": _clamp_score(float(score)),
+                "evidence": str(evidence or "platform reference feature reviewed"),
+            }
+        else:
+            missing.append(feature)
+            scores[feature] = {
+                "score": 0.0,
+                "evidence": "platform reference feature was not reviewed by the local VLM",
             }
     average = _clamp_score(sum(item["score"] for item in scores.values()) / len(scores))
     low = {
@@ -402,6 +449,20 @@ def attach_video_aesthetic_gate(batch: dict) -> None:
         batch["platform_score"] = min(float(current_platform), batch["video_aesthetic_score"])
     else:
         batch["platform_score"] = batch["video_aesthetic_score"]
+
+
+def attach_platform_reference_gate(batch: dict) -> None:
+    review = batch.get("review") if isinstance(batch.get("review"), dict) else {}
+    gate = platform_reference_gate(review)
+    if not gate:
+        return
+    batch["platform_reference_gate"] = gate
+    batch["platform_reference_score"] = gate["average"] if gate["status"] == "passed" else 0.0
+    current_platform = batch.get("platform_score")
+    if isinstance(current_platform, (int, float)):
+        batch["platform_score"] = min(float(current_platform), batch["platform_reference_score"])
+    else:
+        batch["platform_score"] = batch["platform_reference_score"]
 
 
 def attach_video_character_distinctiveness_gate(batch: dict, scene: dict) -> None:
@@ -643,6 +704,11 @@ class GenerationReviewService:
                     "Aesthetic quality must judge whether the clip looks publishable for a commercial short-drama platform: "
                     "attractive face rendering, clean lighting, readable expression on a phone screen, tasteful color, "
                     "production polish, and no cheap filter look, random text, logo, watermark, or repair scars. "
+                    "Also return platform_reference_scores with these keys: "
+                    "seed_dance_gap, premium_casting, mobile_frame_value, production_design, viewer_scroll_stop_appeal. "
+                    "Score the visible gap against a premium Seed Dance-style vertical short-drama reference: "
+                    "faces should look intentionally cast, the mobile frame should feel valuable, art direction should not look cheap, "
+                    "and the first impression should be strong enough to stop a viewer from scrolling. "
                     "When scene.platform_aesthetic_contract is present, use its video_features and review_instruction as the required "
                     "platform polish checklist and return video_aesthetic_scores for every listed feature. Treat profile_prompt as "
                     "the target look and profile_negative_prompt as visible defects to penalize, including AI gloss, plastic texture, "
@@ -681,6 +747,7 @@ class GenerationReviewService:
                 if score is not None:
                     batch["platform_score"] = score
                 attach_video_aesthetic_gate(batch)
+                attach_platform_reference_gate(batch)
                 attach_video_character_distinctiveness_gate(batch, scene)
                 attach_video_performance_gate(batch, scene)
                 attach_episode_continuity_gate(batch, scene)

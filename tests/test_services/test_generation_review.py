@@ -16,10 +16,12 @@ from src.services.generation_review import (
     GenerationReviewService,
     LlamaCppReviewer,
     ReviewError,
+    PLATFORM_REFERENCE_FEATURES,
     VIDEO_AESTHETIC_FEATURES,
     VIDEO_PERFORMANCE_FEATURES,
     decision,
     final_composition_finishing_gate,
+    platform_reference_gate,
     require_passed,
     video_aesthetic_gate,
     video_character_distinctiveness_gate,
@@ -127,6 +129,29 @@ def test_video_aesthetic_gate_quantifies_short_drama_motion_surface(monkeypatch)
         "lighting_consistency",
         "motion_smoothness",
         "artifact_absence",
+    }
+
+
+def test_platform_reference_gate_quantifies_seed_dance_gap(monkeypatch):
+    monkeypatch.setattr("src.services.generation_review.settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
+    review = {
+        "platform_reference_scores": {
+            "seed_dance_gap": {"score": 2, "evidence": "large visible gap versus contact sheet"},
+            "premium_casting": {"score": 3, "evidence": "face feels generic and low-end"},
+            "mobile_frame_value": {"score": 4, "evidence": "frame reads on phone"},
+            "production_design": {"score": 2, "evidence": "set dressing looks cheap"},
+            "viewer_scroll_stop_appeal": {"score": 3, "evidence": "opening impression is weak"},
+        }
+    }
+
+    gate = platform_reference_gate(review)
+
+    assert gate["status"] == "needs_review"
+    assert set(gate["low"]) == {
+        "seed_dance_gap",
+        "premium_casting",
+        "production_design",
+        "viewer_scroll_stop_appeal",
     }
 
 
@@ -265,6 +290,32 @@ def test_frame_review_accepts_video_aesthetic_scores(tmp_path, monkeypatch):
     assert "scene.platform_aesthetic_contract" in reviewer.evaluate.call_args.args[0]
     assert "profile_prompt" in reviewer.evaluate.call_args.args[0]
     assert "profile_negative_prompt" in reviewer.evaluate.call_args.args[0]
+
+
+def test_frame_review_accepts_platform_reference_scores(tmp_path, monkeypatch):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"test video bytes")
+    frames = [{"index": i, "timestamp": i, "path": str(tmp_path / f"{i}.jpg")} for i in range(3)]
+    monkeypatch.setattr(GenerationReviewService, "sample_frames", lambda *args: frames)
+    data = {key: {"score": 4, "evidence": "visible subject matches the keyframe"} for key in (
+        "story_match", "composition", "aesthetic_quality", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
+    data["platform_reference_scores"] = {
+        feature: {"score": 4, "evidence": "passes platform reference comparison"}
+        for feature in PLATFORM_REFERENCE_FEATURES
+    }
+    reviewer = Mock()
+    reviewer.evaluate.return_value = FrameReview(**data, reviewed_frames=[0, 1, 2], issues=[])
+
+    result = GenerationReviewService(reviewer).review_video(
+        str(video),
+        {"scene_number": 1},
+        tmp_path / "frames.json",
+    )
+
+    assert result["status"] == "passed"
+    assert result["batches"][0]["platform_reference_gate"]["status"] == "passed"
+    assert result["batches"][0]["review"]["platform_reference_scores"]["seed_dance_gap"]["score"] == 4
+    assert "platform_reference_scores" in reviewer.evaluate.call_args.args[0]
 
 
 def test_frame_review_accepts_character_distinctiveness_scores(tmp_path, monkeypatch):
