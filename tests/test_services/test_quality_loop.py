@@ -151,3 +151,52 @@ def test_quality_loop_treats_seed_dance_candidate_summary_as_ready():
 
     assert plan["status"] == "ready"
     assert plan["next_step"] == "Proceed to final composition and human sample review."
+
+
+def test_quality_loop_uses_scorecard_focus_when_repair_queue_is_empty():
+    summary = {
+        "status": "partial_needs_review",
+        "repair_queue": [],
+        "quality_scorecard": {
+            "status": "needs_repair",
+            "production_score": 2.6,
+            "next_focus": {
+                "dimension": "platform_aesthetic",
+                "label": "Mobile short-drama surface quality",
+                "suggested_action": "refine_prompt_composition",
+                "scenes": [2],
+                "evidence": ["seed_dance_gap score is below threshold"],
+            },
+        },
+    }
+
+    plan = build_quality_loop_plan(summary, max_actions=5)
+
+    assert plan["status"] == "can_auto_repair"
+    assert plan["selected"][0]["action"] == "refine_prompt_composition"
+    assert plan["selected"][0]["scene_number"] == 2
+    assert plan["selected"][0]["source_report"] == "quality_scorecard"
+    assert plan["selected"][0]["production_score"] == 2.6
+
+
+def test_quality_loop_keeps_scorecard_focus_manual_without_scene_scope():
+    summary = {
+        "status": "partial_needs_review",
+        "repair_queue": [],
+        "quality_scorecard": {
+            "status": "needs_repair",
+            "next_focus": {
+                "dimension": "platform_aesthetic",
+                "label": "Mobile short-drama surface quality",
+                "suggested_action": "refine_prompt_composition",
+                "scenes": [],
+                "evidence": ["platform reference evidence has no scene id"],
+            },
+        },
+    }
+
+    plan = build_quality_loop_plan(summary, max_actions=5)
+
+    assert plan["status"] == "manual_review_required"
+    assert plan["manual_actions"][0]["action"] == "refine_prompt_composition"
+    assert plan["manual_actions"][0]["missing_scope"] == "scene_number"

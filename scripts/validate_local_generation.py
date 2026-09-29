@@ -1692,7 +1692,7 @@ def build_acceptance_package(output: Path) -> dict:
         quality_scorecard = build_generation_quality_scorecard(
             _quality_scorecard_reports(output, summary, repair_queue)
         )
-    summary_for_loop = {**summary, "repair_queue": repair_queue}
+    summary_for_loop = {**summary, "repair_queue": repair_queue, "quality_scorecard": quality_scorecard}
     quality_loop_plan = build_quality_loop_plan(summary_for_loop, max_actions=5)
     manual_section = _manual_review_section(summary, render_report, manual_review)
     package = {

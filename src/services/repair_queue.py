@@ -515,6 +515,12 @@ def _execution_mode(action: str) -> str:
     return "manual"
 
 
+def repair_execution_mode(action: str) -> str:
+    """Return the execution bucket used by repair queues for a known action."""
+
+    return _execution_mode(action)
+
+
 def _priority(text: str) -> str:
     if any(term in text for term in ("critical", "major", "failed", "below", "unavailable")):
         return "high"
