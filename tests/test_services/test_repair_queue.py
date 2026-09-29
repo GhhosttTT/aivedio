@@ -126,6 +126,32 @@ def test_repair_queue_maps_video_performance_gate_to_performance_repair():
     assert queue[0]["scene_number"] == 8
 
 
+def test_repair_queue_maps_video_commercial_aesthetic_to_video_aesthetic_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 2,
+            "scene": {"scene_number": 8},
+            "video_aesthetic_gate": {
+                "status": "needs_review",
+                "low": {
+                    "commercial_aesthetic": {
+                        "score": 2,
+                        "evidence": "commercial_aesthetic low: muddy lighting, weak platform score, and poor production value",
+                    },
+                },
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "refine_video_commercial_aesthetic"
+    assert queue[0]["execution"] == "auto"
+    assert queue[0]["stage"] == "video"
+    assert queue[0]["scene_number"] == 8
+
+
 def test_repair_queue_reads_final_composition_batches():
     report = {
         "status": "needs_review",

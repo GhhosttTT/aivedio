@@ -66,7 +66,7 @@ MANUAL_CLIP_DIMENSION_REPAIR_HINTS = {
     "identity_stability": "identity drift face drift changed wardrobe temporal stability",
     "temporal_motion": "temporal motion flicker camera jump warped body melting",
     "acting_performance": "video performance acting no reaction dialogue_reaction body_language gaze_intent",
-    "commercial_aesthetic": "video performance commercial aesthetic platform score production value lighting",
+    "commercial_aesthetic": "video aesthetic commercial_aesthetic platform score production value lighting color_grade",
     "composition_continuity": "temporal camera jump composition continuity crop screen direction",
 }
 

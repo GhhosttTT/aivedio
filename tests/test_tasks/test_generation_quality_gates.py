@@ -1256,7 +1256,7 @@ def test_required_video_review_blocks_low_platform_score(project_data, tmp_path,
     report = json.loads(output.with_suffix(".quality.json").read_text(encoding="utf-8"))
     assert report["status"] == "needs_review"
     assert report["selected_platform_score"] < 4.1
-    assert report["repair_queue"][0]["action"] == "refine_prompt_composition"
+    assert report["repair_queue"][0]["action"] == "refine_video_commercial_aesthetic"
 
 
 def test_video_selection_uses_aesthetic_breakdown(project_data, tmp_path, monkeypatch):
@@ -1592,7 +1592,7 @@ def test_video_repair_action_from_candidates_promotes_static_motion_repair():
     assert action == "increase_motion_and_regenerate_video"
 
 
-def test_video_repair_action_ignores_image_stage_aesthetic_repairs():
+def test_video_repair_action_promotes_video_aesthetic_repairs():
     action = _video_repair_action_from_candidates([
         {
             "average": 2.3,
@@ -1608,7 +1608,7 @@ def test_video_repair_action_ignores_image_stage_aesthetic_repairs():
         }
     ])
 
-    assert action is None
+    assert action == "refine_video_commercial_aesthetic"
 
 
 def test_video_refinement_converts_motion_failure_into_repair_action(project_data, tmp_path, monkeypatch):
@@ -2537,6 +2537,21 @@ def test_video_repair_action_raises_performance_direction_slightly():
     assert noise == 0.024
 
 
+def test_video_repair_action_stabilizes_commercial_aesthetic_pass():
+    motion, noise = _apply_video_repair_action(120, 0.02, "refine_video_commercial_aesthetic")
+    prompt, negative = _apply_video_repair_prompt(
+        "directed short-drama clip",
+        "identity drift",
+        "refine_video_commercial_aesthetic",
+    )
+
+    assert motion == 110
+    assert noise == 0.018
+    assert "commercial short-drama look" in prompt
+    assert "premium lighting" in prompt
+    assert "washed-out color grade" in negative
+
+
 def test_video_repair_action_from_candidates_detects_flat_performance():
     action = _video_repair_action_from_candidates([
         {
@@ -2556,6 +2571,29 @@ def test_video_repair_action_from_candidates_detects_flat_performance():
     ])
 
     assert action == "regenerate_video_with_performance_direction"
+
+
+def test_video_repair_action_from_candidates_detects_commercial_aesthetic_failure():
+    action = _video_repair_action_from_candidates([
+        {
+            "index": 1,
+            "status": "needs_review",
+            "average": 4.4,
+            "scene": {"scene_number": 1},
+            "video_aesthetic_gate": {
+                "status": "needs_review",
+                "low": {
+                    "commercial_aesthetic": {
+                        "score": 2,
+                        "evidence": "commercial_aesthetic low: muddy lighting and weak production value",
+                    },
+                },
+                "missing": [],
+            },
+        }
+    ])
+
+    assert action == "refine_video_commercial_aesthetic"
 
 
 def test_unknown_video_repair_action_keeps_parameters_unchanged():

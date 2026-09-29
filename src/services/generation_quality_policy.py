@@ -170,6 +170,12 @@ ACTION_BUDGETS = {
             "min_candidates": 4,
             "profile": "performance_direction_recovery",
         },
+        "refine_video_commercial_aesthetic": {
+            "candidate_multiplier": 1.8,
+            "extra_refinement_passes": 2,
+            "min_candidates": 5,
+            "profile": "video_commercial_aesthetic_recovery",
+        },
     },
 }
 

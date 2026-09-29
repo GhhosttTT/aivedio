@@ -140,6 +140,23 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 f"python -m scripts.validate_local_generation compare-baseline --output {output_path} --candidate <regenerated_clip.mp4> --baseline <seed_dance_reference.mp4>",
                 f"python -m scripts.validate_local_generation summarize --output {output_path}",
             ]
+        elif action == "refine_video_commercial_aesthetic":
+            entry["rerun_strategy"] = (
+                "Regenerate the affected clip with stricter commercial short-drama lighting, color grade, phone-frame composition, and production polish constraints."
+            )
+            entry["parameter_hints"] = {
+                "repair_action": "refine_video_commercial_aesthetic",
+                "stabilize_motion_for_aesthetic_polish": True,
+                "lower_noise_aug_strength_slightly": True,
+                "increase_video_candidates": True,
+                "preserve_identity": True,
+                "commercial_aesthetic_required": True,
+            }
+            commands = [
+                f"python -m scripts.validate_local_generation review-video --output {output_path} --video <regenerated_clip.mp4> --description \"<scene description>\"",
+                f"python -m scripts.validate_local_generation compare-baseline --output {output_path} --candidate <regenerated_clip.mp4> --baseline <seed_dance_reference.mp4>",
+                f"python -m scripts.validate_local_generation summarize --output {output_path}",
+            ]
         else:
             entry["rerun_strategy"] = item.get("recommendation") or "Resolve this repair action and rerun summarize."
             commands = [f"python -m scripts.validate_local_generation summarize --output {output_path}"]

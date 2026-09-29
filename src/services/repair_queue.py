@@ -287,6 +287,24 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
             "candidate_index": candidate.get("index"),
             "scene_number": _scene_number(candidate),
         }
+    if media_type == "video" and any(
+        term in text
+        for term in (
+            "video aesthetic", "video_aesthetic", "commercial_aesthetic", "commercial aesthetic",
+            "platform score", "production value", "production polish", "commercial polish",
+            "color_grade", "lighting_quality", "lighting consistency", "phone-frame polish",
+        )
+    ):
+        return {
+            "priority": _priority(text),
+            "stage": "video",
+            "action": "refine_video_commercial_aesthetic",
+            "execution": _execution_mode("refine_video_commercial_aesthetic"),
+            "reason": evidence[:240],
+            "recommendation": "Regenerate the clip with stricter commercial short-drama lighting, color grade, phone-frame composition, and production polish constraints.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
     if any(term in text for term in ("after face repair", "face repair scar", "distorted face repair")):
         return {
             "priority": _priority(text),
@@ -336,6 +354,7 @@ def _execution_mode(action: str) -> str:
         "lower_motion_and_regenerate_video",
         "increase_motion_and_regenerate_video",
         "regenerate_video_with_performance_direction",
+        "refine_video_commercial_aesthetic",
     }:
         return "auto"
     if action in {"regenerate_turnaround_album", "regenerate_character_identity", "refreeze_spatial_plan", "fix_workflow_profile", "start_local_reviewer"}:

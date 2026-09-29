@@ -77,3 +77,22 @@ def test_repair_execution_plan_handles_performance_video_rerun(tmp_path):
     assert item["action"] == "regenerate_video_with_performance_direction"
     assert item["parameter_hints"]["strengthen_shot_plan_performance"] is True
     assert item["parameter_hints"]["preserve_identity"] is True
+
+
+def test_repair_execution_plan_handles_video_commercial_aesthetic_rerun(tmp_path):
+    plan = build_repair_execution_plan(
+        tmp_path,
+        [{
+            "action": "refine_video_commercial_aesthetic",
+            "execution": "auto",
+            "stage": "video",
+            "scene_number": 6,
+            "reason": "commercial_aesthetic low with muddy lighting and poor production value",
+        }],
+    )
+
+    item = plan["auto"][0]
+    assert item["action"] == "refine_video_commercial_aesthetic"
+    assert item["parameter_hints"]["commercial_aesthetic_required"] is True
+    assert item["parameter_hints"]["stabilize_motion_for_aesthetic_polish"] is True
+    assert item["parameter_hints"]["preserve_identity"] is True

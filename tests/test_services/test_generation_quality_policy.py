@@ -63,6 +63,21 @@ def test_performance_video_budget_uses_performance_direction_profile(monkeypatch
     assert budget.action_profile == "performance_direction_recovery"
 
 
+def test_commercial_aesthetic_video_budget_uses_heavier_video_polish_profile(monkeypatch):
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_VIDEO_CANDIDATES", 2)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 1)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_MAX_VIDEO_CANDIDATES", 8)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_VIDEO_CANDIDATE_MULTIPLIER", 1.5)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES", 1)
+
+    budget = video_quality_budget("refine_video_commercial_aesthetic")
+
+    assert budget.candidate_count == 6
+    assert budget.refinement_passes == 4
+    assert budget.action_profile == "video_commercial_aesthetic_recovery"
+
+
 def test_base_generation_budget_keeps_configured_values(monkeypatch):
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_CANDIDATES", 5)

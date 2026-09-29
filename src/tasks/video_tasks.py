@@ -94,6 +94,10 @@ VIDEO_REPAIR_PROMPT_DIRECTIVES = {
         "Strengthen short-drama acting performance: clear facial emotion readable on a phone screen, intentional eye line, "
         "visible reaction to dialogue, expressive but natural body language, and one readable action intent."
     ),
+    "refine_video_commercial_aesthetic": (
+        "Upgrade the clip's commercial short-drama look: polished phone-frame composition, stable premium lighting, "
+        "clean color grade, attractive face readability, and high-end production value across the full motion."
+    ),
 }
 
 VIDEO_REPAIR_NEGATIVE_DIRECTIVES = {
@@ -105,6 +109,10 @@ VIDEO_REPAIR_NEGATIVE_DIRECTIVES = {
     ),
     "regenerate_video_with_performance_direction": (
         "flat acting, dead eyes, unreadable emotion, no reaction to dialogue, stiff body language, random gesture"
+    ),
+    "refine_video_commercial_aesthetic": (
+        "cheap filter, low-budget set, muddy lighting, washed-out color grade, cluttered frame, "
+        "unreadable face on phone screen, commercial aesthetic drop"
     ),
 }
 
@@ -234,6 +242,11 @@ def _apply_video_repair_action(
         return (
             max(1, min(255, int(motion_bucket_id * 1.08))),
             max(0.0, min(1.0, round(max(noise_aug_strength * 1.08, noise_aug_strength + 0.004), 4))),
+        )
+    if repair_action == "refine_video_commercial_aesthetic":
+        return (
+            max(1, min(255, int(motion_bucket_id * 0.92))),
+            max(0.0, min(1.0, round(max(noise_aug_strength * 0.82, noise_aug_strength - 0.002), 4))),
         )
     return motion_bucket_id, noise_aug_strength
 
@@ -578,6 +591,7 @@ def _video_repair_action_from_candidates(candidates: list[dict]) -> str | None:
             "lower_motion_and_regenerate_video",
             "increase_motion_and_regenerate_video",
             "regenerate_video_with_performance_direction",
+            "refine_video_commercial_aesthetic",
         }:
             return str(item["action"])
     return None
