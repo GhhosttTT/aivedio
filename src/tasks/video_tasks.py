@@ -13,6 +13,7 @@ from src.services.generation_quality_policy import video_quality_budget
 from src.services.generation_review import GenerationReviewService, ReviewError, attach_video_aesthetic_gate, platform_video_score, write_report
 from src.services.repair_queue import attach_repair_queue, build_repair_queue
 from src.services.svd_service import get_svd_service
+from src.services.video_quality_metrics import video_candidate_metrics
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
 from src.tasks.celery_app import celery_app
@@ -296,6 +297,31 @@ def _video_gate_passes(candidate: dict) -> tuple[bool, dict[str, float]]:
     return identity_ok and temporal_ok, scores
 
 
+def _attach_video_technical_metrics(candidate: dict) -> None:
+    if not candidate.get("path") or isinstance(candidate.get("technical_metrics"), dict):
+        return
+    metrics = video_candidate_metrics(candidate["path"])
+    candidate["technical_metrics"] = metrics
+    if isinstance(metrics.get("technical_score"), (int, float)):
+        candidate["technical_score"] = float(metrics["technical_score"])
+
+
+def _video_selection_score(candidate: dict) -> float:
+    platform_score = candidate.get("platform_score")
+    average = candidate.get("average")
+    technical_score = candidate.get("technical_score")
+    if not isinstance(platform_score, (int, float)):
+        platform_score = average if isinstance(average, (int, float)) else 0.0
+    if not isinstance(average, (int, float)):
+        average = platform_score
+    if not isinstance(technical_score, (int, float)):
+        technical_score = platform_score
+    return round(
+        max(0.0, min(5.0, float(platform_score) * 0.55 + float(average) * 0.25 + float(technical_score) * 0.20)),
+        2,
+    )
+
+
 def _review_final_video_after_postprocess(
     video_path: str,
     scene: Scene,
@@ -391,11 +417,15 @@ def _select_best_video_candidate(
     report_path: Path,
     quality_budget: dict | None = None,
 ) -> tuple[str, dict]:
+    for candidate in candidates:
+        _attach_video_technical_metrics(candidate)
+        candidate["selection_score"] = _video_selection_score(candidate)
     ranked = sorted(
         candidates,
         key=lambda item: (
             1 if _video_gate_passes(item)[0] else 0,
             1 if _video_aesthetic_gate_passes(item) else 0,
+            item.get("selection_score", 0),
             item.get("platform_score", item.get("average", 0)),
             item.get("average", 0),
         ),
@@ -418,6 +448,8 @@ def _select_best_video_candidate(
         "selected_path": best["path"],
         "selected_average": best.get("average", 0),
         "selected_platform_score": platform_score,
+        "selected_technical_score": best.get("technical_score"),
+        "selected_selection_score": best.get("selection_score"),
         "min_average": settings.GENERATION_VIDEO_MIN_SCORE,
         "min_identity_score": settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE,
         "min_temporal_score": settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE,
@@ -587,6 +619,8 @@ def _generate_quality_video_candidates(
                 candidate["shot_plan"] = shot_plan_payload
             if review.get("error"):
                 candidate["error"] = review["error"]
+            _attach_video_technical_metrics(candidate)
+            candidate["selection_score"] = _video_selection_score(candidate)
             candidates.append(candidate)
             pass_candidates.append(candidate)
         if any(

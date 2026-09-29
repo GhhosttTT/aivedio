@@ -13,7 +13,7 @@ from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _character_sheet_generation_contract, _complexity_report, _composition_constraint, _feedback_repair_directive, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
-from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _review_final_video_after_postprocess, _scene_review_payload, _video_repair_action_from_candidates
+from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _review_final_video_after_postprocess, _scene_review_payload, _select_best_video_candidate, _video_repair_action_from_candidates
 
 
 def passed_video_aesthetic_scores(score: int = 5) -> dict:
@@ -1277,6 +1277,43 @@ def test_video_selection_uses_aesthetic_breakdown(project_data, tmp_path, monkey
         "motion_smoothness",
         "artifact_absence",
     }
+
+
+def test_video_selection_uses_technical_score_when_review_scores_tie(tmp_path, monkeypatch):
+    weak = tmp_path / "weak.mp4"
+    strong = tmp_path / "strong.mp4"
+    weak.write_bytes(b"weak")
+    strong.write_bytes(b"strong")
+
+    def fake_metrics(path):
+        score = 4.8 if Path(path).name == "strong.mp4" else 2.2
+        return {
+            "status": "available",
+            "path": str(path),
+            "technical_score": score,
+            "motion_energy": 8.0 if score > 4 else 1.0,
+            "sharpness": 90.0 if score > 4 else 5.0,
+        }
+
+    monkeypatch.setattr("src.tasks.video_tasks.video_candidate_metrics", fake_metrics)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", False)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE", 4.0)
+
+    final_path, report = _select_best_video_candidate(
+        [
+            {"index": 1, "path": str(weak), "status": "passed", "average": 4.4, "platform_score": 4.4},
+            {"index": 2, "path": str(strong), "status": "passed", "average": 4.4, "platform_score": 4.4},
+        ],
+        str(tmp_path / "final.mp4"),
+        tmp_path / "final.quality.json",
+    )
+
+    assert Path(final_path).read_bytes() == b"strong"
+    assert report["status"] == "passed"
+    assert report["candidates"][0]["index"] == 2
+    assert report["selected_technical_score"] == 4.8
+    assert report["selected_selection_score"] > report["candidates"][1]["selection_score"]
 
 
 def test_required_video_review_blocks_low_scoring_candidates(project_data, tmp_path, monkeypatch):
