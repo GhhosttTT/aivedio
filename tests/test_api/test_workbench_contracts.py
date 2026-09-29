@@ -731,6 +731,10 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
             "manual_clip_review_present": True,
             "manual_clip_score": 4.3,
             "manual_clip_review_passed": True,
+            "manual_case_dimension_review_passed": True,
+            "manual_case_dimension_review": {"missing": [], "low": []},
+            "manual_clip_dimension_review_passed": True,
+            "manual_clip_dimension_review": {"missing": [], "low": []},
             "manual_blocking_issues": [],
             "manual_blocking_issues_passed": True,
             "repair_queue_empty": True,
@@ -774,6 +778,8 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
     assert validation["checks"]["manual_review_covers_rendered_cases"] is True
     assert validation["checks"]["manual_review_missing_case_ids"] == []
     assert validation["checks"]["manual_clip_review_passed"] is True
+    assert validation["checks"]["manual_case_dimension_review_passed"] is True
+    assert validation["checks"]["manual_clip_dimension_review_passed"] is True
     assert validation["checks"]["manual_blocking_issues_passed"] is True
     assert validation["checks"]["repair_queue_empty"] is True
     assert not any(item["code"] == "missing_sample_validation" for item in payload["warnings"])
@@ -792,6 +798,8 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
     assert not any(item["code"] == "sample_validation_manual_review_incomplete" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_baseline_contact_sheet_missing" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_manual_clip_review_not_passed" for item in payload["warnings"])
+    assert not any(item["code"] == "sample_validation_manual_case_dimensions_not_passed" for item in payload["warnings"])
+    assert not any(item["code"] == "sample_validation_manual_clip_dimensions_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_manual_blocking_issues" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_manual_review_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_repair_queue_not_empty" for item in payload["warnings"])
@@ -817,6 +825,10 @@ def test_production_readiness_warns_when_sample_coverage_is_incomplete(setup):
             "manual_clip_review_present": True,
             "manual_clip_score": 4.3,
             "manual_clip_review_passed": True,
+            "manual_case_dimension_review_passed": True,
+            "manual_case_dimension_review": {"missing": [], "low": []},
+            "manual_clip_dimension_review_passed": True,
+            "manual_clip_dimension_review": {"missing": [], "low": []},
             "manual_blocking_issues": [],
             "manual_blocking_issues_passed": True,
             "repair_queue_empty": True,
@@ -847,6 +859,70 @@ def test_production_readiness_warns_when_sample_coverage_is_incomplete(setup):
     assert validation["checks"]["sample_coverage_passed"] is False
     issue = next(item for item in payload["warnings"] if item["code"] == "sample_validation_coverage_missing")
     assert "distinct_role_reverse_shot" in issue["message"]
+
+
+def test_production_readiness_warns_when_manual_dimensions_fail(setup):
+    client, _, path = setup
+    validation_dir = path / "storage" / "validation"
+    validation_dir.mkdir(parents=True, exist_ok=True)
+    (validation_dir / "validation_summary.json").write_text(json.dumps({
+        "status": "ready_for_seed_dance_candidate",
+        "checks": {
+            "video_review_passed": True,
+            "video_identity_gate_passed": True,
+            "video_temporal_gate_passed": True,
+            "video_aesthetic_gate_passed": True,
+            "video_character_distinctiveness_gate_passed": True,
+            "video_performance_gate_passed": True,
+            "baseline_contact_sheet_present": True,
+            "baseline_comparison_passed": True,
+            "manual_review_covers_rendered_cases": True,
+            "manual_review_missing_case_ids": [],
+            "manual_clip_review_present": True,
+            "manual_clip_score": 4.3,
+            "manual_clip_review_passed": False,
+            "manual_case_dimension_review_passed": False,
+            "manual_case_dimension_review": {
+                "missing": [{"id": "reaction", "dimension": "platform_aesthetic"}],
+                "low": [],
+            },
+            "manual_clip_dimension_review_passed": False,
+            "manual_clip_dimension_review": {
+                "missing": [],
+                "low": [{"id": "1", "dimension": "acting_performance", "score": 3.5}],
+            },
+            "manual_blocking_issues": [],
+            "manual_blocking_issues_passed": True,
+            "repair_queue_empty": True,
+            "manual_review_passed": False,
+            "image_review_present": True,
+            "image_review_covers_rendered_cases": True,
+            "image_review_missing_case_ids": [],
+            "image_review_passed": True,
+            "render_profile": {
+                "quality_mode": "ultra",
+                "optimization_mode": "quality",
+                "prompt_optimization": True,
+                "parameter_optimization": True,
+            },
+            "render_profile_passed": True,
+            "render_workflow_parameters_passed": True,
+            "sample_coverage_passed": True,
+            "sample_coverage": {"missing": []},
+        },
+        "action_items": [],
+    }), encoding="utf-8")
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    validation = payload["checks"]["sample_validation"]
+    assert validation["checks"]["manual_case_dimension_review_passed"] is False
+    assert validation["checks"]["manual_clip_dimension_review_passed"] is False
+    codes = {item["code"] for item in payload["warnings"]}
+    assert "sample_validation_manual_case_dimensions_not_passed" in codes
+    assert "sample_validation_manual_clip_dimensions_not_passed" in codes
 
 
 def test_production_readiness_warns_when_sample_image_review_is_missing(setup):

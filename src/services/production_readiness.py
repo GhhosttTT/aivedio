@@ -824,6 +824,24 @@ class ProductionReadinessService:
                 "Add a human full-clip review in manual_review.json after watching the generated clip and Seed Dance contact sheet.",
                 severity="warning",
             ))
+        if checks.get("manual_case_dimension_review_passed") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_manual_case_dimensions_not_passed",
+                (
+                    "Complete manual case dimension_scores for identity_match, phone_readability, "
+                    "platform_aesthetic, visual_integrity, and story_match with every score >= 4."
+                ),
+                severity="warning",
+            ))
+        if checks.get("manual_clip_dimension_review_passed") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_manual_clip_dimensions_not_passed",
+                (
+                    "Complete manual clip dimension_scores for identity_stability, temporal_motion, "
+                    "acting_performance, commercial_aesthetic, and composition_continuity with every score >= 4."
+                ),
+                severity="warning",
+            ))
         if checks.get("manual_blocking_issues_passed") is not True:
             warnings.append(ReadinessIssue(
                 "sample_validation_manual_blocking_issues",
@@ -869,6 +887,10 @@ class ProductionReadinessService:
                 "manual_clip_review_present": checks.get("manual_clip_review_present"),
                 "manual_clip_score": checks.get("manual_clip_score"),
                 "manual_clip_review_passed": checks.get("manual_clip_review_passed"),
+                "manual_case_dimension_review": checks.get("manual_case_dimension_review"),
+                "manual_case_dimension_review_passed": checks.get("manual_case_dimension_review_passed"),
+                "manual_clip_dimension_review": checks.get("manual_clip_dimension_review"),
+                "manual_clip_dimension_review_passed": checks.get("manual_clip_dimension_review_passed"),
                 "manual_blocking_issues": checks.get("manual_blocking_issues"),
                 "manual_blocking_issues_passed": checks.get("manual_blocking_issues_passed"),
                 "repair_queue_empty": checks.get("repair_queue_empty"),

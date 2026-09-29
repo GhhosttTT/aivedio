@@ -111,12 +111,31 @@ def passed_image_review(*ids):
 def passed_manual_review(*ids):
     return {
         "cases": [
-            {"id": item, "score": 4.5 if index == 0 else 4.0, "decision": "accept", "note": "case passes human review"}
+            {
+                "id": item,
+                "score": 4.5 if index == 0 else 4.0,
+                "decision": "accept",
+                "dimension_scores": {
+                    "identity_match": 4.3,
+                    "phone_readability": 4.2,
+                    "platform_aesthetic": 4.1,
+                    "visual_integrity": 4.2,
+                    "story_match": 4.4,
+                },
+                "note": "case passes human review",
+            }
             for index, item in enumerate(ids)
         ],
         "clip": {
             "score": 4.3,
             "decision": "accept",
+            "dimension_scores": {
+                "identity_stability": 4.2,
+                "temporal_motion": 4.1,
+                "acting_performance": 4.0,
+                "commercial_aesthetic": 4.1,
+                "composition_continuity": 4.2,
+            },
             "watched_full_clip": True,
             "watched_seed_dance_contact_sheet": True,
             "note": "full clip is stable enough for candidate review",
@@ -754,6 +773,53 @@ def test_validation_summary_requires_manual_clip_review(tmp_path):
     assert report["checks"]["manual_clip_review_passed"] is False
     assert report["checks"]["manual_review_passed"] is False
     assert any("full generated clip" in item for item in report["action_items"])
+
+
+def test_validation_summary_requires_manual_case_dimension_scores(tmp_path):
+    manual_review = passed_manual_review(*PRODUCTION_CASE_IDS)
+    manual_review["cases"][0]["dimension_scores"].pop("platform_aesthetic")
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "image_review.json", passed_image_review(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", manual_review)
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["manual_case_dimension_review_passed"] is False
+    assert report["checks"]["manual_case_dimension_review"]["missing"] == [{
+        "id": "establishing",
+        "dimension": "platform_aesthetic",
+    }]
+    assert report["checks"]["manual_review_passed"] is False
+    assert any("case dimension_scores" in item for item in report["action_items"])
+
+
+def test_validation_summary_blocks_low_manual_clip_dimension_score(tmp_path):
+    manual_review = passed_manual_review(*PRODUCTION_CASE_IDS)
+    manual_review["clip"]["dimension_scores"]["acting_performance"] = 3.5
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "image_review.json", passed_image_review(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", manual_review)
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["manual_clip_dimension_review_passed"] is False
+    assert report["checks"]["manual_clip_dimension_review"]["low"] == [{
+        "id": "1",
+        "dimension": "acting_performance",
+        "score": 3.5,
+    }]
+    assert report["checks"]["manual_clip_review_passed"] is False
+    assert any("clip dimension_scores" in item for item in report["action_items"])
 
 
 def test_validation_summary_blocks_unresolved_repair_queue(tmp_path):

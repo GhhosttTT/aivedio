@@ -38,6 +38,22 @@ REQUIRED_SAMPLE_COVERAGE = {
     "stylized_generated_source": "stylized or fully generated source-look shot",
 }
 
+REQUIRED_MANUAL_CASE_DIMENSIONS = {
+    "identity_match": "character identity, wardrobe, and face match the intended role",
+    "phone_readability": "face, prop, and action read clearly on a vertical phone screen",
+    "platform_aesthetic": "lighting, skin texture, color, and composition meet premium short-drama expectations",
+    "visual_integrity": "hands, props, anatomy, text, and artifacts are clean enough for production",
+    "story_match": "image matches the written scene intent without distracting additions",
+}
+
+REQUIRED_MANUAL_CLIP_DIMENSIONS = {
+    "identity_stability": "character identity and wardrobe stay stable across the full clip",
+    "temporal_motion": "motion is smooth enough with no major flicker, warping, or frozen-frame feel",
+    "acting_performance": "emotion, gaze, dialogue reaction, and body language are readable",
+    "commercial_aesthetic": "overall look is polished enough against the Seed Dance contact sheet",
+    "composition_continuity": "frame, crop, camera direction, and scene continuity hold through the clip",
+}
+
 
 def _review_models_endpoint() -> str:
     endpoint = settings.LOCAL_REVIEW_BASE_URL.rstrip("/")
@@ -709,6 +725,46 @@ def _manual_clip_review(manual_review: dict | None) -> dict:
     return clip if isinstance(clip, dict) else {}
 
 
+def _dimension_scores(item: dict) -> dict[str, float]:
+    raw = item.get("dimension_scores") or item.get("scores")
+    if not isinstance(raw, dict):
+        return {}
+    scores: dict[str, float] = {}
+    for key, value in raw.items():
+        if isinstance(value, (int, float)):
+            scores[str(key)] = float(value)
+        elif isinstance(value, dict) and isinstance(value.get("score"), (int, float)):
+            scores[str(key)] = float(value["score"])
+    return scores
+
+
+def _manual_dimension_review(
+    items: list[dict],
+    required: dict[str, str],
+    *,
+    id_key: str = "id",
+) -> dict:
+    missing: list[dict] = []
+    low: list[dict] = []
+    for index, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            continue
+        item_id = str(item.get(id_key) or item.get("id") or index)
+        scores = _dimension_scores(item)
+        for key in required:
+            if key not in scores:
+                missing.append({"id": item_id, "dimension": key})
+                continue
+            if scores[key] < 4:
+                low.append({"id": item_id, "dimension": key, "score": scores[key]})
+    return {
+        "required": required,
+        "missing": missing,
+        "low": low,
+        "passed": bool(items) and not missing and not low,
+    }
+
+
 def _calibration_recommendations(manual_cases: list[dict], video_review_report: dict | None) -> list[dict]:
     recommendations = []
     low_dimensions = _review_low_dimensions(video_review_report)
@@ -868,11 +924,17 @@ def summarize_validation(output: Path):
     manual_clip = _manual_clip_review(manual_review)
     manual_case_ids = _case_ids(manual_cases)
     missing_manual_case_ids = sorted(rendered_case_ids - manual_case_ids)
+    case_dimension_review = _manual_dimension_review(manual_cases, REQUIRED_MANUAL_CASE_DIMENSIONS)
+    clip_dimension_review = _manual_dimension_review([manual_clip] if manual_clip else [], REQUIRED_MANUAL_CLIP_DIMENSIONS)
     checks["manual_review_present"] = bool(manual_cases)
     checks["manual_review_covers_rendered_cases"] = bool(rendered_case_ids) and not missing_manual_case_ids
     checks["manual_review_missing_case_ids"] = missing_manual_case_ids
+    checks["manual_case_dimension_review"] = case_dimension_review
+    checks["manual_case_dimension_review_passed"] = case_dimension_review["passed"]
     checks["manual_clip_review_present"] = bool(manual_clip)
     checks["manual_clip_score"] = manual_clip.get("score") if manual_clip else None
+    checks["manual_clip_dimension_review"] = clip_dimension_review
+    checks["manual_clip_dimension_review_passed"] = clip_dimension_review["passed"]
     checks["manual_clip_review_passed"] = bool(
         manual_clip
         and manual_clip.get("decision") == "accept"
@@ -880,6 +942,7 @@ def summarize_validation(output: Path):
         and manual_clip.get("score") >= 4
         and manual_clip.get("watched_full_clip") is True
         and manual_clip.get("watched_seed_dance_contact_sheet") is True
+        and checks["manual_clip_dimension_review_passed"]
     )
     manual_blocking_issues = _manual_blocking_issues(manual_cases, manual_clip)
     checks["manual_blocking_issues"] = manual_blocking_issues
@@ -892,6 +955,7 @@ def summarize_validation(output: Path):
         checks["manual_review_passed"] = (
             not failed_manual
             and checks["manual_review_covers_rendered_cases"]
+            and checks["manual_case_dimension_review_passed"]
             and checks["manual_clip_review_passed"]
             and checks["manual_blocking_issues_passed"]
         )
@@ -955,10 +1019,20 @@ def summarize_validation(output: Path):
             "Add manual_review.json scores for every rendered validation case: "
             + ", ".join(missing_manual_case_ids)
         )
+    elif not checks["manual_case_dimension_review_passed"]:
+        report["action_items"].append(
+            "Add or improve manual_review.json case dimension_scores for identity_match, phone_readability, "
+            "platform_aesthetic, visual_integrity, and story_match; every rendered case needs scores >= 4."
+        )
     elif report.get("manual_failures"):
         report["action_items"].append("Improve prompts/workflow/model settings for manual cases below 4 before scaling up.")
     if checks["manual_review_present"] and not checks["manual_clip_review_present"]:
         report["action_items"].append("Add manual_review.json clip review after watching the full generated clip and Seed Dance contact sheet.")
+    elif checks["manual_clip_review_present"] and not checks["manual_clip_dimension_review_passed"]:
+        report["action_items"].append(
+            "Add or improve manual_review.json clip dimension_scores for identity_stability, temporal_motion, "
+            "acting_performance, commercial_aesthetic, and composition_continuity; every clip dimension needs score >= 4."
+        )
     elif checks["manual_clip_review_present"] and not checks["manual_clip_review_passed"]:
         report["action_items"].append("Improve the generated clip until human clip review score is at least 4 and decision is accept.")
     if not checks["manual_blocking_issues_passed"]:
@@ -1061,10 +1135,13 @@ def _manual_review_section(summary: dict, render_report: dict | None, manual_rev
         "min_score": checks.get("manual_min_score"),
         "failures": summary.get("manual_failures", []),
         "blocking_issues": checks.get("manual_blocking_issues", []),
+        "case_dimension_review": checks.get("manual_case_dimension_review", {}),
+        "clip_dimension_review": checks.get("manual_clip_dimension_review", {}),
         "clip": {
             "present": bool(manual_clip),
             "score": checks.get("manual_clip_score"),
             "decision": manual_clip.get("decision"),
+            "dimension_scores": _dimension_scores(manual_clip),
             "watched_full_clip": manual_clip.get("watched_full_clip"),
             "watched_seed_dance_contact_sheet": manual_clip.get("watched_seed_dance_contact_sheet"),
             "note": manual_clip.get("note"),
@@ -1075,6 +1152,7 @@ def _manual_review_section(summary: dict, render_report: dict | None, manual_rev
                 "id": case_id,
                 "image": next((case.get("image") for case in rendered_cases if str(case.get("id")) == case_id), None),
                 "manual_score": manual_by_id.get(case_id, {}).get("score"),
+                "dimension_scores": _dimension_scores(manual_by_id.get(case_id, {})),
                 "decision": manual_by_id.get(case_id, {}).get("decision"),
                 "note": manual_by_id.get(case_id, {}).get("note"),
             }
@@ -1143,6 +1221,8 @@ def _build_acceptance_markdown(package: dict) -> str:
         "baseline_contact_sheet_present",
         "baseline_comparison_passed",
         "manual_clip_review_passed",
+        "manual_case_dimension_review_passed",
+        "manual_clip_dimension_review_passed",
         "manual_blocking_issues_passed",
         "repair_queue_empty",
         "manual_review_passed",
@@ -1165,6 +1245,25 @@ def _build_acceptance_markdown(package: dict) -> str:
                 note=(case.get("note") or "").replace("|", "/"),
             )
         )
+    lines.extend([
+        "",
+        "## Manual Case Dimensions",
+        "",
+        "| Case | identity_match | phone_readability | platform_aesthetic | visual_integrity | story_match |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ])
+    for case in manual.get("cases", []):
+        scores = case.get("dimension_scores") if isinstance(case.get("dimension_scores"), dict) else {}
+        lines.append(
+            "| {id} | {identity_match} | {phone_readability} | {platform_aesthetic} | {visual_integrity} | {story_match} |".format(
+                id=case.get("id", ""),
+                identity_match=scores.get("identity_match", ""),
+                phone_readability=scores.get("phone_readability", ""),
+                platform_aesthetic=scores.get("platform_aesthetic", ""),
+                visual_integrity=scores.get("visual_integrity", ""),
+                story_match=scores.get("story_match", ""),
+            )
+        )
     clip = manual.get("clip", {})
     lines.extend([
         "",
@@ -1178,6 +1277,18 @@ def _build_acceptance_markdown(package: dict) -> str:
             clip_seen=_markdown_bool(clip.get("watched_full_clip")),
             sheet_seen=_markdown_bool(clip.get("watched_seed_dance_contact_sheet")),
             note=(clip.get("note") or "").replace("|", "/"),
+        ),
+        "",
+        "## Manual Clip Dimensions",
+        "",
+        "| identity_stability | temporal_motion | acting_performance | commercial_aesthetic | composition_continuity |",
+        "| --- | --- | --- | --- | --- |",
+        "| {identity_stability} | {temporal_motion} | {acting_performance} | {commercial_aesthetic} | {composition_continuity} |".format(
+            identity_stability=(clip.get("dimension_scores") or {}).get("identity_stability", ""),
+            temporal_motion=(clip.get("dimension_scores") or {}).get("temporal_motion", ""),
+            acting_performance=(clip.get("dimension_scores") or {}).get("acting_performance", ""),
+            commercial_aesthetic=(clip.get("dimension_scores") or {}).get("commercial_aesthetic", ""),
+            composition_continuity=(clip.get("dimension_scores") or {}).get("composition_continuity", ""),
         ),
     ])
     lines.extend([
