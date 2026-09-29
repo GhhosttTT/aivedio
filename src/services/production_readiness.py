@@ -782,6 +782,12 @@ class ProductionReadinessService:
                 "Improve generated clip lighting, skin texture, phone readability, polish, and repair-artifact quality.",
                 severity="warning",
             ))
+        if checks.get("video_platform_reference_gate_passed") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_video_platform_reference_gate_not_passed",
+                "Improve the clip until local VLM platform-reference review passes Seed Dance gap, premium casting, mobile frame value, production design, and scroll-stop appeal.",
+                severity="warning",
+            ))
         if checks.get("video_character_distinctiveness_gate_passed") is False:
             warnings.append(ReadinessIssue(
                 "sample_validation_video_character_distinctiveness_gate_not_passed",
@@ -879,6 +885,7 @@ class ProductionReadinessService:
                 "video_identity_gate_passed": checks.get("video_identity_gate_passed"),
                 "video_temporal_gate_passed": checks.get("video_temporal_gate_passed"),
                 "video_aesthetic_gate_passed": checks.get("video_aesthetic_gate_passed"),
+                "video_platform_reference_gate_passed": checks.get("video_platform_reference_gate_passed"),
                 "video_character_distinctiveness_gate_passed": checks.get("video_character_distinctiveness_gate_passed"),
                 "video_performance_gate_passed": checks.get("video_performance_gate_passed"),
                 "baseline_contact_sheet_present": checks.get("baseline_contact_sheet_present"),

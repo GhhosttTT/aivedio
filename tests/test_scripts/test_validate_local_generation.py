@@ -53,6 +53,12 @@ def passed_video_review():
                 "missing": [],
                 "low": {},
             },
+            "platform_reference_gate": {
+                "status": "passed",
+                "average": 4.2,
+                "missing": [],
+                "low": {},
+            },
             "character_distinctiveness_gate": {
                 "status": "passed",
                 "average": 4.2,
@@ -643,6 +649,7 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     assert report["checks"]["video_temporal_gate_passed"] is True
     assert report["checks"]["video_platform_gate_passed"] is True
     assert report["checks"]["video_aesthetic_gate_passed"] is True
+    assert report["checks"]["video_platform_reference_gate_passed"] is True
     assert report["checks"]["video_character_distinctiveness_gate_passed"] is True
     assert report["checks"]["render_profile_passed"] is True
     assert report["checks"]["render_workflow_parameters_passed"] is True
@@ -1118,7 +1125,33 @@ def test_validation_summary_requires_video_aesthetic_gate(tmp_path):
     assert report["status"] == "partial_needs_review"
     assert report["checks"]["video_aesthetic_gate_passed"] is False
     assert report["checks"]["video_review_passed"] is False
-    assert any("aesthetic/character-distinctiveness/performance gates" in item for item in report["action_items"])
+    assert any("aesthetic/platform-reference/character-distinctiveness/performance gates" in item for item in report["action_items"])
+
+
+def test_validation_summary_requires_video_platform_reference_gate(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    video_review = passed_video_review()
+    video_review["batches"][0]["platform_reference_gate"] = {
+        "status": "needs_review",
+        "average": 0,
+        "missing": [],
+        "low": {
+            "seed_dance_gap": {"score": 2, "evidence": "large visible gap versus Seed Dance contact sheet"},
+        },
+    }
+    write_json(tmp_path / "video_review.json", video_review)
+    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery"))
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["video_platform_reference_gate_passed"] is False
+    assert report["checks"]["video_review_passed"] is False
+    assert any("Seed Dance reference gap" in item for item in report["action_items"])
 
 
 def test_validation_summary_requires_video_character_distinctiveness_gate_when_present(tmp_path):
@@ -1316,7 +1349,7 @@ def test_validation_summary_blocks_low_video_identity_gate(tmp_path):
     assert report["status"] == "partial_needs_review"
     assert report["checks"]["video_review_passed"] is False
     assert report["checks"]["video_identity_gate_passed"] is False
-    assert any("identity/temporal/platform/aesthetic/character-distinctiveness/performance gates" in item for item in report["action_items"])
+    assert any("identity/temporal/platform/aesthetic/platform-reference/character-distinctiveness/performance gates" in item for item in report["action_items"])
 
 
 def test_validation_summary_recommends_targeted_calibration(tmp_path):

@@ -739,6 +739,7 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
             "video_identity_gate_passed": True,
             "video_temporal_gate_passed": True,
             "video_aesthetic_gate_passed": True,
+            "video_platform_reference_gate_passed": True,
             "video_character_distinctiveness_gate_passed": True,
             "video_performance_gate_passed": True,
             "baseline_contact_sheet_present": True,
@@ -782,6 +783,7 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
     assert validation["status"] == "ready_for_seed_dance_candidate"
     assert validation["checks"]["video_identity_gate_passed"] is True
     assert validation["checks"]["video_aesthetic_gate_passed"] is True
+    assert validation["checks"]["video_platform_reference_gate_passed"] is True
     assert validation["checks"]["video_character_distinctiveness_gate_passed"] is True
     assert validation["checks"]["video_performance_gate_passed"] is True
     assert validation["checks"]["baseline_contact_sheet_present"] is True
@@ -809,6 +811,7 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
     assert not any(item["code"] == "sample_validation_video_identity_gate_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_video_temporal_gate_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_video_aesthetic_gate_not_passed" for item in payload["warnings"])
+    assert not any(item["code"] == "sample_validation_video_platform_reference_gate_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_video_character_distinctiveness_gate_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_video_performance_gate_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_baseline_comparison_not_passed" for item in payload["warnings"])
@@ -997,6 +1000,7 @@ def test_production_readiness_warns_when_sample_video_gates_fail(setup):
             "video_identity_gate_passed": False,
             "video_temporal_gate_passed": False,
             "video_aesthetic_gate_passed": False,
+            "video_platform_reference_gate_passed": False,
             "video_character_distinctiveness_gate_passed": False,
             "video_performance_gate_passed": False,
             "baseline_contact_sheet_present": True,
@@ -1035,6 +1039,7 @@ def test_production_readiness_warns_when_sample_video_gates_fail(setup):
     assert "sample_validation_video_identity_gate_not_passed" in codes
     assert "sample_validation_video_temporal_gate_not_passed" in codes
     assert "sample_validation_video_aesthetic_gate_not_passed" in codes
+    assert "sample_validation_video_platform_reference_gate_not_passed" in codes
     assert "sample_validation_video_character_distinctiveness_gate_not_passed" in codes
     assert "sample_validation_video_performance_gate_not_passed" in codes
 
