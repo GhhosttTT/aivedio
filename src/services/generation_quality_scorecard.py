@@ -131,6 +131,28 @@ FEATURE_ACTIONS = {
     "copied_facial_geometry": "regenerate_keyframe_with_role_separation",
 }
 
+PLATFORM_REFERENCE_FEATURES = {
+    "seed_dance_gap",
+    "premium_casting",
+    "mobile_frame_value",
+    "production_design",
+    "viewer_scroll_stop_appeal",
+    "platform_reference",
+    "short_drama_reference",
+}
+
+PLATFORM_AESTHETIC_FEATURES = {
+    "skin_texture",
+    "skin_texture_stability",
+    "lighting_quality",
+    "lighting_consistency",
+    "color_grade",
+    "color_grade_consistency",
+    "phone_readability",
+    "background_separation",
+    "production_polish",
+}
+
 DEFAULT_DIMENSION_ACTIONS = {
     "identity": "regenerate_keyframe_with_identity_lock",
     "platform_aesthetic": "refine_prompt_composition",
@@ -318,18 +340,35 @@ def _add_gate_findings(
                 evidence = str(payload.get("evidence") or feature)
             else:
                 evidence = str(feature)
-            action = _feature_action(str(feature), gate_name)
+            action = _feature_action(str(feature), gate_name, candidate, report_name)
             if action:
                 target["actions"][action] = target["actions"].get(action, 0) + 1
             _append_evidence(target, f"{feature}: {evidence}")
 
 
-def _feature_action(feature: str, gate_name: str) -> str | None:
+def _feature_action(feature: str, gate_name: str, candidate: dict[str, Any], report_name: str) -> str | None:
     if feature == "artifact_absence":
         if gate_name == "video_aesthetic_gate":
             return "lower_motion_and_regenerate_video"
         return "regenerate_keyframe_with_prop_constraints"
+    if feature in PLATFORM_REFERENCE_FEATURES:
+        if _is_video_context(candidate, report_name, gate_name):
+            return "refine_video_commercial_aesthetic"
+        return "refine_prompt_composition"
+    if feature in PLATFORM_AESTHETIC_FEATURES and gate_name == "video_aesthetic_gate":
+        return "refine_video_commercial_aesthetic"
     return FEATURE_ACTIONS.get(feature)
+
+
+def _is_video_context(candidate: dict[str, Any], report_name: str, gate_name: str) -> bool:
+    if gate_name == "video_aesthetic_gate":
+        return True
+    lowered = report_name.lower()
+    if any(token in lowered for token in ("video", "clip", "composition")):
+        return True
+    if any(key in candidate for key in ("video_path", "clip_path", "final_video_review", "video_aesthetic_gate")):
+        return True
+    return False
 
 
 def _feature_dimension(feature: str) -> str:
