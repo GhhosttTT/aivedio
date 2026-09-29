@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any
 
-from src.services.generation_quality_policy import image_quality_pipeline
+from src.services.generation_quality_policy import image_quality_pipeline, video_quality_pipeline
 
 
 def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str, Any]]) -> dict[str, Any]:
@@ -142,6 +142,7 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "lower_noise_aug_strength": True,
                 "increase_video_refinement_passes": True,
             }
+            _attach_video_pipeline_hint(entry, action, {"shot_role": "dialogue_reaction"})
             commands = [
                 f"python -m scripts.validate_local_generation review-video --output {output_path} --video <regenerated_clip.mp4> --description \"<scene description>\"",
                 f"python -m scripts.validate_local_generation compare-baseline --output {output_path} --candidate <regenerated_clip.mp4> --baseline <seed_dance_reference.mp4>",
@@ -157,6 +158,7 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "raise_noise_aug_strength_slightly": True,
                 "increase_video_candidates": True,
             }
+            _attach_video_pipeline_hint(entry, action, {"shot_role": "action"})
             commands = [
                 f"python -m scripts.validate_local_generation review-video --output {output_path} --video <regenerated_clip.mp4> --description \"<scene description>\"",
                 f"python -m scripts.validate_local_generation compare-baseline --output {output_path} --candidate <regenerated_clip.mp4> --baseline <seed_dance_reference.mp4>",
@@ -174,6 +176,7 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "increase_video_candidates": True,
                 "preserve_identity": True,
             }
+            _attach_video_pipeline_hint(entry, action, {"shot_role": "dialogue_reaction"})
             commands = [
                 f"python -m scripts.validate_local_generation review-video --output {output_path} --video <regenerated_clip.mp4> --description \"<scene description>\"",
                 f"python -m scripts.validate_local_generation compare-baseline --output {output_path} --candidate <regenerated_clip.mp4> --baseline <seed_dance_reference.mp4>",
@@ -191,6 +194,7 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "preserve_identity": True,
                 "commercial_aesthetic_required": True,
             }
+            _attach_video_pipeline_hint(entry, action, {"shot_role": "emotion_reaction"})
             commands = [
                 f"python -m scripts.validate_local_generation review-video --output {output_path} --video <regenerated_clip.mp4> --description \"<scene description>\"",
                 f"python -m scripts.validate_local_generation compare-baseline --output {output_path} --candidate <regenerated_clip.mp4> --baseline <seed_dance_reference.mp4>",
@@ -209,6 +213,7 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "check_subtitle_safe_area": True,
                 "increase_video_candidates": True,
             }
+            _attach_video_pipeline_hint(entry, action, {"shot_role": "establishing"})
             commands = [
                 f"python -m scripts.validate_local_generation review-video --output {output_path} --video <final_or_refinished_episode.mp4> --description \"final composed short-drama episode\"",
                 f"python -m scripts.validate_local_generation compare-baseline --output {output_path} --candidate <final_or_refinished_episode.mp4> --baseline <seed_dance_reference.mp4>",
@@ -278,6 +283,17 @@ def _attach_image_pipeline_hint(
     shot_profile: dict[str, Any] | None = None,
 ) -> None:
     pipeline = image_quality_pipeline(shot_profile, repair_action)
+    entry["quality_pipeline"] = pipeline.as_dict()
+    entry.setdefault("parameter_hints", {})["required_quality_pipeline_stages"] = pipeline.stages
+    entry["parameter_hints"]["required_workflow_capabilities"] = pipeline.required_capabilities
+
+
+def _attach_video_pipeline_hint(
+    entry: dict[str, Any],
+    repair_action: str,
+    shot_plan: dict[str, Any] | None = None,
+) -> None:
+    pipeline = video_quality_pipeline(shot_plan, repair_action)
     entry["quality_pipeline"] = pipeline.as_dict()
     entry.setdefault("parameter_hints", {})["required_quality_pipeline_stages"] = pipeline.stages
     entry["parameter_hints"]["required_workflow_capabilities"] = pipeline.required_capabilities

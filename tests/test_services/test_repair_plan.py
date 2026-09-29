@@ -86,6 +86,27 @@ def test_repair_execution_plan_handles_project_style_consistency_rerun(tmp_path)
     assert any("--repair-action refine_project_style_consistency" in command for command in plan["rerun_validation_commands"])
 
 
+def test_repair_execution_plan_handles_lower_motion_video_rerun(tmp_path):
+    plan = build_repair_execution_plan(
+        tmp_path,
+        [{
+            "action": "lower_motion_and_regenerate_video",
+            "execution": "auto",
+            "stage": "video",
+            "scene_number": 2,
+            "reason": "identity drift and camera jump",
+        }],
+    )
+
+    item = plan["auto"][0]
+    assert item["action"] == "lower_motion_and_regenerate_video"
+    assert item["parameter_hints"]["lower_motion_bucket_id"] is True
+    assert item["parameter_hints"]["lower_noise_aug_strength"] is True
+    assert "temporal_identity_stabilization" in item["quality_pipeline"]["stages"]
+    assert "motion_smoothing" in item["quality_pipeline"]["stages"]
+    assert "temporal_identity" in item["parameter_hints"]["required_workflow_capabilities"]
+
+
 def test_repair_execution_plan_handles_increase_motion_video_rerun(tmp_path):
     plan = build_repair_execution_plan(
         tmp_path,
@@ -102,6 +123,9 @@ def test_repair_execution_plan_handles_increase_motion_video_rerun(tmp_path):
     assert item["action"] == "increase_motion_and_regenerate_video"
     assert item["parameter_hints"]["raise_motion_bucket_id"] is True
     assert item["parameter_hints"]["raise_noise_aug_strength_slightly"] is True
+    assert item["quality_pipeline"]["repair_action"] == "increase_motion_and_regenerate_video"
+    assert "motion_floor_recovery" in item["quality_pipeline"]["stages"]
+    assert "motion_control" in item["parameter_hints"]["required_workflow_capabilities"]
 
 
 def test_repair_execution_plan_handles_performance_video_rerun(tmp_path):
@@ -120,6 +144,9 @@ def test_repair_execution_plan_handles_performance_video_rerun(tmp_path):
     assert item["action"] == "regenerate_video_with_performance_direction"
     assert item["parameter_hints"]["strengthen_shot_plan_performance"] is True
     assert item["parameter_hints"]["preserve_identity"] is True
+    assert "dialogue_reaction_pass" in item["quality_pipeline"]["stages"]
+    assert "emotion_readability_pass" in item["quality_pipeline"]["stages"]
+    assert "performance_direction" in item["parameter_hints"]["required_workflow_capabilities"]
 
 
 def test_repair_execution_plan_handles_video_commercial_aesthetic_rerun(tmp_path):
@@ -139,6 +166,9 @@ def test_repair_execution_plan_handles_video_commercial_aesthetic_rerun(tmp_path
     assert item["parameter_hints"]["commercial_aesthetic_required"] is True
     assert item["parameter_hints"]["stabilize_motion_for_aesthetic_polish"] is True
     assert item["parameter_hints"]["preserve_identity"] is True
+    assert "commercial_lighting_pass" in item["quality_pipeline"]["stages"]
+    assert "phone_readability_pass" in item["quality_pipeline"]["stages"]
+    assert "aesthetic_polish" in item["parameter_hints"]["required_workflow_capabilities"]
 
 
 def test_repair_execution_plan_handles_final_composition_finish_rerun(tmp_path):
@@ -157,6 +187,9 @@ def test_repair_execution_plan_handles_final_composition_finish_rerun(tmp_path):
     assert item["parameter_hints"]["unify_exposure"] is True
     assert item["parameter_hints"]["unify_skin_tone"] is True
     assert item["parameter_hints"]["check_subtitle_safe_area"] is True
+    assert "episode_finish_polish" in item["quality_pipeline"]["stages"]
+    assert "cut_continuity_review" in item["quality_pipeline"]["stages"]
+    assert "episode_continuity" in item["parameter_hints"]["required_workflow_capabilities"]
     assert any("final_or_refinished_episode.mp4" in command for command in plan["rerun_validation_commands"])
 
 
