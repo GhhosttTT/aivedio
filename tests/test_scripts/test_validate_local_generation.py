@@ -763,7 +763,34 @@ def test_validation_summary_blocks_manual_issue_tags_even_with_passing_scores(tm
         "id": "discovery",
         "blocking_issues": ["identity drift"],
     }]
+    assert report["checks"]["repair_queue_empty"] is False
+    assert report["repair_queue"][0]["action"] == "regenerate_keyframe_with_identity_lock"
     assert any("manual blocking issues" in item for item in report["action_items"])
+
+
+def test_validation_summary_converts_manual_clip_issues_to_video_repair_queue(tmp_path):
+    manual_review = passed_manual_review("discovery")
+    manual_review["clip"] = {
+        "score": 4.5,
+        "decision": "accept",
+        "watched_full_clip": True,
+        "watched_seed_dance_contact_sheet": True,
+        "issue_tags": ["flat acting", "no reaction"],
+    }
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", manual_review)
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["repair_queue_empty"] is False
+    assert report["repair_queue"][0]["action"] == "regenerate_video_with_performance_direction"
+    assert report["repair_queue"][0]["stage"] == "video"
 
 
 def test_validation_summary_requires_seed_dance_baseline_comparison(tmp_path):

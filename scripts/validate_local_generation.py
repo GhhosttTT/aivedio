@@ -23,7 +23,7 @@ from src.services.video_engine_preflight import (
 )
 from src.services.generation_review import GenerationReviewService, platform_video_score, write_report
 from src.services.shot_prompt_service import ShotPromptService
-from src.services.repair_queue import attach_repair_queue
+from src.services.repair_queue import attach_repair_queue, build_repair_queue
 from src.services.repair_plan import build_repair_execution_plan
 from src.services.quality_loop import build_quality_loop_plan
 from src.tasks.image_tasks import _apply_image_repair_action, _quality_parameters, _repair_parameter_profile
@@ -300,6 +300,82 @@ def _manual_blocking_issues(manual_cases: list[dict], manual_clip: dict) -> list
                 "blocking_issues": matched,
             })
     return findings
+
+
+def _manual_scene_number(item: dict) -> int | None:
+    value = item.get("scene_number")
+    if value is None:
+        value = item.get("scene")
+    try:
+        scene_number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return scene_number if scene_number > 0 else None
+
+
+def _manual_issue_reasons(item: dict) -> list[str]:
+    reasons = []
+    for key in ("blocking_issues", "issue_tags", "issues"):
+        value = item.get(key)
+        if isinstance(value, str):
+            reasons.append(value)
+        elif isinstance(value, list):
+            reasons.extend(str(tag) for tag in value)
+    if item.get("decision") == "reject":
+        reasons.append(str(item.get("note") or item.get("reason") or "manual review rejected this output"))
+    score = item.get("score")
+    if isinstance(score, (int, float)) and score < 4:
+        reasons.append(str(item.get("note") or item.get("reason") or f"manual score {score} below 4"))
+    return [reason for reason in reasons if reason and reason.strip()]
+
+
+def _manual_repair_queue(manual_review: dict | None) -> list[dict]:
+    if not isinstance(manual_review, dict):
+        return []
+    queue: list[dict] = []
+    cases = manual_review.get("cases", []) if isinstance(manual_review.get("cases"), list) else []
+    for case in cases:
+        if not isinstance(case, dict):
+            continue
+        reasons = _manual_issue_reasons(case)
+        if not reasons:
+            continue
+        scene_number = _manual_scene_number(case)
+        report = {
+            "status": "needs_review",
+            "candidates": [{
+                "index": case.get("id"),
+                "scene": {"scene_number": scene_number} if scene_number else {},
+                "review": {
+                    "issues": [
+                        {
+                            "severity": "major",
+                            "reason": reason,
+                            **({"scene_number": scene_number} if scene_number else {}),
+                        }
+                        for reason in reasons
+                    ],
+                },
+            }],
+        }
+        queue.extend(build_repair_queue(report, "image"))
+    clip = _manual_clip_review(manual_review)
+    clip_reasons = _manual_issue_reasons({"id": "clip", **clip}) if clip else []
+    if clip_reasons:
+        report = {
+            "status": "needs_review",
+            "batches": [{
+                "status": "needs_review",
+                "review": {
+                    "issues": [
+                        {"severity": "major", "reason": reason}
+                        for reason in clip_reasons
+                    ],
+                },
+            }],
+        }
+        queue.extend(build_repair_queue(report, "video"))
+    return queue
 
 
 def _review_low_dimensions(video_review_report: dict | None) -> list[str]:
@@ -811,6 +887,7 @@ def summarize_validation(output: Path):
         *composition_reports.values(),
         baseline_comparison_report,
         manual_review,
+        {"repair_queue": _manual_repair_queue(manual_review)},
     )
     report["repair_queue"] = repair_queue
     checks["repair_queue_empty"] = not repair_queue
@@ -1152,6 +1229,7 @@ def _validation_repair_queue(output: Path, summary: dict | None = None) -> list[
         *composition_reports.values(),
         baseline_report,
         manual_review,
+        {"repair_queue": _manual_repair_queue(manual_review)},
         summary,
     )
 
