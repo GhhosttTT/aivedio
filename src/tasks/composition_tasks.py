@@ -4,6 +4,7 @@
 """
 
 import json
+import re
 from pathlib import Path
 from typing import Optional
 from src.tasks.celery_app import celery_app
@@ -79,6 +80,7 @@ def compose_final_video_task(
         
         _require_passed_scene_videos(scenes)
         _require_passed_scene_audio(scenes)
+        _require_scene_subtitles(scenes)
 
         # 收集所有分镜的视频和音频路径
         video_paths = []
@@ -334,6 +336,59 @@ def _require_passed_scene_audio(scenes: list[Scene]) -> None:
         raise ValueError("Missing generated audio for spoken-dialogue scenes: " + ", ".join(missing))
     if failed:
         raise ValueError("Scene audio is not production-ready: " + "; ".join(failed))
+
+
+def _require_scene_subtitles(scenes: list[Scene]) -> None:
+    missing = []
+    failed = []
+    for scene in scenes:
+        if not has_spoken_dialogue(scene.dialogue):
+            continue
+        if not scene.subtitle_path:
+            missing.append(str(scene.scene_number))
+            continue
+        subtitle_path = Path(scene.subtitle_path)
+        if not subtitle_path.is_file():
+            missing.append(str(scene.scene_number))
+            continue
+        try:
+            content = subtitle_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            failed.append(f"{scene.scene_number}: cannot read subtitle: {exc}")
+            continue
+        if not _srt_has_timing(content):
+            failed.append(f"{scene.scene_number}: subtitle has no valid SRT timing")
+            continue
+        if not _subtitle_matches_dialogue(content, scene.dialogue or ""):
+            failed.append(f"{scene.scene_number}: subtitle text does not cover spoken dialogue")
+    if missing:
+        raise ValueError("Missing subtitle for spoken-dialogue scenes: " + ", ".join(missing))
+    if failed:
+        raise ValueError("Scene subtitles are not production-ready: " + "; ".join(failed))
+
+
+def _srt_has_timing(content: str) -> bool:
+    return bool(re.search(r"\d{2}:\d{2}:\d{2},\d{3}\s+-->\s+\d{2}:\d{2}:\d{2},\d{3}", content))
+
+
+def _subtitle_matches_dialogue(content: str, dialogue: str) -> bool:
+    dialogue_text = _normalize_subtitle_text(dialogue)
+    subtitle_lines = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.isdigit() or "-->" in stripped:
+            continue
+        subtitle_lines.append(stripped)
+    subtitle_text = _normalize_subtitle_text("".join(subtitle_lines))
+    if not dialogue_text:
+        return True
+    if not subtitle_text:
+        return False
+    return dialogue_text in subtitle_text or subtitle_text in dialogue_text
+
+
+def _normalize_subtitle_text(text: str) -> str:
+    return re.sub(r"[\s,，.。!！?？:：;；\"'“”‘’、…-]+", "", text or "").lower()
 
 
 def _gate_status_passed(review: dict, key: str) -> bool:

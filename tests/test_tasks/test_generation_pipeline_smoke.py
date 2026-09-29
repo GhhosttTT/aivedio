@@ -109,6 +109,42 @@ def test_composition_skips_audio_quality_for_no_dialogue_scene():
     composition_tasks._require_passed_scene_audio([scene])
 
 
+def test_composition_requires_subtitle_for_dialogue_scene():
+    scene = Mock(scene_number=1, dialogue="你为什么骗我", subtitle_path=None)
+
+    with pytest.raises(ValueError, match="Missing subtitle"):
+        composition_tasks._require_scene_subtitles([scene])
+
+
+def test_composition_blocks_subtitle_that_does_not_match_dialogue(tmp_path):
+    subtitle = tmp_path / "scene_001.srt"
+    subtitle.write_text(
+        "1\n00:00:00,000 --> 00:00:01,500\n今晚天气很好\n",
+        encoding="utf-8",
+    )
+    scene = Mock(scene_number=1, dialogue="你为什么骗我", subtitle_path=str(subtitle))
+
+    with pytest.raises(ValueError, match="subtitle text does not cover spoken dialogue"):
+        composition_tasks._require_scene_subtitles([scene])
+
+
+def test_composition_accepts_matching_dialogue_subtitle(tmp_path):
+    subtitle = tmp_path / "scene_001.srt"
+    subtitle.write_text(
+        "1\n00:00:00,000 --> 00:00:01,500\n你为什么\n骗我\n",
+        encoding="utf-8",
+    )
+    scene = Mock(scene_number=1, dialogue="你为什么骗我？！", subtitle_path=str(subtitle))
+
+    composition_tasks._require_scene_subtitles([scene])
+
+
+def test_composition_skips_subtitle_quality_for_no_dialogue_scene():
+    scene = Mock(scene_number=1, dialogue="无对白", subtitle_path=None)
+
+    composition_tasks._require_scene_subtitles([scene])
+
+
 def test_composition_requires_final_normalized_video_review(tmp_path):
     video = tmp_path / "scene_001.mp4"
     video.write_bytes(b"fake video")
