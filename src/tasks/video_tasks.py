@@ -483,12 +483,40 @@ def _attach_video_technical_metrics(candidate: dict) -> None:
         candidate["technical_score"] = float(metrics["technical_score"])
 
 
+def _candidate_gate_average(candidate: dict, key: str) -> float | None:
+    gate = candidate.get(key)
+    if isinstance(gate, dict) and isinstance(gate.get("average"), (int, float)):
+        return float(gate["average"])
+    return None
+
+
+def _video_critical_floor_score(candidate: dict) -> float | None:
+    scores: list[float] = []
+    gate_scores = candidate.get("gate_scores") if isinstance(candidate.get("gate_scores"), dict) else {}
+    for key in ("facial_identity", "identity_consistency", "temporal_consistency"):
+        value = gate_scores.get(key)
+        if isinstance(value, (int, float)):
+            scores.append(float(value))
+    for key in ("video_aesthetic_gate", "character_distinctiveness_gate", "video_performance_gate"):
+        value = _candidate_gate_average(candidate, key)
+        if value is not None:
+            scores.append(value)
+    platform_score = candidate.get("platform_score")
+    if isinstance(platform_score, (int, float)):
+        scores.append(float(platform_score))
+    if not scores:
+        return None
+    return min(scores)
+
+
 def _video_selection_score(candidate: dict) -> float:
     platform_score = candidate.get("platform_score")
     average = candidate.get("average")
     technical_score = candidate.get("technical_score")
     distinctiveness_score = candidate.get("character_distinctiveness_score")
     performance_score = candidate.get("video_performance_score")
+    aesthetic_score = _candidate_gate_average(candidate, "video_aesthetic_gate")
+    critical_floor_score = _video_critical_floor_score(candidate)
     if not isinstance(platform_score, (int, float)):
         platform_score = average if isinstance(average, (int, float)) else 0.0
     if not isinstance(average, (int, float)):
@@ -499,14 +527,24 @@ def _video_selection_score(candidate: dict) -> float:
         distinctiveness_score = platform_score
     if not isinstance(performance_score, (int, float)):
         performance_score = platform_score
+    if not isinstance(aesthetic_score, (int, float)):
+        aesthetic_score = platform_score
+    if not isinstance(critical_floor_score, (int, float)):
+        critical_floor_score = min(
+            float(value)
+            for value in (platform_score, average, technical_score, distinctiveness_score, performance_score)
+            if isinstance(value, (int, float))
+        )
     return round(
         max(0.0, min(
             5.0,
-            float(platform_score) * 0.35
-            + float(average) * 0.18
-            + float(technical_score) * 0.12
-            + float(distinctiveness_score) * 0.17
-            + float(performance_score) * 0.18,
+            float(platform_score) * 0.20
+            + float(average) * 0.12
+            + float(technical_score) * 0.08
+            + float(distinctiveness_score) * 0.15
+            + float(performance_score) * 0.15
+            + float(aesthetic_score) * 0.10
+            + float(critical_floor_score) * 0.20,
         )),
         2,
     )

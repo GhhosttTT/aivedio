@@ -1793,6 +1793,54 @@ def test_video_candidate_selection_prefers_passing_performance_gate(tmp_path, mo
     assert report["selected_video_performance_gate"]["status"] == "passed"
 
 
+def test_video_selection_prefers_stronger_short_drama_floor_over_average(tmp_path, monkeypatch):
+    average_heavy = tmp_path / "average_heavy.mp4"
+    floor_strong = tmp_path / "floor_strong.mp4"
+    average_heavy.write_bytes(b"average-heavy")
+    floor_strong.write_bytes(b"floor-strong")
+    monkeypatch.setattr("src.tasks.video_tasks.video_candidate_metrics", lambda _path: {"technical_score": 4.5})
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE", 4.0)
+
+    final_path, report = _select_best_video_candidate(
+        [
+            {
+                "index": 1,
+                "path": str(average_heavy),
+                "status": "passed",
+                "average": 4.9,
+                "platform_score": 4.9,
+                "gate_scores": {"facial_identity": 4.0, "identity_consistency": 4.0, "temporal_consistency": 4.0},
+                "video_aesthetic_gate": {"status": "passed", "average": 4.0, "low": {}, "missing": []},
+                "character_distinctiveness_gate": {"status": "passed", "average": 4.0, "low": {}, "missing": []},
+                "character_distinctiveness_score": 4.0,
+                "video_performance_gate": {"status": "passed", "average": 4.0, "low": {}, "missing": []},
+                "video_performance_score": 4.0,
+            },
+            {
+                "index": 2,
+                "path": str(floor_strong),
+                "status": "passed",
+                "average": 4.4,
+                "platform_score": 4.4,
+                "gate_scores": {"facial_identity": 4.8, "identity_consistency": 4.8, "temporal_consistency": 4.8},
+                "video_aesthetic_gate": {"status": "passed", "average": 4.8, "low": {}, "missing": []},
+                "character_distinctiveness_gate": {"status": "passed", "average": 4.8, "low": {}, "missing": []},
+                "character_distinctiveness_score": 4.8,
+                "video_performance_gate": {"status": "passed", "average": 4.8, "low": {}, "missing": []},
+                "video_performance_score": 4.8,
+            },
+        ],
+        str(tmp_path / "final.mp4"),
+        tmp_path / "quality.json",
+    )
+
+    assert Path(final_path).read_bytes() == b"floor-strong"
+    assert report["selected_path"] == str(floor_strong)
+    assert report["selected_selection_score"] > report["candidates"][1]["selection_score"]
+
+
 def test_video_candidate_report_records_character_sheet_reference(project_data, tmp_path, monkeypatch):
     from PIL import Image
     from src.services.character_identity_service import CharacterIdentityService
