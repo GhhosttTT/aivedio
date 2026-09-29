@@ -556,6 +556,10 @@ def test_workflow_profile_freeze_clears_readiness_workflow_profile_blocker(setup
 
     after = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
     assert after["checks"]["workflow_profile"]["status"] == "valid"
+    pipeline = after["checks"]["workflow_profile"]["image_quality_pipeline"]
+    assert "face_detail" in pipeline["required_stages"]
+    assert "upscale" in pipeline["covered_stages"]
+    assert pipeline["missing_stages"] == []
     assert not any(item["code"] == "workflow_profile_not_ready" for item in after["blockers"])
 
 

@@ -18,6 +18,8 @@ def test_repair_execution_plan_handles_identity_lock_rerun(tmp_path):
     assert item["action"] == "regenerate_keyframe_with_identity_lock"
     assert item["parameter_hints"]["lock_character_sheet"] is True
     assert item["parameter_hints"]["repair_action"] == "regenerate_keyframe_with_identity_lock"
+    assert "identity_vlm_review" in item["quality_pipeline"]["stages"]
+    assert "character_identity" in item["parameter_hints"]["required_workflow_capabilities"]
     assert any("render-images" in command for command in plan["rerun_validation_commands"])
     assert any("--repair-action regenerate_keyframe_with_identity_lock" in command for command in plan["rerun_validation_commands"])
     assert any("--scene-number 3" in command for command in plan["rerun_validation_commands"])
@@ -36,6 +38,8 @@ def test_repair_execution_plan_passes_face_repair_action_to_render_images(tmp_pa
     )
 
     assert plan["auto"][0]["parameter_hints"]["natural_face_texture_required"] is True
+    assert "artifact_vlm_review" in plan["auto"][0]["quality_pipeline"]["stages"]
+    assert "face_repair" in plan["auto"][0]["parameter_hints"]["required_workflow_capabilities"]
     assert any("--repair-action refine_face_aesthetic_detail" in command for command in plan["rerun_validation_commands"])
 
 

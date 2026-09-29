@@ -20,7 +20,7 @@ from src.services.shot_complexity_service import ShotComplexityService
 from src.services.spatial_control_assets import SpatialControlAssetService
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.generation_quality_scorecard import build_generation_quality_scorecard
-from src.services.production_workflow_profile import ProductionWorkflowProfileService
+from src.services.production_workflow_profile import ProductionWorkflowProfileService, REQUIRED_IMAGE_PIPELINE_STAGES
 from src.services.quality_loop import build_quality_loop_plan
 from src.services.story_room_quality import StoryRoomQualityService
 from src.services.video_director_service import get_video_director_service
@@ -614,6 +614,18 @@ class ProductionReadinessService:
 
     def _workflow_profile_check(self, blockers: list[ReadinessIssue]) -> dict:
         report = ProductionWorkflowProfileService().validate_profile()
+        profile = report.get("profile") if isinstance(report.get("profile"), dict) else {}
+        covered_stages = profile.get("required_image_pipeline_stages")
+        if not isinstance(covered_stages, list):
+            covered_stages = []
+        report["image_quality_pipeline"] = {
+            "required_stages": REQUIRED_IMAGE_PIPELINE_STAGES,
+            "covered_stages": covered_stages,
+            "missing_stages": [
+                stage for stage in REQUIRED_IMAGE_PIPELINE_STAGES
+                if stage not in covered_stages
+            ],
+        }
         if report.get("status") != "valid":
             details = []
             if report.get("missing"):

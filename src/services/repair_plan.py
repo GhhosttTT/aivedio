@@ -3,6 +3,8 @@
 from pathlib import Path
 from typing import Any
 
+from src.services.generation_quality_policy import image_quality_pipeline
+
 
 def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str, Any]]) -> dict[str, Any]:
     """Build actionable rerun guidance from unresolved repair actions."""
@@ -37,6 +39,7 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "quality_mode": "ultra",
                 "optimization_mode": "quality",
             }
+            _attach_image_pipeline_hint(entry, action)
             commands = [
                 _render_images_command(output_path, action, item.get("scene_number")),
                 f"python -m scripts.validate_local_generation review-images --output {output_path}",
@@ -52,6 +55,7 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "optimization_mode": "quality",
                 "increase_image_candidates": True,
             }
+            _attach_image_pipeline_hint(entry, action)
             commands = [
                 _render_images_command(output_path, action, item.get("scene_number")),
                 f"python -m scripts.validate_local_generation review-images --output {output_path}",
@@ -68,6 +72,7 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "increase_image_candidates": True,
                 "natural_face_texture_required": True,
             }
+            _attach_image_pipeline_hint(entry, action, {"id": "close_up"})
             commands = [
                 _render_images_command(output_path, action, item.get("scene_number")),
                 f"python -m scripts.validate_local_generation review-images --output {output_path}",
@@ -82,6 +87,7 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "lock_props": True,
                 "increase_image_candidates": True,
             }
+            _attach_image_pipeline_hint(entry, action, {"id": "prop_interaction"})
             commands = [
                 _render_images_command(output_path, action, item.get("scene_number")),
                 f"python -m scripts.validate_local_generation review-images --output {output_path}",
@@ -160,3 +166,14 @@ def _render_images_command(output_path: Path, repair_action: str, scene_number: 
     if scene_number_int > 0:
         command += f" --scene-number {scene_number_int}"
     return command
+
+
+def _attach_image_pipeline_hint(
+    entry: dict[str, Any],
+    repair_action: str,
+    shot_profile: dict[str, Any] | None = None,
+) -> None:
+    pipeline = image_quality_pipeline(shot_profile, repair_action)
+    entry["quality_pipeline"] = pipeline.as_dict()
+    entry.setdefault("parameter_hints", {})["required_quality_pipeline_stages"] = pipeline.stages
+    entry["parameter_hints"]["required_workflow_capabilities"] = pipeline.required_capabilities
