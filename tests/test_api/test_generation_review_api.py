@@ -98,17 +98,26 @@ def test_generation_review_summary_includes_repair_queue():
         },
         "quality_scene_2": {
             "status": "needs_review",
+            "repair_queue": [{"priority": "high", "stage": "video", "action": "increase_motion_and_regenerate_video", "execution": "auto"}],
+        },
+        "quality_scene_3": {
+            "status": "needs_review",
             "repair_queue": [{"priority": "high", "stage": "workflow", "action": "fix_workflow_profile", "execution": "setup_required"}],
         },
     })
 
-    assert summary["repair_queue"]["total"] == 2
+    assert summary["repair_queue"]["total"] == 3
     assert summary["repair_queue"]["actions"]["lower_motion_and_regenerate_video"] == 1
-    assert summary["repair_queue"]["execution"]["auto"] == 1
+    assert summary["repair_queue"]["actions"]["increase_motion_and_regenerate_video"] == 1
+    assert summary["repair_queue"]["execution"]["auto"] == 2
     assert summary["repair_queue"]["execution"]["setup_required"] == 1
-    assert summary["repair_queue"]["auto_actions"][0]["action"] == "lower_motion_and_regenerate_video"
+    assert {
+        item["action"] for item in summary["repair_queue"]["auto_actions"]
+    } == {"lower_motion_and_regenerate_video", "increase_motion_and_regenerate_video"}
     assert summary["repair_queue"]["setup_required"][0]["action"] == "fix_workflow_profile"
-    assert summary["repair_execution_plan"]["auto"][0]["action"] == "lower_motion_and_regenerate_video"
+    assert {
+        item["action"] for item in summary["repair_execution_plan"]["auto"]
+    } == {"lower_motion_and_regenerate_video", "increase_motion_and_regenerate_video"}
     assert summary["repair_execution_plan"]["setup_required"][0]["action"] == "fix_workflow_profile"
     assert any("compare-baseline" in command for command in summary["repair_execution_plan"]["rerun_validation_commands"])
 

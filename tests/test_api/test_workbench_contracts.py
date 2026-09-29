@@ -361,6 +361,55 @@ def test_repair_queue_auto_submits_batch_repair_tasks(setup, monkeypatch):
     ]
 
 
+def test_repair_queue_auto_submits_static_video_motion_floor_repair(setup, monkeypatch):
+    client, db, _ = setup
+    project_root = storage_manager.get_project_path(1)
+    report_root = project_root / "videos"
+    report_root.mkdir(parents=True, exist_ok=True)
+    (report_root / "scene_1.quality.json").write_text(json.dumps({
+        "status": "needs_review",
+        "repair_queue": [
+            {
+                "scene_number": 1,
+                "priority": "high",
+                "stage": "video",
+                "action": "increase_motion_and_regenerate_video",
+                "execution": "auto",
+                "reason": "video motion too static or frozen",
+            }
+        ],
+    }), encoding="utf-8")
+    submitted = []
+
+    def fake_create_scene_repair_task(self, project_id, scene_number, action):
+        celery_task_id = f"repair-{scene_number}-{action}"
+        self.db.add(Task(
+            project_id=project_id,
+            celery_task_id=celery_task_id,
+            status=TaskStatus.PENDING,
+            progress=0.0,
+            total_steps=1,
+            current_step=0,
+        ))
+        self.db.commit()
+        submitted.append((scene_number, action))
+        return celery_task_id
+
+    monkeypatch.setattr(TaskOrchestrator, "create_scene_repair_task", fake_create_scene_repair_task)
+
+    response = client.post(
+        "/api/projects/1/repair-queue/auto",
+        json={"max_actions": 10},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "submitted"
+    assert payload["submitted"][0]["task_id"] == "repair-1-increase_motion_and_regenerate_video"
+    assert payload["submitted"][0]["action"] == "increase_motion_and_regenerate_video"
+    assert submitted == [(1, "increase_motion_and_regenerate_video")]
+
+
 def test_quality_loop_plan_exposes_next_repair_cycle(setup):
     client, db, _ = setup
     report_root = storage_manager.get_project_path(1) / "images"
