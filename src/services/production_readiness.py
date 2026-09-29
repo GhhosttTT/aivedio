@@ -758,6 +758,12 @@ class ProductionReadinessService:
                 ),
                 severity="warning",
             ))
+        if checks.get("image_platform_reference_gate_passed") is not True:
+            warnings.append(ReadinessIssue(
+                "sample_validation_image_platform_reference_gate_not_passed",
+                "Improve rendered keyframes until local VLM platform-reference review passes Seed Dance gap, premium casting, mobile frame value, production design, and scroll-stop appeal.",
+                severity="warning",
+            ))
         if checks.get("video_review_passed") is not True:
             warnings.append(ReadinessIssue(
                 "sample_validation_video_review_not_passed",
@@ -881,6 +887,7 @@ class ProductionReadinessService:
                 "image_review_covers_rendered_cases": checks.get("image_review_covers_rendered_cases"),
                 "image_review_missing_case_ids": checks.get("image_review_missing_case_ids"),
                 "image_review_passed": checks.get("image_review_passed"),
+                "image_platform_reference_gate_passed": checks.get("image_platform_reference_gate_passed"),
                 "video_review_passed": checks.get("video_review_passed"),
                 "video_identity_gate_passed": checks.get("video_identity_gate_passed"),
                 "video_temporal_gate_passed": checks.get("video_temporal_gate_passed"),

@@ -109,6 +109,12 @@ def passed_image_review(*ids):
                     "low": {},
                     "missing": [],
                 },
+                "platform_reference_gate": {
+                    "status": "passed",
+                    "scores": {},
+                    "low": {},
+                    "missing": [],
+                },
             }
             for item in ids
         ],
@@ -656,6 +662,7 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     assert report["checks"]["sample_coverage_passed"] is True
     assert report["checks"]["sample_coverage"]["missing"] == []
     assert report["checks"]["image_review_passed"] is True
+    assert report["checks"]["image_platform_reference_gate_passed"] is True
     assert report["checks"]["image_review_covers_rendered_cases"] is True
     assert report["checks"]["image_review_missing_case_ids"] == []
     assert report["checks"]["manual_review_covers_rendered_cases"] is True
@@ -732,6 +739,35 @@ def test_validation_summary_blocks_failed_image_review(tmp_path):
     assert report["status"] == "partial_needs_review"
     assert report["checks"]["image_review_passed"] is False
     assert any("image VLM review passes" in item for item in report["action_items"])
+
+
+def test_validation_summary_requires_image_platform_reference_gate(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery"))
+    image_review = passed_image_review("discovery")
+    image_review["cases"][0]["platform_reference_gate"] = {
+        "status": "needs_review",
+        "low": {
+            "seed_dance_gap": {"score": 2, "evidence": "large visible gap against premium reference"},
+            "premium_casting": {"score": 2, "evidence": "generic AI portrait"},
+        },
+        "missing": [],
+    }
+    write_json(tmp_path / "image_review.json", image_review)
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", {
+        "cases": [{"id": "discovery", "score": 4.5, "decision": "accept"}],
+        "clip": passed_manual_review("discovery")["clip"],
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["image_review_passed"] is True
+    assert report["checks"]["image_platform_reference_gate_passed"] is False
+    assert any("image platform-reference review" in item for item in report["action_items"])
 
 
 def test_validation_summary_requires_image_review_for_every_rendered_case(tmp_path):

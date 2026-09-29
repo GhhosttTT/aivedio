@@ -544,6 +544,19 @@ def _video_platform_reference_gates_passed(video_review_report: dict | None) -> 
     return True
 
 
+def _image_platform_reference_gates_passed(image_review_report: dict | None) -> bool:
+    if not isinstance(image_review_report, dict):
+        return False
+    cases = image_review_report.get("cases", [])
+    if not cases:
+        return False
+    for case in cases:
+        gate = case.get("platform_reference_gate") if isinstance(case, dict) else None
+        if not isinstance(gate, dict) or gate.get("status") != "passed":
+            return False
+    return True
+
+
 def _video_character_distinctiveness_gates_passed(video_review_report: dict | None) -> bool:
     if not isinstance(video_review_report, dict):
         return True
@@ -944,6 +957,7 @@ def summarize_validation(output: Path):
         _image_review_cases_passed(image_review_report)
         and checks["image_review_covers_rendered_cases"]
     )
+    checks["image_platform_reference_gate_passed"] = _image_platform_reference_gates_passed(image_review_report)
     video_gate_scores = _video_review_gate_scores(video_review_report)
     checks["video_gate_scores"] = video_gate_scores
     checks["video_identity_gate_passed"] = bool(
@@ -1062,6 +1076,11 @@ def summarize_validation(output: Path):
         )
     elif not checks["image_review_passed"]:
         report["action_items"].append("Improve rendered keyframes until image VLM review passes platform aesthetic, identity, and turnaround gates.")
+    elif not checks["image_platform_reference_gate_passed"]:
+        report["action_items"].append(
+            "Improve rendered keyframes until image platform-reference review passes Seed Dance gap, premium casting, "
+            "mobile frame value, production design, and scroll-stop appeal."
+        )
     if not checks["video_review_passed"]:
         report["action_items"].append(
             "Run review-video on a generated clip and pass identity/temporal/platform/aesthetic/platform-reference/"
@@ -1128,7 +1147,8 @@ def summarize_validation(output: Path):
         "environment_ready", "video_workflow_ready", "images_rendered",
         "render_profile_passed", "render_workflow_parameters_passed",
         "sample_coverage_passed",
-        "image_review_passed", "video_review_passed", "baseline_comparison_passed", "manual_review_passed",
+        "image_review_passed", "image_platform_reference_gate_passed",
+        "video_review_passed", "baseline_comparison_passed", "manual_review_passed",
         "repair_queue_empty",
     )):
         report["status"] = "ready_for_seed_dance_candidate"
@@ -1399,6 +1419,7 @@ def _build_acceptance_markdown(package: dict) -> str:
         "sample_coverage_passed",
         "image_review_passed",
         "image_review_covers_rendered_cases",
+        "image_platform_reference_gate_passed",
         "video_review_passed",
         "video_identity_gate_passed",
         "video_temporal_gate_passed",

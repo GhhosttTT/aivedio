@@ -761,6 +761,7 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
             "image_review_covers_rendered_cases": True,
             "image_review_missing_case_ids": [],
             "image_review_passed": True,
+            "image_platform_reference_gate_passed": True,
             "render_profile": {
                 "quality_mode": "ultra",
                 "optimization_mode": "quality",
@@ -791,6 +792,7 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
     assert validation["checks"]["render_workflow_parameters_passed"] is True
     assert validation["checks"]["sample_coverage_passed"] is True
     assert validation["checks"]["image_review_passed"] is True
+    assert validation["checks"]["image_platform_reference_gate_passed"] is True
     assert validation["checks"]["image_review_covers_rendered_cases"] is True
     assert validation["checks"]["image_review_missing_case_ids"] == []
     assert validation["checks"]["render_profile"]["quality_mode"] == "ultra"
@@ -807,6 +809,7 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
     assert not any(item["code"] == "sample_validation_workflow_parameters_missing" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_coverage_missing" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_image_review_not_passed" for item in payload["warnings"])
+    assert not any(item["code"] == "sample_validation_image_platform_reference_gate_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_video_review_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_video_identity_gate_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_video_temporal_gate_not_passed" for item in payload["warnings"])
@@ -987,6 +990,59 @@ def test_production_readiness_warns_when_sample_image_review_is_missing(setup):
     assert validation["checks"]["image_review_missing_case_ids"] == ["reaction"]
     assert any(item["code"] == "sample_validation_image_review_not_passed" for item in payload["warnings"])
     assert any("reaction" in item["message"] for item in payload["warnings"])
+
+
+def test_production_readiness_warns_when_sample_image_platform_reference_gate_fails(setup):
+    client, _, path = setup
+    validation_dir = path / "storage" / "validation"
+    validation_dir.mkdir(parents=True, exist_ok=True)
+    (validation_dir / "validation_summary.json").write_text(json.dumps({
+        "status": "partial_needs_review",
+        "checks": {
+            "video_review_passed": True,
+            "video_identity_gate_passed": True,
+            "video_temporal_gate_passed": True,
+            "video_aesthetic_gate_passed": True,
+            "video_platform_reference_gate_passed": True,
+            "video_character_distinctiveness_gate_passed": True,
+            "video_performance_gate_passed": True,
+            "baseline_contact_sheet_present": True,
+            "baseline_comparison_passed": True,
+            "manual_review_covers_rendered_cases": True,
+            "manual_review_missing_case_ids": [],
+            "manual_clip_review_present": True,
+            "manual_clip_score": 4.3,
+            "manual_clip_review_passed": True,
+            "manual_blocking_issues": [],
+            "manual_blocking_issues_passed": True,
+            "repair_queue_empty": True,
+            "manual_review_passed": True,
+            "image_review_present": True,
+            "image_review_covers_rendered_cases": True,
+            "image_review_missing_case_ids": [],
+            "image_review_passed": True,
+            "image_platform_reference_gate_passed": False,
+            "render_profile": {
+                "quality_mode": "ultra",
+                "optimization_mode": "quality",
+                "prompt_optimization": True,
+                "parameter_optimization": True,
+            },
+            "render_profile_passed": True,
+            "render_workflow_parameters_passed": True,
+            "sample_coverage_passed": True,
+            "sample_coverage": {"missing": []},
+        },
+        "action_items": ["Improve rendered keyframes until image platform-reference review passes."],
+    }), encoding="utf-8")
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    validation = payload["checks"]["sample_validation"]
+    assert validation["checks"]["image_platform_reference_gate_passed"] is False
+    assert any(item["code"] == "sample_validation_image_platform_reference_gate_not_passed" for item in payload["warnings"])
 
 
 def test_production_readiness_warns_when_sample_video_gates_fail(setup):
