@@ -98,6 +98,28 @@ FEATURE_DIMENSIONS = {
     "audio_duration": "dialogue_audio",
     "subtitle_sync": "dialogue_audio",
     "voice_delivery": "dialogue_audio",
+    "seed_dance_gap": "platform_aesthetic",
+    "premium_casting": "platform_aesthetic",
+    "mobile_frame_value": "platform_aesthetic",
+    "production_design": "platform_aesthetic",
+    "viewer_scroll_stop_appeal": "platform_aesthetic",
+    "platform_reference": "platform_aesthetic",
+    "short_drama_reference": "platform_aesthetic",
+}
+
+DEFAULT_DIMENSION_ACTIONS = {
+    "identity": "regenerate_keyframe_with_identity_lock",
+    "platform_aesthetic": "refine_prompt_composition",
+    "temporal_motion": "lower_motion_and_regenerate_video",
+    "acting_performance": "regenerate_video_with_performance_direction",
+    "technical_integrity": "regenerate_keyframe_with_prop_constraints",
+    "story_atomicity": "split_scene",
+    "story_rhythm": "rewrite_short_drama_story_rhythm",
+    "spatial_continuity": "refreeze_spatial_plan",
+    "workflow_assets": "fix_workflow_profile",
+    "episode_style_consistency": "refine_project_style_consistency",
+    "final_composition_finish": "refine_final_composition_finish",
+    "dialogue_audio": "refine_dialogue_audio_delivery",
 }
 
 
@@ -133,6 +155,10 @@ def build_generation_quality_scorecard(reports: dict[str, dict[str, Any]]) -> di
             if isinstance(candidate, dict):
                 candidate_count += 1
                 _add_candidate_findings(dimensions, candidate, report_name)
+        for case in report.get("cases") or []:
+            if isinstance(case, dict):
+                candidate_count += 1
+                _add_candidate_findings(dimensions, case, report_name)
         final_video_review = report.get("final_video_review")
         if isinstance(final_video_review, dict):
             candidate_count += 1
@@ -199,6 +225,7 @@ def _add_candidate_findings(dimensions: dict[str, dict[str, Any]], candidate: di
                     _add_score_finding(dimensions, dimension, candidate, report_name, nested_key, nested_value)
     for gate_name in (
         "platform_aesthetic_gate",
+        "platform_reference_gate",
         "video_aesthetic_gate",
         "episode_style_consistency_gate",
         "episode_continuity_gate",
@@ -269,6 +296,10 @@ def _add_gate_findings(
 def _feature_dimension(feature: str) -> str:
     if feature in FEATURE_DIMENSIONS:
         return FEATURE_DIMENSIONS[feature]
+    if "seed_dance" in feature or "platform_reference" in feature or "premium_casting" in feature:
+        return "platform_aesthetic"
+    if "production_design" in feature or "mobile_frame" in feature or "scroll_stop" in feature:
+        return "platform_aesthetic"
     if feature in {
         "scene_order_coherence",
         "screen_direction_continuity",
@@ -338,7 +369,7 @@ def _next_focus(failing: list[dict[str, Any]]) -> dict[str, Any] | None:
     return {
         "dimension": first["dimension"],
         "label": first["label"],
-        "suggested_action": actions[0][0] if actions else None,
+        "suggested_action": actions[0][0] if actions else DEFAULT_DIMENSION_ACTIONS.get(first["dimension"]),
         "scenes": first["scenes"][:5],
         "evidence": first["evidence"][:3],
     }

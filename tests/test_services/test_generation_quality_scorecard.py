@@ -60,6 +60,39 @@ def test_generation_quality_scorecard_is_clean_without_failed_reports():
     assert scorecard["weakest_dimensions"] == []
 
 
+def test_generation_quality_scorecard_counts_platform_reference_gate_without_repair_queue():
+    scorecard = build_generation_quality_scorecard({
+        "image_review": {
+            "status": "needs_review",
+            "cases": [{
+                "scene": {"scene_number": 5},
+                "platform_reference_gate": {
+                    "status": "needs_review",
+                    "low": {
+                        "seed_dance_gap": {
+                            "score": 2,
+                            "evidence": "large gap against premium short-drama reference",
+                        },
+                        "premium_casting": {
+                            "score": 3,
+                            "evidence": "face and styling read like a generic generated portrait",
+                        },
+                    },
+                    "missing": [],
+                },
+            }],
+        },
+    })
+
+    assert scorecard["status"] == "needs_repair"
+    assert scorecard["candidate_count"] == 1
+    assert scorecard["repair_queue_total"] == 0
+    assert scorecard["dimensions"]["platform_aesthetic"]["status"] == "needs_repair"
+    assert scorecard["dimensions"]["platform_aesthetic"]["scenes"] == [5]
+    assert scorecard["next_focus"]["dimension"] == "platform_aesthetic"
+    assert scorecard["next_focus"]["suggested_action"] == "refine_prompt_composition"
+
+
 def test_generation_quality_scorecard_counts_final_video_review_regressions():
     scorecard = build_generation_quality_scorecard({
         "quality_scene_3": {
