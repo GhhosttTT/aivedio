@@ -21,9 +21,10 @@ def rendered_cases(*ids, render_profile=None):
             {
                 "id": item,
                 "image": f"{item}.png",
+                "scene": {"scene_number": index + 1, "visual_description": f"{item} validation scene"},
                 "actual_workflow": {"steps": 45, "cfg": 7.0, "sampler_name": "dpmpp_2m"},
             }
-            for item in ids
+            for index, item in enumerate(ids)
         ],
     }
 
@@ -765,6 +766,7 @@ def test_validation_summary_blocks_manual_issue_tags_even_with_passing_scores(tm
     }]
     assert report["checks"]["repair_queue_empty"] is False
     assert report["repair_queue"][0]["action"] == "regenerate_keyframe_with_identity_lock"
+    assert report["repair_queue"][0]["scene_number"] == 1
     assert any("manual blocking issues" in item for item in report["action_items"])
 
 

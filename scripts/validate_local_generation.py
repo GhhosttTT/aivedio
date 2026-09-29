@@ -306,6 +306,8 @@ def _manual_scene_number(item: dict) -> int | None:
     value = item.get("scene_number")
     if value is None:
         value = item.get("scene")
+    if isinstance(value, dict):
+        value = value.get("scene_number")
     try:
         scene_number = int(value)
     except (TypeError, ValueError):
@@ -329,10 +331,22 @@ def _manual_issue_reasons(item: dict) -> list[str]:
     return [reason for reason in reasons if reason and reason.strip()]
 
 
-def _manual_repair_queue(manual_review: dict | None) -> list[dict]:
+def _render_scene_by_case_id(render_report: dict | None) -> dict[str, dict]:
+    if not isinstance(render_report, dict):
+        return {}
+    cases = render_report.get("cases", []) if isinstance(render_report.get("cases"), list) else []
+    result = {}
+    for case in cases:
+        if isinstance(case, dict) and case.get("id") is not None and isinstance(case.get("scene"), dict):
+            result[str(case["id"])] = case["scene"]
+    return result
+
+
+def _manual_repair_queue(manual_review: dict | None, render_report: dict | None = None) -> list[dict]:
     if not isinstance(manual_review, dict):
         return []
     queue: list[dict] = []
+    render_scene_by_id = _render_scene_by_case_id(render_report)
     cases = manual_review.get("cases", []) if isinstance(manual_review.get("cases"), list) else []
     for case in cases:
         if not isinstance(case, dict):
@@ -340,6 +354,8 @@ def _manual_repair_queue(manual_review: dict | None) -> list[dict]:
         reasons = _manual_issue_reasons(case)
         if not reasons:
             continue
+        if not isinstance(case.get("scene"), dict) and case.get("id") is not None:
+            case = {**case, "scene": render_scene_by_id.get(str(case["id"]), {})}
         scene_number = _manual_scene_number(case)
         report = {
             "status": "needs_review",
@@ -887,7 +903,7 @@ def summarize_validation(output: Path):
         *composition_reports.values(),
         baseline_comparison_report,
         manual_review,
-        {"repair_queue": _manual_repair_queue(manual_review)},
+        {"repair_queue": _manual_repair_queue(manual_review, render_report)},
     )
     report["repair_queue"] = repair_queue
     checks["repair_queue_empty"] = not repair_queue
@@ -1229,7 +1245,7 @@ def _validation_repair_queue(output: Path, summary: dict | None = None) -> list[
         *composition_reports.values(),
         baseline_report,
         manual_review,
-        {"repair_queue": _manual_repair_queue(manual_review)},
+        {"repair_queue": _manual_repair_queue(manual_review, render_report)},
         summary,
     )
 
