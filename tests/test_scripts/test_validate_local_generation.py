@@ -39,6 +39,12 @@ def passed_video_review():
                 "missing": [],
                 "low": {},
             },
+            "video_performance_gate": {
+                "status": "passed",
+                "average": 4.2,
+                "missing": [],
+                "low": {},
+            },
             "review": {
                 "story_match": {"score": 4, "evidence": "scene matches"},
                 "composition": {"score": 4, "evidence": "framing is usable"},
@@ -828,7 +834,26 @@ def test_validation_summary_requires_video_aesthetic_gate(tmp_path):
     assert report["status"] == "partial_needs_review"
     assert report["checks"]["video_aesthetic_gate_passed"] is False
     assert report["checks"]["video_review_passed"] is False
-    assert any("video aesthetic gates" in item for item in report["action_items"])
+    assert any("aesthetic/performance gates" in item for item in report["action_items"])
+
+
+def test_validation_summary_requires_video_performance_gate(tmp_path):
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases("discovery"))
+    write_json(tmp_path / "image_review.json", passed_image_review("discovery"))
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    video_review = passed_video_review()
+    video_review["batches"][0].pop("video_performance_gate")
+    write_json(tmp_path / "video_review.json", video_review)
+    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery"))
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["video_performance_gate_passed"] is False
+    assert report["checks"]["video_review_passed"] is False
+    assert any("performance gates" in item for item in report["action_items"])
 
 
 def test_validation_summary_blocks_failed_final_normalized_video_review(tmp_path):
@@ -900,7 +925,7 @@ def test_validation_summary_blocks_low_video_identity_gate(tmp_path):
     assert report["status"] == "partial_needs_review"
     assert report["checks"]["video_review_passed"] is False
     assert report["checks"]["video_identity_gate_passed"] is False
-    assert any("identity/temporal/platform gates" in item for item in report["action_items"])
+    assert any("identity/temporal/platform/aesthetic/performance gates" in item for item in report["action_items"])
 
 
 def test_validation_summary_recommends_targeted_calibration(tmp_path):
@@ -983,6 +1008,7 @@ def test_acceptance_package_includes_final_normalized_video_reviews(tmp_path):
             },
             "platform_score": 4.2,
             "video_aesthetic_gate": {"status": "passed", "low": {}, "missing": []},
+            "video_performance_gate": {"status": "passed", "low": {}, "missing": []},
         },
     })
 

@@ -211,6 +211,7 @@ class ProductionWorkflowProfileService:
             "video_temporal_min_score": settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE,
             "video_platform_min_score": settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE,
             "video_aesthetic_feature_min_score": settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE,
+            "video_performance_min_score": settings.GENERATION_VIDEO_PERFORMANCE_MIN_SCORE,
             "image_review_required": settings.GENERATION_REQUIRE_IMAGE_REVIEW,
             "video_review_required": settings.GENERATION_REQUIRE_VIDEO_REVIEW,
             "image_postprocess_required": settings.GENERATION_REQUIRE_IMAGE_POSTPROCESS,

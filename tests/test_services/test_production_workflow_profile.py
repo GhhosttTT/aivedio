@@ -204,6 +204,25 @@ def test_workflow_profile_tracks_video_aesthetic_feature_gate(tmp_path, monkeypa
     assert "quality_gate_video_aesthetic_feature_min_score" in report["stale"]
 
 
+def test_workflow_profile_tracks_video_performance_gate(tmp_path, monkeypatch):
+    image, reference, video = write_production_workflows(tmp_path)
+    profile = tmp_path / "profile.json"
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_VIDEO_PERFORMANCE_MIN_SCORE", 4.0)
+
+    service = ProductionWorkflowProfileService()
+    manifest = service.freeze_profile(profile_path=str(profile))
+    assert manifest["quality_gates"]["video_performance_min_score"] == 4.0
+
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_VIDEO_PERFORMANCE_MIN_SCORE", 4.5)
+    report = service.validate_profile(profile_path=str(profile))
+
+    assert report["status"] == "blocked"
+    assert "quality_gate_video_performance_min_score" in report["stale"]
+
+
 def test_workflow_profile_tracks_generation_quality_budget(tmp_path, monkeypatch):
     image, reference, video = write_production_workflows(tmp_path)
     profile = tmp_path / "profile.json"

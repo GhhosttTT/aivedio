@@ -718,6 +718,7 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
             "video_identity_gate_passed": True,
             "video_temporal_gate_passed": True,
             "video_aesthetic_gate_passed": True,
+            "video_performance_gate_passed": True,
             "baseline_contact_sheet_present": True,
             "baseline_comparison_passed": True,
             "manual_review_covers_rendered_cases": True,
@@ -753,6 +754,7 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
     assert validation["status"] == "ready_for_seed_dance_candidate"
     assert validation["checks"]["video_identity_gate_passed"] is True
     assert validation["checks"]["video_aesthetic_gate_passed"] is True
+    assert validation["checks"]["video_performance_gate_passed"] is True
     assert validation["checks"]["baseline_contact_sheet_present"] is True
     assert validation["checks"]["render_profile_passed"] is True
     assert validation["checks"]["render_workflow_parameters_passed"] is True
@@ -774,6 +776,7 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
     assert not any(item["code"] == "sample_validation_video_identity_gate_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_video_temporal_gate_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_video_aesthetic_gate_not_passed" for item in payload["warnings"])
+    assert not any(item["code"] == "sample_validation_video_performance_gate_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_baseline_comparison_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_manual_review_incomplete" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_baseline_contact_sheet_missing" for item in payload["warnings"])
@@ -793,6 +796,8 @@ def test_production_readiness_warns_when_sample_image_review_is_missing(setup):
             "video_review_passed": True,
             "video_identity_gate_passed": True,
             "video_temporal_gate_passed": True,
+            "video_aesthetic_gate_passed": True,
+            "video_performance_gate_passed": True,
             "baseline_comparison_passed": True,
             "manual_review_covers_rendered_cases": True,
             "manual_review_missing_case_ids": [],
@@ -835,6 +840,7 @@ def test_production_readiness_warns_when_sample_video_gates_fail(setup):
             "video_identity_gate_passed": False,
             "video_temporal_gate_passed": False,
             "video_aesthetic_gate_passed": False,
+            "video_performance_gate_passed": False,
             "baseline_contact_sheet_present": True,
             "baseline_comparison_passed": True,
             "manual_review_covers_rendered_cases": True,
@@ -871,6 +877,7 @@ def test_production_readiness_warns_when_sample_video_gates_fail(setup):
     assert "sample_validation_video_identity_gate_not_passed" in codes
     assert "sample_validation_video_temporal_gate_not_passed" in codes
     assert "sample_validation_video_aesthetic_gate_not_passed" in codes
+    assert "sample_validation_video_performance_gate_not_passed" in codes
 
 
 def test_production_readiness_warns_when_sample_baseline_contact_sheet_is_missing(setup):
@@ -884,6 +891,7 @@ def test_production_readiness_warns_when_sample_baseline_contact_sheet_is_missin
             "video_identity_gate_passed": True,
             "video_temporal_gate_passed": True,
             "video_aesthetic_gate_passed": True,
+            "video_performance_gate_passed": True,
             "baseline_contact_sheet_present": False,
             "baseline_comparison_passed": False,
             "manual_review_covers_rendered_cases": True,
@@ -925,6 +933,7 @@ def test_production_readiness_warns_when_sample_manual_clip_review_is_missing(se
             "video_identity_gate_passed": True,
             "video_temporal_gate_passed": True,
             "video_aesthetic_gate_passed": True,
+            "video_performance_gate_passed": True,
             "baseline_contact_sheet_present": True,
             "baseline_comparison_passed": True,
             "manual_review_covers_rendered_cases": True,
@@ -969,6 +978,7 @@ def test_production_readiness_warns_when_sample_repair_queue_is_not_empty(setup)
             "video_identity_gate_passed": True,
             "video_temporal_gate_passed": True,
             "video_aesthetic_gate_passed": True,
+            "video_performance_gate_passed": True,
             "baseline_contact_sheet_present": True,
             "baseline_comparison_passed": True,
             "manual_review_covers_rendered_cases": True,
@@ -1015,6 +1025,7 @@ def test_production_readiness_warns_when_sample_manual_blocking_issues_exist(set
             "video_identity_gate_passed": True,
             "video_temporal_gate_passed": True,
             "video_aesthetic_gate_passed": True,
+            "video_performance_gate_passed": True,
             "baseline_contact_sheet_present": True,
             "baseline_comparison_passed": True,
             "manual_review_covers_rendered_cases": True,
@@ -1061,6 +1072,8 @@ def test_production_readiness_warns_when_sample_render_profile_is_not_production
             "video_review_passed": True,
             "video_identity_gate_passed": True,
             "video_temporal_gate_passed": True,
+            "video_aesthetic_gate_passed": True,
+            "video_performance_gate_passed": True,
             "baseline_comparison_passed": True,
             "manual_review_covers_rendered_cases": True,
             "manual_review_missing_case_ids": [],
@@ -1091,6 +1104,8 @@ def test_production_readiness_warns_when_sample_workflow_parameters_are_missing(
             "video_review_passed": True,
             "video_identity_gate_passed": True,
             "video_temporal_gate_passed": True,
+            "video_aesthetic_gate_passed": True,
+            "video_performance_gate_passed": True,
             "baseline_comparison_passed": True,
             "manual_review_covers_rendered_cases": True,
             "manual_review_missing_case_ids": [],
