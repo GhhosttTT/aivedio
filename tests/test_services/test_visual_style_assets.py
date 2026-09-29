@@ -73,6 +73,7 @@ def test_generation_prompts_add_platform_aesthetic_contract(tmp_path, monkeypatc
     assert "random color grade" in negative
     assert "plastic skin" in negative
     assert "skin_texture" in contract["image_features"]
+    assert "style_consistency" in contract["image_features"]
     assert "motion_smoothness" in contract["video_features"]
     assert "Platform aesthetic contract" in contract["prompt"]
 

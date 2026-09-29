@@ -535,6 +535,11 @@ IMAGE_REPAIR_PARAMETER_PROFILES = {
         "cfg_delta": -0.3,
         "reason": "composition_aesthetic_repair",
     },
+    "refine_project_style_consistency": {
+        "steps_boost": 10,
+        "cfg_delta": -0.15,
+        "reason": "project_style_consistency_repair",
+    },
     "refine_face_aesthetic_detail": {
         "steps_boost": 12,
         "cfg_delta": -0.35,
@@ -622,6 +627,10 @@ IMAGE_REPAIR_PROMPTS = {
         "repair pass: improve short-drama framing, balanced composition, clean crop, readable face, "
         "cinematic lighting, clear foreground-background separation, polished commercial still"
     ),
+    "refine_project_style_consistency": (
+        "repair pass: lock the project visual style bible across the episode, preserve the same commercial color grade, "
+        "lighting direction, wardrobe palette, set dressing value, lens contrast, and phone-readable drama look"
+    ),
     "refine_face_aesthetic_detail": (
         "repair pass: premium short-drama face rendering, natural skin texture with subtle pores, "
         "believable facial micro-contrast, clean catchlights, attractive but realistic features, "
@@ -645,6 +654,10 @@ IMAGE_REPAIR_NEGATIVES = {
     "refine_prompt_composition": (
         "bad crop, cropped face, awkward framing, flat lighting, muddy lighting, cluttered composition, "
         "unclear subject, low production value"
+    ),
+    "refine_project_style_consistency": (
+        "style drift between shots, random color grade, inconsistent lighting, mismatched wardrobe palette, "
+        "set dressing drift, cheap filter look, different project look, unstable lens contrast"
     ),
     "refine_face_aesthetic_detail": (
         "plastic skin, waxy face, over-smoothed face, airbrushed skin, AI generated gloss, "

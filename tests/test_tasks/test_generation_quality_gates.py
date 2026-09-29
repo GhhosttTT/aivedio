@@ -2531,6 +2531,25 @@ def test_image_role_separation_repair_adds_identity_contrast_constraints():
     assert cfg < 6.0
 
 
+def test_image_project_style_repair_adds_visual_bible_constraints():
+    prompt, negative = _apply_image_repair_action(
+        "short drama hallway confrontation",
+        "blurry",
+        "refine_project_style_consistency",
+    )
+    profile = _repair_parameter_profile("refine_project_style_consistency")
+    steps, cfg = _quality_parameters(1, 0, 40, 6.0, "refine_project_style_consistency")
+
+    assert "project visual style bible" in prompt
+    assert "commercial color grade" in prompt
+    assert "wardrobe palette" in prompt
+    assert "style drift between shots" in negative
+    assert "random color grade" in negative
+    assert profile["reason"] == "project_style_consistency_repair"
+    assert steps > 40
+    assert cfg < 6.0
+
+
 def test_unknown_image_repair_action_keeps_prompt_unchanged():
     assert _apply_image_repair_action("prompt", "negative", "unknown_action") == ("prompt", "negative")
 

@@ -53,6 +53,7 @@ class VisualStyleAssetService:
         "phone_readability",
         "background_separation",
         "production_polish",
+        "style_consistency",
         "repair_artifacts_absent",
     )
     VIDEO_AESTHETIC_FEATURES = (

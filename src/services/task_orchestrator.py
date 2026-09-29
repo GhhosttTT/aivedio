@@ -167,6 +167,7 @@ class TaskOrchestrator:
             "regenerate_keyframe_with_role_separation",
             "regenerate_keyframe_with_prop_constraints",
             "refine_prompt_composition",
+            "refine_project_style_consistency",
             "refine_face_aesthetic_detail",
         }
         video_actions = {

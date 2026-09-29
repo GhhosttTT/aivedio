@@ -64,6 +64,28 @@ def test_repair_execution_plan_passes_face_repair_action_to_render_images(tmp_pa
     assert any("--repair-action refine_face_aesthetic_detail" in command for command in plan["rerun_validation_commands"])
 
 
+def test_repair_execution_plan_handles_project_style_consistency_rerun(tmp_path):
+    plan = build_repair_execution_plan(
+        tmp_path,
+        [{
+            "action": "refine_project_style_consistency",
+            "execution": "auto",
+            "stage": "image",
+            "scene_number": 7,
+            "reason": "style drift between shots and random color grade",
+        }],
+    )
+
+    item = plan["auto"][0]
+    assert item["action"] == "refine_project_style_consistency"
+    assert item["parameter_hints"]["lock_project_style_bible"] is True
+    assert item["parameter_hints"]["lock_color_grade"] is True
+    assert item["parameter_hints"]["lock_lighting_continuity"] is True
+    assert "project_style_bible" in item["quality_pipeline"]["stages"]
+    assert "color_grade_lock" in item["quality_pipeline"]["stages"]
+    assert any("--repair-action refine_project_style_consistency" in command for command in plan["rerun_validation_commands"])
+
+
 def test_repair_execution_plan_handles_increase_motion_video_rerun(tmp_path):
     plan = build_repair_execution_plan(
         tmp_path,

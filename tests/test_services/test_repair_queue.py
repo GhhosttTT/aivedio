@@ -56,6 +56,32 @@ def test_repair_queue_maps_character_distinctiveness_gate_to_role_separation():
     assert queue[0]["execution"] == "auto"
 
 
+def test_repair_queue_maps_style_drift_to_project_style_consistency_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 1,
+            "scene": {"scene_number": 6},
+            "platform_aesthetic_gate": {
+                "status": "needs_review",
+                "low": {
+                    "style_consistency": {
+                        "score": 2,
+                        "evidence": "style drift between shots with random color grade and inconsistent lighting",
+                    }
+                },
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "image")
+
+    assert queue[0]["action"] == "refine_project_style_consistency"
+    assert queue[0]["stage"] == "image"
+    assert queue[0]["scene_number"] == 6
+    assert queue[0]["execution"] == "auto"
+
+
 def test_repair_queue_maps_video_identity_drift_to_motion_repair():
     report = {
         "status": "needs_review",

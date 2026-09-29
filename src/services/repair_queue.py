@@ -8,6 +8,17 @@ from typing import Any
 ACTION_RULES = [
     (
         (
+            "style drift", "visual style drift", "random color grade", "inconsistent color grade",
+            "color grade drift", "inconsistent lighting", "lighting mismatch", "wardrobe drift",
+            "set dressing drift", "scene style mismatch", "different project look", "look continuity",
+            "episode style", "project style bible", "visual bible",
+        ),
+        "refine_project_style_consistency",
+        "Regenerate the keyframe with locked project visual bible, color grade, lighting continuity, wardrobe continuity, and set dressing consistency.",
+        "image",
+    ),
+    (
+        (
             "same-face casting", "same-face characters", "same face characters", "same-face cast",
             "no_same_face_casting", "copied facial geometry", "copied face geometry",
             "merged visual identity", "merged facial geometry", "role_readability",
@@ -362,6 +373,7 @@ def _execution_mode(action: str) -> str:
         "regenerate_keyframe_with_prop_constraints",
         "refine_prompt_composition",
         "refine_face_aesthetic_detail",
+        "refine_project_style_consistency",
         "lower_motion_and_regenerate_video",
         "increase_motion_and_regenerate_video",
         "regenerate_video_with_performance_direction",

@@ -109,6 +109,12 @@ REPAIR_PIPELINE_STAGES = {
         "negative": "same-face casting after repair, copied facial geometry, merged visual identity, hidden second actor",
         "capabilities": ["character_identity", "spatial_control", "face_repair", "candidate_review"],
     },
+    "refine_project_style_consistency": {
+        "stages": ["project_style_bible", "color_grade_lock", "lighting_continuity", "wardrobe_continuity", "style_vlm_review"],
+        "prompt": "repair pipeline: lock project visual bible, color grade, lighting continuity, wardrobe continuity, and set dressing continuity before acceptance",
+        "negative": "style drift after repair, random color grade, mismatched lighting, wardrobe drift, inconsistent set dressing",
+        "capabilities": ["spatial_control", "upscale", "candidate_review"],
+    },
     "refine_face_aesthetic_detail": {
         "stages": ["face_detail", "skin_texture_pass", "upscale", "artifact_vlm_review"],
         "prompt": "repair pipeline: high quality face detail pass, skin texture artifact check, upscale artifact review",
@@ -149,6 +155,12 @@ ACTION_BUDGETS = {
             "extra_refinement_passes": 1,
             "min_candidates": 4,
             "profile": "composition_polish",
+        },
+        "refine_project_style_consistency": {
+            "candidate_multiplier": 1.7,
+            "extra_refinement_passes": 2,
+            "min_candidates": 5,
+            "profile": "project_style_consistency",
         },
         "refine_face_aesthetic_detail": {
             "candidate_multiplier": 2.0,

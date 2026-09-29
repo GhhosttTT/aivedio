@@ -36,6 +36,26 @@ def test_role_separation_image_budget_uses_heavier_multi_character_profile(monke
     assert "spatial_control" in pipeline.required_capabilities
 
 
+def test_style_consistency_image_budget_and_pipeline_lock_project_look(monkeypatch):
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_CANDIDATES", 2)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 1)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_MAX_IMAGE_CANDIDATES", 8)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_IMAGE_CANDIDATE_MULTIPLIER", 1.5)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES", 1)
+
+    budget = image_quality_budget("refine_project_style_consistency")
+    pipeline = image_quality_pipeline({"id": "establishing"}, "refine_project_style_consistency")
+
+    assert budget.candidate_count == 6
+    assert budget.refinement_passes == 4
+    assert budget.action_profile == "project_style_consistency"
+    assert "project_style_bible" in pipeline.stages
+    assert "color_grade_lock" in pipeline.stages
+    assert "style_vlm_review" in pipeline.stages
+    assert "candidate_review" in pipeline.required_capabilities
+
+
 def test_video_budget_respects_max_candidate_cap(monkeypatch):
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_VIDEO_CANDIDATES", 6)

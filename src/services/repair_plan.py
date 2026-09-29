@@ -80,6 +80,26 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 f"python -m scripts.validate_local_generation review-images --output {output_path}",
                 f"python -m scripts.validate_local_generation summarize --output {output_path}",
             ]
+        elif action == "refine_project_style_consistency":
+            entry["rerun_strategy"] = (
+                "Rerun keyframe generation with locked project visual bible, color grade, lighting continuity, wardrobe continuity, and set dressing constraints."
+            )
+            entry["parameter_hints"] = {
+                "repair_action": "refine_project_style_consistency",
+                "lock_project_style_bible": True,
+                "lock_color_grade": True,
+                "lock_lighting_continuity": True,
+                "lock_wardrobe_palette": True,
+                "increase_image_candidates": True,
+                "quality_mode": "ultra",
+                "optimization_mode": "quality",
+            }
+            _attach_image_pipeline_hint(entry, action, {"id": "establishing"})
+            commands = [
+                _render_images_command(output_path, action, item.get("scene_number")),
+                f"python -m scripts.validate_local_generation review-images --output {output_path}",
+                f"python -m scripts.validate_local_generation summarize --output {output_path}",
+            ]
         elif action == "refine_face_aesthetic_detail":
             entry["rerun_strategy"] = (
                 "Rerun keyframe generation with stricter face texture, natural pores, catchlights, and premium beauty-lighting constraints."
