@@ -55,6 +55,10 @@ SCORE_DIMENSIONS = {
     "video_performance_scores": "acting_performance",
 }
 
+SCORE_ACTIONS = {
+    "visual_integrity": "regenerate_keyframe_with_prop_constraints",
+}
+
 FEATURE_DIMENSIONS = {
     "skin_texture": "platform_aesthetic",
     "skin_texture_stability": "platform_aesthetic",
@@ -117,6 +121,8 @@ FEATURE_DIMENSIONS = {
 }
 
 FEATURE_ACTIONS = {
+    "repair_artifacts_absent": "regenerate_keyframe_with_prop_constraints",
+    "artifact_absence": "regenerate_keyframe_with_prop_constraints",
     "no_same_face_casting": "regenerate_keyframe_with_role_separation",
     "role_readability": "regenerate_keyframe_with_role_separation",
     "face_geometry_separation": "regenerate_keyframe_with_role_separation",
@@ -276,6 +282,9 @@ def _add_score_finding(
     if scene_number is not None:
         target["scenes"].add(scene_number)
     evidence = str(value.get("evidence") or key).strip()
+    action = SCORE_ACTIONS.get(key)
+    if action:
+        target["actions"][action] = target["actions"].get(action, 0) + 1
     _append_evidence(target, f"{key}: {evidence}")
 
 

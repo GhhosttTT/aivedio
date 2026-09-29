@@ -233,6 +233,55 @@ def test_generation_quality_scorecard_routes_character_distinctiveness_gate_to_r
     assert scorecard["next_focus"]["suggested_action"] == "regenerate_keyframe_with_role_separation"
 
 
+def test_generation_quality_scorecard_routes_visual_integrity_to_prop_constraints():
+    scorecard = build_generation_quality_scorecard({
+        "image_review": {
+            "status": "needs_review",
+            "cases": [{
+                "scene": {"scene_number": 10},
+                "review": {
+                    "visual_integrity": {
+                        "score": 2,
+                        "evidence": "broken fingers and unreadable hand-object contact",
+                    },
+                },
+            }],
+        },
+    })
+
+    assert scorecard["status"] == "needs_repair"
+    assert scorecard["dimensions"]["technical_integrity"]["status"] == "needs_repair"
+    assert scorecard["dimensions"]["technical_integrity"]["scenes"] == [10]
+    assert scorecard["next_focus"]["dimension"] == "technical_integrity"
+    assert scorecard["next_focus"]["suggested_action"] == "regenerate_keyframe_with_prop_constraints"
+
+
+def test_generation_quality_scorecard_routes_artifact_gate_to_prop_constraints():
+    scorecard = build_generation_quality_scorecard({
+        "video_review": {
+            "status": "needs_review",
+            "batches": [{
+                "scene": {"scene_number": 11},
+                "video_aesthetic_gate": {
+                    "status": "needs_review",
+                    "low": {
+                        "artifact_absence": {
+                            "score": 2,
+                            "evidence": "repair scar flickers around hands",
+                        },
+                    },
+                },
+            }],
+        },
+    })
+
+    assert scorecard["status"] == "needs_repair"
+    assert scorecard["dimensions"]["technical_integrity"]["status"] == "needs_repair"
+    assert scorecard["dimensions"]["technical_integrity"]["scenes"] == [11]
+    assert scorecard["next_focus"]["dimension"] == "technical_integrity"
+    assert scorecard["next_focus"]["suggested_action"] == "regenerate_keyframe_with_prop_constraints"
+
+
 def test_generation_quality_scorecard_counts_episode_style_consistency_regressions():
     scorecard = build_generation_quality_scorecard({
         "final_composition": {
