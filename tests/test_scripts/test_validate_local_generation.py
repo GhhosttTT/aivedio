@@ -1456,10 +1456,14 @@ def test_acceptance_package_includes_repair_rerun_plan(tmp_path):
     assert loop_plan["selected"][0]["action"] == "lower_motion_and_regenerate_video"
     assert loop_plan["selected"][0]["scene_number"] == 1
     assert package["selected_repair_execution_plan"]["auto"][0]["action"] == "lower_motion_and_regenerate_video"
+    assert "temporal_identity_stabilization" in plan["auto"][0]["quality_pipeline"]["stages"]
     assert any("review-video" in command for command in plan["rerun_validation_commands"])
     assert any("compare-baseline" in command for command in plan["rerun_validation_commands"])
     markdown = (tmp_path / "acceptance_package.md").read_text(encoding="utf-8")
     assert "Repair Rerun Plan" in markdown
+    assert "Required Pipeline Stages" in markdown
+    assert "temporal_identity_stabilization" in markdown
+    assert "temporal_identity" in markdown
     assert "Next Quality Loop" in markdown
     assert "Commands for selected repairs" in markdown
     assert "lower_motion_and_regenerate_video" in markdown

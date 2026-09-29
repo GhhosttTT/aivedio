@@ -1466,12 +1466,33 @@ def _build_acceptance_markdown(package: dict) -> str:
         lines.append(f"- [ ] {item}")
     repair_plan = package.get("repair_execution_plan", {})
     commands = repair_plan.get("rerun_validation_commands") or []
-    if commands:
+    plan_entries = _repair_plan_entries(repair_plan)
+    if commands or plan_entries:
         lines.extend([
             "",
             "## Repair Rerun Plan",
             "",
         ])
+        if plan_entries:
+            lines.extend([
+                "| Bucket | Action | Scene | Required Pipeline Stages | Required Workflow Capabilities |",
+                "| --- | --- | --- | --- | --- |",
+            ])
+            for bucket, item in plan_entries:
+                pipeline = item.get("quality_pipeline") if isinstance(item.get("quality_pipeline"), dict) else {}
+                hints = item.get("parameter_hints") if isinstance(item.get("parameter_hints"), dict) else {}
+                stages = pipeline.get("stages") or hints.get("required_quality_pipeline_stages") or []
+                capabilities = hints.get("required_workflow_capabilities") or pipeline.get("required_capabilities") or []
+                lines.append(
+                    "| {bucket} | `{action}` | {scene} | {stages} | {capabilities} |".format(
+                        bucket=bucket,
+                        action=item.get("action", ""),
+                        scene=item.get("scene_number") or "",
+                        stages=", ".join(str(stage) for stage in stages),
+                        capabilities=", ".join(str(capability) for capability in capabilities),
+                    )
+                )
+            lines.append("")
         for command in commands:
             lines.append(f"- `{command}`")
     loop_plan = package.get("quality_loop_plan", {})
@@ -1519,6 +1540,17 @@ def _build_acceptance_markdown(package: dict) -> str:
     for item in action_items:
         lines.append(f"- {item}")
     return "\n".join(lines) + "\n"
+
+
+def _repair_plan_entries(plan: dict) -> list[tuple[str, dict]]:
+    entries = []
+    if not isinstance(plan, dict):
+        return entries
+    for bucket in ("auto", "setup_required", "manual"):
+        for item in plan.get(bucket) or []:
+            if isinstance(item, dict):
+                entries.append((bucket, item))
+    return entries
 
 
 def build_acceptance_package(output: Path) -> dict:
