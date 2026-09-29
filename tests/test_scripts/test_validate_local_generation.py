@@ -909,6 +909,8 @@ def test_acceptance_package_surfaces_missing_manual_review_and_setup_actions(tmp
     assert package["status"] == "partial_needs_review"
     assert package["manual_review"]["missing_case_ids"] == ["reaction"]
     assert package["repair_queue"][0]["execution"] == "setup_required"
+    assert package["quality_loop_plan"]["status"] == "setup_required"
+    assert package["quality_loop_plan"]["setup_required"][0]["action"] == "regenerate_turnaround_album"
     assert any("missing rendered cases" in item for item in package["blocking_action_items"])
     assert any("setup-required" in item for item in package["blocking_action_items"])
 
@@ -935,10 +937,16 @@ def test_acceptance_package_includes_repair_rerun_plan(tmp_path):
     package = validator.build_acceptance_package(tmp_path)
 
     plan = package["repair_execution_plan"]
+    loop_plan = package["quality_loop_plan"]
     assert plan["auto"][0]["action"] == "lower_motion_and_regenerate_video"
     assert plan["auto"][0]["parameter_hints"]["lower_motion_bucket_id"] is True
+    assert loop_plan["status"] == "can_auto_repair"
+    assert loop_plan["selected"][0]["action"] == "lower_motion_and_regenerate_video"
+    assert loop_plan["selected"][0]["scene_number"] == 1
     assert any("review-video" in command for command in plan["rerun_validation_commands"])
     assert any("compare-baseline" in command for command in plan["rerun_validation_commands"])
     markdown = (tmp_path / "acceptance_package.md").read_text(encoding="utf-8")
     assert "Repair Rerun Plan" in markdown
+    assert "Next Quality Loop" in markdown
+    assert "lower_motion_and_regenerate_video" in markdown
     assert "review-video" in markdown

@@ -25,6 +25,7 @@ from src.services.generation_review import GenerationReviewService, platform_vid
 from src.services.shot_prompt_service import ShotPromptService
 from src.services.repair_queue import attach_repair_queue
 from src.services.repair_plan import build_repair_execution_plan
+from src.services.quality_loop import build_quality_loop_plan
 from scripts.compare_video_baseline import compare as compare_video_baseline
 
 
@@ -892,6 +893,36 @@ def _build_acceptance_markdown(package: dict) -> str:
         ])
         for command in commands:
             lines.append(f"- `{command}`")
+    loop_plan = package.get("quality_loop_plan", {})
+    if loop_plan:
+        lines.extend([
+            "",
+            "## Next Quality Loop",
+            "",
+            f"- Status: `{loop_plan.get('status')}`",
+            f"- Next step: {loop_plan.get('next_step')}",
+        ])
+        selected = loop_plan.get("selected") or []
+        if selected:
+            lines.append("- Selected automatic repairs:")
+            for item in selected:
+                lines.append(
+                    "  - scene {scene}: `{action}` ({stage})".format(
+                        scene=item.get("scene_number", ""),
+                        action=item.get("action", ""),
+                        stage=item.get("stage", ""),
+                    )
+                )
+        setup_required = loop_plan.get("setup_required") or []
+        if setup_required:
+            lines.append("- Setup required before rerun:")
+            for item in setup_required:
+                lines.append(f"  - `{item.get('action', '')}`: {item.get('reason', '')}")
+        manual_actions = loop_plan.get("manual_actions") or []
+        if manual_actions:
+            lines.append("- Manual decisions required:")
+            for item in manual_actions:
+                lines.append(f"  - `{item.get('action', '')}`: {item.get('reason', '')}")
     lines.extend([
         "",
         "## Blocking Action Items",
@@ -921,6 +952,7 @@ def build_acceptance_package(output: Path) -> dict:
         manual_review,
         summary,
     )
+    summary_for_loop = {**summary, "repair_queue": repair_queue}
     manual_section = _manual_review_section(summary, render_report, manual_review)
     package = {
         "status": summary.get("status", "needs_action"),
@@ -945,6 +977,7 @@ def build_acceptance_package(output: Path) -> dict:
         "calibration_recommendations": summary.get("calibration_recommendations", []),
         "repair_queue": repair_queue,
         "repair_execution_plan": build_repair_execution_plan(output, repair_queue),
+        "quality_loop_plan": build_quality_loop_plan(summary_for_loop, max_actions=5),
         "human_review_checklist": [
             "Confirm every rendered case image matches the intended character, wardrobe, scene, and camera angle.",
             "Reject same-face characters, face drift, broken hands, unreadable expressions, bad crops, and random text/watermarks.",
