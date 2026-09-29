@@ -422,6 +422,8 @@ def _composition_review_error(report: dict) -> str | None:
             return f"composition review batch {index} character distinctiveness gate failed"
         if not _gate_status_passed(batch, "video_performance_gate"):
             return f"composition review batch {index} performance gate failed"
+        if not _gate_status_passed(batch, "episode_continuity_gate"):
+            return f"composition review batch {index} episode continuity gate failed"
     return None
 
 

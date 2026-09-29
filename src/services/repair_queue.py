@@ -62,7 +62,11 @@ ACTION_RULES = [
         "image",
     ),
     (
-        ("spatial", "position", "left/right", "screen direction", "camera axis", "blocking", "stage map", "relative position"),
+        (
+            "spatial", "position", "left/right", "screen direction", "screen_direction_continuity",
+            "character_position_continuity", "camera axis", "blocking", "stage map", "relative position",
+            "prop_continuity", "cut_smoothness", "scene_order_coherence", "jarring cut", "jump cut",
+        ),
         "refreeze_spatial_plan",
         "Review and freeze the spatial plan before regenerating the affected shots.",
         "spatial",
@@ -220,6 +224,7 @@ def _candidate_evidence(candidate: dict[str, Any]) -> list[str]:
         "platform_aesthetic_gate",
         "video_aesthetic_gate",
         "episode_style_consistency_gate",
+        "episode_continuity_gate",
         "turnaround_gate",
         "character_distinctiveness_gate",
         "video_performance_gate",

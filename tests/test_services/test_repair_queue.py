@@ -105,6 +105,34 @@ def test_repair_queue_expands_top_level_episode_style_gate_by_scene():
     assert queue[0]["execution"] == "auto"
 
 
+def test_repair_queue_maps_episode_continuity_gate_to_spatial_plan_setup():
+    report = {
+        "status": "needs_review",
+        "batches": [{
+            "status": "needs_review",
+            "episode_continuity_gate": {
+                "status": "needs_review",
+                "low": {
+                    "screen_direction_continuity": {
+                        "score": 2,
+                        "evidence": "screen_direction_continuity failed: jarring cut flips camera axis",
+                    },
+                    "prop_continuity": {
+                        "score": 2,
+                        "evidence": "prop_continuity failed: contract disappears after the cut",
+                    },
+                },
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "refreeze_spatial_plan"
+    assert queue[0]["stage"] == "spatial"
+    assert queue[0]["execution"] == "setup_required"
+
+
 def test_repair_queue_maps_video_identity_drift_to_motion_repair():
     report = {
         "status": "needs_review",

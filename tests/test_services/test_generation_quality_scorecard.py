@@ -152,3 +152,36 @@ def test_generation_quality_scorecard_counts_episode_style_consistency_regressio
     assert scorecard["dimensions"]["episode_style_consistency"]["scenes"] == [2]
     assert scorecard["next_focus"]["dimension"] == "episode_style_consistency"
     assert scorecard["next_focus"]["suggested_action"] == "refine_project_style_consistency"
+
+
+def test_generation_quality_scorecard_counts_episode_continuity_regressions():
+    scorecard = build_generation_quality_scorecard({
+        "final_composition": {
+            "status": "needs_review",
+            "batches": [{
+                "episode_continuity_gate": {
+                    "status": "needs_review",
+                    "low": {
+                        "screen_direction_continuity": {
+                            "score": 2,
+                            "evidence": "screen direction flips across the cut",
+                        },
+                        "prop_continuity": {
+                            "score": 2,
+                            "evidence": "contract disappears after the cut",
+                        },
+                    },
+                },
+            }],
+            "repair_queue": [{
+                "action": "refreeze_spatial_plan",
+                "execution": "setup_required",
+                "reason": "screen direction flips across the cut",
+            }],
+        },
+    })
+
+    assert scorecard["status"] == "needs_repair"
+    assert scorecard["dimensions"]["spatial_continuity"]["status"] == "needs_repair"
+    assert scorecard["next_focus"]["dimension"] == "spatial_continuity"
+    assert scorecard["next_focus"]["suggested_action"] == "refreeze_spatial_plan"

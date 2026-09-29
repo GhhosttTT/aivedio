@@ -112,6 +112,7 @@ def passed_composition_review():
             "video_aesthetic_gate": {"status": "passed"},
             "character_distinctiveness_gate": {"status": "passed"},
             "video_performance_gate": {"status": "passed"},
+            "episode_continuity_gate": {"status": "passed"},
             "review": {
                 "facial_identity": {"score": 4.2, "evidence": "faces match"},
                 "identity_consistency": {"score": 4.2, "evidence": "identity stable"},
@@ -250,6 +251,43 @@ def test_final_composed_video_review_blocks_episode_style_drift(tmp_path, monkey
     assert written["repair_queue"][0]["action"] == "refine_project_style_consistency"
     assert written["repair_queue"][0]["scene_number"] == 3
     assert written["repair_queue"][0]["execution"] == "auto"
+
+
+def test_final_composed_video_review_blocks_episode_continuity_drift(tmp_path, monkeypatch):
+    final_video = tmp_path / "final.mp4"
+    final_video.write_bytes(b"final video")
+    project = Mock(id=7, name="premium-drama")
+    scenes = [Mock(
+        scene_number=2,
+        character_name="Alice",
+        visual_description="Alice crosses the office after taking the contract",
+        image_prompt="Alice medium shot",
+        dialogue="合同在哪里",
+        audio_path=None,
+        subtitle_path=None,
+    )]
+    failed = passed_composition_review()
+    failed["batches"][0]["episode_continuity_gate"] = {
+        "status": "needs_review",
+        "low": {
+            "screen_direction_continuity": {"score": 2, "evidence": "screen direction flips across the cut"},
+            "prop_continuity": {"score": 2, "evidence": "contract disappears after the cut"},
+        },
+        "missing": [],
+    }
+
+    class FakeReviewService:
+        def review_video(self, *_args, **_kwargs):
+            return failed
+
+    monkeypatch.setattr(composition_tasks, "GenerationReviewService", FakeReviewService)
+
+    with pytest.raises(ValueError, match="episode continuity gate failed"):
+        composition_tasks._review_final_composed_video(project, scenes, str(final_video))
+    written = json.loads(final_video.with_suffix(".composition_review.json").read_text(encoding="utf-8"))
+    assert written["error"] == "composition review batch 1 episode continuity gate failed"
+    assert written["repair_queue"][0]["action"] == "refreeze_spatial_plan"
+    assert written["repair_queue"][0]["execution"] == "setup_required"
 
 
 def test_draft_tasks_cannot_publish_an_unreviewed_final_video(tmp_path, monkeypatch):

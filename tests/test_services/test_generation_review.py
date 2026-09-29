@@ -9,6 +9,7 @@ import pytest
 
 from src.services.generation_review import (
     CHARACTER_DISTINCTIVENESS_FEATURES,
+    EPISODE_CONTINUITY_FEATURES,
     FrameReview,
     StoryReview,
     GenerationReviewService,
@@ -20,6 +21,7 @@ from src.services.generation_review import (
     require_passed,
     video_aesthetic_gate,
     video_character_distinctiveness_gate,
+    episode_continuity_gate,
     video_performance_gate,
 )
 
@@ -179,6 +181,30 @@ def test_video_performance_gate_quantifies_flat_short_drama_acting(monkeypatch):
     }
 
 
+def test_episode_continuity_gate_quantifies_final_composition_jump_cuts(monkeypatch):
+    monkeypatch.setattr("src.services.generation_review.settings.GENERATION_VIDEO_PERFORMANCE_MIN_SCORE", 4.0)
+    review = {
+        "episode_continuity_scores": {
+            "scene_order_coherence": {"score": 4, "evidence": "scene order is coherent"},
+            "screen_direction_continuity": {"score": 2, "evidence": "screen direction flips across the cut"},
+            "character_position_continuity": {"score": 3, "evidence": "actor jumps from left to right"},
+            "prop_continuity": {"score": 2, "evidence": "contract disappears after the cut"},
+            "cut_smoothness": {"score": 4, "evidence": "cuts are mostly smooth"},
+        }
+    }
+
+    gate = episode_continuity_gate(review, {
+        "shot_plan": {"shot_role": "final_composed_short_drama"},
+    })
+
+    assert gate["status"] == "needs_review"
+    assert set(gate["low"]) == {
+        "screen_direction_continuity",
+        "character_position_continuity",
+        "prop_continuity",
+    }
+
+
 def test_frame_review_accepts_video_aesthetic_scores(tmp_path, monkeypatch):
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"test video bytes")
@@ -273,6 +299,39 @@ def test_frame_review_accepts_video_performance_scores(tmp_path, monkeypatch):
     assert result["batches"][0]["video_performance_gate"]["status"] == "passed"
     assert result["batches"][0]["review"]["video_performance_scores"]["gaze_intent"]["score"] == 4
     assert "video_performance_scores" in reviewer.evaluate.call_args.args[0]
+
+
+def test_frame_review_accepts_episode_continuity_scores_for_final_composition(tmp_path, monkeypatch):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"test video bytes")
+    frames = [{"index": i, "timestamp": i, "path": str(tmp_path / f"{i}.jpg")} for i in range(3)]
+    monkeypatch.setattr(GenerationReviewService, "sample_frames", lambda *args: frames)
+    data = {key: {"score": 4, "evidence": "visible subject matches the keyframe"} for key in (
+        "story_match", "composition", "aesthetic_quality", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
+    data["video_performance_scores"] = {
+        feature: {"score": 4, "evidence": "acting reads clearly"}
+        for feature in VIDEO_PERFORMANCE_FEATURES
+    }
+    data["episode_continuity_scores"] = {
+        feature: {"score": 4, "evidence": "episode continuity holds"}
+        for feature in EPISODE_CONTINUITY_FEATURES
+    }
+    reviewer = Mock()
+    reviewer.evaluate.return_value = FrameReview(**data, reviewed_frames=[0, 1, 2], issues=[])
+
+    result = GenerationReviewService(reviewer).review_video(
+        str(video),
+        {
+            "scene_number": "final_composition",
+            "shot_plan": {"shot_role": "final_composed_short_drama"},
+        },
+        tmp_path / "frames.json",
+    )
+
+    assert result["status"] == "passed"
+    assert result["batches"][0]["episode_continuity_gate"]["status"] == "passed"
+    assert result["batches"][0]["review"]["episode_continuity_scores"]["cut_smoothness"]["score"] == 4
+    assert "episode_continuity_scores" in reviewer.evaluate.call_args.args[0]
 
 
 def test_temporal_inconsistency_blocks_video_review(tmp_path, monkeypatch):

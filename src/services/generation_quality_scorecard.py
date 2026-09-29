@@ -12,6 +12,7 @@ DIMENSION_LABELS = {
     "acting_performance": "Acting, emotion, and dialogue reaction",
     "technical_integrity": "Rendering and visual integrity",
     "story_atomicity": "Atomic shot design",
+    "spatial_continuity": "Shot continuity and screen direction",
     "workflow_assets": "Production setup and control assets",
     "episode_style_consistency": "Episode visual style continuity",
 }
@@ -29,7 +30,7 @@ ACTION_DIMENSIONS = {
     "regenerate_video_with_performance_direction": "acting_performance",
     "split_scene": "story_atomicity",
     "fix_workflow_profile": "workflow_assets",
-    "refreeze_spatial_plan": "workflow_assets",
+    "refreeze_spatial_plan": "spatial_continuity",
     "start_local_reviewer": "workflow_assets",
     "manual_review": "technical_integrity",
 }
@@ -66,6 +67,11 @@ FEATURE_DIMENSIONS = {
     "dialogue_reaction": "acting_performance",
     "body_language": "acting_performance",
     "action_intent": "acting_performance",
+    "scene_order_coherence": "spatial_continuity",
+    "screen_direction_continuity": "spatial_continuity",
+    "character_position_continuity": "spatial_continuity",
+    "prop_continuity": "spatial_continuity",
+    "cut_smoothness": "spatial_continuity",
 }
 
 
@@ -169,6 +175,7 @@ def _add_candidate_findings(dimensions: dict[str, dict[str, Any]], candidate: di
         "platform_aesthetic_gate",
         "video_aesthetic_gate",
         "episode_style_consistency_gate",
+        "episode_continuity_gate",
         "turnaround_gate",
         "character_distinctiveness_gate",
         "video_performance_gate",
@@ -233,6 +240,14 @@ def _add_gate_findings(
 def _feature_dimension(feature: str) -> str:
     if feature in FEATURE_DIMENSIONS:
         return FEATURE_DIMENSIONS[feature]
+    if feature in {
+        "scene_order_coherence",
+        "screen_direction_continuity",
+        "character_position_continuity",
+        "prop_continuity",
+        "cut_smoothness",
+    }:
+        return "spatial_continuity"
     if "style_consistency" in feature or "color_grade" in feature or "lighting" in feature:
         return "episode_style_consistency"
     return "technical_integrity"
