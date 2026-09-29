@@ -2,7 +2,7 @@ import io
 import json
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 from uuid import uuid4
 
 import pytest
@@ -173,10 +173,16 @@ def test_produce_blocks_when_production_readiness_needs_review(setup, monkeypatc
 
 def test_repair_scene_keyframe_creates_targeted_task(setup, monkeypatch):
     client, db, _ = setup
-    chain = Mock()
-    chain.freeze.return_value.id = "repair-task-id"
-    generate = Mock(return_value=chain)
+    workflow = Mock()
+    workflow.freeze.return_value.id = "repair-task-id"
+    generate = Mock(return_value=Mock(name="image-signature"))
+    video = Mock(return_value=Mock(name="video-signature"))
+    review = Mock(return_value=Mock(name="review-signature"))
+    build_chain = Mock(return_value=workflow)
     monkeypatch.setattr("src.services.task_orchestrator.generate_image_task.si", generate)
+    monkeypatch.setattr("src.services.task_orchestrator.generate_video_task.si", video)
+    monkeypatch.setattr("src.services.task_orchestrator.review_generation_task.si", review)
+    monkeypatch.setattr("src.services.task_orchestrator.chain", build_chain)
     monkeypatch.setattr(
         "src.services.task_orchestrator.ProductionWorkflowProfileService",
         lambda: Mock(validate_profile=Mock(return_value={"status": "valid"})),
@@ -190,17 +196,25 @@ def test_repair_scene_keyframe_creates_targeted_task(setup, monkeypatch):
     assert response.status_code == 200, response.text
     assert response.json()["task_id"] == "repair-task-id"
     assert generate.call_args.kwargs["repair_action"] == "refine_face_aesthetic_detail"
+    video.assert_called_once_with(1, 1, ANY)
+    review.assert_called_once_with(1, ANY)
     scene = db.query(Scene).filter(Scene.project_id == 1, Scene.scene_number == 1).one()
     assert scene.image_path is None and scene.video_path is None
-    chain.apply_async.assert_called_once()
+    workflow.apply_async.assert_called_once()
 
 
 def test_repair_scene_identity_lock_creates_keyframe_task(setup, monkeypatch):
     client, db, _ = setup
-    chain = Mock()
-    chain.freeze.return_value.id = "identity-repair-task-id"
-    generate = Mock(return_value=chain)
+    workflow = Mock()
+    workflow.freeze.return_value.id = "identity-repair-task-id"
+    generate = Mock(return_value=Mock(name="image-signature"))
+    video = Mock(return_value=Mock(name="video-signature"))
+    review = Mock(return_value=Mock(name="review-signature"))
+    build_chain = Mock(return_value=workflow)
     monkeypatch.setattr("src.services.task_orchestrator.generate_image_task.si", generate)
+    monkeypatch.setattr("src.services.task_orchestrator.generate_video_task.si", video)
+    monkeypatch.setattr("src.services.task_orchestrator.review_generation_task.si", review)
+    monkeypatch.setattr("src.services.task_orchestrator.chain", build_chain)
     monkeypatch.setattr(
         "src.services.task_orchestrator.ProductionWorkflowProfileService",
         lambda: Mock(validate_profile=Mock(return_value={"status": "valid"})),
@@ -214,8 +228,11 @@ def test_repair_scene_identity_lock_creates_keyframe_task(setup, monkeypatch):
     assert response.status_code == 200, response.text
     assert response.json()["task_id"] == "identity-repair-task-id"
     assert generate.call_args.kwargs["repair_action"] == "regenerate_keyframe_with_identity_lock"
+    video.assert_called_once_with(1, 1, ANY)
+    review.assert_called_once_with(1, ANY)
     scene = db.query(Scene).filter(Scene.project_id == 1, Scene.scene_number == 1).one()
     assert scene.image_path is None and scene.video_path is None
+    workflow.apply_async.assert_called_once()
 
 
 def test_repair_scene_blocks_when_workflow_profile_not_valid(setup, monkeypatch):

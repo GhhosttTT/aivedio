@@ -213,7 +213,7 @@ class TaskOrchestrator:
             celery_task_id=str(uuid4()),
             status=TaskStatus.PENDING,
             progress=0.0,
-            total_steps=1,
+            total_steps=self._repair_total_steps(action, image_actions, video_actions, audio_actions),
             current_step=0,
         )
         self.db.add(task_model)
@@ -223,20 +223,31 @@ class TaskOrchestrator:
         if action in image_actions:
             scene.image_path = None
             scene.video_path = None
-            task = generate_image_task.si(
-                scene.id,
-                scene.image_prompt or scene.visual_description,
-                project_id,
-                task_model.id,
-                repair_action=action,
+            task = chain(
+                generate_image_task.si(
+                    scene.id,
+                    scene.image_prompt or scene.visual_description,
+                    project_id,
+                    task_model.id,
+                    repair_action=action,
+                ),
+                generate_video_task.si(
+                    scene.id,
+                    project_id,
+                    task_model.id,
+                ),
+                review_generation_task.si(project_id, task_model.id),
             )
         elif action in video_actions:
             scene.video_path = None
-            task = generate_video_task.si(
-                scene.id,
-                project_id,
-                task_model.id,
-                repair_action=action,
+            task = chain(
+                generate_video_task.si(
+                    scene.id,
+                    project_id,
+                    task_model.id,
+                    repair_action=action,
+                ),
+                review_generation_task.si(project_id, task_model.id),
             )
         else:
             if not scene.dialogue:
@@ -244,13 +255,20 @@ class TaskOrchestrator:
             scene.audio_path = None
             scene.audio_duration = None
             scene.subtitle_path = None
-            task = generate_audio_task.si(
-                scene.id,
-                scene.dialogue,
-                scene.character_name or "default",
-                project_id,
-                task_model.id,
-                repair_action=action,
+            task = chain(
+                generate_audio_task.si(
+                    scene.id,
+                    scene.dialogue,
+                    scene.character_name or "default",
+                    project_id,
+                    task_model.id,
+                    repair_action=action,
+                ),
+                generate_subtitle_task.si(
+                    scene.id,
+                    project_id,
+                    task_model.id,
+                ),
             )
 
         result = task.freeze()
@@ -264,6 +282,21 @@ class TaskOrchestrator:
             self.db.commit()
             raise
         return result.id
+
+    @staticmethod
+    def _repair_total_steps(
+        action: str,
+        image_actions: set[str],
+        video_actions: set[str],
+        audio_actions: set[str],
+    ) -> int:
+        if action in image_actions:
+            return 3  # keyframe, dependent video, sampled-frame review
+        if action in video_actions:
+            return 2  # video, sampled-frame review
+        if action in audio_actions:
+            return 2  # dialogue audio, dependent subtitle
+        return 1
 
     def _calculate_total_steps(
         self,

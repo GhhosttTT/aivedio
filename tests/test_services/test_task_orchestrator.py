@@ -4,7 +4,7 @@ TaskOrchestrator 服务单元测试
 """
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -161,10 +161,14 @@ class TestCreateProductionTask:
     def test_create_scene_repair_task_handles_dialogue_audio_repair(
         self, orchestrator, sample_project, sample_scenes, monkeypatch
     ):
-        chain = Mock()
-        chain.freeze.return_value.id = "audio-repair-task-id"
-        generate = Mock(return_value=chain)
+        workflow = Mock()
+        workflow.freeze.return_value.id = "audio-repair-task-id"
+        generate = Mock(return_value=Mock(name="audio-signature"))
+        subtitle = Mock(return_value=Mock(name="subtitle-signature"))
+        build_chain = Mock(return_value=workflow)
         monkeypatch.setattr("src.services.task_orchestrator.generate_audio_task.si", generate)
+        monkeypatch.setattr("src.services.task_orchestrator.generate_subtitle_task.si", subtitle)
+        monkeypatch.setattr("src.services.task_orchestrator.chain", build_chain)
         scene = sample_scenes[0]
         scene.audio_path = "old.mp3"
         scene.audio_duration = 1.5
@@ -180,12 +184,98 @@ class TestCreateProductionTask:
 
         assert celery_task_id == "audio-repair-task-id"
         assert generate.call_args.kwargs["repair_action"] == "refine_dialogue_audio_delivery"
+        subtitle.assert_called_once_with(scene.id, sample_project.id, ANY)
+        build_chain.assert_called_once()
         orchestrator.db.refresh(scene)
         assert scene.audio_path is None
         assert scene.audio_duration is None
         assert scene.subtitle_path is None
         assert scene.video_path == "keep-video.mp4"
-        chain.apply_async.assert_called_once()
+        workflow.apply_async.assert_called_once()
+        task = orchestrator.db.query(TaskModel).filter(
+            TaskModel.celery_task_id == celery_task_id
+        ).one()
+        assert task.total_steps == 2
+
+    def test_create_scene_repair_task_rerenders_video_after_keyframe_repair(
+        self, orchestrator, sample_project, sample_scenes, monkeypatch
+    ):
+        workflow = Mock()
+        workflow.freeze.return_value.id = "image-repair-task-id"
+        generate_image = Mock(return_value=Mock(name="image-signature"))
+        generate_video = Mock(return_value=Mock(name="video-signature"))
+        review = Mock(return_value=Mock(name="review-signature"))
+        build_chain = Mock(return_value=workflow)
+        monkeypatch.setattr(
+            "src.services.task_orchestrator.ProductionWorkflowProfileService",
+            lambda: Mock(validate_profile=Mock(return_value={"status": "valid"})),
+        )
+        monkeypatch.setattr("src.services.task_orchestrator.generate_image_task.si", generate_image)
+        monkeypatch.setattr("src.services.task_orchestrator.generate_video_task.si", generate_video)
+        monkeypatch.setattr("src.services.task_orchestrator.review_generation_task.si", review)
+        monkeypatch.setattr("src.services.task_orchestrator.chain", build_chain)
+        scene = sample_scenes[0]
+        scene.image_path = "old.png"
+        scene.video_path = "old.mp4"
+        orchestrator.db.commit()
+
+        celery_task_id = orchestrator.create_scene_repair_task(
+            sample_project.id,
+            scene.scene_number,
+            "refine_face_aesthetic_detail",
+        )
+
+        assert celery_task_id == "image-repair-task-id"
+        assert generate_image.call_args.kwargs["repair_action"] == "refine_face_aesthetic_detail"
+        generate_video.assert_called_once_with(scene.id, sample_project.id, ANY)
+        review.assert_called_once_with(sample_project.id, ANY)
+        build_chain.assert_called_once()
+        orchestrator.db.refresh(scene)
+        assert scene.image_path is None
+        assert scene.video_path is None
+        workflow.apply_async.assert_called_once()
+        task = orchestrator.db.query(TaskModel).filter(
+            TaskModel.celery_task_id == celery_task_id
+        ).one()
+        assert task.total_steps == 3
+
+    def test_create_scene_repair_task_reviews_after_video_repair(
+        self, orchestrator, sample_project, sample_scenes, monkeypatch
+    ):
+        workflow = Mock()
+        workflow.freeze.return_value.id = "video-repair-task-id"
+        generate_video = Mock(return_value=Mock(name="video-signature"))
+        review = Mock(return_value=Mock(name="review-signature"))
+        build_chain = Mock(return_value=workflow)
+        monkeypatch.setattr(
+            "src.services.task_orchestrator.ProductionWorkflowProfileService",
+            lambda: Mock(validate_profile=Mock(return_value={"status": "valid"})),
+        )
+        monkeypatch.setattr("src.services.task_orchestrator.generate_video_task.si", generate_video)
+        monkeypatch.setattr("src.services.task_orchestrator.review_generation_task.si", review)
+        monkeypatch.setattr("src.services.task_orchestrator.chain", build_chain)
+        scene = sample_scenes[0]
+        scene.image_path = "passed-keyframe.png"
+        scene.video_path = "old.mp4"
+        orchestrator.db.commit()
+
+        celery_task_id = orchestrator.create_scene_repair_task(
+            sample_project.id,
+            scene.scene_number,
+            "increase_motion_and_regenerate_video",
+        )
+
+        assert celery_task_id == "video-repair-task-id"
+        assert generate_video.call_args.kwargs["repair_action"] == "increase_motion_and_regenerate_video"
+        review.assert_called_once_with(sample_project.id, ANY)
+        build_chain.assert_called_once()
+        orchestrator.db.refresh(scene)
+        assert scene.video_path is None
+        workflow.apply_async.assert_called_once()
+        task = orchestrator.db.query(TaskModel).filter(
+            TaskModel.celery_task_id == celery_task_id
+        ).one()
+        assert task.total_steps == 2
 
 
 class TestCalculateTotalSteps:
