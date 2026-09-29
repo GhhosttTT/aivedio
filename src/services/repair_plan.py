@@ -214,6 +214,22 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 f"python -m scripts.validate_local_generation compare-baseline --output {output_path} --candidate <final_or_refinished_episode.mp4> --baseline <seed_dance_reference.mp4>",
                 f"python -m scripts.validate_local_generation summarize --output {output_path}",
             ]
+        elif action == "rewrite_short_drama_story_rhythm":
+            entry["rerun_strategy"] = (
+                "Rewrite the shooting script before GPU generation: visible early hook, recurring escalation, mid/final reversal, ending hook, dialogue/reaction drive, emotional progression, and atomic visual beats."
+            )
+            entry["parameter_hints"] = {
+                "repair_action": "rewrite_short_drama_story_rhythm",
+                "requires_script_rewrite": True,
+                "early_hook_required": True,
+                "escalation_every_3_to_4_scenes": True,
+                "reversal_required": True,
+                "ending_hook_required": True,
+                "split_overloaded_atomic_shots": True,
+            }
+            commands = [
+                f"python -m scripts.validate_local_generation summarize --output {output_path}",
+            ]
         else:
             entry["rerun_strategy"] = item.get("recommendation") or "Resolve this repair action and rerun summarize."
             commands = [f"python -m scripts.validate_local_generation summarize --output {output_path}"]

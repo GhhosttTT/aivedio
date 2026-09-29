@@ -28,6 +28,8 @@ def test_story_room_quality_flags_underdeveloped_short_drama():
     assert "reversal" in report["missing"]
     assert "ending_hook" in report["missing"]
     assert report["rewrite_actions"]
+    assert report["repair_queue"][0]["action"] == "rewrite_short_drama_story_rhythm"
+    assert report["repair_queue"][0]["execution"] == "setup_required"
 
 
 def test_story_room_quality_accepts_platform_ready_story_shape():
@@ -53,6 +55,7 @@ def test_story_room_quality_accepts_platform_ready_story_shape():
     assert report["status"] == "passed"
     assert report["score"] >= 7
     assert report["missing"] == []
+    assert report["repair_queue"] == []
     assert report["signals"]["early_hook"] is True
     assert report["signals"]["has_reversal"] is True
     assert report["signals"]["ending_hook"] is True

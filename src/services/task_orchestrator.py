@@ -179,6 +179,7 @@ class TaskOrchestrator:
         }
         blocked_actions = {
             "regenerate_character_identity": "请先在角色参考页重新生成身份方案和参考图，再重做关键帧。",
+            "rewrite_short_drama_story_rhythm": "请先重写短剧剧本节奏：开头钩子、冲突升级、反转、结尾钩子、情绪递进和原子镜头，再重新生成。",
             "split_scene": "请先把该分镜拆成更简单的原子镜头，再重新生成。",
             "start_local_reviewer": "请先启动 llama.cpp 视觉审核服务，再重跑审核或生成。",
             "manual_review": "该问题需要人工复核后再选择具体返工动作。",

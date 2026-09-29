@@ -218,3 +218,25 @@ def test_generation_quality_scorecard_counts_final_composition_finish_regression
     assert scorecard["dimensions"]["final_composition_finish"]["status"] == "needs_repair"
     assert scorecard["next_focus"]["dimension"] == "final_composition_finish"
     assert scorecard["next_focus"]["suggested_action"] == "refine_final_composition_finish"
+
+
+def test_generation_quality_scorecard_counts_story_rhythm_regressions():
+    scorecard = build_generation_quality_scorecard({
+        "story_room_quality": {
+            "status": "weak",
+            "story_room_quality_gate": {
+                "status": "needs_review",
+                "missing": ["early_hook", "escalation_cadence", "ending_hook"],
+            },
+            "repair_queue": [{
+                "action": "rewrite_short_drama_story_rhythm",
+                "execution": "setup_required",
+                "reason": "early_hook escalation_cadence ending_hook",
+            }],
+        },
+    })
+
+    assert scorecard["status"] == "needs_repair"
+    assert scorecard["dimensions"]["story_rhythm"]["status"] == "needs_repair"
+    assert scorecard["next_focus"]["dimension"] == "story_rhythm"
+    assert scorecard["next_focus"]["suggested_action"] == "rewrite_short_drama_story_rhythm"

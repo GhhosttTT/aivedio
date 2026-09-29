@@ -158,3 +158,21 @@ def test_repair_execution_plan_handles_final_composition_finish_rerun(tmp_path):
     assert item["parameter_hints"]["unify_skin_tone"] is True
     assert item["parameter_hints"]["check_subtitle_safe_area"] is True
     assert any("final_or_refinished_episode.mp4" in command for command in plan["rerun_validation_commands"])
+
+
+def test_repair_execution_plan_handles_story_rhythm_rewrite(tmp_path):
+    plan = build_repair_execution_plan(
+        tmp_path,
+        [{
+            "action": "rewrite_short_drama_story_rhythm",
+            "execution": "setup_required",
+            "stage": "script",
+            "reason": "missing early hook and ending hook",
+        }],
+    )
+
+    item = plan["setup_required"][0]
+    assert item["action"] == "rewrite_short_drama_story_rhythm"
+    assert item["parameter_hints"]["requires_script_rewrite"] is True
+    assert item["parameter_hints"]["early_hook_required"] is True
+    assert item["parameter_hints"]["ending_hook_required"] is True

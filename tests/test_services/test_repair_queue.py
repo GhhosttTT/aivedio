@@ -477,6 +477,30 @@ def test_repair_queue_handles_review_unavailable():
     assert queue[0]["execution"] == "setup_required"
 
 
+def test_repair_queue_maps_story_room_quality_gate_to_script_rewrite():
+    report = {
+        "status": "weak",
+        "kind": "story_room_quality",
+        "story_room_quality_gate": {
+            "status": "needs_review",
+            "missing": ["early_hook", "escalation_cadence", "reversal", "ending_hook"],
+            "low": {
+                3: {
+                    "score": 0,
+                    "evidence": "too_many_actions_or_beats",
+                    "scene_number": 3,
+                },
+            },
+        },
+    }
+
+    queue = build_repair_queue(report, "script")
+
+    assert queue[0]["action"] == "rewrite_short_drama_story_rhythm"
+    assert queue[0]["stage"] == "script"
+    assert queue[0]["execution"] == "setup_required"
+
+
 def test_repair_queue_classifies_asset_and_workflow_setup_failures():
     report = {
         "status": "needs_review",

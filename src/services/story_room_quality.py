@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 
 from src.database.models import Project, Scene
+from src.services.repair_queue import build_repair_queue
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,7 @@ class StoryRoomQualityReport:
     missing: list[str]
     rewrite_actions: list[str]
     scene_notes: list[dict]
+    repair_queue: list[dict]
 
     def to_dict(self) -> dict:
         return {
@@ -25,6 +27,7 @@ class StoryRoomQualityReport:
             "missing": self.missing,
             "rewrite_actions": self.rewrite_actions,
             "scene_notes": self.scene_notes,
+            "repair_queue": self.repair_queue,
         }
 
 
@@ -122,13 +125,32 @@ class StoryRoomQualityService:
 
         score = max(0, 8 - len(missing))
         status = "passed" if score >= 7 else ("warn" if score >= 4 else "weak")
+        rewrite_actions = self._rewrite_actions(missing, overloaded)
+        repair_queue = build_repair_queue({
+            "status": status,
+            "kind": "story_room_quality",
+            "story_room_quality_gate": {
+                "status": "passed" if status == "passed" else "needs_review",
+                "missing": missing,
+                "low": {
+                    item["scene_number"]: {
+                        "score": 0,
+                        "evidence": "too_many_actions_or_beats",
+                        "scene_number": item["scene_number"],
+                    }
+                    for item in overloaded
+                },
+            },
+            "rewrite_actions": rewrite_actions,
+        }, "script")
         return StoryRoomQualityReport(
             status=status,
             score=score,
             signals=signals,
             missing=missing,
-            rewrite_actions=self._rewrite_actions(missing, overloaded),
+            rewrite_actions=rewrite_actions,
             scene_notes=overloaded,
+            repair_queue=repair_queue,
         )
 
     def _scene_text(self, scene: Scene, script_scene: dict) -> str:

@@ -8,6 +8,17 @@ from typing import Any
 ACTION_RULES = [
     (
         (
+            "story_room_quality", "story room quality", "short-drama rhythm", "story rhythm",
+            "early_hook", "ending_hook", "escalation_cadence", "dialogue_or_reaction_drive",
+            "emotional_progression", "market_brief", "reversal", "weak hook", "weak story",
+            "too_many_actions_or_beats",
+        ),
+        "rewrite_short_drama_story_rhythm",
+        "Rewrite the script with a visible early hook, recurring escalation, reversal, ending hook, dialogue/reaction drive, emotional progression, and atomic visual beats.",
+        "script",
+    ),
+    (
+        (
             "style drift", "visual style drift", "random color grade", "inconsistent color grade",
             "color grade drift", "inconsistent lighting", "lighting mismatch", "wardrobe drift",
             "set dressing drift", "scene style mismatch", "different project look", "look continuity",
@@ -202,6 +213,31 @@ def _top_level_gate_candidates(report: dict[str, Any]) -> list[dict[str, Any]]:
                     "missing": [],
                 },
             })
+    story_gate = report.get("story_room_quality_gate")
+    if isinstance(story_gate, dict):
+        missing = story_gate.get("missing") if isinstance(story_gate.get("missing"), list) else []
+        if missing:
+            candidates.append({
+                "index": "story_room_quality",
+                "scene": {},
+                "story_room_quality_gate": {
+                    "status": "needs_review",
+                    "low": {},
+                    "missing": missing,
+                },
+            })
+        low = story_gate.get("low") if isinstance(story_gate.get("low"), dict) else {}
+        for key, payload in low.items():
+            scene_number = payload.get("scene_number") if isinstance(payload, dict) else None
+            candidates.append({
+                "index": key,
+                "scene": {"scene_number": scene_number} if isinstance(scene_number, int) else {},
+                "story_room_quality_gate": {
+                    "status": "needs_review",
+                    "low": {key: payload},
+                    "missing": [],
+                },
+            })
     return candidates
 
 
@@ -240,6 +276,7 @@ def _candidate_evidence(candidate: dict[str, Any]) -> list[str]:
         "character_distinctiveness_gate",
         "video_performance_gate",
         "final_composition_finishing_gate",
+        "story_room_quality_gate",
     ):
         gate = candidate.get(gate_name) if isinstance(candidate.get(gate_name), dict) else {}
         evidence.extend(_gate_evidence(gate, gate_name))
@@ -447,7 +484,14 @@ def _execution_mode(action: str) -> str:
         "refine_final_composition_finish",
     }:
         return "auto"
-    if action in {"regenerate_turnaround_album", "regenerate_character_identity", "refreeze_spatial_plan", "fix_workflow_profile", "start_local_reviewer"}:
+    if action in {
+        "regenerate_turnaround_album",
+        "regenerate_character_identity",
+        "refreeze_spatial_plan",
+        "fix_workflow_profile",
+        "start_local_reviewer",
+        "rewrite_short_drama_story_rhythm",
+    }:
         return "setup_required"
     return "manual"
 

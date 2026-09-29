@@ -12,6 +12,7 @@ DIMENSION_LABELS = {
     "acting_performance": "Acting, emotion, and dialogue reaction",
     "technical_integrity": "Rendering and visual integrity",
     "story_atomicity": "Atomic shot design",
+    "story_rhythm": "Short-drama hook and pacing",
     "spatial_continuity": "Shot continuity and screen direction",
     "workflow_assets": "Production setup and control assets",
     "episode_style_consistency": "Episode visual style continuity",
@@ -30,6 +31,7 @@ ACTION_DIMENSIONS = {
     "increase_motion_and_regenerate_video": "temporal_motion",
     "regenerate_video_with_performance_direction": "acting_performance",
     "split_scene": "story_atomicity",
+    "rewrite_short_drama_story_rhythm": "story_rhythm",
     "fix_workflow_profile": "workflow_assets",
     "refreeze_spatial_plan": "spatial_continuity",
     "refine_final_composition_finish": "final_composition_finish",
@@ -74,6 +76,14 @@ FEATURE_DIMENSIONS = {
     "character_position_continuity": "spatial_continuity",
     "prop_continuity": "spatial_continuity",
     "cut_smoothness": "spatial_continuity",
+    "early_hook": "story_rhythm",
+    "ending_hook": "story_rhythm",
+    "escalation_cadence": "story_rhythm",
+    "dialogue_or_reaction_drive": "story_rhythm",
+    "emotional_progression": "story_rhythm",
+    "market_brief": "story_rhythm",
+    "reversal": "story_rhythm",
+    "too_many_actions_or_beats": "story_atomicity",
     "exposure_uniformity": "final_composition_finish",
     "skin_tone_uniformity": "final_composition_finish",
     "color_grade_uniformity": "final_composition_finish",
@@ -188,6 +198,7 @@ def _add_candidate_findings(dimensions: dict[str, dict[str, Any]], candidate: di
         "turnaround_gate",
         "character_distinctiveness_gate",
         "video_performance_gate",
+        "story_room_quality_gate",
     ):
         gate = candidate.get(gate_name) if isinstance(candidate.get(gate_name), dict) else {}
         _add_gate_findings(dimensions, gate, candidate, report_name)
