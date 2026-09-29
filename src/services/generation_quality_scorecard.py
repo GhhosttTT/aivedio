@@ -122,7 +122,6 @@ FEATURE_DIMENSIONS = {
 
 FEATURE_ACTIONS = {
     "repair_artifacts_absent": "regenerate_keyframe_with_prop_constraints",
-    "artifact_absence": "regenerate_keyframe_with_prop_constraints",
     "no_same_face_casting": "regenerate_keyframe_with_role_separation",
     "role_readability": "regenerate_keyframe_with_role_separation",
     "face_geometry_separation": "regenerate_keyframe_with_role_separation",
@@ -262,7 +261,7 @@ def _add_candidate_findings(dimensions: dict[str, dict[str, Any]], candidate: di
         "story_room_quality_gate",
     ):
         gate = candidate.get(gate_name) if isinstance(candidate.get(gate_name), dict) else {}
-        _add_gate_findings(dimensions, gate, candidate, report_name)
+        _add_gate_findings(dimensions, gate, candidate, report_name, gate_name)
 
 
 def _add_score_finding(
@@ -293,6 +292,7 @@ def _add_gate_findings(
     gate: dict[str, Any],
     candidate: dict[str, Any],
     report_name: str,
+    gate_name: str,
 ) -> None:
     if not gate:
         return
@@ -318,10 +318,18 @@ def _add_gate_findings(
                 evidence = str(payload.get("evidence") or feature)
             else:
                 evidence = str(feature)
-            action = FEATURE_ACTIONS.get(str(feature))
+            action = _feature_action(str(feature), gate_name)
             if action:
                 target["actions"][action] = target["actions"].get(action, 0) + 1
             _append_evidence(target, f"{feature}: {evidence}")
+
+
+def _feature_action(feature: str, gate_name: str) -> str | None:
+    if feature == "artifact_absence":
+        if gate_name == "video_aesthetic_gate":
+            return "lower_motion_and_regenerate_video"
+        return "regenerate_keyframe_with_prop_constraints"
+    return FEATURE_ACTIONS.get(feature)
 
 
 def _feature_dimension(feature: str) -> str:

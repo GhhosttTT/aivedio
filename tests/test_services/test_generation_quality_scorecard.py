@@ -256,12 +256,38 @@ def test_generation_quality_scorecard_routes_visual_integrity_to_prop_constraint
     assert scorecard["next_focus"]["suggested_action"] == "regenerate_keyframe_with_prop_constraints"
 
 
-def test_generation_quality_scorecard_routes_artifact_gate_to_prop_constraints():
+def test_generation_quality_scorecard_routes_image_artifact_gate_to_prop_constraints():
+    scorecard = build_generation_quality_scorecard({
+        "image_review": {
+            "status": "needs_review",
+            "cases": [{
+                "scene": {"scene_number": 11},
+                "platform_aesthetic_gate": {
+                    "status": "needs_review",
+                    "low": {
+                        "repair_artifacts_absent": {
+                            "score": 2,
+                            "evidence": "visible face repair scar around hand detail pass",
+                        },
+                    },
+                },
+            }],
+        },
+    })
+
+    assert scorecard["status"] == "needs_repair"
+    assert scorecard["dimensions"]["technical_integrity"]["status"] == "needs_repair"
+    assert scorecard["dimensions"]["technical_integrity"]["scenes"] == [11]
+    assert scorecard["next_focus"]["dimension"] == "technical_integrity"
+    assert scorecard["next_focus"]["suggested_action"] == "regenerate_keyframe_with_prop_constraints"
+
+
+def test_generation_quality_scorecard_routes_video_artifact_gate_to_motion_repair():
     scorecard = build_generation_quality_scorecard({
         "video_review": {
             "status": "needs_review",
             "batches": [{
-                "scene": {"scene_number": 11},
+                "scene": {"scene_number": 12},
                 "video_aesthetic_gate": {
                     "status": "needs_review",
                     "low": {
@@ -277,9 +303,9 @@ def test_generation_quality_scorecard_routes_artifact_gate_to_prop_constraints()
 
     assert scorecard["status"] == "needs_repair"
     assert scorecard["dimensions"]["technical_integrity"]["status"] == "needs_repair"
-    assert scorecard["dimensions"]["technical_integrity"]["scenes"] == [11]
+    assert scorecard["dimensions"]["technical_integrity"]["scenes"] == [12]
     assert scorecard["next_focus"]["dimension"] == "technical_integrity"
-    assert scorecard["next_focus"]["suggested_action"] == "regenerate_keyframe_with_prop_constraints"
+    assert scorecard["next_focus"]["suggested_action"] == "lower_motion_and_regenerate_video"
 
 
 def test_generation_quality_scorecard_counts_episode_style_consistency_regressions():
