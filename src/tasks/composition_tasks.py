@@ -19,6 +19,7 @@ from src.services.generation_review import (
 from src.services.repair_queue import attach_repair_queue
 from src.services.video_composer import get_video_composer
 from src.services.subtitle_generator import get_subtitle_generator
+from src.tasks.audio_tasks import has_spoken_dialogue
 from src.utils.storage import get_project_final_video_path
 from src.utils.logger import get_logger
 
@@ -77,6 +78,7 @@ def compose_final_video_task(
         subtitle_generator = get_subtitle_generator()
         
         _require_passed_scene_videos(scenes)
+        _require_passed_scene_audio(scenes)
 
         # 收集所有分镜的视频和音频路径
         video_paths = []
@@ -298,6 +300,40 @@ def _require_passed_scene_videos(scenes: list[Scene]) -> None:
         raise ValueError("Missing generated video for scenes: " + ", ".join(missing))
     if failed:
         raise ValueError("Scene videos are not production-ready: " + "; ".join(failed))
+
+
+def _require_passed_scene_audio(scenes: list[Scene]) -> None:
+    missing = []
+    failed = []
+    for scene in scenes:
+        if not has_spoken_dialogue(scene.dialogue):
+            continue
+        if not scene.audio_path:
+            missing.append(str(scene.scene_number))
+            continue
+        audio_path = Path(scene.audio_path)
+        if not audio_path.is_file():
+            missing.append(str(scene.scene_number))
+            continue
+        quality_path = audio_path.with_suffix(".quality.json")
+        if not quality_path.is_file():
+            failed.append(f"{scene.scene_number}: missing audio quality report")
+            continue
+        try:
+            report = json.loads(quality_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            failed.append(f"{scene.scene_number}: invalid audio quality report: {exc}")
+            continue
+        if report.get("status") != "passed":
+            failed.append(f"{scene.scene_number}: audio quality status={report.get('status') or 'unknown'}")
+            continue
+        gate = report.get("dialogue_audio_quality_gate")
+        if isinstance(gate, dict) and gate.get("status") != "passed":
+            failed.append(f"{scene.scene_number}: dialogue audio quality gate failed")
+    if missing:
+        raise ValueError("Missing generated audio for spoken-dialogue scenes: " + ", ".join(missing))
+    if failed:
+        raise ValueError("Scene audio is not production-ready: " + "; ".join(failed))
 
 
 def _gate_status_passed(review: dict, key: str) -> bool:

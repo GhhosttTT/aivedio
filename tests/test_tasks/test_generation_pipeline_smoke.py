@@ -72,6 +72,43 @@ def test_composition_accepts_passed_video_quality_report(tmp_path):
     composition_tasks._require_passed_scene_videos([scene])
 
 
+def test_composition_requires_passed_audio_quality_report_for_dialogue(tmp_path):
+    audio = tmp_path / "scene_001.mp3"
+    audio.write_bytes(b"fake audio")
+    audio.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "needs_review",
+        "dialogue_audio_quality_gate": {
+            "status": "needs_review",
+            "low": {
+                "speech_pacing": {"score": 2, "evidence": "too rushed"},
+            },
+        },
+        "repair_queue": [{"action": "refine_dialogue_audio_delivery"}],
+    }), encoding="utf-8")
+    scene = Mock(scene_number=1, dialogue="你为什么骗我", audio_path=str(audio))
+
+    with pytest.raises(ValueError, match="audio quality status=needs_review"):
+        composition_tasks._require_passed_scene_audio([scene])
+
+
+def test_composition_accepts_passed_audio_quality_report_for_dialogue(tmp_path):
+    audio = tmp_path / "scene_001.mp3"
+    audio.write_bytes(b"fake audio")
+    audio.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "passed",
+        "dialogue_audio_quality_gate": {"status": "passed", "low": {}, "missing": []},
+    }), encoding="utf-8")
+    scene = Mock(scene_number=1, dialogue="你为什么骗我", audio_path=str(audio))
+
+    composition_tasks._require_passed_scene_audio([scene])
+
+
+def test_composition_skips_audio_quality_for_no_dialogue_scene():
+    scene = Mock(scene_number=1, dialogue="无对白", audio_path=None)
+
+    composition_tasks._require_passed_scene_audio([scene])
+
+
 def test_composition_requires_final_normalized_video_review(tmp_path):
     video = tmp_path / "scene_001.mp4"
     video.write_bytes(b"fake video")
