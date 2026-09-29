@@ -557,6 +557,27 @@ def _image_platform_reference_gates_passed(image_review_report: dict | None) -> 
     return True
 
 
+def _image_platform_reference_repair_queue(image_review_report: dict | None) -> list[dict]:
+    if not isinstance(image_review_report, dict):
+        return []
+    candidates = []
+    for index, case in enumerate(image_review_report.get("cases", []) or [], start=1):
+        if not isinstance(case, dict):
+            continue
+        gate = case.get("platform_reference_gate")
+        if not isinstance(gate, dict) or gate.get("status") == "passed":
+            continue
+        scene = case.get("scene") if isinstance(case.get("scene"), dict) else {}
+        candidates.append({
+            "index": case.get("id") or index,
+            "scene": scene,
+            "platform_reference_gate": gate,
+        })
+    if not candidates:
+        return []
+    return build_repair_queue({"status": "needs_review", "candidates": candidates}, "image")
+
+
 def _video_character_distinctiveness_gates_passed(video_review_report: dict | None) -> bool:
     if not isinstance(video_review_report, dict):
         return True
@@ -1136,6 +1157,7 @@ def summarize_validation(output: Path):
         *composition_reports.values(),
         baseline_comparison_report,
         manual_review,
+        {"repair_queue": _image_platform_reference_repair_queue(image_review_report)},
         {"repair_queue": _manual_repair_queue(manual_review, render_report)},
     )
     report["repair_queue"] = repair_queue
@@ -1315,6 +1337,24 @@ def build_manual_review_template(output: Path) -> dict:
     return template
 
 
+def _dedupe_repair_queue(items: list[dict]) -> list[dict]:
+    unique = []
+    seen = set()
+    for item in items:
+        key = (
+            item.get("action"),
+            item.get("execution"),
+            item.get("stage"),
+            item.get("scene_number"),
+            item.get("reason"),
+        )
+        if key in seen:
+            continue
+        unique.append(item)
+        seen.add(key)
+    return unique
+
+
 def _collect_repair_queue(*reports) -> list[dict]:
     queue = []
     for report in reports:
@@ -1326,7 +1366,7 @@ def _collect_repair_queue(*reports) -> list[dict]:
         for batch in report.get("batches", []):
             if isinstance(batch, dict) and isinstance(batch.get("repair_queue"), list):
                 queue.extend(item for item in batch["repair_queue"] if isinstance(item, dict))
-    return queue
+    return _dedupe_repair_queue(queue)
 
 
 def _manual_review_section(summary: dict, render_report: dict | None, manual_review: dict | None) -> dict:
@@ -1680,6 +1720,7 @@ def _validation_repair_queue(output: Path, summary: dict | None = None) -> list[
         *composition_reports.values(),
         baseline_report,
         manual_review,
+        {"repair_queue": _image_platform_reference_repair_queue(image_review_report)},
         {"repair_queue": _manual_repair_queue(manual_review, render_report)},
         summary,
     )

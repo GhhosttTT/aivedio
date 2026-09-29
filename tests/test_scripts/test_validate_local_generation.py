@@ -754,6 +754,7 @@ def test_validation_summary_requires_image_platform_reference_gate(tmp_path):
         },
         "missing": [],
     }
+    image_review["cases"][0]["scene"] = {"scene_number": 1}
     write_json(tmp_path / "image_review.json", image_review)
     write_json(tmp_path / "video_review.json", passed_video_review())
     write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
@@ -768,6 +769,9 @@ def test_validation_summary_requires_image_platform_reference_gate(tmp_path):
     assert report["checks"]["image_review_passed"] is True
     assert report["checks"]["image_platform_reference_gate_passed"] is False
     assert any("image platform-reference review" in item for item in report["action_items"])
+    assert report["repair_queue"][0]["action"] == "refine_prompt_composition"
+    assert report["repair_queue"][0]["execution"] == "auto"
+    assert report["repair_queue"][0]["scene_number"] == 1
 
 
 def test_validation_summary_requires_image_review_for_every_rendered_case(tmp_path):
@@ -1619,6 +1623,28 @@ def test_quality_loop_package_writes_direct_next_repair_plan(tmp_path):
     assert package["selected_repair_execution_plan"]["auto"][0]["action"] == "refine_face_aesthetic_detail"
     assert len(package["selected_repair_execution_plan"]["auto"]) == 1
     assert (tmp_path / "quality_loop_plan.json").is_file()
+
+
+def test_quality_loop_package_repairs_image_platform_reference_gate(tmp_path):
+    write_json(tmp_path / "validation_summary.json", {"status": "partial_needs_review"})
+    image_review = passed_image_review("discovery")
+    image_review["cases"][0]["scene"] = {"scene_number": 3}
+    image_review["cases"][0]["platform_reference_gate"] = {
+        "status": "needs_review",
+        "low": {
+            "seed_dance_gap": {"score": 2, "evidence": "large visible gap against premium reference"},
+        },
+        "missing": [],
+    }
+    write_json(tmp_path / "image_review.json", image_review)
+
+    package = validator.build_quality_loop_package(tmp_path, max_actions=1)
+
+    assert package["status"] == "can_auto_repair"
+    assert package["plan"]["selected"][0]["action"] == "refine_prompt_composition"
+    assert package["plan"]["selected"][0]["scene_number"] == 3
+    assert package["selected_repair_execution_plan"]["auto"][0]["parameter_hints"]["repair_action"] == "refine_prompt_composition"
+    assert any("--repair-action refine_prompt_composition" in command for command in package["selected_repair_execution_plan"]["rerun_validation_commands"])
 
 
 def test_quality_loop_package_surfaces_setup_required_without_auto_actions(tmp_path):
