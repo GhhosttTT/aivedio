@@ -101,6 +101,101 @@ def test_composition_blocks_failed_final_normalized_video_gate(tmp_path):
         composition_tasks._require_passed_scene_videos([scene])
 
 
+def passed_composition_review():
+    return {
+        "status": "passed",
+        "average": 4.4,
+        "batches": [{
+            "status": "passed",
+            "average": 4.4,
+            "platform_score": 4.2,
+            "video_aesthetic_gate": {"status": "passed"},
+            "character_distinctiveness_gate": {"status": "passed"},
+            "video_performance_gate": {"status": "passed"},
+            "review": {
+                "facial_identity": {"score": 4.2, "evidence": "faces match"},
+                "identity_consistency": {"score": 4.2, "evidence": "identity stable"},
+                "temporal_consistency": {"score": 4.1, "evidence": "cuts are coherent"},
+            },
+        }],
+    }
+
+
+def test_final_composed_video_review_payload_tracks_episode_context(tmp_path, monkeypatch):
+    captured = {}
+    final_video = tmp_path / "final.mp4"
+    final_video.write_bytes(b"final video")
+    project = Mock(id=7, name="premium-drama")
+    scenes = [
+        Mock(
+            scene_number=1,
+            character_name="Alice",
+            visual_description="Alice confronts Bob in an office doorway",
+            image_prompt="Alice close-up",
+            dialogue="你为什么骗我",
+            audio_path=str(tmp_path / "scene1.mp3"),
+            subtitle_path=str(tmp_path / "scene1.srt"),
+        ),
+        Mock(
+            scene_number=2,
+            character_name="Bob",
+            visual_description="Bob hides the contract",
+            image_prompt="Bob reaction",
+            dialogue="我没有选择",
+            audio_path=str(tmp_path / "scene2.mp3"),
+            subtitle_path=str(tmp_path / "scene2.srt"),
+        ),
+    ]
+
+    class FakeReviewService:
+        def review_video(self, video, payload, report_path, reference=None):
+            captured["video"] = video
+            captured["payload"] = payload
+            captured["report_path"] = report_path
+            captured["reference"] = reference
+            return passed_composition_review()
+
+    monkeypatch.setattr(composition_tasks, "GenerationReviewService", FakeReviewService)
+
+    report = composition_tasks._review_final_composed_video(project, scenes, str(final_video))
+
+    assert report["path"].endswith(".composition_review.json")
+    assert captured["video"] == str(final_video)
+    assert captured["report_path"] == final_video.with_suffix(".composition_review.json")
+    assert captured["payload"]["scene_number"] == "final_composition"
+    assert captured["payload"]["shot_plan"]["shot_role"] == "final_composed_short_drama"
+    assert captured["payload"]["platform_aesthetic_contract"]["video_features"]
+    assert captured["payload"]["scenes"][0]["has_audio"] is True
+    assert captured["payload"]["scenes"][0]["has_subtitle"] is True
+    assert {item["name"] for item in captured["payload"]["visible_characters"]} == {"Alice", "Bob"}
+
+
+def test_final_composed_video_review_blocks_failed_episode_gate(tmp_path, monkeypatch):
+    final_video = tmp_path / "final.mp4"
+    final_video.write_bytes(b"final video")
+    project = Mock(id=7, name="premium-drama")
+    scenes = [Mock(
+        scene_number=1,
+        character_name="Alice",
+        visual_description="Alice reacts flatly",
+        image_prompt="Alice close-up",
+        dialogue="你为什么骗我",
+        audio_path=None,
+        subtitle_path=None,
+    )]
+    failed = passed_composition_review()
+    failed["batches"][0]["video_performance_gate"] = {"status": "needs_review"}
+
+    class FakeReviewService:
+        def review_video(self, *_args, **_kwargs):
+            return failed
+
+    monkeypatch.setattr(composition_tasks, "GenerationReviewService", FakeReviewService)
+
+    with pytest.raises(ValueError, match="composition review batch 1 performance gate failed"):
+        composition_tasks._review_final_composed_video(project, scenes, str(final_video))
+
+
 def test_draft_tasks_cannot_publish_an_unreviewed_final_video(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("ENABLE_DRAFT_MEDIA_FALLBACK", "true")

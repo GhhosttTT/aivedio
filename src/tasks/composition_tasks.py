@@ -10,6 +10,7 @@ from src.tasks.celery_app import celery_app
 from src.database.database import get_db
 from src.database.models import Project, ProjectStatus, Scene, Task as TaskModel, TaskStatus
 from src.config import settings
+from src.services.generation_review import GenerationReviewService, VIDEO_AESTHETIC_FEATURES
 from src.services.video_composer import get_video_composer
 from src.services.subtitle_generator import get_subtitle_generator
 from src.utils.storage import get_project_final_video_path
@@ -153,6 +154,8 @@ def compose_final_video_task(
                     shutil.copy2(temp_video_path, final_video_path)
                 else:
                     shutil.move(temp_video_path, final_video_path)
+
+        composition_review = _review_final_composed_video(project, scenes, final_video_path)
         
         # 更新项目状态
         project.final_video_path = final_video_path
@@ -173,11 +176,14 @@ def compose_final_video_task(
         
         logger.info(f"视频合成成功: project_id={project_id}, path={final_video_path}")
         
-        return {
+        result = {
             "project_id": project_id,
             "final_video_path": final_video_path,
             "status": "completed"
         }
+        if composition_review:
+            result["composition_review_path"] = composition_review.get("path")
+        return result
     
     except Exception as e:
         logger.error(f"视频合成失败: project_id={project_id}, error={e}")
@@ -326,6 +332,109 @@ def _final_video_review_error(report: dict) -> str | None:
     if not _gate_status_passed(review, "video_performance_gate"):
         return "final normalized video performance gate failed"
     return None
+
+
+def _project_final_review_payload(project: Project, scenes: list[Scene]) -> dict:
+    visible_characters = []
+    seen = set()
+    scene_summaries = []
+    dialogue_lines = []
+    for scene in scenes:
+        if scene.character_name and scene.character_name not in seen:
+            visible_characters.append({
+                "name": scene.character_name,
+                "appearance": scene.visual_description or scene.image_prompt or "",
+            })
+            seen.add(scene.character_name)
+        scene_summaries.append({
+            "scene_number": scene.scene_number,
+            "visual_description": scene.visual_description,
+            "dialogue": scene.dialogue,
+            "has_audio": bool(scene.audio_path),
+            "has_subtitle": bool(scene.subtitle_path),
+        })
+        if scene.dialogue:
+            dialogue_lines.append(str(scene.dialogue))
+    return {
+        "scene_number": "final_composition",
+        "project_id": project.id,
+        "project_name": project.name,
+        "visual_description": "Full composed mobile short-drama episode assembled from reviewed scene clips.",
+        "dialogue": "\n".join(dialogue_lines),
+        "scenes": scene_summaries,
+        "visible_characters": visible_characters,
+        "shot_plan": {
+            "shot_role": "final_composed_short_drama",
+            "review_scope": "full_episode_after_concat_audio_subtitles",
+        },
+        "platform_aesthetic_contract": {
+            "video_features": list(VIDEO_AESTHETIC_FEATURES),
+            "review_instruction": (
+                "Judge the composed full episode for premium mobile short-drama polish, "
+                "coherent transitions, readable subtitles when present, audio-video timing, "
+                "consistent character identity across scene boundaries, and commercial finish."
+            ),
+        },
+        "composition_contract": {
+            "must_check": [
+                "scene order is coherent",
+                "cuts do not create jarring identity or position jumps",
+                "dialogue reaction beats are readable",
+                "burned subtitles are readable and do not cover faces",
+                "audio and lip/action timing feel aligned",
+                "the full clip is publishable on a mobile short-drama feed",
+            ],
+        },
+    }
+
+
+def _composition_review_error(report: dict) -> str | None:
+    if not settings.GENERATION_REQUIRE_VIDEO_REVIEW:
+        return None
+    if report.get("status") != "passed":
+        return f"composition review status={report.get('status') or 'unknown'}"
+    if float(report.get("average") or 0) < settings.GENERATION_VIDEO_MIN_SCORE:
+        return f"composition review average={report.get('average') or 0} below {settings.GENERATION_VIDEO_MIN_SCORE}"
+    batches = report.get("batches") if isinstance(report.get("batches"), list) else []
+    if not batches:
+        return "composition review has no sampled-frame batches"
+    for index, batch in enumerate(batches, start=1):
+        if batch.get("status") != "passed":
+            return f"composition review batch {index} status={batch.get('status') or 'unknown'}"
+        review = batch.get("review") if isinstance(batch.get("review"), dict) else {}
+        for key in ("facial_identity", "identity_consistency"):
+            value = review.get(key)
+            if isinstance(value, dict) and float(value.get("score") or 0) < settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE:
+                return f"composition review batch {index} {key} gate failed"
+        value = review.get("temporal_consistency")
+        if isinstance(value, dict) and float(value.get("score") or 0) < settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE:
+            return f"composition review batch {index} temporal gate failed"
+        platform_score = batch.get("platform_score")
+        if isinstance(platform_score, (int, float)) and platform_score < settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE:
+            return f"composition review batch {index} platform score={platform_score} below {settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE}"
+        if not _gate_status_passed(batch, "video_aesthetic_gate"):
+            return f"composition review batch {index} aesthetic gate failed"
+        if not _optional_gate_status_passed(batch, "character_distinctiveness_gate"):
+            return f"composition review batch {index} character distinctiveness gate failed"
+        if not _gate_status_passed(batch, "video_performance_gate"):
+            return f"composition review batch {index} performance gate failed"
+    return None
+
+
+def _review_final_composed_video(project: Project, scenes: list[Scene], final_video_path: str) -> dict | None:
+    if not settings.GENERATION_REQUIRE_VIDEO_REVIEW:
+        return None
+    report_path = Path(final_video_path).with_suffix(".composition_review.json")
+    report = GenerationReviewService().review_video(
+        final_video_path,
+        _project_final_review_payload(project, scenes),
+        report_path,
+    )
+    report["path"] = str(report_path)
+    error = _composition_review_error(report)
+    if error:
+        raise ValueError("Final composed video is not production-ready: " + error)
+    return report
 
 
 def _parse_srt_time(time_str: str) -> float:
