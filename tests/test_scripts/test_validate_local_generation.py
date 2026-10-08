@@ -272,6 +272,9 @@ def test_video_workflow_preflight_blocks_missing_video_contract(tmp_path, monkey
     assert report["checks"]["has_repair_action_placeholder"] is False
     assert report["checks"]["has_quality_pipeline_placeholder"] is False
     assert report["checks"]["has_likely_video_output"] is False
+    assert any("{reference_image}" in item for item in report["action_items"])
+    assert any("{quality_mode}" in item for item in report["action_items"])
+    assert any("video output node" in item for item in report["action_items"])
 
 
 def test_video_workflow_preflight_blocks_missing_quality_placeholders(tmp_path, monkeypatch):
@@ -317,6 +320,9 @@ def test_video_workflow_preflight_blocks_missing_quality_placeholders(tmp_path, 
     assert report["checks"]["has_quality_profile_placeholder"] is False
     assert report["checks"]["has_repair_action_placeholder"] is False
     assert report["checks"]["has_quality_pipeline_placeholder"] is False
+    assert any("{quality_mode}" in item for item in report["action_items"])
+    assert any("{repair_action}" in item for item in report["action_items"])
+    assert any("{quality_pipeline_json}" in item for item in report["action_items"])
 
 
 def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeypatch):
@@ -375,6 +381,7 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
         "quality_pipeline_json", "reference_image", "repair_action",
     ]
     assert report["likely_output_nodes"][0]["class_type"] == "VHS_VideoCombine"
+    assert report["action_items"] == []
 
 
 def test_render_images_uses_production_quality_profile(tmp_path, monkeypatch):

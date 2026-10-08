@@ -52,12 +52,13 @@ def likely_video_outputs(workflow: dict) -> list[dict]:
 
 def preflight_video_workflow(base_url: str | None = None, workflow_path: str | None = None) -> dict:
     path = workflow_path or settings.COMFYUI_VIDEO_WORKFLOW_PATH
-    report = {"status": "blocked", "workflow_path": path, "checks": {}}
+    report = {"status": "blocked", "workflow_path": path, "checks": {}, "action_items": []}
     checks = report["checks"]
     if not path:
         checks["configured"] = False
         report["status"] = "skipped"
         report["message"] = "COMFYUI_VIDEO_WORKFLOW_PATH is empty; video generation will use SVD"
+        report["action_items"].append("Set COMFYUI_VIDEO_WORKFLOW_PATH to a production ComfyUI video API workflow.")
         return report
     checks["configured"] = True
     workflow_file = Path(path)
@@ -67,6 +68,7 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
     report["resolved_workflow_path"] = str(workflow_file)
     if not workflow_file.is_file():
         report["error"] = f"workflow file does not exist: {workflow_file}"
+        report["action_items"].append(report["error"])
         return report
     try:
         workflow = json.loads(workflow_file.read_text(encoding="utf-8"))
@@ -87,6 +89,16 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
             "quality_pipeline_prompt", "quality_pipeline_negative",
         } & set(placeholders))
         checks["has_likely_video_output"] = bool(outputs)
+        contract_required = (
+            "workflow_file", "has_reference_placeholder", "has_prompt_placeholder",
+            "has_quality_profile_placeholder", "has_repair_action_placeholder",
+            "has_quality_pipeline_placeholder", "has_likely_video_output",
+        )
+        if not all(checks.get(key) for key in contract_required):
+            checks["comfyui_preflight"] = False
+            report["status"] = "blocked"
+            report["action_items"].extend(_video_workflow_action_items(checks))
+            return report
         service = ComfyUIService(base_url=base_url, timeout=15)
         try:
             quality_pipeline = {
@@ -127,14 +139,35 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
     except Exception as exc:
         checks["comfyui_preflight"] = False
         report["error"] = str(exc)
+        report["action_items"].append(str(exc))
         return report
-    required = (
-        "workflow_file", "has_reference_placeholder", "has_prompt_placeholder",
-        "has_quality_profile_placeholder", "has_repair_action_placeholder",
-        "has_quality_pipeline_placeholder", "has_likely_video_output", "comfyui_preflight",
-    )
+    required = ("workflow_file", "comfyui_preflight")
     report["status"] = "ready_for_live_test" if all(checks.get(key) for key in required) else "blocked"
+    if report["status"] == "blocked":
+        report["action_items"].extend(_video_workflow_action_items(checks))
     return report
+
+
+def _video_workflow_action_items(checks: dict) -> list[str]:
+    items = []
+    if not checks.get("has_reference_placeholder"):
+        items.append("Add {reference_image} or {image} to the workflow input image node.")
+    if not checks.get("has_prompt_placeholder"):
+        items.append("Add {prompt} or {positive_prompt} to the positive prompt node.")
+    if not checks.get("has_quality_profile_placeholder"):
+        items.append("Add {quality_mode} or {quality_profile} so the workflow can switch production quality profiles.")
+    if not checks.get("has_repair_action_placeholder"):
+        items.append("Add {repair_action} so repair passes can select stronger generation branches.")
+    if not checks.get("has_quality_pipeline_placeholder"):
+        items.append(
+            "Add {quality_pipeline_json}, {quality_pipeline_stages}, {quality_pipeline_prompt}, "
+            "or {quality_pipeline_negative} so commercial quality stages reach the workflow."
+        )
+    if not checks.get("has_likely_video_output"):
+        items.append("Add a video output node such as VHS_VideoCombine, WebM/GIF export, or another video save node.")
+    if not checks.get("comfyui_preflight"):
+        items.append("Fix ComfyUI node/model preflight errors before running production video generation.")
+    return items
 
 
 def preflight_production_video_engine(base_url: str | None = None, workflow_path: str | None = None) -> dict:
@@ -163,7 +196,9 @@ def preflight_production_video_engine(base_url: str | None = None, workflow_path
     elif workflow_report.get("error"):
         report["action_items"].append(workflow_report["error"])
     else:
-        report["action_items"].append("Fix the blocked video workflow checks before using production generation.")
+        report["action_items"].extend(
+            workflow_report.get("action_items") or ["Fix the blocked video workflow checks before using production generation."]
+        )
     return report
 
 
