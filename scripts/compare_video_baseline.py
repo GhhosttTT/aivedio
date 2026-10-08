@@ -125,6 +125,11 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
     differences = {
         "duration_delta_seconds": round(candidate_stats.duration_seconds - baseline_stats.duration_seconds, 3),
         "fps_delta": round(candidate_stats.fps - baseline_stats.fps, 3),
+        "aspect_ratio_delta": round(
+            _aspect_ratio(candidate_stats.width, candidate_stats.height)
+            - _aspect_ratio(baseline_stats.width, baseline_stats.height),
+            3,
+        ),
         "motion_energy_ratio": _safe_ratio(candidate_stats.motion_energy, baseline_stats.motion_energy),
         "sharpness_ratio": _safe_ratio(candidate_stats.sharpness, baseline_stats.sharpness),
         "brightness_delta": round(candidate_stats.brightness - baseline_stats.brightness, 3),
@@ -135,6 +140,7 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
         "resolution_not_lower": (
             candidate_stats.width * candidate_stats.height >= baseline_stats.width * baseline_stats.height
         ),
+        "aspect_ratio_close": abs(differences["aspect_ratio_delta"]) <= 0.08,
         "motion_not_static": candidate_stats.motion_energy >= max(2.0, baseline_stats.motion_energy * 0.45),
         "sharpness_not_collapsed": candidate_stats.sharpness >= max(8.0, baseline_stats.sharpness * 0.45),
         "brightness_stable": candidate_stats.brightness_variance <= max(900.0, baseline_stats.brightness_variance * 3.0),
@@ -220,6 +226,10 @@ def _safe_ratio(value: float, baseline: float) -> float | None:
     return round(value / baseline, 3)
 
 
+def _aspect_ratio(width: int, height: int) -> float:
+    return width / height if height else 0.0
+
+
 def _ratio_score(value: float | None, ideal: float = 1.0, tolerance: float = 0.55) -> float:
     if value is None or not math.isfinite(value):
         return 2.5
@@ -236,6 +246,7 @@ def _technical_similarity_score(differences: dict, gates: dict[str, bool]) -> fl
     component_scores = [
         _delta_score(float(differences["duration_delta_seconds"]), 1.0),
         _delta_score(float(differences["fps_delta"]), 8.0),
+        _delta_score(float(differences["aspect_ratio_delta"]), 0.16),
         _ratio_score(differences.get("motion_energy_ratio"), tolerance=0.75),
         _ratio_score(differences.get("sharpness_ratio"), tolerance=0.75),
         _delta_score(float(differences["brightness_delta"]), 60.0),
