@@ -153,6 +153,42 @@ def test_quality_loop_treats_seed_dance_candidate_summary_as_ready():
     assert plan["next_step"] == "Proceed to final composition and human sample review."
 
 
+def test_quality_loop_routes_clean_low_production_score_to_manual_video_repair():
+    summary = {
+        "status": "partial_needs_review",
+        "repair_queue": [],
+        "quality_scorecard": {
+            "status": "clean",
+            "production_score": 3.9,
+            "next_focus": None,
+        },
+    }
+
+    plan = build_quality_loop_plan(summary, max_actions=5)
+
+    assert plan["status"] == "manual_review_required"
+    assert plan["manual_actions"][0]["action"] == "refine_video_commercial_aesthetic"
+    assert plan["manual_actions"][0]["production_score"] == 3.9
+    assert plan["manual_actions"][0]["missing_scope"] == "scene_number"
+
+
+def test_quality_loop_does_not_treat_seed_dance_candidate_as_ready_when_score_is_low():
+    summary = {
+        "status": "ready_for_seed_dance_candidate",
+        "repair_queue": [],
+        "quality_scorecard": {
+            "status": "clean",
+            "production_score": 3.8,
+            "next_focus": None,
+        },
+    }
+
+    plan = build_quality_loop_plan(summary, max_actions=5)
+
+    assert plan["status"] == "manual_review_required"
+    assert plan["manual_actions"][0]["source_report"] == "quality_scorecard"
+
+
 def test_quality_loop_uses_scorecard_focus_when_repair_queue_is_empty():
     summary = {
         "status": "partial_needs_review",

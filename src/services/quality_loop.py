@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.services.generation_quality_scorecard import (
+    MIN_COMMERCIAL_PRODUCTION_SCORE,
+    production_score_meets_candidate_threshold,
+)
 from src.services.repair_queue import repair_execution_mode
 
 
@@ -150,7 +154,12 @@ def augment_repair_queue_with_scorecard(
     lets the next generation pass act on the weakest proven defect.
     """
 
-    if not isinstance(scorecard, dict) or scorecard.get("status") in {None, "clean"}:
+    if not isinstance(scorecard, dict):
+        return repair_queue
+    if scorecard.get("status") in {None, "clean"}:
+        if _scorecard_production_score_is_low(scorecard):
+            item = _low_production_score_item(scorecard)
+            repair_queue["manual_actions"].append(item)
         return repair_queue
     focus = scorecard.get("next_focus") if isinstance(scorecard.get("next_focus"), dict) else {}
     action = str(focus.get("suggested_action") or "").strip()
@@ -180,6 +189,33 @@ def augment_repair_queue_with_scorecard(
             repair_queue["manual_actions"].append(item)
         existing.add(key)
     return repair_queue
+
+
+def _scorecard_production_score_is_low(scorecard: dict[str, Any]) -> bool:
+    score = scorecard.get("production_score")
+    return not production_score_meets_candidate_threshold(score)
+
+
+def _low_production_score_item(scorecard: dict[str, Any]) -> dict[str, Any]:
+    score = scorecard.get("production_score")
+    return {
+        "priority": "high",
+        "stage": "video",
+        "action": "refine_video_commercial_aesthetic",
+        "execution": "manual",
+        "reason": (
+            "quality_scorecard production_score is below the commercial candidate threshold "
+            f"({score} < {MIN_COMMERCIAL_PRODUCTION_SCORE})."
+        ),
+        "recommendation": (
+            "Choose the weakest visible clip, rerun commercial-aesthetic video repair, "
+            "then rebuild the validation summary."
+        ),
+        "source_report": "quality_scorecard",
+        "dimension": "platform_aesthetic",
+        "production_score": score,
+        "missing_scope": "scene_number",
+    }
 
 
 def build_quality_loop_plan(summary: dict[str, Any], max_actions: int) -> dict[str, Any]:
