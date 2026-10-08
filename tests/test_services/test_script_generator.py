@@ -436,6 +436,9 @@ class TestScriptGenerator:
         )
 
         assert "Scenes 1-2 must contain a visible hook" in prompt
+        assert "protagonist's visible goal" in prompt
+        assert "opposing force" in prompt
+        assert "failure consequence" in prompt
         assert "Every 3-4 scenes must escalate conflict" in prompt
         assert "one clear reversal" in prompt
         assert "final two scenes" in prompt

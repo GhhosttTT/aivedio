@@ -73,6 +73,16 @@ class StoryRoomQualityService:
         "失望", "惊讶", "哭", "怒", "shock", "angry", "afraid", "hesitate",
         "determined",
     ]
+    GOAL_TERMS = [
+        "想要", "必须", "选择", "保护", "证明", "拿到", "夺回", "逃离", "留下",
+        "赢回", "救", "查清", "复仇", "逆袭", "want", "must", "choose", "protect",
+        "prove", "escape", "win", "save", "find", "revenge",
+    ]
+    STAKES_TERMS = [
+        "失去", "毁掉", "破产", "坐牢", "曝光", "名声", "孩子", "遗产", "婚姻",
+        "生命", "家族", "lose", "ruin", "bankrupt", "jail", "expose", "reputation",
+        "child", "inheritance", "marriage", "life", "family",
+    ]
 
     def evaluate(self, project: Project, scenes: list[Scene], script_scenes: dict[int, dict] | None = None) -> StoryRoomQualityReport:
         script_scenes = script_scenes or {}
@@ -93,10 +103,15 @@ class StoryRoomQualityService:
         reversal_count = self._count_terms(middle_text, self.REVERSAL_TERMS)
         ending_count = self._count_terms(ending_text, self.ENDING_TERMS) + len(re.findall(r"[!?！？]", ending_text))
         escalation_windows = self._escalation_windows(scene_texts)
+        goal_count = self._count_terms(full_text, self.GOAL_TERMS)
+        stakes_count = self._count_terms(full_text, self.STAKES_TERMS)
 
         signals = {
             "has_market_brief": len(brief_text.strip()) >= 20 and self._count_terms(brief_text, self.MARKET_TERMS) > 0,
             "early_hook": hook_count > 0,
+            "character_goal_conflict": goal_count > 0 and conflict_count > 0 and stakes_count > 0,
+            "goal_signals": goal_count,
+            "stakes_signals": stakes_count,
             "dialogue_density": dialogue_density,
             "escalation_windows": escalation_windows,
             "has_reversal": reversal_count > 0,
@@ -110,6 +125,8 @@ class StoryRoomQualityService:
             missing.append("market_brief")
         if not signals["early_hook"]:
             missing.append("early_hook")
+        if not signals["character_goal_conflict"]:
+            missing.append("character_goal_conflict")
         if dialogue_density < 0.5:
             missing.append("dialogue_or_reaction_drive")
         if escalation_windows < max(1, len(ordered) // 4):
@@ -123,8 +140,8 @@ class StoryRoomQualityService:
         if overloaded:
             missing.append("atomic_shots")
 
-        score = max(0, 8 - len(missing))
-        status = "passed" if score >= 7 else ("warn" if score >= 4 else "weak")
+        score = max(0, 9 - len(missing))
+        status = "passed" if score >= 8 else ("warn" if score >= 5 else "weak")
         rewrite_actions = self._rewrite_actions(missing, overloaded)
         repair_queue = build_repair_queue({
             "status": status,
@@ -194,6 +211,8 @@ class StoryRoomQualityService:
             actions.append("Add a topic brief with target audience, platform, genre, hook type, and risk notes.")
         if "early_hook" in missing:
             actions.append("Rewrite scenes 1-2 around a visible secret, threat, crisis, evidence, or irreversible choice.")
+        if "character_goal_conflict" in missing:
+            actions.append("Clarify the protagonist's visible goal, the opposing force, and what is lost if they fail.")
         if "dialogue_or_reaction_drive" in missing:
             actions.append("Make at least half of the shots dialogue-driven or reaction-driven.")
         if "escalation_cadence" in missing:

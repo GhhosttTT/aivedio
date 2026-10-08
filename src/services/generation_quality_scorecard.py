@@ -90,6 +90,7 @@ FEATURE_DIMENSIONS = {
     "prop_continuity": "spatial_continuity",
     "cut_smoothness": "spatial_continuity",
     "early_hook": "story_rhythm",
+    "character_goal_conflict": "story_rhythm",
     "ending_hook": "story_rhythm",
     "escalation_cadence": "story_rhythm",
     "dialogue_or_reaction_drive": "story_rhythm",

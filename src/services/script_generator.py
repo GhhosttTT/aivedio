@@ -599,9 +599,10 @@ Mandatory fixes:
 5. If there are too few scenes for the old plot, simplify the plot rather than compressing actions.
 6. Remove contradictions such as a dirty counter becoming clean without a cleanup beat.
 7. Scenes 1-2 must contain a visible hook: secret, betrayal, threat, crisis, shocking evidence, identity clue, or irreversible choice.
-8. Every 3-4 scenes must escalate conflict through confrontation, refusal, exposed evidence, emotional breakdown, or a higher-stakes decision.
-9. The middle or final third must include one clear reversal, and the final two scenes must deliver a payoff or next-episode hook.
-10. Put hook, escalation, reversal, and ending hook into story beats and visible actions, not only into the summary.
+8. Make the protagonist's visible goal, opposing force, and failure consequence clear through actions or dialogue.
+9. Every 3-4 scenes must escalate conflict through confrontation, refusal, exposed evidence, emotional breakdown, or a higher-stakes decision.
+10. The middle or final third must include one clear reversal, and the final two scenes must deliver a payoff or next-episode hook.
+11. Put hook, goal-conflict-stakes, escalation, reversal, and ending hook into story beats and visible actions, not only into the summary.
 
 Output only this parser-compatible format:
 【剧本】
