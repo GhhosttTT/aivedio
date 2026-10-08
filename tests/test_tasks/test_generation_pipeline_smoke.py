@@ -146,6 +146,74 @@ def test_composition_skips_subtitle_quality_for_no_dialogue_scene():
     composition_tasks._require_scene_subtitles([scene])
 
 
+def test_merge_subtitles_preserves_no_dialogue_scene_timeline(tmp_path):
+    first_subtitle = tmp_path / "scene_001.srt"
+    first_subtitle.write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\n你为什么骗我\n",
+        encoding="utf-8",
+    )
+    third_subtitle = tmp_path / "scene_003.srt"
+    third_subtitle.write_text(
+        "1\n00:00:00,000 --> 00:00:01,200\n我没有选择\n",
+        encoding="utf-8",
+    )
+    scenes = [
+        Mock(scene_number=1, subtitle_path=str(first_subtitle), video_path="scene_001.mp4", audio_duration=1.0),
+        Mock(scene_number=2, subtitle_path=None, video_path="scene_002.mp4", audio_duration=None),
+        Mock(scene_number=3, subtitle_path=str(third_subtitle), video_path="scene_003.mp4", audio_duration=1.2),
+    ]
+    service = Mock()
+    durations = {
+        "scene_001.mp4": 2.0,
+        "scene_002.mp4": 3.0,
+        "scene_003.mp4": 2.0,
+    }
+    service._get_duration.side_effect = lambda path: durations[path]
+
+    output = tmp_path / "merged.srt"
+    composition_tasks._merge_subtitles(
+        [str(first_subtitle), str(third_subtitle)],
+        str(output),
+        scenes,
+        service,
+    )
+
+    content = output.read_text(encoding="utf-8")
+    assert "00:00:00,000 --> 00:00:01,000" in content
+    assert "00:00:05,000 --> 00:00:06,200" in content
+    assert "我没有选择" in content
+
+
+def test_merge_subtitles_falls_back_to_audio_duration_when_video_probe_fails(tmp_path):
+    subtitle = tmp_path / "scene_001.srt"
+    subtitle.write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\n合同在哪里\n",
+        encoding="utf-8",
+    )
+    next_subtitle = tmp_path / "scene_002.srt"
+    next_subtitle.write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\n在保险柜里\n",
+        encoding="utf-8",
+    )
+    scenes = [
+        Mock(scene_number=1, subtitle_path=str(subtitle), video_path="broken.mp4", audio_duration=2.5),
+        Mock(scene_number=2, subtitle_path=str(next_subtitle), video_path="scene_002.mp4", audio_duration=1.0),
+    ]
+    service = Mock()
+    service._get_duration.side_effect = RuntimeError("ffprobe unavailable")
+
+    output = tmp_path / "merged.srt"
+    composition_tasks._merge_subtitles(
+        [str(subtitle), str(next_subtitle)],
+        str(output),
+        scenes,
+        service,
+    )
+
+    content = output.read_text(encoding="utf-8")
+    assert "00:00:02,500 --> 00:00:03,500" in content
+
+
 def test_composition_blocks_audio_video_duration_mismatch():
     service = Mock()
     service._get_duration.side_effect = [4.0, 1.0]

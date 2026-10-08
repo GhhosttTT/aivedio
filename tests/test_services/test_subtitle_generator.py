@@ -46,6 +46,8 @@ class TestSubtitleGenerator:
         assert service.max_chars_per_line == 30
         assert service.max_lines == 3
         assert service.font_size == 28
+        assert service.margin_v == 64
+        assert service.bold is True
     
     def test_generate_srt_success(self, service, sample_dialogues, tmp_path):
         """测试：成功生成 SRT 字幕"""
@@ -214,6 +216,26 @@ class TestSubtitleGenerator:
         
         assert result_path == str(output_file)
         mock_run.assert_called_once()
+
+    def test_burn_subtitle_uses_mobile_short_drama_style(self, service, tmp_path):
+        """测试：字幕烧录使用适合手机短剧的可读样式"""
+        video_file = tmp_path / "video.mp4"
+        video_file.write_text("fake video")
+        subtitle_file = tmp_path / "subtitle.srt"
+        subtitle_file.write_text("fake subtitle")
+
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            service.burn_subtitle(str(video_file), str(subtitle_file), str(tmp_path / "output.mp4"))
+
+        cmd = mock_run.call_args.args[0]
+        filter_expr = cmd[cmd.index("-vf") + 1]
+        assert "FontSize=38" in filter_expr
+        assert "Outline=3" in filter_expr
+        assert "Shadow=1" in filter_expr
+        assert "MarginV=64" in filter_expr
+        assert "Alignment=2" in filter_expr
+        assert "Bold=1" in filter_expr
     
     def test_burn_subtitle_ffmpeg_error(self, service, tmp_path):
         """测试：FFmpeg 执行失败时抛出异常"""
@@ -233,6 +255,15 @@ class TestSubtitleGenerator:
         assert service._color_to_ass("black") == "&H00000000"
         assert service._color_to_ass("red") == "&H000000FF"
         assert service._color_to_ass("unknown") == "&H00FFFFFF"  # 默认白色
+
+    def test_subtitle_force_style_can_disable_bold(self):
+        service = SubtitleGenerator(bold=False, margin_v=48, font_size=32)
+
+        style = service._subtitle_force_style()
+
+        assert "FontSize=32" in style
+        assert "MarginV=48" in style
+        assert "Bold=0" in style
 
 
 class TestGlobalSubtitleGenerator:

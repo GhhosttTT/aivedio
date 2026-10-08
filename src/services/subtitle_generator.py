@@ -25,11 +25,15 @@ class SubtitleGenerator:
         self,
         max_chars_per_line: int = 20,
         max_lines: int = 2,
-        font_size: int = 24,
+        font_size: int = 38,
         font_color: str = "white",
         font_name: str = "Arial",
         outline_color: str = "black",
-        outline_width: int = 2
+        outline_width: int = 3,
+        shadow: int = 1,
+        margin_v: int = 64,
+        alignment: int = 2,
+        bold: bool = True
     ):
         """
         初始化字幕生成服务
@@ -50,6 +54,10 @@ class SubtitleGenerator:
         self.font_name = font_name
         self.outline_color = outline_color
         self.outline_width = outline_width
+        self.shadow = shadow
+        self.margin_v = margin_v
+        self.alignment = alignment
+        self.bold = bold
         
         logger.info("字幕生成服务初始化完成")
     
@@ -313,11 +321,7 @@ class SubtitleGenerator:
             )
             subtitle_filter = (
                 f"subtitles=filename='{escaped_subtitle_path}':"
-                f"force_style='FontName={self.font_name},"
-                f"FontSize={self.font_size},"
-                f"PrimaryColour={self._color_to_ass(self.font_color)},"
-                f"OutlineColour={self._color_to_ass(self.outline_color)},"
-                f"Outline={self.outline_width}'"
+                f"force_style='{self._subtitle_force_style()}'"
             )
             
             cmd = [
@@ -373,6 +377,21 @@ class SubtitleGenerator:
         }
         
         return color_map.get(color.lower(), "&H00FFFFFF")
+
+    def _subtitle_force_style(self) -> str:
+        """Return an ASS style tuned for readable mobile short-drama subtitles."""
+
+        return ",".join([
+            f"FontName={self.font_name}",
+            f"FontSize={self.font_size}",
+            f"PrimaryColour={self._color_to_ass(self.font_color)}",
+            f"OutlineColour={self._color_to_ass(self.outline_color)}",
+            f"Outline={self.outline_width}",
+            f"Shadow={self.shadow}",
+            f"MarginV={self.margin_v}",
+            f"Alignment={self.alignment}",
+            f"Bold={1 if self.bold else 0}",
+        ])
 
 
 # 全局字幕生成服务实例（单例模式）

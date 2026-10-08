@@ -145,7 +145,7 @@ def compose_final_video_task(
         if subtitle_paths:
             # 合并所有字幕文件
             merged_subtitle_path = final_video_path.replace(".mp4", ".srt")
-            _merge_subtitles(subtitle_paths, merged_subtitle_path, scenes)
+            _merge_subtitles(subtitle_paths, merged_subtitle_path, scenes, video_composer)
             
             # 烧录字幕到视频
             subtitle_generator.burn_subtitle(
@@ -213,7 +213,7 @@ def compose_final_video_task(
         raise
 
 
-def _merge_subtitles(subtitle_paths: list, output_path: str, scenes: list) -> None:
+def _merge_subtitles(subtitle_paths: list, output_path: str, scenes: list, video_composer=None) -> None:
     """
     合并多个字幕文件
     
@@ -228,49 +228,89 @@ def _merge_subtitles(subtitle_paths: list, output_path: str, scenes: list) -> No
     current_time_offset = 0.0
     subtitle_index = 1
     
-    for i, subtitle_path in enumerate(subtitle_paths):
-        scene = scenes[i]
-        
-        # 读取字幕文件
-        with open(subtitle_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        
-        # 解析字幕条目
-        entries = re.split(r"\n\n+", content.strip())
-        
-        for entry in entries:
-            lines = entry.strip().split("\n")
-            if len(lines) < 3:
-                continue
-            
-            # 解析时间轴
-            time_line = lines[1]
-            match = re.match(r"(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})", time_line)
-            if not match:
-                continue
-            
-            start_time = _parse_srt_time(match.group(1))
-            end_time = _parse_srt_time(match.group(2))
-            
-            # 调整时间偏移
-            new_start_time = start_time + current_time_offset
-            new_end_time = end_time + current_time_offset
-            
-            # 重新格式化
-            new_entry = f"{subtitle_index}\n"
-            new_entry += f"{_format_srt_time(new_start_time)} --> {_format_srt_time(new_end_time)}\n"
-            new_entry += "\n".join(lines[2:])
-            
-            merged_subtitles.append(new_entry)
-            subtitle_index += 1
-        
-        # 更新时间偏移（使用音频时长）
-        if scene.audio_duration:
-            current_time_offset += scene.audio_duration
+    fallback_subtitle_paths = iter(subtitle_paths or [])
+    use_scene_subtitle_paths = any(_scene_subtitle_path(scene) for scene in scenes)
+
+    for scene in scenes:
+        subtitle_path = _scene_subtitle_path(scene)
+        if not subtitle_path and not use_scene_subtitle_paths:
+            subtitle_path = next(fallback_subtitle_paths, None)
+
+        if subtitle_path:
+            # 读取字幕文件
+            with open(subtitle_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # 解析字幕条目
+            entries = re.split(r"\n\n+", content.strip())
+
+            for entry in entries:
+                lines = entry.strip().split("\n")
+                if len(lines) < 3:
+                    continue
+
+                # 解析时间轴
+                time_line = lines[1]
+                match = re.match(r"(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})", time_line)
+                if not match:
+                    continue
+
+                start_time = _parse_srt_time(match.group(1))
+                end_time = _parse_srt_time(match.group(2))
+
+                # 调整时间偏移
+                new_start_time = start_time + current_time_offset
+                new_end_time = end_time + current_time_offset
+
+                # 重新格式化
+                new_entry = f"{subtitle_index}\n"
+                new_entry += f"{_format_srt_time(new_start_time)} --> {_format_srt_time(new_end_time)}\n"
+                new_entry += "\n".join(lines[2:])
+
+                merged_subtitles.append(new_entry)
+                subtitle_index += 1
+
+        current_time_offset += _scene_composition_duration(scene, video_composer)
     
     # 写入合并后的字幕文件
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n\n".join(merged_subtitles))
+
+
+def _scene_subtitle_path(scene) -> str | Path | None:
+    subtitle_path = getattr(scene, "subtitle_path", None)
+    return subtitle_path if isinstance(subtitle_path, (str, Path)) and subtitle_path else None
+
+
+def _scene_composition_duration(scene, video_composer=None) -> float:
+    """Return the time this scene occupies in the final concat timeline."""
+
+    if video_composer and getattr(scene, "video_path", None):
+        try:
+            duration = float(video_composer._get_duration(scene.video_path))
+            if duration > 0:
+                return duration
+        except Exception as exc:
+            logger.warning(
+                "Cannot probe scene video duration for subtitle merge: scene={}, error={}",
+                getattr(scene, "scene_number", None),
+                exc,
+            )
+    audio_duration = getattr(scene, "audio_duration", None)
+    if isinstance(audio_duration, (int, float)) and audio_duration > 0:
+        return float(audio_duration)
+    if video_composer and getattr(scene, "audio_path", None):
+        try:
+            duration = float(video_composer._get_duration(scene.audio_path))
+            if duration > 0:
+                return duration
+        except Exception as exc:
+            logger.warning(
+                "Cannot probe scene audio duration for subtitle merge: scene={}, error={}",
+                getattr(scene, "scene_number", None),
+                exc,
+            )
+    return 0.0
 
 
 def _require_passed_scene_videos(scenes: list[Scene]) -> None:
