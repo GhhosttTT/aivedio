@@ -144,16 +144,18 @@ def passed_manual_review(*ids):
             "score": 4.3,
             "decision": "accept",
             "dimension_scores": {
-                "identity_stability": 4.2,
-                "temporal_motion": 4.1,
-                "acting_performance": 4.0,
-                "commercial_aesthetic": 4.1,
-                "seed_dance_gap": 4.0,
-                "composition_continuity": 4.2,
+                "identity_stability": {"score": 4.2, "evidence": "identity and wardrobe stay stable in the full clip"},
+                "temporal_motion": {"score": 4.1, "evidence": "motion remains smooth with no major flicker"},
+                "acting_performance": {"score": 4.0, "evidence": "gaze and reaction read clearly enough for dialogue"},
+                "commercial_aesthetic": {"score": 4.1, "evidence": "lighting and color hold premium short-drama value"},
+                "seed_dance_gap": {"score": 4.0, "evidence": "reference contact sheet gap is acceptable for review"},
+                "composition_continuity": {"score": 4.2, "evidence": "frame direction and crop stay consistent enough"},
             },
             "watched_full_clip": True,
             "watched_seed_dance_contact_sheet": True,
-            "note": "full clip is stable enough for candidate review",
+            "candidate_video": "candidate.mp4",
+            "seed_dance_contact_sheet": "seed_dance_contact_sheet.png",
+            "note": "full clip is stable enough for candidate review against the contact sheet",
         },
     }
 
@@ -666,10 +668,12 @@ def test_manual_review_template_writes_dimension_scaffold(tmp_path):
     }
     assert template["clip"]["dimension_scores"]["acting_performance"] is None
     assert template["clip"]["dimension_scores"]["seed_dance_gap"] is None
+    assert template["clip"]["dimension_evidence"]["acting_performance"] is None
     assert template["clip"]["seed_dance_contact_sheet"].endswith("seed_dance_contact_sheet.png")
     assert (tmp_path / "manual_review_template.json").is_file()
     markdown = (tmp_path / "manual_review_template.md").read_text(encoding="utf-8")
     assert "Manual Review Template" in markdown
+    assert "Overall evidence note" in markdown
     assert "identity_match" in markdown
 
 
@@ -1046,6 +1050,33 @@ def test_validation_summary_blocks_low_manual_clip_dimension_score(tmp_path):
     assert report["repair_queue"][0]["action"] == "regenerate_video_with_performance_direction"
     assert report["repair_queue"][0]["stage"] == "video"
     assert any("clip dimension_scores" in item for item in report["action_items"])
+
+
+def test_validation_summary_requires_manual_clip_evidence(tmp_path):
+    manual_review = passed_manual_review(*PRODUCTION_CASE_IDS)
+    manual_review["clip"]["candidate_video"] = ""
+    manual_review["clip"]["dimension_scores"]["identity_stability"] = 4.2
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "image_review.json", passed_image_review(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", manual_review)
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["manual_clip_evidence_review_passed"] is False
+    assert report["checks"]["manual_clip_evidence_review"]["missing"] == [
+        {"field": "candidate_video", "reason": "full generated candidate video reference is required"},
+        {
+            "field": "dimension_scores.identity_stability.evidence",
+            "reason": "dimension evidence must explain the human score",
+        },
+    ]
+    assert report["checks"]["manual_clip_review_passed"] is False
+    assert any("clip evidence" in item for item in report["action_items"])
 
 
 def test_validation_summary_converts_low_manual_commercial_aesthetic_dimension_to_video_repair(tmp_path):

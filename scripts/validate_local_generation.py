@@ -61,6 +61,8 @@ REQUIRED_MANUAL_CLIP_DIMENSIONS = {
     "composition_continuity": "frame, crop, camera direction, and scene continuity hold through the clip",
 }
 
+MIN_MANUAL_EVIDENCE_CHARS = 20
+
 MANUAL_CASE_DIMENSION_REPAIR_HINTS = {
     "identity_match": "identity drift face drift changed wardrobe wrong view angle",
     "character_distinctiveness": "same-face casting copied facial geometry role separation identity contrast",
@@ -824,6 +826,17 @@ def _baseline_contact_sheet_present(baseline_report: dict | None, output: Path) 
     return path.is_file()
 
 
+def _manual_media_reference_exists(output: Path, value) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    if value.startswith(("http://", "https://")):
+        return True
+    path = Path(value)
+    if not path.is_absolute():
+        path = output / path
+    return path.is_file()
+
+
 def _manual_clip_review(manual_review: dict | None) -> dict:
     if not isinstance(manual_review, dict):
         return {}
@@ -842,6 +855,59 @@ def _dimension_scores(item: dict) -> dict[str, float]:
         elif isinstance(value, dict) and isinstance(value.get("score"), (int, float)):
             scores[str(key)] = float(value["score"])
     return scores
+
+
+def _evidence_text(value) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("evidence", "note", "reason", "justification"):
+            text = value.get(key)
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+    return ""
+
+
+def _manual_clip_evidence_review(manual_clip: dict, output: Path) -> dict:
+    missing: list[dict] = []
+    if not manual_clip:
+        return {"missing": [{"field": "clip", "reason": "manual clip review is missing"}], "passed": False}
+
+    for field, reason in {
+        "candidate_video": "full generated candidate video reference is required",
+        "seed_dance_contact_sheet": "Seed Dance visual contact sheet reference is required",
+    }.items():
+        if not isinstance(manual_clip.get(field), str) or not manual_clip[field].strip():
+            missing.append({"field": field, "reason": reason})
+
+    if manual_clip.get("seed_dance_contact_sheet") and not _manual_media_reference_exists(
+        output, manual_clip.get("seed_dance_contact_sheet")
+    ):
+        missing.append({
+            "field": "seed_dance_contact_sheet",
+            "reason": "referenced Seed Dance contact sheet file is missing",
+        })
+
+    note = _evidence_text(manual_clip.get("note"))
+    if len(note) < MIN_MANUAL_EVIDENCE_CHARS:
+        missing.append({
+            "field": "note",
+            "reason": f"overall clip evidence note must be at least {MIN_MANUAL_EVIDENCE_CHARS} characters",
+        })
+
+    raw_scores = manual_clip.get("dimension_scores") if isinstance(manual_clip.get("dimension_scores"), dict) else {}
+    dimension_evidence = manual_clip.get("dimension_evidence")
+    if not isinstance(dimension_evidence, dict):
+        dimension_evidence = {}
+    for dimension in REQUIRED_MANUAL_CLIP_DIMENSIONS:
+        evidence = _evidence_text(raw_scores.get(dimension)) or _evidence_text(dimension_evidence.get(dimension))
+        if len(evidence) < MIN_MANUAL_EVIDENCE_CHARS:
+            missing.append({
+                "field": f"dimension_scores.{dimension}.evidence",
+                "reason": "dimension evidence must explain the human score",
+            })
+
+    return {"missing": missing, "passed": not missing}
 
 
 def _manual_dimension_review(
@@ -1035,6 +1101,7 @@ def summarize_validation(output: Path):
     missing_manual_case_ids = sorted(rendered_case_ids - manual_case_ids)
     case_dimension_review = _manual_dimension_review(manual_cases, REQUIRED_MANUAL_CASE_DIMENSIONS)
     clip_dimension_review = _manual_dimension_review([manual_clip] if manual_clip else [], REQUIRED_MANUAL_CLIP_DIMENSIONS)
+    clip_evidence_review = _manual_clip_evidence_review(manual_clip, output)
     checks["manual_review_present"] = bool(manual_cases)
     checks["manual_review_covers_rendered_cases"] = bool(rendered_case_ids) and not missing_manual_case_ids
     checks["manual_review_missing_case_ids"] = missing_manual_case_ids
@@ -1044,6 +1111,8 @@ def summarize_validation(output: Path):
     checks["manual_clip_score"] = manual_clip.get("score") if manual_clip else None
     checks["manual_clip_dimension_review"] = clip_dimension_review
     checks["manual_clip_dimension_review_passed"] = clip_dimension_review["passed"]
+    checks["manual_clip_evidence_review"] = clip_evidence_review
+    checks["manual_clip_evidence_review_passed"] = clip_evidence_review["passed"]
     checks["manual_clip_review_passed"] = bool(
         manual_clip
         and manual_clip.get("decision") == "accept"
@@ -1052,6 +1121,7 @@ def summarize_validation(output: Path):
         and manual_clip.get("watched_full_clip") is True
         and manual_clip.get("watched_seed_dance_contact_sheet") is True
         and checks["manual_clip_dimension_review_passed"]
+        and checks["manual_clip_evidence_review_passed"]
     )
     manual_blocking_issues = _manual_blocking_issues(manual_cases, manual_clip)
     checks["manual_blocking_issues"] = manual_blocking_issues
@@ -1148,6 +1218,11 @@ def summarize_validation(output: Path):
             "Add or improve manual_review.json clip dimension_scores for identity_stability, temporal_motion, "
             "acting_performance, commercial_aesthetic, seed_dance_gap, and composition_continuity; "
             "every clip dimension needs score >= 4."
+        )
+    elif checks["manual_clip_review_present"] and not checks["manual_clip_evidence_review_passed"]:
+        report["action_items"].append(
+            "Add manual_review.json clip evidence: candidate_video, seed_dance_contact_sheet, an overall note, "
+            "and evidence text for every clip dimension."
         )
     elif checks["manual_clip_review_present"] and not checks["manual_clip_review_passed"]:
         report["action_items"].append("Improve the generated clip until human clip review score is at least 4 and decision is accept.")
@@ -1276,6 +1351,7 @@ def _build_manual_review_markdown(template: dict) -> str:
         "",
         f"- Candidate video: `{clip.get('candidate_video') or ''}`",
         f"- Seed Dance contact sheet: `{clip.get('seed_dance_contact_sheet') or ''}`",
+        f"- Overall evidence note: `{clip.get('note') or ''}`",
         "",
         "| identity_stability | temporal_motion | acting_performance | commercial_aesthetic | seed_dance_gap | composition_continuity | Decision |",
         "| --- | --- | --- | --- | --- | --- | --- |",
@@ -1332,6 +1408,7 @@ def build_manual_review_template(output: Path) -> dict:
             "Fill every case score and dimension_scores field with 0-5 numeric scores.",
             "Use decision=accept only when every required case dimension is >= 4 and no blocking issue remains.",
             "Set clip watched_full_clip and watched_seed_dance_contact_sheet to true only after full visual review.",
+            "Set clip candidate_video and seed_dance_contact_sheet, then add evidence text for every clip dimension.",
             "Use issue_tags or blocking_issues to trigger targeted repair suggestions.",
         ],
         "required_case_dimensions": REQUIRED_MANUAL_CASE_DIMENSIONS,
@@ -1341,6 +1418,7 @@ def build_manual_review_template(output: Path) -> dict:
             "score": None,
             "decision": "pending",
             "dimension_scores": _blank_scores(REQUIRED_MANUAL_CLIP_DIMENSIONS),
+            "dimension_evidence": _blank_scores(REQUIRED_MANUAL_CLIP_DIMENSIONS),
             "watched_full_clip": False,
             "watched_seed_dance_contact_sheet": False,
             "seed_dance_contact_sheet": contact_sheet,
@@ -1404,11 +1482,14 @@ def _manual_review_section(summary: dict, render_report: dict | None, manual_rev
         "blocking_issues": checks.get("manual_blocking_issues", []),
         "case_dimension_review": checks.get("manual_case_dimension_review", {}),
         "clip_dimension_review": checks.get("manual_clip_dimension_review", {}),
+        "clip_evidence_review": checks.get("manual_clip_evidence_review", {}),
         "clip": {
             "present": bool(manual_clip),
             "score": checks.get("manual_clip_score"),
             "decision": manual_clip.get("decision"),
             "dimension_scores": _dimension_scores(manual_clip),
+            "candidate_video": manual_clip.get("candidate_video"),
+            "seed_dance_contact_sheet": manual_clip.get("seed_dance_contact_sheet"),
             "watched_full_clip": manual_clip.get("watched_full_clip"),
             "watched_seed_dance_contact_sheet": manual_clip.get("watched_seed_dance_contact_sheet"),
             "note": manual_clip.get("note"),
@@ -1502,6 +1583,7 @@ def _build_acceptance_markdown(package: dict) -> str:
         "manual_clip_review_passed",
         "manual_case_dimension_review_passed",
         "manual_clip_dimension_review_passed",
+        "manual_clip_evidence_review_passed",
         "manual_blocking_issues_passed",
         "repair_queue_empty",
         "manual_review_passed",
@@ -1550,11 +1632,13 @@ def _build_acceptance_markdown(package: dict) -> str:
         "",
         "## Full Clip Review",
         "",
-        "| Score | Decision | Watched Clip | Watched Contact Sheet | Note |",
-        "| --- | --- | --- | --- | --- |",
-        "| {score} | {decision} | {clip_seen} | {sheet_seen} | {note} |".format(
+        "| Score | Decision | Candidate Video | Contact Sheet | Watched Clip | Watched Contact Sheet | Note |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| {score} | {decision} | {candidate_video} | {contact_sheet} | {clip_seen} | {sheet_seen} | {note} |".format(
             score=clip.get("score", ""),
             decision=clip.get("decision") or "",
+            candidate_video=clip.get("candidate_video") or "",
+            contact_sheet=clip.get("seed_dance_contact_sheet") or "",
             clip_seen=_markdown_bool(clip.get("watched_full_clip")),
             sheet_seen=_markdown_bool(clip.get("watched_seed_dance_contact_sheet")),
             note=(clip.get("note") or "").replace("|", "/"),
