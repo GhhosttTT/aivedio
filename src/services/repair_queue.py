@@ -215,6 +215,17 @@ def _top_level_gate_candidates(report: dict[str, Any]) -> list[dict[str, Any]]:
         gate = report.get(gate_name)
         if not isinstance(gate, dict):
             continue
+        missing = gate.get("missing") if isinstance(gate.get("missing"), list) else []
+        if missing:
+            candidates.append({
+                "index": gate_name,
+                "scene": report.get("scene") if isinstance(report.get("scene"), dict) else {},
+                gate_name: {
+                    "status": "needs_review",
+                    "low": {},
+                    "missing": missing,
+                },
+            })
         low = gate.get("low") if isinstance(gate.get("low"), dict) else {}
         for key, payload in low.items():
             scene_number = payload.get("scene_number") if isinstance(payload, dict) else None

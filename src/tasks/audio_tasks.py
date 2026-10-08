@@ -61,6 +61,7 @@ def dialogue_audio_profile(text: str | None, repair_action: str | None = None) -
             "emotion": emotion,
             "speed": speed,
             "profile": "short_drama_repair",
+            "source": "tts",
             "reason": reason,
         }
 
@@ -68,6 +69,7 @@ def dialogue_audio_profile(text: str | None, repair_action: str | None = None) -
         "emotion": emotion,
         "speed": speed,
         "profile": "short_drama_default",
+        "source": "tts",
         "reason": reason,
     }
 
@@ -84,6 +86,8 @@ def dialogue_audio_quality_report(
     if has_spoken_dialogue(text):
         if not audio_path:
             missing.append("dialogue_audio_present")
+        elif not Path(str(audio_path)).is_file():
+            missing.append("dialogue_audio_file")
         if not duration or duration <= 0:
             missing.append("audio_duration")
         else:
@@ -99,6 +103,12 @@ def dialogue_audio_quality_report(
             low["tts_emotion_match"] = {
                 "score": 2,
                 "evidence": "dialogue audio tts_emotion_match is neutral on an emotional short-drama line",
+                "scene_number": scene.scene_number,
+            }
+        if profile.get("source") == "draft_silent_fallback" or profile.get("is_draft") is True:
+            low["voice_delivery"] = {
+                "score": 0,
+                "evidence": "dialogue audio is a silent draft fallback and cannot satisfy production voice delivery",
                 "scene_number": scene.scene_number,
             }
     gate = {
@@ -169,6 +179,12 @@ def generate_audio_task(
                 text=text,
                 output_path=audio_path,
             )
+            profile = {
+                **profile,
+                "source": "draft_silent_fallback",
+                "is_draft": True,
+                "fallback_error": str(exc),
+            }
 
         if not duration or duration <= 0:
             duration = get_draft_media_service().estimate_dialogue_duration(text)
