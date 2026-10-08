@@ -33,10 +33,19 @@ def write_production_workflows(tmp_path):
     video.write_text(
         """
         {
-          "1": {"class_type": "LoadImage"},
-          "2": {"class_type": "LoadImage"},
-          "3": {"class_type": "SVD_img2vid_Conditioning"},
-          "4": {"class_type": "VHS_VideoCombine"}
+          "1": {"class_type": "LoadImage", "inputs": {"image": "{reference_image}"}},
+          "2": {"class_type": "LoadImage", "inputs": {"image": "{last_frame}"}},
+          "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "{prompt}"}},
+          "4": {
+            "class_type": "VideoQualitySwitch",
+            "inputs": {
+              "quality_mode": "{quality_mode}",
+              "repair_action": "{repair_action}",
+              "quality_pipeline": "{quality_pipeline_json}"
+            }
+          },
+          "5": {"class_type": "SVD_img2vid_Conditioning"},
+          "6": {"class_type": "VHS_VideoCombine", "inputs": {"filename_prefix": "{output_prefix}"}}
         }
         """,
         encoding="utf-8",
@@ -59,6 +68,8 @@ def test_workflow_profile_freezes_required_workflow_hashes(tmp_path, monkeypatch
     assert "face_detail" in manifest["required_image_pipeline_stages"]
     assert "upscale" in manifest["required_image_pipeline_stages"]
     assert "final_vlm_review" in manifest["required_image_pipeline_stages"]
+    assert manifest["video_workflow_contract"]["missing_groups"] == []
+    assert manifest["video_workflow_contract"]["groups"]["quality_pipeline"] is True
     assert manifest["capabilities"]["character_identity"] is True
     assert manifest["capabilities"]["pose_control"] is True
     assert manifest["capabilities"]["depth_control"] is True
@@ -69,6 +80,60 @@ def test_workflow_profile_freezes_required_workflow_hashes(tmp_path, monkeypatch
     stale = service.validate_profile(profile_path=str(profile))
     assert stale["status"] == "blocked"
     assert "video_workflow_hash" in stale["stale"]
+
+
+def test_workflow_profile_rejects_video_workflow_without_quality_placeholders(tmp_path, monkeypatch):
+    image, reference, video = write_production_workflows(tmp_path)
+    profile = tmp_path / "profile.json"
+    video.write_text(
+        """
+        {
+          "1": {"class_type": "LoadImage"},
+          "2": {"class_type": "LoadImage"},
+          "3": {"class_type": "SVD_img2vid_Conditioning"},
+          "4": {"class_type": "VHS_VideoCombine"}
+        }
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
+
+    service = ProductionWorkflowProfileService()
+
+    with pytest.raises(ValueError, match="video workflow quality placeholders"):
+        service.freeze_profile(profile_path=str(profile))
+
+
+def test_workflow_profile_blocks_stale_video_quality_contract(tmp_path, monkeypatch):
+    image, reference, video = write_production_workflows(tmp_path)
+    profile = tmp_path / "profile.json"
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
+
+    service = ProductionWorkflowProfileService()
+    service.freeze_profile(profile_path=str(profile), notes="approved local profile")
+
+    video.write_text(
+        """
+        {
+          "1": {"class_type": "LoadImage", "inputs": {"image": "{reference_image}"}},
+          "2": {"class_type": "LoadImage", "inputs": {"image": "{last_frame}"}},
+          "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "{prompt}"}},
+          "4": {"class_type": "SVD_img2vid_Conditioning"},
+          "5": {"class_type": "VHS_VideoCombine", "inputs": {"filename_prefix": "{output_prefix}"}}
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    report = service.validate_profile(profile_path=str(profile))
+
+    assert report["status"] == "blocked"
+    assert "video_workflow_quality_placeholders" in report["missing"]
+    assert "video_workflow_contract" in report["stale"]
 
 
 def test_workflow_profile_requires_quality_capabilities(tmp_path, monkeypatch):

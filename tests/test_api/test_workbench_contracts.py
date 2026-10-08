@@ -553,8 +553,13 @@ def test_workflow_profile_freeze_clears_readiness_workflow_profile_blocker(setup
     )
     reference.write_text('{"1":{"class_type":"IPAdapterFaceID"},"2":{"class_type":"SaveImage"}}', encoding="utf-8")
     video.write_text(
-        '{"1":{"class_type":"LoadImage"},"2":{"class_type":"LoadImage"},'
-        '"3":{"class_type":"SVD_img2vid_Conditioning"},"4":{"class_type":"VHS_VideoCombine"}}',
+        '{"1":{"class_type":"LoadImage","inputs":{"image":"{reference_image}"}},'
+        '"2":{"class_type":"LoadImage","inputs":{"image":"{last_frame}"}},'
+        '"3":{"class_type":"CLIPTextEncode","inputs":{"text":"{prompt}"}},'
+        '"4":{"class_type":"VideoQualitySwitch","inputs":{"quality_mode":"{quality_mode}",'
+        '"repair_action":"{repair_action}","pipeline":"{quality_pipeline_json}"}},'
+        '"5":{"class_type":"SVD_img2vid_Conditioning"},'
+        '"6":{"class_type":"VHS_VideoCombine","inputs":{"filename_prefix":"{output_prefix}"}}}',
         encoding="utf-8",
     )
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
@@ -570,6 +575,7 @@ def test_workflow_profile_freeze_clears_readiness_workflow_profile_blocker(setup
     assert frozen.status_code == 200, frozen.text
     assert frozen.json()["status"] == "approved"
     assert "reference" in frozen.json()["profile"]["required_workflows"]
+    assert frozen.json()["profile"]["video_workflow_contract"]["missing_groups"] == []
 
     after = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
     assert after["checks"]["workflow_profile"]["status"] == "valid"

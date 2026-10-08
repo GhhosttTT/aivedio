@@ -13,6 +13,7 @@ from src.services.generation_quality_policy import (
     image_quality_budget,
     video_quality_budget,
 )
+from src.services.video_engine_preflight import scan_placeholders
 
 
 REQUIRED_CAPABILITIES = {
@@ -51,6 +52,16 @@ CAPABILITY_KEYWORDS = {
     "candidate_review": ("saveimage", "save_image", "savevideo", "video combine", "vhs_videocombine"),
 }
 VIDEO_OUTPUT_KEYWORDS = ("vhs_videocombine", "savevideo", "createvideo", "video combine")
+VIDEO_WORKFLOW_PLACEHOLDER_GROUPS = {
+    "reference": {"reference_image", "image"},
+    "prompt": {"prompt", "positive_prompt"},
+    "quality_profile": {"quality_mode", "quality_profile"},
+    "repair_action": {"repair_action"},
+    "quality_pipeline": {
+        "quality_pipeline", "quality_pipeline_json", "quality_pipeline_stages",
+        "quality_pipeline_prompt", "quality_pipeline_negative",
+    },
+}
 
 
 class ProductionWorkflowProfileService:
@@ -81,6 +92,12 @@ class ProductionWorkflowProfileService:
         missing_capabilities = sorted(name for name in REQUIRED_CAPABILITIES if not caps.get(name))
         if missing_capabilities:
             raise ValueError("workflow capabilities are missing: " + ", ".join(missing_capabilities))
+        video_contract = self._video_workflow_contract(workflow_paths.get("video", ""))
+        if video_contract["missing_groups"]:
+            raise ValueError(
+                "video workflow quality placeholders are missing: "
+                + ", ".join(video_contract["missing_groups"])
+            )
         manifest = {
             "version": 1,
             "status": "approved",
@@ -95,6 +112,11 @@ class ProductionWorkflowProfileService:
             "required_capabilities": sorted(REQUIRED_CAPABILITIES),
             "required_workflows": sorted(REQUIRED_WORKFLOWS),
             "required_image_pipeline_stages": REQUIRED_IMAGE_PIPELINE_STAGES,
+            "required_video_workflow_placeholders": {
+                name: sorted(values)
+                for name, values in VIDEO_WORKFLOW_PLACEHOLDER_GROUPS.items()
+            },
+            "video_workflow_contract": video_contract,
             "capabilities": caps,
             "capability_evidence": detected_capabilities,
             "quality_gates": self._current_quality_gates(),
@@ -124,6 +146,12 @@ class ProductionWorkflowProfileService:
             missing.append("approved_status")
         if profile.get("required_image_pipeline_stages") != REQUIRED_IMAGE_PIPELINE_STAGES:
             stale.append("required_image_pipeline_stages")
+        required_video_placeholders = {
+            name: sorted(values)
+            for name, values in VIDEO_WORKFLOW_PLACEHOLDER_GROUPS.items()
+        }
+        if profile.get("required_video_workflow_placeholders") != required_video_placeholders:
+            stale.append("required_video_workflow_placeholders")
         capabilities = profile.get("capabilities") if isinstance(profile.get("capabilities"), dict) else {}
         capability_evidence = profile.get("capability_evidence") if isinstance(profile.get("capability_evidence"), dict) else {}
         missing_capabilities = sorted(name for name in REQUIRED_CAPABILITIES if not capabilities.get(name))
@@ -148,6 +176,12 @@ class ProductionWorkflowProfileService:
         if low_budget:
             missing.append("production_quality_budget")
         current_paths = self._current_workflow_paths()
+        current_video_contract = self._video_workflow_contract(current_paths.get("video", ""))
+        stored_video_contract = profile.get("video_workflow_contract") if isinstance(profile.get("video_workflow_contract"), dict) else {}
+        if current_video_contract.get("missing_groups"):
+            missing.append("video_workflow_quality_placeholders")
+        if stored_video_contract and stored_video_contract != current_video_contract:
+            stale.append("video_workflow_contract")
         for name, current_path in current_paths.items():
             if name in REQUIRED_WORKFLOWS and not current_path:
                 missing.append(f"{name}_workflow_path")
@@ -174,6 +208,7 @@ class ProductionWorkflowProfileService:
                 "approved_quality_profiles": sorted(APPROVED_QUALITY_PROFILES),
                 "video_end_frame_enabled": True,
                 "required_image_pipeline_stages": REQUIRED_IMAGE_PIPELINE_STAGES,
+                "required_video_workflow_placeholders": required_video_placeholders,
             },
             "profile": profile,
         }
@@ -331,6 +366,31 @@ class ProductionWorkflowProfileService:
             if isinstance(node, dict) and node.get("class_type"):
                 classes.append(str(node["class_type"]))
         return classes
+
+    def _video_workflow_contract(self, workflow_path: str) -> dict:
+        placeholders = sorted(self._workflow_placeholders(workflow_path))
+        placeholder_set = set(placeholders)
+        group_status = {
+            name: bool(values & placeholder_set)
+            for name, values in VIDEO_WORKFLOW_PLACEHOLDER_GROUPS.items()
+        }
+        return {
+            "placeholders": placeholders,
+            "groups": group_status,
+            "missing_groups": sorted(name for name, present in group_status.items() if not present),
+        }
+
+    def _workflow_placeholders(self, workflow_path: str) -> set[str]:
+        if not workflow_path:
+            return set()
+        path = Path(workflow_path)
+        if not path.is_file():
+            return set()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return set()
+        return scan_placeholders(data)
 
     def _capability_match(self, capability: str, lower_classes: list[str], class_names: list[str]) -> dict:
         keywords = CAPABILITY_KEYWORDS.get(capability, ())
