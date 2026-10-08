@@ -583,7 +583,49 @@ def test_workflow_profile_freeze_clears_readiness_workflow_profile_blocker(setup
     assert "face_detail" in pipeline["required_stages"]
     assert "upscale" in pipeline["covered_stages"]
     assert pipeline["missing_stages"] == []
+    video_contract = after["checks"]["workflow_profile"]["video_quality_contract"]
+    assert video_contract["missing_groups"] == []
+    assert video_contract["groups"]["quality_pipeline"] is True
     assert not any(item["code"] == "workflow_profile_not_ready" for item in after["blockers"])
+
+
+def test_production_readiness_reports_video_workflow_quality_contract_gaps(setup, monkeypatch):
+    client, _, path = setup
+    image = path / "image_workflow.json"
+    reference = path / "reference_workflow.json"
+    video = path / "video_workflow.json"
+    profile = path / "production_workflow_profile.json"
+    image.write_text(
+        '{"1":{"class_type":"KSampler"},"2":{"class_type":"ControlNetApply"},'
+        '"3":{"class_type":"OpenPosePreprocessor"},"4":{"class_type":"ZoeDepthPreprocessor"},'
+        '"5":{"class_type":"FaceDetailer"},"6":{"class_type":"ImageUpscaleWithModel"},'
+        '"7":{"class_type":"SaveImage"}}',
+        encoding="utf-8",
+    )
+    reference.write_text('{"1":{"class_type":"IPAdapterFaceID"},"2":{"class_type":"SaveImage"}}', encoding="utf-8")
+    video.write_text(
+        '{"1":{"class_type":"LoadImage"},"2":{"class_type":"LoadImage"},'
+        '"3":{"class_type":"SVD_img2vid_Conditioning"},"4":{"class_type":"VHS_VideoCombine"}}',
+        encoding="utf-8",
+    )
+    profile.write_text(
+        '{"status":"approved","workflow_paths":{},"workflow_hashes":{},'
+        '"capabilities":{"character_identity":true},"quality_gates":{}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_PRODUCTION_PROFILE_PATH", str(profile))
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    contract = payload["checks"]["workflow_profile"]["video_quality_contract"]
+    assert set(contract["missing_groups"]) >= {"prompt", "quality_pipeline", "quality_profile", "reference", "repair_action"}
+    blocker = next(item for item in payload["blockers"] if item["code"] == "workflow_profile_not_ready")
+    assert "video_placeholders=" in blocker["message"]
 
 
 def test_production_readiness_accepts_vertical_mobile_format(setup, monkeypatch):

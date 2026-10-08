@@ -203,6 +203,7 @@ class ProductionWorkflowProfileService:
             "stale": sorted(set(stale)),
             "missing_capabilities": missing_capabilities,
             "quality_budget_issues": low_budget,
+            "video_workflow_contract": current_video_contract,
             "minimum_quality_budget": {
                 **MIN_QUALITY_BUDGET,
                 "approved_quality_profiles": sorted(APPROVED_QUALITY_PROFILES),

@@ -630,6 +630,12 @@ class ProductionReadinessService:
                 if stage not in covered_stages
             ],
         }
+        video_contract = report.get("video_workflow_contract") if isinstance(report.get("video_workflow_contract"), dict) else {}
+        report["video_quality_contract"] = {
+            "groups": video_contract.get("groups") or {},
+            "missing_groups": video_contract.get("missing_groups") or [],
+            "placeholders": video_contract.get("placeholders") or [],
+        }
         if report.get("status") != "valid":
             details = []
             if report.get("missing"):
@@ -638,6 +644,9 @@ class ProductionReadinessService:
                 details.append("stale=" + ",".join(report["stale"]))
             if report.get("missing_capabilities"):
                 details.append("capabilities=" + ",".join(report["missing_capabilities"]))
+            missing_video_groups = report["video_quality_contract"]["missing_groups"]
+            if missing_video_groups:
+                details.append("video_placeholders=" + ",".join(missing_video_groups))
             blockers.append(ReadinessIssue(
                 "workflow_profile_not_ready",
                 "Approve a stable ComfyUI production workflow profile before final generation"
