@@ -24,6 +24,13 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+COMFYUI_QUALITY_MODE_ALIASES = {
+    "seed_dance_reference": "ultra",
+    "hongguo_reference": "high_quality",
+}
+COMFYUI_HIGH_QUALITY_MODES = {"high_quality", "ultra"}
+
+
 def _extract_workflow_image_metadata(output_path: str) -> dict[str, object]:
     workflow_path = Path(output_path).with_suffix(".workflow.json")
     if not workflow_path.is_file():
@@ -132,7 +139,12 @@ class LocalComfyUIProvider:
         return self._comfyui_service
 
     def generate_image(self, request: ImageGenerationRequest) -> GenerationResult:
-        high_quality_request = str(request.quality_mode or "").lower() in {"high_quality", "ultra"}
+        requested_quality_mode = str(request.quality_mode or "").lower().strip()
+        effective_quality_mode = COMFYUI_QUALITY_MODE_ALIASES.get(
+            requested_quality_mode,
+            request.quality_mode,
+        )
+        high_quality_request = str(effective_quality_mode or "").lower() in COMFYUI_HIGH_QUALITY_MODES
         enable_prompt_optimization = bool(
             settings.GENERATION_ENABLE_PROMPT_OPTIMIZATION
             and (high_quality_request or request.optimization_mode)
@@ -153,7 +165,7 @@ class LocalComfyUIProvider:
             reference_image=request.reference_image,
             use_ipadapter=request.use_ipadapter,
             scene_type=request.scene_type,
-            quality_mode=request.quality_mode,
+            quality_mode=effective_quality_mode,
             optimization_mode=request.optimization_mode,
             enable_realism=False,
             enable_prompt_optimization=enable_prompt_optimization,
@@ -167,6 +179,7 @@ class LocalComfyUIProvider:
                 "width": request.width,
                 "height": request.height,
                 "quality_mode": request.quality_mode,
+                "effective_quality_mode": effective_quality_mode,
                 "optimization_mode": request.optimization_mode,
                 "prompt_optimization": enable_prompt_optimization,
                 "parameter_optimization": enable_parameter_optimization,

@@ -79,6 +79,28 @@ def test_local_comfyui_provider_enables_optimizers_for_ultra_quality(monkeypatch
     assert service.last_kwargs["enable_parameter_optimization"] is True
 
 
+def test_local_comfyui_provider_maps_reference_profiles_to_supported_quality_modes(monkeypatch):
+    service = FakeComfyUIService()
+    provider = LocalComfyUIProvider(comfyui_service=service)
+    monkeypatch.setattr("src.services.generation_provider.settings.GENERATION_ENABLE_PROMPT_OPTIMIZATION", True)
+    monkeypatch.setattr("src.services.generation_provider.settings.GENERATION_ENABLE_PARAMETER_OPTIMIZATION", True)
+
+    result = provider.generate_image(
+        ImageGenerationRequest(
+            prompt="raw photo, premium vertical short drama shot",
+            output_path="storage/project_1/images/scene_1.png",
+            quality_mode="seed_dance_reference",
+            optimization_mode="quality",
+        )
+    )
+
+    assert service.last_kwargs["quality_mode"] == "ultra"
+    assert service.last_kwargs["enable_prompt_optimization"] is True
+    assert service.last_kwargs["enable_parameter_optimization"] is True
+    assert result.metadata["quality_mode"] == "seed_dance_reference"
+    assert result.metadata["effective_quality_mode"] == "ultra"
+
+
 def test_local_comfyui_provider_reports_actual_workflow_parameters(tmp_path):
     class WorkflowWritingComfyUIService(FakeComfyUIService):
         def generate_image(self, **kwargs):
