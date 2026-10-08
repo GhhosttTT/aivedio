@@ -1812,7 +1812,10 @@ def build_quality_loop_package(output: Path, max_actions: int = 5) -> dict:
         quality_scorecard = build_generation_quality_scorecard(
             _quality_scorecard_reports(output, summary, repair_queue)
         )
-    plan = build_quality_loop_plan({**summary, "repair_queue": repair_queue}, max_actions=max_actions)
+    plan = build_quality_loop_plan(
+        {**summary, "repair_queue": repair_queue, "quality_scorecard": quality_scorecard},
+        max_actions=max_actions,
+    )
     package = {
         "status": plan["status"],
         "generated_at": round(time.time()),

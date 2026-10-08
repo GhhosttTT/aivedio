@@ -1695,6 +1695,25 @@ def test_quality_loop_package_repairs_image_platform_reference_gate(tmp_path):
     assert any("--repair-action refine_prompt_composition" in command for command in package["selected_repair_execution_plan"]["rerun_validation_commands"])
 
 
+def test_quality_loop_package_routes_low_clean_scorecard_to_manual_video_repair(tmp_path):
+    write_json(tmp_path / "validation_summary.json", {
+        "status": "partial_needs_review",
+        "quality_scorecard": {
+            "status": "clean",
+            "production_score": 3.8,
+            "next_focus": None,
+        },
+    })
+
+    package = validator.build_quality_loop_package(tmp_path, max_actions=1)
+
+    assert package["status"] == "manual_review_required"
+    assert package["quality_scorecard"]["production_score"] == 3.8
+    assert package["plan"]["manual_actions"][0]["action"] == "refine_video_commercial_aesthetic"
+    assert package["plan"]["manual_actions"][0]["production_score"] == 3.8
+    assert package["selected_repair_execution_plan"]["auto"] == []
+
+
 def test_quality_loop_package_surfaces_setup_required_without_auto_actions(tmp_path):
     write_json(tmp_path / "validation_summary.json", {"status": "partial_needs_review"})
     write_json(tmp_path / "image_review.json", {
