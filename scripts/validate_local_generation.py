@@ -887,6 +887,13 @@ def _manual_clip_evidence_review(manual_clip: dict, output: Path) -> dict:
             "field": "seed_dance_contact_sheet",
             "reason": "referenced Seed Dance contact sheet file is missing",
         })
+    if manual_clip.get("candidate_video") and not _manual_media_reference_exists(
+        output, manual_clip.get("candidate_video")
+    ):
+        missing.append({
+            "field": "candidate_video",
+            "reason": "referenced generated candidate video file is missing",
+        })
 
     note = _evidence_text(manual_clip.get("note"))
     if len(note) < MIN_MANUAL_EVIDENCE_CHARS:

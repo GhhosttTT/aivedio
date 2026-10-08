@@ -153,7 +153,7 @@ def passed_manual_review(*ids):
             },
             "watched_full_clip": True,
             "watched_seed_dance_contact_sheet": True,
-            "candidate_video": "candidate.mp4",
+            "candidate_video": "https://example.test/candidate.mp4",
             "seed_dance_contact_sheet": "seed_dance_contact_sheet.png",
             "note": "full clip is stable enough for candidate review against the contact sheet",
         },
@@ -1077,6 +1077,28 @@ def test_validation_summary_requires_manual_clip_evidence(tmp_path):
     ]
     assert report["checks"]["manual_clip_review_passed"] is False
     assert any("clip evidence" in item for item in report["action_items"])
+
+
+def test_validation_summary_requires_existing_manual_candidate_video(tmp_path):
+    manual_review = passed_manual_review(*PRODUCTION_CASE_IDS)
+    manual_review["clip"]["candidate_video"] = "missing-candidate.mp4"
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "image_review.json", passed_image_review(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", manual_review)
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["manual_clip_evidence_review_passed"] is False
+    assert {
+        "field": "candidate_video",
+        "reason": "referenced generated candidate video file is missing",
+    } in report["checks"]["manual_clip_evidence_review"]["missing"]
+    assert report["checks"]["manual_clip_review_passed"] is False
 
 
 def test_validation_summary_converts_low_manual_commercial_aesthetic_dimension_to_video_repair(tmp_path):
