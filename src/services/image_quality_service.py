@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt
 from src.config import settings
 from src.services.generation_review import (
     Issue,
+    MIN_REVIEW_EVIDENCE_CHARS,
     PLATFORM_REFERENCE_FEATURES,
     ReviewError,
     Score,
@@ -72,7 +73,7 @@ readable face on a phone screen, commercial lighting, natural skin texture, clea
 filter look.
 Also return platform_aesthetic_scores with these keys: skin_texture, lighting_quality, color_grade,
 phone_readability, background_separation, production_polish, repair_artifacts_absent. Score each 0-5 with concrete
-visual evidence. Penalize plastic skin, muddy light, over-saturated filters, tiny unreadable faces, messy background,
+visual evidence of at least 12 characters. Penalize plastic skin, muddy light, over-saturated filters, tiny unreadable faces, messy background,
 low production value, visible face repair scars, and upscale artifacts.
 Also return platform_reference_scores with these keys: seed_dance_gap, premium_casting, mobile_frame_value,
 production_design, viewer_scroll_stop_appeal. Score the still image against a premium Seed Dance-style vertical
@@ -91,7 +92,7 @@ When scene.identity_contrast_matrix is present, compare each pair's contrast_fie
 geometry, copied hair, swapped wardrobe, merged features, or any same-face casting between different named roles.
 When two or more visible characters are present, also return character_distinctiveness_scores with these keys:
 face_geometry_separation, hair_separation, wardrobe_separation, role_readability, no_same_face_casting.
-Score each 0-5 with concrete visual evidence. Penalize same-face casting, copied eye/nose/mouth geometry,
+Score each 0-5 with concrete visual evidence of at least 12 characters. Penalize same-face casting, copied eye/nose/mouth geometry,
 near-identical hairstyles, swapped clothing, merged bodies, or unclear role separation.
 When scene.turnaround_view is present, also return turnaround_feature_scores. Score each required character-sheet feature
 from scene.reference_requirements and scene.identity independently: view angle, facial features, hairstyle silhouette,
@@ -105,6 +106,34 @@ Animation style is valid only when the requested style says so. Return only the 
 
 def _clamp_score(value: float) -> float:
     return round(max(0.0, min(5.0, value)), 2)
+
+
+def _feature_score_or_missing(
+    supplied: dict[str, Any] | None,
+    feature: str,
+    missing: list[str],
+    *,
+    missing_evidence: str,
+) -> dict[str, Any]:
+    item = supplied.get(feature) if isinstance(supplied, dict) else None
+    score = item.get("score") if isinstance(item, dict) else None
+    evidence = str(item.get("evidence") or "").strip() if isinstance(item, dict) else ""
+    if not isinstance(score, (int, float)):
+        missing.append(feature)
+        return {
+            "score": 0.0,
+            "evidence": missing_evidence,
+        }
+    if len(evidence) < MIN_REVIEW_EVIDENCE_CHARS:
+        missing.append(f"{feature}.evidence")
+        return {
+            "score": 0.0,
+            "evidence": f"specific visual evidence shorter than {MIN_REVIEW_EVIDENCE_CHARS} characters",
+        }
+    return {
+        "score": _clamp_score(float(score)),
+        "evidence": evidence,
+    }
 
 
 def _review_score(candidate: dict[str, Any], key: str) -> float | None:
@@ -147,20 +176,12 @@ def platform_aesthetic_gate(candidate: dict[str, Any]) -> dict[str, Any] | None:
     missing = []
     min_score = settings.GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE
     for feature in PLATFORM_AESTHETIC_FEATURES:
-        item = supplied.get(feature)
-        score = item.get("score") if isinstance(item, dict) else None
-        evidence = item.get("evidence") if isinstance(item, dict) else ""
-        if isinstance(score, (int, float)):
-            scores[feature] = {
-                "score": _clamp_score(float(score)),
-                "evidence": str(evidence or "feature reviewed"),
-            }
-        else:
-            missing.append(feature)
-            scores[feature] = {
-                "score": 0.0,
-                "evidence": "platform aesthetic feature was not reviewed by the local VLM",
-            }
+        scores[feature] = _feature_score_or_missing(
+            supplied,
+            feature,
+            missing,
+            missing_evidence="platform aesthetic feature was not reviewed by the local VLM",
+        )
     average = _clamp_score(sum(item["score"] for item in scores.values()) / len(scores))
     low = {
         feature: item
@@ -199,20 +220,12 @@ def platform_reference_gate(candidate: dict[str, Any]) -> dict[str, Any] | None:
     missing = []
     min_score = settings.GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE
     for feature in PLATFORM_REFERENCE_FEATURES:
-        item = supplied.get(feature)
-        score = item.get("score") if isinstance(item, dict) else None
-        evidence = item.get("evidence") if isinstance(item, dict) else ""
-        if isinstance(score, (int, float)):
-            scores[feature] = {
-                "score": _clamp_score(float(score)),
-                "evidence": str(evidence or "platform reference feature reviewed"),
-            }
-        else:
-            missing.append(feature)
-            scores[feature] = {
-                "score": 0.0,
-                "evidence": "platform reference feature was not reviewed by the local VLM",
-            }
+        scores[feature] = _feature_score_or_missing(
+            supplied,
+            feature,
+            missing,
+            missing_evidence="platform reference feature was not reviewed by the local VLM",
+        )
     average = _clamp_score(sum(item["score"] for item in scores.values()) / len(scores))
     low = {
         feature: item
@@ -263,20 +276,12 @@ def character_distinctiveness_gate(candidate: dict[str, Any], scene: dict[str, A
     missing = []
     min_score = settings.GENERATION_CHARACTER_DISTINCTIVENESS_MIN_SCORE
     for feature in CHARACTER_DISTINCTIVENESS_FEATURES:
-        item = supplied.get(feature) if isinstance(supplied, dict) else None
-        score = item.get("score") if isinstance(item, dict) else None
-        evidence = item.get("evidence") if isinstance(item, dict) else ""
-        if isinstance(score, (int, float)):
-            scores[feature] = {
-                "score": _clamp_score(float(score)),
-                "evidence": str(evidence or "character distinctiveness feature reviewed"),
-            }
-        else:
-            missing.append(feature)
-            scores[feature] = {
-                "score": 0.0,
-                "evidence": "character distinctiveness feature was not reviewed by the local VLM",
-            }
+        scores[feature] = _feature_score_or_missing(
+            supplied,
+            feature,
+            missing,
+            missing_evidence="character distinctiveness feature was not reviewed by the local VLM",
+        )
     average = _clamp_score(sum(item["score"] for item in scores.values()) / len(scores))
     low = {
         feature: item

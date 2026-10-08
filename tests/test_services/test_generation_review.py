@@ -266,7 +266,7 @@ def test_frame_review_accepts_video_aesthetic_scores(tmp_path, monkeypatch):
     data = {key: {"score": 4, "evidence": "visible subject matches the keyframe"} for key in (
         "story_match", "composition", "aesthetic_quality", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
     data["video_aesthetic_scores"] = {
-        feature: {"score": 4, "evidence": "passes"}
+        feature: {"score": 4, "evidence": "visible sampled frames pass this feature"}
         for feature in VIDEO_AESTHETIC_FEATURES
     }
     reviewer = Mock()
@@ -290,6 +290,22 @@ def test_frame_review_accepts_video_aesthetic_scores(tmp_path, monkeypatch):
     assert "scene.platform_aesthetic_contract" in reviewer.evaluate.call_args.args[0]
     assert "profile_prompt" in reviewer.evaluate.call_args.args[0]
     assert "profile_negative_prompt" in reviewer.evaluate.call_args.args[0]
+
+
+def test_video_aesthetic_gate_rejects_short_generic_evidence(monkeypatch):
+    monkeypatch.setattr("src.services.generation_review.settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
+    review = {
+        "video_aesthetic_scores": {
+            feature: {"score": 4, "evidence": "passes"}
+            for feature in VIDEO_AESTHETIC_FEATURES
+        }
+    }
+
+    gate = video_aesthetic_gate(review)
+
+    assert gate["status"] == "needs_review"
+    assert gate["missing"] == [f"{feature}.evidence" for feature in VIDEO_AESTHETIC_FEATURES]
+    assert gate["scores"]["motion_smoothness"]["score"] == 0.0
 
 
 def test_frame_review_accepts_platform_reference_scores(tmp_path, monkeypatch):
@@ -507,6 +523,7 @@ def test_llama_cpp_reviewer_sends_openai_compatible_images(tmp_path, monkeypatch
     assert body["stream"] is False
     assert body["response_format"]["type"] == "json_object"
     assert "JSON must satisfy this schema" in body["messages"][0]["content"]
+    assert "at least 12 characters" in body["messages"][0]["content"]
     image_url = body["messages"][1]["content"][1]["image_url"]["url"]
     assert image_url.startswith("data:image/jpeg;base64,")
     with Image.open(io.BytesIO(base64.b64decode(image_url.split(",", 1)[1]))) as decoded:

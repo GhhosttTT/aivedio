@@ -87,7 +87,7 @@ def test_platform_reference_gate_quantifies_seed_dance_keyframe_gap(monkeypatch)
                 "premium_casting": {"score": 3, "evidence": "generic AI portrait"},
                 "mobile_frame_value": {"score": 4, "evidence": "phone readable"},
                 "production_design": {"score": 2, "evidence": "low-budget location"},
-                "viewer_scroll_stop_appeal": {"score": 5, "evidence": "strong hook"},
+                "viewer_scroll_stop_appeal": {"score": 5, "evidence": "strong opening hook"},
             }
         },
     }
@@ -193,7 +193,7 @@ def test_select_best_prefers_character_distinctiveness_over_higher_average(tmp_p
         "platform_reference_scores": passed_platform_reference_scores(),
     }
     weak_distinctiveness = {
-        feature: {"score": 5, "evidence": "passes"}
+        feature: {"score": 5, "evidence": "visible role contrast remains clear"}
         for feature in CHARACTER_DISTINCTIVENESS_FEATURES
     }
     weak_distinctiveness["no_same_face_casting"] = {"score": 2, "evidence": "same-face casting between Alice and Bob"}
@@ -288,7 +288,7 @@ def test_select_best_prioritizes_character_distinctiveness_gate_before_selection
         "platform_reference_scores": passed_platform_reference_scores(),
     }
     same_face_scores = {
-        feature: {"score": 5, "evidence": "passes"}
+        feature: {"score": 5, "evidence": "visible role contrast remains clear"}
         for feature in CHARACTER_DISTINCTIVENESS_FEATURES
     }
     same_face_scores["no_same_face_casting"] = {"score": 2, "evidence": "same-face casting"}
@@ -405,12 +405,12 @@ def test_select_best_uses_platform_aesthetic_breakdown(tmp_path, monkeypatch):
     monkeypatch.setattr("src.services.image_quality_service.settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE", 4.0)
 
     low_breakdown = {
-        feature: {"score": 4, "evidence": "ok"}
+        feature: {"score": 4, "evidence": "visible still frame is acceptable"}
         for feature in PLATFORM_AESTHETIC_FEATURES
     }
     low_breakdown["skin_texture"] = {"score": 1, "evidence": "plastic skin"}
     high_breakdown = {
-        feature: {"score": 4, "evidence": "passes"}
+        feature: {"score": 4, "evidence": "visible still frame satisfies this feature"}
         for feature in PLATFORM_AESTHETIC_FEATURES
     }
     selector = ImageQualitySelector(reviewer=object())
@@ -740,14 +740,14 @@ def test_review_candidate_accepts_platform_aesthetic_scores(tmp_path):
     class FakeReviewer:
         def evaluate(self, _instruction, _payload, schema, images=()):
             return schema.model_validate({
-                "prompt_alignment": {"score": 4, "evidence": "matches"},
+                "prompt_alignment": {"score": 4, "evidence": "prompt matches office doorway scene"},
                 "composition": {"score": 4, "evidence": "single readable subject"},
                 "aesthetic_quality": {"score": 4, "evidence": "commercial look"},
                 "visual_integrity": {"score": 4, "evidence": "clean render"},
                 "facial_identity": {"score": 4, "evidence": "face matches"},
                 "identity_consistency": {"score": 4, "evidence": "wardrobe stable"},
                 "platform_aesthetic_scores": {
-                    feature: {"score": 4, "evidence": "passes"}
+                    feature: {"score": 4, "evidence": "visible still frame satisfies this feature"}
                     for feature in PLATFORM_AESTHETIC_FEATURES
                 },
                 "reviewed_images": [1],
@@ -774,7 +774,7 @@ def test_review_candidate_accepts_platform_reference_scores(tmp_path):
         def evaluate(self, instruction, _payload, schema, images=()):
             assert "platform_reference_scores" in instruction
             return schema.model_validate({
-                "prompt_alignment": {"score": 4, "evidence": "matches"},
+                "prompt_alignment": {"score": 4, "evidence": "prompt matches office doorway scene"},
                 "composition": {"score": 4, "evidence": "single readable subject"},
                 "aesthetic_quality": {"score": 4, "evidence": "commercial look"},
                 "visual_integrity": {"score": 4, "evidence": "clean render"},

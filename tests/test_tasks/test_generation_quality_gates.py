@@ -685,7 +685,7 @@ def test_image_generation_uses_multiple_quality_candidates(tmp_path, monkeypatch
                 "platform_aesthetic_scores": {
                     "skin_texture": {"score": 5, "evidence": "natural skin"},
                     "lighting_quality": {"score": 5, "evidence": "commercial lighting"},
-                    "color_grade": {"score": 5, "evidence": "clean color"},
+                    "color_grade": {"score": 5, "evidence": "clean color grade"},
                     "phone_readability": {"score": 5, "evidence": "face readable"},
                     "background_separation": {"score": 5, "evidence": "clear separation"},
                     "production_polish": {"score": 5, "evidence": "premium look"},
@@ -755,7 +755,7 @@ def test_image_generation_reviews_postprocessed_final_image(tmp_path, monkeypatc
                 "platform_aesthetic_scores": {
                     "skin_texture": {"score": 5, "evidence": "natural skin"},
                     "lighting_quality": {"score": 5, "evidence": "commercial lighting"},
-                    "color_grade": {"score": 5, "evidence": "clean color"},
+                    "color_grade": {"score": 5, "evidence": "clean color grade"},
                     "phone_readability": {"score": 5, "evidence": "face readable"},
                     "background_separation": {"score": 5, "evidence": "clear separation"},
                     "production_polish": {"score": 5, "evidence": "premium look"},
@@ -838,7 +838,7 @@ def test_postprocess_review_blocks_degraded_final_image(tmp_path, monkeypatch):
                 "platform_aesthetic_scores": {
                     "skin_texture": {"score": 5, "evidence": "natural skin"},
                     "lighting_quality": {"score": 5, "evidence": "commercial lighting"},
-                    "color_grade": {"score": 5, "evidence": "clean color"},
+                    "color_grade": {"score": 5, "evidence": "clean color grade"},
                     "phone_readability": {"score": 5, "evidence": "face readable"},
                     "background_separation": {"score": 5, "evidence": "clear separation"},
                     "production_polish": {"score": 5, "evidence": "premium look"},
@@ -1280,7 +1280,7 @@ def test_video_selection_uses_aesthetic_breakdown(project_data, tmp_path, monkey
             return kwargs["output_path"]
 
     low_breakdown = {
-        "skin_texture_stability": {"score": 4, "evidence": "skin stable"},
+        "skin_texture_stability": {"score": 4, "evidence": "skin remains stable"},
         "lighting_consistency": {"score": 1, "evidence": "light jumps"},
         "color_grade_consistency": {"score": 4, "evidence": "color stable"},
         "phone_readability": {"score": 4, "evidence": "face readable"},
@@ -1289,7 +1289,7 @@ def test_video_selection_uses_aesthetic_breakdown(project_data, tmp_path, monkey
         "artifact_absence": {"score": 2, "evidence": "repair scar flickers"},
     }
     high_breakdown = {
-        feature: {"score": 4, "evidence": "passes"}
+        feature: {"score": 4, "evidence": "sampled video frames satisfy this feature"}
         for feature in low_breakdown
     }
 
@@ -1364,7 +1364,7 @@ def test_video_selection_prefers_character_distinctiveness(project_data, tmp_pat
         for feature in weak_distinctiveness
     }
     video_aesthetic_scores = {
-        "skin_texture_stability": {"score": 4, "evidence": "skin stable"},
+        "skin_texture_stability": {"score": 4, "evidence": "skin remains stable"},
         "lighting_consistency": {"score": 4, "evidence": "lighting stable"},
         "color_grade_consistency": {"score": 4, "evidence": "color stable"},
         "phone_readability": {"score": 4, "evidence": "faces readable"},
@@ -2136,13 +2136,13 @@ def test_final_normalized_video_review_blocks_temporal_regression(project_data, 
                         "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
                         "temporal_consistency": {"score": 2, "evidence": "normalized clip stutters and camera jumps"},
                         "video_aesthetic_scores": {
-                            "skin_texture_stability": {"score": 4, "evidence": "skin stable"},
+                            "skin_texture_stability": {"score": 4, "evidence": "skin remains stable"},
                             "lighting_consistency": {"score": 4, "evidence": "lighting stable"},
                             "color_grade_consistency": {"score": 4, "evidence": "color stable"},
                             "phone_readability": {"score": 4, "evidence": "face readable"},
                             "motion_smoothness": {"score": 2, "evidence": "stutter after padding"},
                             "background_stability": {"score": 3, "evidence": "background jumps"},
-                            "artifact_absence": {"score": 4, "evidence": "no scars"},
+                            "artifact_absence": {"score": 4, "evidence": "no visible repair scars"},
                         },
                     }
                 }],
