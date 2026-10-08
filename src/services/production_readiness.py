@@ -8,6 +8,7 @@ import os
 import re
 from dataclasses import dataclass
 
+import httpx
 from sqlalchemy.orm import Session
 
 from src.config import settings
@@ -84,7 +85,7 @@ class ProductionReadinessService:
             "spatial_continuity": self._spatial_continuity_check(project, scenes, characters, blockers, warnings),
             "visual_style": self._visual_style_check(project, scenes, blockers),
             "workflow_profile": self._workflow_profile_check(blockers),
-            "reviewer": self._reviewer_check(blockers),
+            "reviewer": self._reviewer_check(blockers, probe_live=include_engine_preflight),
             "project_generation_quality": self._project_generation_quality_check(project, warnings),
             "sample_validation": self._sample_validation_check(warnings),
         }
@@ -654,7 +655,7 @@ class ProductionReadinessService:
             ))
         return report
 
-    def _reviewer_check(self, blockers: list[ReadinessIssue]) -> dict:
+    def _reviewer_check(self, blockers: list[ReadinessIssue], probe_live: bool = False) -> dict:
         backend = settings.LOCAL_REVIEW_BACKEND.lower().strip()
         configured = backend == "llama_cpp" and bool(settings.LOCAL_REVIEW_BASE_URL and settings.LOCAL_REVIEW_MODEL)
         if backend != "llama_cpp":
@@ -677,13 +678,58 @@ class ProductionReadinessService:
                 "video_review_not_required",
                 "Enable GENERATION_REQUIRE_VIDEO_REVIEW=true before claiming production video quality.",
             ))
+        probe = self._probe_llama_cpp_reviewer(blockers) if configured and probe_live else {
+            "status": "skipped",
+            "reason": "live_probe_disabled",
+        }
         return {
             "backend": settings.LOCAL_REVIEW_BACKEND,
             "base_url": settings.LOCAL_REVIEW_BASE_URL,
             "model": settings.LOCAL_REVIEW_MODEL,
             "configured": configured,
+            "probe": probe,
             "image_review_required": settings.GENERATION_REQUIRE_IMAGE_REVIEW,
             "video_review_required": settings.GENERATION_REQUIRE_VIDEO_REVIEW,
+        }
+
+    def _probe_llama_cpp_reviewer(self, blockers: list[ReadinessIssue]) -> dict:
+        endpoint = settings.LOCAL_REVIEW_BASE_URL.rstrip("/")
+        if not endpoint.endswith("/v1"):
+            endpoint += "/v1"
+        models_url = endpoint + "/models"
+        try:
+            with httpx.Client(timeout=settings.LOCAL_REVIEW_PROBE_TIMEOUT, trust_env=False) as client:
+                response = client.get(models_url)
+                response.raise_for_status()
+                payload = response.json()
+        except Exception as exc:
+            blockers.append(ReadinessIssue(
+                "reviewer_probe_failed",
+                f"Start llama.cpp reviewer before production: {models_url} failed with {exc}",
+            ))
+            return {
+                "status": "unavailable",
+                "endpoint": models_url,
+                "error": str(exc),
+            }
+        models = []
+        for item in payload.get("data", []) if isinstance(payload, dict) else []:
+            if isinstance(item, dict) and item.get("id"):
+                models.append(str(item["id"]))
+        model_available = settings.LOCAL_REVIEW_MODEL in models
+        if not model_available:
+            blockers.append(ReadinessIssue(
+                "reviewer_model_not_available",
+                (
+                    f"llama.cpp reviewer is reachable but LOCAL_REVIEW_MODEL={settings.LOCAL_REVIEW_MODEL} "
+                    f"is not listed by {models_url}."
+                ),
+            ))
+        return {
+            "status": "available" if model_available else "model_missing",
+            "endpoint": models_url,
+            "model_available": model_available,
+            "models": models[:20],
         }
 
     def _sample_validation_check(self, warnings: list[ReadinessIssue]) -> dict:

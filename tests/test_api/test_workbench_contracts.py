@@ -679,6 +679,109 @@ def test_production_readiness_blocks_disabled_local_review_requirements(setup, m
     assert any(item["code"] == "video_review_not_required" for item in payload["blockers"])
 
 
+def test_production_readiness_probes_llama_cpp_reviewer_models(monkeypatch):
+    from src.services.production_readiness import ProductionReadinessService
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": [{"id": "local-vlm"}]}
+
+    class FakeClient:
+        def __init__(self, timeout, trust_env):
+            self.timeout = timeout
+            self.trust_env = trust_env
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, url):
+            assert url == "http://127.0.0.1:8080/v1/models"
+            return FakeResponse()
+
+    monkeypatch.setattr("src.services.production_readiness.httpx.Client", FakeClient)
+    monkeypatch.setattr("src.services.production_readiness.settings.LOCAL_REVIEW_BACKEND", "llama_cpp")
+    monkeypatch.setattr("src.services.production_readiness.settings.LOCAL_REVIEW_BASE_URL", "http://127.0.0.1:8080")
+    monkeypatch.setattr("src.services.production_readiness.settings.LOCAL_REVIEW_MODEL", "local-vlm")
+
+    blockers = []
+    report = ProductionReadinessService(Mock())._reviewer_check(blockers, probe_live=True)
+
+    assert report["probe"]["status"] == "available"
+    assert report["probe"]["model_available"] is True
+    assert not any(item.code in {"reviewer_probe_failed", "reviewer_model_not_available"} for item in blockers)
+
+
+def test_production_readiness_blocks_missing_llama_cpp_review_model(monkeypatch):
+    from src.services.production_readiness import ProductionReadinessService
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": [{"id": "other-vlm"}]}
+
+    class FakeClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, _url):
+            return FakeResponse()
+
+    monkeypatch.setattr("src.services.production_readiness.httpx.Client", FakeClient)
+    monkeypatch.setattr("src.services.production_readiness.settings.LOCAL_REVIEW_BACKEND", "llama_cpp")
+    monkeypatch.setattr("src.services.production_readiness.settings.LOCAL_REVIEW_BASE_URL", "http://127.0.0.1:8080/v1")
+    monkeypatch.setattr("src.services.production_readiness.settings.LOCAL_REVIEW_MODEL", "local-vlm")
+
+    blockers = []
+    report = ProductionReadinessService(Mock())._reviewer_check(blockers, probe_live=True)
+
+    assert report["probe"]["status"] == "model_missing"
+    assert report["probe"]["models"] == ["other-vlm"]
+    assert any(item.code == "reviewer_model_not_available" for item in blockers)
+
+
+def test_production_readiness_blocks_unreachable_llama_cpp_reviewer(monkeypatch):
+    from src.services.production_readiness import ProductionReadinessService
+
+    class FakeClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, _url):
+            raise RuntimeError("connection refused")
+
+    monkeypatch.setattr("src.services.production_readiness.httpx.Client", FakeClient)
+    monkeypatch.setattr("src.services.production_readiness.settings.LOCAL_REVIEW_BACKEND", "llama_cpp")
+    monkeypatch.setattr("src.services.production_readiness.settings.LOCAL_REVIEW_BASE_URL", "http://127.0.0.1:8080/v1")
+    monkeypatch.setattr("src.services.production_readiness.settings.LOCAL_REVIEW_MODEL", "local-vlm")
+
+    blockers = []
+    report = ProductionReadinessService(Mock())._reviewer_check(blockers, probe_live=True)
+
+    assert report["probe"]["status"] == "unavailable"
+    assert "connection refused" in report["probe"]["error"]
+    assert any(item.code == "reviewer_probe_failed" for item in blockers)
+
+
 def test_production_readiness_accepts_required_image_postprocess(setup, monkeypatch):
     client, _, _ = setup
     monkeypatch.setattr("src.services.production_readiness.settings.GENERATION_REQUIRE_IMAGE_POSTPROCESS", True)

@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     LOCAL_REVIEW_BASE_URL: str = "http://127.0.0.1:8080/v1"
     LOCAL_REVIEW_MODEL: str = "local-vlm"
     LOCAL_REVIEW_TIMEOUT: int = 300
+    LOCAL_REVIEW_PROBE_TIMEOUT: float = 2.0
 
     # SVD 配置
     SVD_MODEL_PATH: str = "./models/stable-video-diffusion-img2vid-xt"
