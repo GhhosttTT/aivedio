@@ -437,7 +437,18 @@ def _normalize_subtitle_text(text: str) -> str:
 
 def _gate_status_passed(review: dict, key: str) -> bool:
     gate = review.get(key)
-    return isinstance(gate, dict) and gate.get("status") == "passed"
+    if not isinstance(gate, dict) or gate.get("status") != "passed":
+        return False
+    if gate.get("missing") or gate.get("low"):
+        return False
+    min_score = gate.get("min_score")
+    scores = gate.get("scores")
+    if isinstance(min_score, (int, float)) and isinstance(scores, dict):
+        for item in scores.values():
+            if isinstance(item, dict) and isinstance(item.get("score"), (int, float)):
+                if float(item["score"]) < float(min_score):
+                    return False
+    return True
 
 
 def _optional_gate_status_passed(review: dict, key: str) -> bool:

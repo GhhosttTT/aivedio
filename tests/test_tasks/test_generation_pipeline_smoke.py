@@ -230,6 +230,34 @@ def test_composition_blocks_failed_final_normalized_platform_reference_gate(tmp_
         composition_tasks._require_passed_scene_videos([scene])
 
 
+def test_composition_blocks_inconsistent_passed_video_gate_low_score(tmp_path):
+    video = tmp_path / "scene_001.mp4"
+    video.write_bytes(b"fake video")
+    video.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "passed",
+        "final_video_review": {
+            "status": "passed",
+            "average": 4.4,
+            "platform_score": 4.2,
+            "video_aesthetic_gate": {
+                "status": "passed",
+                "min_score": 4.0,
+                "scores": {
+                    "motion_smoothness": {"score": 2.0, "evidence": "motion jitters after interpolation"},
+                },
+                "missing": [],
+                "low": {},
+            },
+            "platform_reference_gate": {"status": "passed"},
+            "video_performance_gate": {"status": "passed"},
+        },
+    }), encoding="utf-8")
+    scene = Mock(scene_number=1, video_path=str(video))
+
+    with pytest.raises(ValueError, match="final normalized video aesthetic gate failed"):
+        composition_tasks._require_passed_scene_videos([scene])
+
+
 def passed_composition_review():
     return {
         "status": "passed",
@@ -496,6 +524,43 @@ def test_final_composed_video_review_blocks_mixed_finishing_polish(tmp_path, mon
     assert written["error"] == "composition review batch 1 final composition finishing gate failed"
     assert written["repair_queue"][0]["action"] == "refine_final_composition_finish"
     assert written["repair_queue"][0]["execution"] == "auto"
+
+
+def test_final_composed_video_review_blocks_inconsistent_passed_finishing_score(tmp_path, monkeypatch):
+    final_video = tmp_path / "final.mp4"
+    final_video.write_bytes(b"final video")
+    project = Mock(id=7, name="premium-drama")
+    scenes = [Mock(
+        scene_number=2,
+        character_name="Alice",
+        visual_description="Alice confronts Bob in a luxury office",
+        image_prompt="Alice medium shot",
+        dialogue="你到底瞒了我多久",
+        audio_path=None,
+        subtitle_path=str(tmp_path / "scene2.srt"),
+    )]
+    failed = passed_composition_review()
+    failed["batches"][0]["final_composition_finishing_gate"] = {
+        "status": "passed",
+        "min_score": 4.0,
+        "scores": {
+            "skin_tone_uniformity": {"score": 2.0, "evidence": "skin tone shifts between cuts"},
+        },
+        "missing": [],
+        "low": {},
+    }
+
+    class FakeReviewService:
+        def review_video(self, *_args, **_kwargs):
+            return failed
+
+    monkeypatch.setattr(composition_tasks, "GenerationReviewService", FakeReviewService)
+
+    with pytest.raises(ValueError, match="final composition finishing gate failed"):
+        composition_tasks._review_final_composed_video(project, scenes, str(final_video))
+    written = json.loads(final_video.with_suffix(".composition_review.json").read_text(encoding="utf-8"))
+    assert written["error"] == "composition review batch 1 final composition finishing gate failed"
+    assert written["repair_queue"][0]["action"] == "refine_final_composition_finish"
 
 
 def test_draft_tasks_cannot_publish_an_unreviewed_final_video(tmp_path, monkeypatch):
