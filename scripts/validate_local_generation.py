@@ -22,7 +22,11 @@ from src.services.video_engine_preflight import (
     scan_placeholders as _scan_placeholders,
 )
 from src.services.generation_review import GenerationReviewService, platform_video_score, write_report
-from src.services.generation_quality_scorecard import build_generation_quality_scorecard
+from src.services.generation_quality_scorecard import (
+    MIN_COMMERCIAL_PRODUCTION_SCORE,
+    build_generation_quality_scorecard,
+    production_score_meets_candidate_threshold,
+)
 from src.services.shot_prompt_service import ShotPromptService
 from src.services.repair_queue import attach_repair_queue, build_repair_queue
 from src.services.repair_plan import build_repair_execution_plan
@@ -1170,6 +1174,14 @@ def summarize_validation(output: Path):
     )
     checks["quality_scorecard_production_score"] = report["quality_scorecard"].get("production_score")
     checks["quality_scorecard_next_focus"] = report["quality_scorecard"].get("next_focus")
+    checks["quality_scorecard_production_score_passed"] = production_score_meets_candidate_threshold(
+        checks["quality_scorecard_production_score"]
+    )
+    if not checks["quality_scorecard_production_score_passed"]:
+        report["action_items"].append(
+            "Improve sample quality until quality_scorecard production_score is at least "
+            f"{MIN_COMMERCIAL_PRODUCTION_SCORE} before accepting a Seed Dance candidate."
+        )
 
     if all(checks[key] for key in (
         "environment_ready", "video_workflow_ready", "images_rendered",
@@ -1177,7 +1189,7 @@ def summarize_validation(output: Path):
         "sample_coverage_passed",
         "image_review_passed", "image_platform_reference_gate_passed",
         "video_review_passed", "baseline_comparison_passed", "manual_review_passed",
-        "repair_queue_empty",
+        "repair_queue_empty", "quality_scorecard_production_score_passed",
     )):
         report["status"] = "ready_for_seed_dance_candidate"
     elif (

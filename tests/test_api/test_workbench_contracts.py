@@ -1130,6 +1130,78 @@ def test_production_readiness_warns_when_sample_quality_scorecard_needs_repair(s
     assert "refine_prompt_composition" in issue["message"]
 
 
+def test_production_readiness_warns_when_clean_sample_scorecard_score_is_low(setup):
+    client, _, path = setup
+    validation_dir = path / "storage" / "validation"
+    validation_dir.mkdir(parents=True, exist_ok=True)
+    (validation_dir / "validation_summary.json").write_text(json.dumps({
+        "status": "ready_for_seed_dance_candidate",
+        "quality_scorecard": {
+            "status": "clean",
+            "production_score": 3.9,
+            "next_focus": None,
+            "weakest_dimensions": [],
+        },
+        "checks": {
+            "video_review_passed": True,
+            "video_identity_gate_passed": True,
+            "video_temporal_gate_passed": True,
+            "video_aesthetic_gate_passed": True,
+            "video_platform_reference_gate_passed": True,
+            "video_character_distinctiveness_gate_passed": True,
+            "video_performance_gate_passed": True,
+            "baseline_contact_sheet_present": True,
+            "baseline_comparison_passed": True,
+            "manual_review_covers_rendered_cases": True,
+            "manual_review_missing_case_ids": [],
+            "manual_clip_review_present": True,
+            "manual_clip_score": 4.3,
+            "manual_clip_review_passed": True,
+            "manual_case_dimension_review_passed": True,
+            "manual_case_dimension_review": {"missing": [], "low": []},
+            "manual_clip_dimension_review_passed": True,
+            "manual_clip_dimension_review": {"missing": [], "low": []},
+            "manual_blocking_issues": [],
+            "manual_blocking_issues_passed": True,
+            "repair_queue_empty": True,
+            "manual_review_passed": True,
+            "image_review_present": True,
+            "image_review_covers_rendered_cases": True,
+            "image_review_missing_case_ids": [],
+            "image_review_passed": True,
+            "image_platform_reference_gate_passed": True,
+            "render_profile": {
+                "quality_mode": "ultra",
+                "optimization_mode": "quality",
+                "prompt_optimization": True,
+                "parameter_optimization": True,
+            },
+            "render_profile_passed": True,
+            "render_workflow_parameters_passed": True,
+            "sample_coverage_passed": True,
+            "sample_coverage": {"missing": []},
+            "quality_scorecard_production_score": 3.9,
+            "quality_scorecard_next_focus": None,
+        },
+        "action_items": [],
+    }), encoding="utf-8")
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    validation = payload["checks"]["sample_validation"]
+    assert validation["quality_scorecard"]["status"] == "clean"
+    assert validation["checks"]["quality_scorecard_production_score"] == 3.9
+    issue = next(
+        item
+        for item in payload["warnings"]
+        if item["code"] == "sample_validation_quality_scorecard_production_score_low"
+    )
+    assert "4.2" in issue["message"]
+    assert "3.9" in issue["message"]
+
+
 def test_production_readiness_warns_when_sample_video_gates_fail(setup):
     client, _, path = setup
     validation_dir = path / "storage" / "validation"

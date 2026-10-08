@@ -19,7 +19,11 @@ from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.shot_complexity_service import ShotComplexityService
 from src.services.spatial_control_assets import SpatialControlAssetService
 from src.services.visual_style_assets import VisualStyleAssetService
-from src.services.generation_quality_scorecard import build_generation_quality_scorecard
+from src.services.generation_quality_scorecard import (
+    MIN_COMMERCIAL_PRODUCTION_SCORE,
+    build_generation_quality_scorecard,
+    production_score_meets_candidate_threshold,
+)
 from src.services.production_workflow_profile import ProductionWorkflowProfileService, REQUIRED_IMAGE_PIPELINE_STAGES
 from src.services.quality_loop import build_quality_loop_plan
 from src.services.story_room_quality import StoryRoomQualityService
@@ -883,6 +887,20 @@ class ProductionReadinessService:
                 (
                     "Resolve the sample validation quality scorecard before accepting production quality. "
                     f"Next focus: {focus}; suggested action: {action}."
+                ),
+                severity="warning",
+            ))
+        production_score = checks.get(
+            "quality_scorecard_production_score",
+            quality_scorecard.get("production_score") if quality_scorecard else None,
+        )
+        if quality_scorecard and not production_score_meets_candidate_threshold(production_score):
+            warnings.append(ReadinessIssue(
+                "sample_validation_quality_scorecard_production_score_low",
+                (
+                    "Raise the sample validation quality_scorecard production_score to at least "
+                    f"{MIN_COMMERCIAL_PRODUCTION_SCORE} before accepting Seed Dance candidate quality; "
+                    f"current score is {production_score}."
                 ),
                 severity="warning",
             ))

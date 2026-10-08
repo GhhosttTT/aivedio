@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 
+MIN_COMMERCIAL_PRODUCTION_SCORE = 4.2
+
+
 DIMENSION_LABELS = {
     "identity": "Character identity and role separation",
     "platform_aesthetic": "Mobile short-drama surface quality",
@@ -19,6 +22,10 @@ DIMENSION_LABELS = {
     "final_composition_finish": "Final episode finishing polish",
     "dialogue_audio": "Dialogue audio delivery and timing",
 }
+
+
+def production_score_meets_candidate_threshold(score: Any) -> bool:
+    return isinstance(score, (int, float)) and score >= MIN_COMMERCIAL_PRODUCTION_SCORE
 
 ACTION_DIMENSIONS = {
     "regenerate_keyframe_with_identity_lock": "identity",

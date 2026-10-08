@@ -672,6 +672,29 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     assert report["action_items"] == []
 
 
+def test_validation_summary_blocks_clean_scorecard_below_commercial_candidate_score(tmp_path, monkeypatch):
+    monkeypatch.setattr(validator, "build_generation_quality_scorecard", lambda reports: {
+        "status": "clean",
+        "production_score": 3.9,
+        "next_focus": None,
+        "weakest_dimensions": [],
+    })
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "image_review.json", passed_image_review(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", passed_manual_review(*PRODUCTION_CASE_IDS))
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] == "partial_needs_review"
+    assert report["checks"]["quality_scorecard_production_score"] == 3.9
+    assert report["checks"]["quality_scorecard_production_score_passed"] is False
+    assert any("production_score is at least 4.2" in item for item in report["action_items"])
+
+
 def test_validation_summary_requires_production_sample_coverage(tmp_path):
     write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
     write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
