@@ -700,7 +700,7 @@ def test_review_candidate_promotes_visible_character_turnaround_contract(tmp_pat
                 "facial_identity": {"score": 4, "evidence": "profile matches reference"},
                 "identity_consistency": {"score": 4, "evidence": "wardrobe and body shape match"},
                 "turnaround_feature_scores": {
-                    feature: {"score": 4, "evidence": f"{feature} matches"}
+                    feature: {"score": 4, "evidence": f"{feature} visibly matches the frozen side reference"}
                     for feature in TURNAROUND_FEATURES["side"]
                 },
                 "reviewed_images": [1],

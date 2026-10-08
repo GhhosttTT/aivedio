@@ -83,7 +83,7 @@ def _passed_review(index, image_path, scene, prompt, reference_image=None):
             "facial_identity": {"score": 5, "evidence": "face matches"},
             "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
             "turnaround_feature_scores": {
-                feature: {"score": 5, "evidence": f"{feature} matches"}
+                feature: {"score": 5, "evidence": f"{feature} visibly matches the character sheet"}
                 for feature in TURNAROUND_FEATURES.get(scene.get("turnaround_view", "front"), [])
             },
             "issues": [],

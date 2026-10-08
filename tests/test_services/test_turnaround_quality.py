@@ -30,15 +30,15 @@ def test_turnaround_gate_quantifies_feature_mismatch():
     candidate = {
         "review": {
             "turnaround_feature_scores": {
-                "view_angle": {"score": 5, "evidence": "strict front"},
-                "face_shape": {"score": 5, "evidence": "oval face"},
-                "eyes": {"score": 5, "evidence": "almond eyes"},
+                "view_angle": {"score": 5, "evidence": "strict front view is visible"},
+                "face_shape": {"score": 5, "evidence": "oval face shape matches identity"},
+                "eyes": {"score": 5, "evidence": "almond brown eyes match identity"},
                 "nose": {"score": 2, "evidence": "nose bridge changed"},
-                "mouth": {"score": 5, "evidence": "medium lips"},
+                "mouth": {"score": 5, "evidence": "medium lip shape matches identity"},
                 "hair": {"score": 5, "evidence": "short black hair"},
                 "distinctive_features": {"score": 1, "evidence": "mole missing"},
-                "body_proportion": {"score": 4, "evidence": "slender body"},
-                "wardrobe_front": {"score": 4, "evidence": "green jacket"},
+                "body_proportion": {"score": 4, "evidence": "slender body proportion matches"},
+                "wardrobe_front": {"score": 4, "evidence": "green jacket is visible"},
             }
         },
         "platform_score": 4.5,
@@ -56,7 +56,7 @@ def test_turnaround_gate_quantifies_feature_mismatch():
 
 def test_turnaround_gate_passes_when_all_features_are_scored():
     scores = {
-        feature: {"score": 4, "evidence": "matches"}
+        feature: {"score": 4, "evidence": f"{feature} visibly matches expected character sheet"}
         for feature in turnaround_expected_features("back", character_data())
     }
     candidate = {"review": {"turnaround_feature_scores": scores}, "platform_score": 4.5}
@@ -66,3 +66,18 @@ def test_turnaround_gate_passes_when_all_features_are_scored():
     assert candidate["turnaround_gate"]["status"] == "passed"
     assert candidate["turnaround_gate"]["missing"] == []
     assert candidate["platform_score"] == 4.0
+
+
+def test_turnaround_gate_rejects_short_generic_evidence():
+    scores = {
+        feature: {"score": 4, "evidence": "matches"}
+        for feature in turnaround_expected_features("back", character_data())
+    }
+    candidate = {"review": {"turnaround_feature_scores": scores}, "platform_score": 4.5}
+
+    attach_turnaround_quality_gate(candidate, "back", character_data(), min_score=4.0)
+
+    gate = candidate["turnaround_gate"]
+    assert gate["status"] == "needs_review"
+    assert gate["missing"] == [f"{feature}.evidence" for feature in turnaround_expected_features("back", character_data())]
+    assert candidate["platform_score"] == 0.0

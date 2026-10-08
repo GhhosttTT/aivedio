@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.services.generation_review import MIN_REVIEW_EVIDENCE_CHARS
+
 
 TURNAROUND_FEATURES: dict[str, tuple[str, ...]] = {
     "front": (
@@ -207,13 +209,21 @@ def attach_turnaround_quality_gate(
     for feature in TURNAROUND_FEATURES[view]:
         score_item = supplied.get(feature) if isinstance(supplied, dict) else None
         score = score_item.get("score") if isinstance(score_item, dict) else None
-        evidence = score_item.get("evidence") if isinstance(score_item, dict) else ""
+        evidence = str(score_item.get("evidence") or "").strip() if isinstance(score_item, dict) else ""
         if isinstance(score, (int, float)):
-            feature_scores[feature] = {
-                "score": round(max(0.0, min(5.0, float(score))), 2),
-                "evidence": str(evidence or "feature reviewed"),
-                "expected": expected.get(feature, ""),
-            }
+            if len(evidence) < MIN_REVIEW_EVIDENCE_CHARS:
+                missing.append(f"{feature}.evidence")
+                feature_scores[feature] = {
+                    "score": 0.0,
+                    "evidence": f"specific visual evidence shorter than {MIN_REVIEW_EVIDENCE_CHARS} characters",
+                    "expected": expected.get(feature, ""),
+                }
+            else:
+                feature_scores[feature] = {
+                    "score": round(max(0.0, min(5.0, float(score))), 2),
+                    "evidence": evidence,
+                    "expected": expected.get(feature, ""),
+                }
         else:
             missing.append(feature)
             feature_scores[feature] = {
