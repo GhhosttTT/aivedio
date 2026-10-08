@@ -1633,6 +1633,37 @@ def test_acceptance_package_includes_repair_rerun_plan(tmp_path):
     assert "review-video" in markdown
 
 
+def test_acceptance_package_surfaces_low_production_score_blocker(tmp_path):
+    write_json(tmp_path / "render.json", rendered_cases("discovery"))
+    write_json(tmp_path / "manual_review.json", passed_manual_review("discovery"))
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "validation_summary.json", {
+        "status": "partial_needs_review",
+        "quality_scorecard": {
+            "status": "clean",
+            "production_score": 3.8,
+            "next_focus": None,
+        },
+        "checks": {
+            "manual_clip_review_passed": True,
+            "manual_review_passed": True,
+            "repair_queue_empty": True,
+            "quality_scorecard_production_score_passed": False,
+        },
+        "action_items": [],
+    })
+
+    package = validator.build_acceptance_package(tmp_path)
+
+    assert any(
+        "quality_scorecard production_score" in item
+        for item in package["blocking_action_items"]
+    )
+    assert package["quality_loop_plan"]["status"] == "manual_review_required"
+    markdown = (tmp_path / "acceptance_package.md").read_text(encoding="utf-8")
+    assert "| quality_scorecard_production_score_passed | FAIL |" in markdown
+
+
 def test_quality_loop_package_writes_direct_next_repair_plan(tmp_path):
     write_json(tmp_path / "validation_summary.json", {"status": "partial_needs_review"})
     write_json(tmp_path / "video_review.json", {

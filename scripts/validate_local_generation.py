@@ -1428,8 +1428,18 @@ def _manual_review_section(summary: dict, render_report: dict | None, manual_rev
     }
 
 
-def _acceptance_action_items(summary: dict, manual_section: dict, repair_queue: list[dict]) -> list[str]:
+def _acceptance_action_items(
+    summary: dict,
+    manual_section: dict,
+    repair_queue: list[dict],
+    quality_scorecard: dict,
+) -> list[str]:
     items = list(summary.get("action_items", []))
+    production_score = quality_scorecard.get("production_score") if isinstance(quality_scorecard, dict) else None
+    if not production_score_meets_candidate_threshold(production_score):
+        items.append(
+            "Raise quality_scorecard production_score to the commercial candidate threshold before accepting production quality."
+        )
     if manual_section["missing_case_ids"]:
         items.append("Finish human review for missing rendered cases before scaling production.")
     if not manual_section.get("clip", {}).get("passed"):
@@ -1495,6 +1505,7 @@ def _build_acceptance_markdown(package: dict) -> str:
         "manual_blocking_issues_passed",
         "repair_queue_empty",
         "manual_review_passed",
+        "quality_scorecard_production_score_passed",
     ):
         lines.append(f"| {key} | {_markdown_bool(checks.get(key))} |")
     lines.extend([
@@ -1749,7 +1760,12 @@ def build_acceptance_package(output: Path) -> dict:
             "Update manual_review.json with scores for every rendered case and a clip review; do not score only the best-looking outputs.",
         ],
     }
-    package["blocking_action_items"] = _acceptance_action_items(summary, manual_section, repair_queue)
+    package["blocking_action_items"] = _acceptance_action_items(
+        summary,
+        manual_section,
+        repair_queue,
+        quality_scorecard,
+    )
     write_report(output / "validation_summary.json", summary)
     write_report(output / "acceptance_package.json", package)
     (output / "acceptance_package.md").write_text(_build_acceptance_markdown(package), encoding="utf-8")
