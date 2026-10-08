@@ -623,6 +623,9 @@ class ComfyUIService:
         workflow_path: Optional[str] = None,
         motion_bucket_id: int = 127,
         noise_aug_strength: float = 0.02,
+        quality_mode: Optional[str] = None,
+        repair_action: Optional[str] = None,
+        quality_pipeline: Optional[dict] = None,
     ) -> str:
         """Run a user-supplied ComfyUI image-to-video API workflow."""
         path = workflow_path or settings.COMFYUI_VIDEO_WORKFLOW_PATH
@@ -638,6 +641,7 @@ class ComfyUIService:
         workflow = json.loads(workflow_file.read_text(encoding="utf-8"))
         uploaded_reference = self._upload_reference_image(reference_image)
         uploaded_end = self._upload_reference_image(end_image) if end_image else uploaded_reference
+        pipeline = quality_pipeline if isinstance(quality_pipeline, dict) else {}
         replacements = {
             "prompt": prompt,
             "positive_prompt": prompt,
@@ -656,6 +660,14 @@ class ComfyUIService:
             "output_prefix": Path(output_path).stem,
             "motion_bucket_id": motion_bucket_id,
             "noise_aug_strength": noise_aug_strength,
+            "quality_mode": quality_mode or "",
+            "quality_profile": quality_mode or "",
+            "repair_action": repair_action or "",
+            "quality_pipeline": pipeline,
+            "quality_pipeline_json": json.dumps(pipeline, ensure_ascii=False),
+            "quality_pipeline_stages": ", ".join(str(item) for item in pipeline.get("stages", []) or []),
+            "quality_pipeline_prompt": str(pipeline.get("prompt_directive") or ""),
+            "quality_pipeline_negative": str(pipeline.get("negative_directive") or ""),
         }
         workflow = self._replace_workflow_placeholders(workflow, replacements)
         self.preflight(workflow)

@@ -2229,6 +2229,9 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
     assert provider.request.fps == 8
     assert provider.request.motion_bucket_id == 120
     assert provider.request.noise_aug_strength == 0.02
+    assert provider.request.quality_mode
+    assert provider.request.quality_pipeline["shot_profile_id"] == "emotion_reaction"
+    assert "micro_expression_pass" in provider.request.quality_pipeline["stages"]
 
 
 def test_comfy_video_generator_applies_performance_repair_prompt(project_data, tmp_path):
@@ -2274,6 +2277,8 @@ def test_comfy_video_generator_applies_performance_repair_prompt(project_data, t
     assert "flat acting" in provider.request.negative_prompt
     assert "dead eyes" in provider.request.negative_prompt
     assert "identity drift" in provider.request.negative_prompt
+    assert provider.request.repair_action == "regenerate_video_with_performance_direction"
+    assert "performance_direction" in provider.request.quality_pipeline["stages"]
 
 
 def test_video_generator_routes_external_provider_instead_of_svd(project_data, monkeypatch):

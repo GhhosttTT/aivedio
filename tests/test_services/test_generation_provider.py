@@ -179,6 +179,9 @@ def test_local_comfyui_provider_delegates_video_generation():
             seed=42,
             motion_bucket_id=96,
             noise_aug_strength=0.012,
+            quality_mode="seed_dance_reference",
+            repair_action="refine_video_commercial_aesthetic",
+            quality_pipeline={"stages": ["platform_reference_gap_repair"]},
         )
     )
 
@@ -191,8 +194,14 @@ def test_local_comfyui_provider_delegates_video_generation():
     assert service.last_kwargs["fps"] == 8
     assert service.last_kwargs["motion_bucket_id"] == 96
     assert service.last_kwargs["noise_aug_strength"] == 0.012
+    assert service.last_kwargs["quality_mode"] == "seed_dance_reference"
+    assert service.last_kwargs["repair_action"] == "refine_video_commercial_aesthetic"
+    assert service.last_kwargs["quality_pipeline"] == {"stages": ["platform_reference_gap_repair"]}
     assert result.metadata["motion_bucket_id"] == 96
     assert result.metadata["noise_aug_strength"] == 0.012
+    assert result.metadata["quality_mode"] == "seed_dance_reference"
+    assert result.metadata["repair_action"] == "refine_video_commercial_aesthetic"
+    assert result.metadata["quality_pipeline"] == {"stages": ["platform_reference_gap_repair"]}
 
 
 def test_get_generation_provider_from_argument(monkeypatch):

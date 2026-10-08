@@ -220,6 +220,9 @@ class _ComfyVideoGenerator:
             seed=seed,
             motion_bucket_id=motion_bucket_id,
             noise_aug_strength=noise_aug_strength,
+            quality_mode=settings.GENERATION_QUALITY_PROFILE,
+            repair_action=getattr(self, "repair_action", None),
+            quality_pipeline=pipeline.as_dict(),
         ))
         return result.output_path
 

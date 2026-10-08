@@ -165,6 +165,10 @@ class TestComfyUIService:
                         "motion_bucket_id": "{motion_bucket_id}",
                         "noise_aug_strength": "{noise_aug_strength}",
                         "seed": "{seed}",
+                        "quality_mode": "{quality_mode}",
+                        "repair_action": "{repair_action}",
+                        "quality_pipeline_json": "{quality_pipeline_json}",
+                        "quality_pipeline_stages": "{quality_pipeline_stages}",
                     },
                 }
             }
@@ -172,11 +176,19 @@ class TestComfyUIService:
                 "motion_bucket_id": 96,
                 "noise_aug_strength": 0.012,
                 "seed": 42,
+                "quality_mode": "seed_dance_reference",
+                "repair_action": "refine_video_commercial_aesthetic",
+                "quality_pipeline_json": "{\"stages\": [\"platform_reference_gap_repair\"]}",
+                "quality_pipeline_stages": "platform_reference_gap_repair",
             })
 
             assert replaced["1"]["inputs"]["motion_bucket_id"] == 96
             assert replaced["1"]["inputs"]["noise_aug_strength"] == 0.012
             assert replaced["1"]["inputs"]["seed"] == 42
+            assert replaced["1"]["inputs"]["quality_mode"] == "seed_dance_reference"
+            assert replaced["1"]["inputs"]["repair_action"] == "refine_video_commercial_aesthetic"
+            assert "platform_reference_gap_repair" in replaced["1"]["inputs"]["quality_pipeline_json"]
+            assert replaced["1"]["inputs"]["quality_pipeline_stages"] == "platform_reference_gap_repair"
 
 
 if __name__ == "__main__":

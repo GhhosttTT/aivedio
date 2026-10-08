@@ -104,6 +104,9 @@ class VideoGenerationRequest:
     seed: int = -1
     motion_bucket_id: int = 127
     noise_aug_strength: float = 0.02
+    quality_mode: Optional[str] = None
+    repair_action: Optional[str] = None
+    quality_pipeline: Optional[dict] = None
 
 
 @dataclass
@@ -201,6 +204,9 @@ class LocalComfyUIProvider:
             seed=request.seed,
             motion_bucket_id=request.motion_bucket_id,
             noise_aug_strength=request.noise_aug_strength,
+            quality_mode=request.quality_mode,
+            repair_action=request.repair_action,
+            quality_pipeline=request.quality_pipeline,
         )
         return GenerationResult(
             provider=self.name.value,
@@ -215,6 +221,9 @@ class LocalComfyUIProvider:
                 "end_image": request.end_image,
                 "motion_bucket_id": request.motion_bucket_id,
                 "noise_aug_strength": request.noise_aug_strength,
+                "quality_mode": request.quality_mode,
+                "repair_action": request.repair_action,
+                "quality_pipeline": request.quality_pipeline,
             },
         )
 
