@@ -663,24 +663,22 @@ def _review_final_video_after_postprocess(
     distinctiveness_ok = _video_character_distinctiveness_gate_passes(final_review)
     performance_ok = _video_performance_gate_passes(final_review)
     platform_score = final_review.get("platform_score")
+    acceptance_error = _final_video_acceptance_error(
+        final_review,
+        gate_ok,
+        aesthetic_ok,
+        reference_ok,
+        distinctiveness_ok,
+        performance_ok,
+        platform_score,
+    )
     if (
         settings.GENERATION_REQUIRE_VIDEO_REVIEW
-        and (
-            final_review.get("status") != "passed"
-            or final_review.get("average", 0) < settings.GENERATION_VIDEO_MIN_SCORE
-            or not gate_ok
-            or not aesthetic_ok
-            or not reference_ok
-            or not distinctiveness_ok
-            or not performance_ok
-            or (
-                isinstance(platform_score, (int, float))
-                and platform_score < settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE
-            )
-        )
+        and acceptance_error
     ):
+        final_review["error"] = acceptance_error
         quality_report["status"] = "needs_review"
-        quality_report["error"] = "Final normalized video failed local VLM review"
+        quality_report["error"] = acceptance_error
         quality_report["repair_queue"] = build_repair_queue(
             {"status": "needs_review", "candidates": [final_review]},
             "video",
@@ -689,6 +687,44 @@ def _review_final_video_after_postprocess(
         raise ReviewError(quality_report["error"])
     write_report(Path(video_path).with_suffix(".quality.json"), quality_report)
     return quality_report
+
+
+def _final_video_acceptance_error(
+    final_review: dict,
+    gate_ok: bool,
+    aesthetic_ok: bool,
+    reference_ok: bool,
+    distinctiveness_ok: bool,
+    performance_ok: bool,
+    platform_score,
+) -> str | None:
+    if final_review.get("status") != "passed":
+        return f"Final normalized video review status={final_review.get('status') or 'unknown'}"
+    if final_review.get("average", 0) < settings.GENERATION_VIDEO_MIN_SCORE:
+        return (
+            f"Final normalized video score {final_review.get('average', 0)} is below "
+            f"{settings.GENERATION_VIDEO_MIN_SCORE}"
+        )
+    if not gate_ok:
+        return f"Final normalized video gate scores are below threshold: {final_review.get('gate_scores') or {}}"
+    if settings.GENERATION_REQUIRE_VIDEO_REVIEW and not isinstance(final_review.get("video_aesthetic_gate"), dict):
+        return "Final normalized video is missing video aesthetic feature scores from local VLM review"
+    if not aesthetic_ok:
+        return "Final normalized video aesthetic feature gate did not pass"
+    if settings.GENERATION_REQUIRE_VIDEO_REVIEW and not isinstance(final_review.get("platform_reference_gate"), dict):
+        return "Final normalized video is missing platform reference feature scores from local VLM review"
+    if not reference_ok:
+        return "Final normalized video platform reference gate did not pass"
+    if not distinctiveness_ok:
+        return "Final normalized video character distinctiveness gate did not pass"
+    if not performance_ok:
+        return "Final normalized video performance gate did not pass"
+    if isinstance(platform_score, (int, float)) and platform_score < settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE:
+        return (
+            f"Final normalized video platform score {platform_score} is below "
+            f"{settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE}"
+        )
+    return None
 
 
 def _video_repair_action_from_candidates(candidates: list[dict]) -> str | None:

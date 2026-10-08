@@ -2114,6 +2114,49 @@ def test_final_normalized_video_is_reviewed_before_acceptance(project_data, tmp_
     assert json.loads(video.with_suffix(".quality.json").read_text(encoding="utf-8"))["final_video_review"]["status"] == "passed"
 
 
+def test_final_normalized_video_blocks_missing_platform_reference_review(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    video = tmp_path / "scene.mp4"
+    Path(scene.image_path).write_bytes(b"image")
+    video.write_bytes(b"video")
+    db.commit()
+
+    class FakeReviewService:
+        def review_video(self, _video, payload, _report_path, _reference=None):
+            assert payload["final_stage"] == "postprocess_normalized_clip"
+            return {
+                "status": "passed",
+                "average": 4.6,
+                "batches": [{
+                    "review": {
+                        "facial_identity": {"score": 5, "evidence": "face matches"},
+                        "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+                        "temporal_consistency": {"score": 5, "evidence": "motion stable"},
+                        "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                    }
+                }],
+            }
+
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    with pytest.raises(ReviewError, match="missing platform reference"):
+        _review_final_video_after_postprocess(
+            str(video),
+            scene,
+            project.id,
+            db,
+            quality_report={"kind": "video_candidate_selection", "status": "passed"},
+        )
+
+    report = json.loads(video.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert report["status"] == "needs_review"
+    assert report["error"] == "Final normalized video is missing platform reference feature scores from local VLM review"
+    assert report["final_video_review"]["error"] == report["error"]
+    assert report["repair_queue"][0]["action"] == "start_local_reviewer"
+
+
 def test_final_normalized_video_review_blocks_flat_performance(project_data, tmp_path, monkeypatch):
     db, project, scene, _, _ = project_data
     scene.image_path = str(tmp_path / "source.png")
@@ -2162,7 +2205,7 @@ def test_final_normalized_video_review_blocks_flat_performance(project_data, tmp
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PERFORMANCE_MIN_SCORE", 4.0)
 
-    with pytest.raises(ReviewError, match="Final normalized video failed"):
+    with pytest.raises(ReviewError, match="performance gate did not pass"):
         _review_final_video_after_postprocess(
             str(video),
             scene,
@@ -2215,7 +2258,7 @@ def test_final_normalized_video_review_blocks_temporal_regression(project_data, 
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
 
-    with pytest.raises(ReviewError, match="Final normalized video failed"):
+    with pytest.raises(ReviewError, match="review status=needs_review"):
         _review_final_video_after_postprocess(
             str(video),
             scene,
