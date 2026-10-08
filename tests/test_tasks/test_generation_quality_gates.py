@@ -1062,6 +1062,7 @@ def test_video_generation_selects_best_reviewed_candidate(project_data, tmp_path
                 "batches": [{
                     "review": {
                         "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                        "platform_reference_scores": passed_platform_reference_scores(),
                         "video_performance_scores": passed_video_performance_scores(),
                     }
                 }],
@@ -1132,6 +1133,7 @@ def test_video_selection_prefers_identity_safe_candidate(project_data, tmp_path,
                             "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
                             "temporal_consistency": {"score": 5, "evidence": "motion stable"},
                             "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                            "platform_reference_scores": passed_platform_reference_scores(),
                         }
                     }],
                 }
@@ -1148,6 +1150,7 @@ def test_video_selection_prefers_identity_safe_candidate(project_data, tmp_path,
                             "identity_consistency": {"score": 4, "evidence": "identity stable"},
                             "temporal_consistency": {"score": 4, "evidence": "motion stable"},
                             "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                            "platform_reference_scores": passed_platform_reference_scores(),
                     }
                 }],
             }
@@ -1304,6 +1307,7 @@ def test_video_selection_uses_aesthetic_breakdown(project_data, tmp_path, monkey
                 "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
                 "temporal_consistency": {"score": 5, "evidence": "motion stable"},
                 "video_aesthetic_scores": low_breakdown if payload["candidate_index"] == 1 else high_breakdown,
+                "platform_reference_scores": passed_platform_reference_scores(),
             }
             return {"status": "passed", "average": 4.8 if payload["candidate_index"] == 1 else 4.2, "batches": [{"review": review}]}
 
@@ -1386,6 +1390,7 @@ def test_video_selection_prefers_character_distinctiveness(project_data, tmp_pat
                 "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
                 "temporal_consistency": {"score": 5, "evidence": "motion stable"},
                 "video_aesthetic_scores": video_aesthetic_scores,
+                "platform_reference_scores": passed_platform_reference_scores(),
                 "character_distinctiveness_scores": (
                     weak_distinctiveness if payload["candidate_index"] == 1 else strong_distinctiveness
                 ),
@@ -1540,7 +1545,10 @@ def test_video_refinement_pass_reduces_motion_after_low_score(project_data, tmp_
                 "status": "passed",
                 "average": 4.5,
                 "batches": [{
-                    "review": {"video_aesthetic_scores": passed_video_aesthetic_scores()}
+                    "review": {
+                        "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                        "platform_reference_scores": passed_platform_reference_scores(),
+                    }
                 }],
             }
 
@@ -1667,7 +1675,10 @@ def test_video_refinement_converts_motion_failure_into_repair_action(project_dat
                 "status": "passed",
                 "average": 4.5,
                 "batches": [{
-                    "review": {"video_aesthetic_scores": passed_video_aesthetic_scores()}
+                    "review": {
+                        "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                        "platform_reference_scores": passed_platform_reference_scores(),
+                    }
                 }],
             }
 
@@ -1720,6 +1731,7 @@ def test_video_repair_generation_expands_quality_budget(project_data, tmp_path, 
                         "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
                         "temporal_consistency": {"score": 5, "evidence": "motion stable"},
                         "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                        "platform_reference_scores": passed_platform_reference_scores(),
                     }
                 }],
             }
@@ -1772,6 +1784,8 @@ def test_video_candidate_selection_prefers_passing_performance_gate(tmp_path, mo
                 "platform_score": 4.8,
                 "gate_scores": {"facial_identity": 5, "identity_consistency": 5, "temporal_consistency": 5},
                 "video_aesthetic_gate": {"status": "passed", "average": 5},
+                "platform_reference_gate": {"status": "passed", "average": 4.8, "low": {}, "missing": []},
+                "platform_reference_score": 4.8,
                 "video_performance_gate": {
                     "status": "needs_review",
                     "average": 0,
@@ -1788,6 +1802,8 @@ def test_video_candidate_selection_prefers_passing_performance_gate(tmp_path, mo
                 "platform_score": 4.2,
                 "gate_scores": {"facial_identity": 4.2, "identity_consistency": 4.2, "temporal_consistency": 4.2},
                 "video_aesthetic_gate": {"status": "passed", "average": 4.2},
+                "platform_reference_gate": {"status": "passed", "average": 4.2, "low": {}, "missing": []},
+                "platform_reference_score": 4.2,
                 "video_performance_gate": {"status": "passed", "average": 4.2, "low": {}, "missing": []},
                 "video_performance_score": 4.2,
             },
@@ -1800,6 +1816,39 @@ def test_video_candidate_selection_prefers_passing_performance_gate(tmp_path, mo
     assert Path(final_path).read_bytes() == b"strong"
     assert report["selected_path"] == str(strong)
     assert report["selected_video_performance_gate"]["status"] == "passed"
+
+
+def test_video_candidate_selection_blocks_missing_platform_reference_gate(tmp_path, monkeypatch):
+    candidate_path = tmp_path / "missing_reference_gate.mp4"
+    candidate_path.write_bytes(b"missing-reference-gate")
+    monkeypatch.setattr("src.tasks.video_tasks.video_candidate_metrics", lambda _path: {"technical_score": 4.5})
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE", 4.0)
+
+    with pytest.raises(ReviewError, match="Video candidates failed quality gate"):
+        _select_best_video_candidate(
+            [{
+                "index": 1,
+                "path": str(candidate_path),
+                "status": "passed",
+                "average": 4.8,
+                "platform_score": 4.8,
+                "gate_scores": {"facial_identity": 4.8, "identity_consistency": 4.8, "temporal_consistency": 4.8},
+                "video_aesthetic_gate": {"status": "passed", "average": 4.8, "low": {}, "missing": []},
+                "character_distinctiveness_gate": {"status": "passed", "average": 4.8, "low": {}, "missing": []},
+                "character_distinctiveness_score": 4.8,
+                "video_performance_gate": {"status": "passed", "average": 4.8, "low": {}, "missing": []},
+                "video_performance_score": 4.8,
+            }],
+            str(tmp_path / "final.mp4"),
+            tmp_path / "quality.json",
+        )
+
+    report = json.loads((tmp_path / "quality.json").read_text(encoding="utf-8"))
+    assert report["status"] == "needs_review"
+    assert report["error"] == "Selected video is missing platform reference feature scores from local VLM review"
+    assert report["repair_queue"][0]["action"] == "start_local_reviewer"
 
 
 def test_video_selection_prefers_stronger_short_drama_floor_over_average(tmp_path, monkeypatch):
@@ -1822,6 +1871,8 @@ def test_video_selection_prefers_stronger_short_drama_floor_over_average(tmp_pat
                 "platform_score": 4.9,
                 "gate_scores": {"facial_identity": 4.0, "identity_consistency": 4.0, "temporal_consistency": 4.0},
                 "video_aesthetic_gate": {"status": "passed", "average": 4.0, "low": {}, "missing": []},
+                "platform_reference_gate": {"status": "passed", "average": 4.0, "low": {}, "missing": []},
+                "platform_reference_score": 4.0,
                 "character_distinctiveness_gate": {"status": "passed", "average": 4.0, "low": {}, "missing": []},
                 "character_distinctiveness_score": 4.0,
                 "video_performance_gate": {"status": "passed", "average": 4.0, "low": {}, "missing": []},
@@ -1835,6 +1886,8 @@ def test_video_selection_prefers_stronger_short_drama_floor_over_average(tmp_pat
                 "platform_score": 4.4,
                 "gate_scores": {"facial_identity": 4.8, "identity_consistency": 4.8, "temporal_consistency": 4.8},
                 "video_aesthetic_gate": {"status": "passed", "average": 4.8, "low": {}, "missing": []},
+                "platform_reference_gate": {"status": "passed", "average": 4.8, "low": {}, "missing": []},
+                "platform_reference_score": 4.8,
                 "character_distinctiveness_gate": {"status": "passed", "average": 4.8, "low": {}, "missing": []},
                 "character_distinctiveness_score": 4.8,
                 "video_performance_gate": {"status": "passed", "average": 4.8, "low": {}, "missing": []},
@@ -1994,7 +2047,12 @@ def test_video_candidate_report_records_character_sheet_reference(project_data, 
             return {
                 "status": "passed",
                 "average": 4.6,
-                "batches": [{"review": {"video_aesthetic_scores": passed_video_aesthetic_scores()}}],
+                "batches": [{
+                    "review": {
+                        "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                        "platform_reference_scores": passed_platform_reference_scores(),
+                    }
+                }],
             }
 
     monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
@@ -2035,6 +2093,7 @@ def test_final_normalized_video_is_reviewed_before_acceptance(project_data, tmp_
                         "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
                         "temporal_consistency": {"score": 5, "evidence": "motion stable"},
                         "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                        "platform_reference_scores": passed_platform_reference_scores(),
                     }
                 }],
             }
@@ -2074,6 +2133,7 @@ def test_final_normalized_video_review_blocks_flat_performance(project_data, tmp
                         "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
                         "temporal_consistency": {"score": 5, "evidence": "motion stable"},
                         "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                        "platform_reference_scores": passed_platform_reference_scores(),
                         "video_performance_scores": {
                             "emotion_readability": {"score": 2, "evidence": "flat acting and unreadable emotion"},
                             "gaze_intent": {"score": 3, "evidence": "dead eyes"},
@@ -2144,6 +2204,7 @@ def test_final_normalized_video_review_blocks_temporal_regression(project_data, 
                             "background_stability": {"score": 3, "evidence": "background jumps"},
                             "artifact_absence": {"score": 4, "evidence": "no visible repair scars"},
                         },
+                        "platform_reference_scores": passed_platform_reference_scores(),
                     }
                 }],
             }

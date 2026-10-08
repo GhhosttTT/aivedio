@@ -164,7 +164,11 @@ ACTION_RULES = [
         "script",
     ),
     (
-        ("review unavailable", "no local vlm", "technical_only", "review failed"),
+        (
+            "review unavailable", "no local vlm", "technical_only", "review failed",
+            "missing platform reference feature scores", "missing video aesthetic feature scores",
+            "missing video performance feature scores", "missing feature scores from local vlm",
+        ),
         "start_local_reviewer",
         "Start llama.cpp VLM review and rerun candidate selection before accepting output.",
         "review",
@@ -368,6 +372,25 @@ def _gate_evidence(gate: dict[str, Any], gate_name: str) -> list[str]:
 
 def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]) -> dict[str, Any] | None:
     text = evidence.lower()
+    if any(
+        term in text
+        for term in (
+            "missing platform reference feature scores",
+            "missing video aesthetic feature scores",
+            "missing video performance feature scores",
+            "missing feature scores from local vlm",
+        )
+    ):
+        return {
+            "priority": _priority(text),
+            "stage": "review",
+            "action": "start_local_reviewer",
+            "execution": _execution_mode("start_local_reviewer"),
+            "reason": evidence[:240],
+            "recommendation": "Start llama.cpp VLM review and rerun candidate selection before accepting output.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
     if text.startswith("low technical image score") or text.startswith("low image sharpness") or text.startswith("bad image exposure") or text.startswith("dull color grade"):
         return {
             "priority": _priority(text),

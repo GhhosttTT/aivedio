@@ -488,7 +488,7 @@ def _video_aesthetic_gate_passes(candidate: dict) -> bool:
 def _platform_reference_gate_passes(candidate: dict) -> bool:
     gate = candidate.get("platform_reference_gate")
     if not isinstance(gate, dict):
-        return True
+        return not settings.GENERATION_REQUIRE_VIDEO_REVIEW
     return gate.get("status") == "passed"
 
 
@@ -792,6 +792,8 @@ def _select_best_video_candidate(
         )
     elif settings.GENERATION_REQUIRE_VIDEO_REVIEW and not isinstance(aesthetic_gate, dict):
         report["error"] = "Selected video is missing video aesthetic feature scores from local VLM review"
+    elif settings.GENERATION_REQUIRE_VIDEO_REVIEW and not isinstance(reference_gate, dict):
+        report["error"] = "Selected video is missing platform reference feature scores from local VLM review"
     elif isinstance(aesthetic_gate, dict) and aesthetic_gate.get("status") != "passed":
         report["error"] = "Selected video aesthetic feature gate did not pass"
     elif isinstance(reference_gate, dict) and reference_gate.get("status") != "passed":
