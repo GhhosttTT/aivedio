@@ -143,6 +143,7 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
         "aspect_ratio_close": abs(differences["aspect_ratio_delta"]) <= 0.08,
         "motion_not_static": candidate_stats.motion_energy >= max(2.0, baseline_stats.motion_energy * 0.45),
         "sharpness_not_collapsed": candidate_stats.sharpness >= max(8.0, baseline_stats.sharpness * 0.45),
+        "exposure_close": abs(differences["brightness_delta"]) <= 45.0,
         "brightness_stable": candidate_stats.brightness_variance <= max(900.0, baseline_stats.brightness_variance * 3.0),
     }
     score = _technical_similarity_score(differences, gates)

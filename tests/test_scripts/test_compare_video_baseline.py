@@ -112,3 +112,29 @@ def test_compare_video_baseline_rejects_aspect_ratio_mismatch_without_video_prob
     assert report["status"] == "needs_review"
     assert report["gates"]["resolution_not_lower"] is True
     assert report["gates"]["aspect_ratio_close"] is False
+
+
+def test_compare_video_baseline_rejects_large_exposure_shift_without_video_probe(monkeypatch, tmp_path):
+    def fake_stats(path, max_samples):
+        brightness = 95 if "baseline" in path.name else 30
+        return VideoStats(
+            path=str(path),
+            duration_seconds=2.0,
+            width=90,
+            height=160,
+            fps=24,
+            sampled_frames=6,
+            motion_energy=8,
+            sharpness=30,
+            brightness=brightness,
+            brightness_variance=40,
+        )
+
+    monkeypatch.setattr("scripts.compare_video_baseline.video_stats", fake_stats)
+
+    report = compare(tmp_path / "candidate.mp4", tmp_path / "baseline.mp4", max_samples=6)
+
+    assert report["status"] == "needs_review"
+    assert report["gates"]["aspect_ratio_close"] is True
+    assert report["gates"]["exposure_close"] is False
+    assert report["differences"]["brightness_delta"] == -65
