@@ -1847,6 +1847,9 @@ def test_video_selection_prefers_stronger_short_drama_floor_over_average(tmp_pat
 
     assert Path(final_path).read_bytes() == b"floor-strong"
     assert report["selected_path"] == str(floor_strong)
+    assert report["selected_critical_floor_score"] == 4.4
+    assert report["candidates"][0]["critical_floor_score"] == 4.4
+    assert report["candidates"][1]["critical_floor_score"] == 4.0
     assert report["selected_selection_score"] > report["candidates"][1]["selection_score"]
 
 

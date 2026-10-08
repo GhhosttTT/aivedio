@@ -716,6 +716,7 @@ def _select_best_video_candidate(
 ) -> tuple[str, dict]:
     for candidate in candidates:
         _attach_video_technical_metrics(candidate)
+        candidate["critical_floor_score"] = _video_critical_floor_score(candidate)
         candidate["selection_score"] = _video_selection_score(candidate)
     ranked = sorted(
         candidates,
@@ -725,6 +726,7 @@ def _select_best_video_candidate(
             1 if _platform_reference_gate_passes(item) else 0,
             1 if _video_character_distinctiveness_gate_passes(item) else 0,
             1 if _video_performance_gate_passes(item) else 0,
+            item.get("critical_floor_score") or 0,
             item.get("selection_score", 0),
             item.get("platform_score", item.get("average", 0)),
             item.get("average", 0),
@@ -758,6 +760,7 @@ def _select_best_video_candidate(
         "selected_average": best.get("average", 0),
         "selected_platform_score": platform_score,
         "selected_technical_score": best.get("technical_score"),
+        "selected_critical_floor_score": best.get("critical_floor_score"),
         "selected_selection_score": best.get("selection_score"),
         "min_average": settings.GENERATION_VIDEO_MIN_SCORE,
         "min_identity_score": settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE,
