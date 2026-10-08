@@ -268,7 +268,55 @@ def test_video_workflow_preflight_blocks_missing_video_contract(tmp_path, monkey
     assert report["status"] == "blocked"
     assert report["checks"]["has_reference_placeholder"] is False
     assert report["checks"]["has_prompt_placeholder"] is False
+    assert report["checks"]["has_quality_profile_placeholder"] is False
+    assert report["checks"]["has_repair_action_placeholder"] is False
+    assert report["checks"]["has_quality_pipeline_placeholder"] is False
     assert report["checks"]["has_likely_video_output"] is False
+
+
+def test_video_workflow_preflight_blocks_missing_quality_placeholders(tmp_path, monkeypatch):
+    workflow = tmp_path / "video.json"
+    workflow.write_text(json.dumps({
+        "1": {"class_type": "LoadImage", "inputs": {"image": "{reference_image}"}},
+        "2": {"class_type": "CLIPTextEncode", "inputs": {"text": "{prompt}"}},
+        "3": {"class_type": "VHS_VideoCombine", "inputs": {"filename_prefix": "{output_prefix}"}},
+    }), encoding="utf-8")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"devices": [{"name": "RTX 3060"}]}
+
+    class FakeClient:
+        def get(self, _url):
+            return FakeResponse()
+
+        def close(self):
+            return None
+
+    class FakeService:
+        def __init__(self, *args, **kwargs):
+            self.client = FakeClient()
+            self.base_url = "http://127.0.0.1:8188"
+
+        def _replace_workflow_placeholders(self, workflow, _replacements):
+            return workflow
+
+        def preflight(self, _workflow):
+            return None
+
+    monkeypatch.setattr(video_engine_preflight, "ComfyUIService", FakeService)
+
+    report = validator.preflight_video_workflow(workflow_path=str(workflow))
+
+    assert report["status"] == "blocked"
+    assert report["checks"]["has_reference_placeholder"] is True
+    assert report["checks"]["has_prompt_placeholder"] is True
+    assert report["checks"]["has_quality_profile_placeholder"] is False
+    assert report["checks"]["has_repair_action_placeholder"] is False
+    assert report["checks"]["has_quality_pipeline_placeholder"] is False
 
 
 def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeypatch):
@@ -277,7 +325,15 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
         "1": {"class_type": "LoadImage", "inputs": {"image": "{reference_image}"}},
         "2": {"class_type": "CLIPTextEncode", "inputs": {"text": "{prompt}"}},
         "3": {"class_type": "LoadImage", "inputs": {"image": "{last_frame}"}},
-        "4": {"class_type": "VHS_VideoCombine", "inputs": {"filename_prefix": "{output_prefix}"}},
+        "4": {
+            "class_type": "VideoQualitySwitch",
+            "inputs": {
+                "quality_mode": "{quality_mode}",
+                "repair_action": "{repair_action}",
+                "pipeline": "{quality_pipeline_json}",
+            },
+        },
+        "5": {"class_type": "VHS_VideoCombine", "inputs": {"filename_prefix": "{output_prefix}"}},
     }), encoding="utf-8")
 
     class FakeResponse:
@@ -311,7 +367,13 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
 
     assert report["status"] == "ready_for_live_test"
     assert report["checks"]["has_end_frame_placeholder"] is True
-    assert report["placeholders"] == ["last_frame", "output_prefix", "prompt", "reference_image"]
+    assert report["checks"]["has_quality_profile_placeholder"] is True
+    assert report["checks"]["has_repair_action_placeholder"] is True
+    assert report["checks"]["has_quality_pipeline_placeholder"] is True
+    assert report["placeholders"] == [
+        "last_frame", "output_prefix", "prompt", "quality_mode",
+        "quality_pipeline_json", "reference_image", "repair_action",
+    ]
     assert report["likely_output_nodes"][0]["class_type"] == "VHS_VideoCombine"
 
 

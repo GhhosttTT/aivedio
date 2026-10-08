@@ -15,6 +15,9 @@ VIDEO_WORKFLOW_PLACEHOLDERS = {
     "start_image", "first_frame", "end_image", "last_frame",
     "width", "height", "duration_seconds", "fps", "seed", "output_prefix",
     "motion_bucket_id", "noise_aug_strength",
+    "quality_mode", "quality_profile", "repair_action", "quality_pipeline",
+    "quality_pipeline_json", "quality_pipeline_stages", "quality_pipeline_prompt",
+    "quality_pipeline_negative",
 }
 
 
@@ -34,11 +37,15 @@ def scan_placeholders(value) -> set[str]:
 
 
 def likely_video_outputs(workflow: dict) -> list[dict]:
-    output_keywords = ("video", "vhs", "webm", "gif", "animated")
+    output_keywords = ("vhs", "webm", "gif", "animated")
+    output_markers = ("save", "combine", "output", "export", "preview")
     matches = []
     for node_id, node in workflow.items():
         class_type = str(node.get("class_type", ""))
-        if any(keyword in class_type.lower() for keyword in output_keywords):
+        lower_class = class_type.lower()
+        if any(keyword in lower_class for keyword in output_keywords) or (
+            "video" in lower_class and any(marker in lower_class for marker in output_markers)
+        ):
             matches.append({"node_id": node_id, "class_type": class_type})
     return matches
 
@@ -73,9 +80,20 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
         checks["has_reference_placeholder"] = bool({"reference_image", "image"} & set(placeholders))
         checks["has_end_frame_placeholder"] = bool({"end_image", "last_frame"} & set(placeholders))
         checks["has_prompt_placeholder"] = bool({"prompt", "positive_prompt"} & set(placeholders))
+        checks["has_quality_profile_placeholder"] = bool({"quality_mode", "quality_profile"} & set(placeholders))
+        checks["has_repair_action_placeholder"] = "repair_action" in set(placeholders)
+        checks["has_quality_pipeline_placeholder"] = bool({
+            "quality_pipeline", "quality_pipeline_json", "quality_pipeline_stages",
+            "quality_pipeline_prompt", "quality_pipeline_negative",
+        } & set(placeholders))
         checks["has_likely_video_output"] = bool(outputs)
         service = ComfyUIService(base_url=base_url, timeout=15)
         try:
+            quality_pipeline = {
+                "stages": ["platform_reference_gap_repair", "commercial_lighting_pass"],
+                "prompt_directive": "premium short-drama video quality validation",
+                "negative_directive": "cheap filter, low-budget lighting, unstable face",
+            }
             resolved = service._replace_workflow_placeholders(workflow, {
                 "prompt": "validation cinematic short-drama shot",
                 "positive_prompt": "validation cinematic short-drama shot",
@@ -90,6 +108,14 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
                 "output_prefix": "validation_video",
                 "motion_bucket_id": 127,
                 "noise_aug_strength": 0.02,
+                "quality_mode": "seed_dance_reference",
+                "quality_profile": "seed_dance_reference",
+                "repair_action": "refine_video_commercial_aesthetic",
+                "quality_pipeline": quality_pipeline,
+                "quality_pipeline_json": json.dumps(quality_pipeline, ensure_ascii=False),
+                "quality_pipeline_stages": ", ".join(quality_pipeline["stages"]),
+                "quality_pipeline_prompt": quality_pipeline["prompt_directive"],
+                "quality_pipeline_negative": quality_pipeline["negative_directive"],
             })
             service.preflight(resolved)
             checks["comfyui_preflight"] = True
@@ -102,7 +128,11 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
         checks["comfyui_preflight"] = False
         report["error"] = str(exc)
         return report
-    required = ("workflow_file", "has_reference_placeholder", "has_prompt_placeholder", "has_likely_video_output", "comfyui_preflight")
+    required = (
+        "workflow_file", "has_reference_placeholder", "has_prompt_placeholder",
+        "has_quality_profile_placeholder", "has_repair_action_placeholder",
+        "has_quality_pipeline_placeholder", "has_likely_video_output", "comfyui_preflight",
+    )
     report["status"] = "ready_for_live_test" if all(checks.get(key) for key in required) else "blocked"
     return report
 
@@ -119,6 +149,7 @@ def preflight_production_video_engine(base_url: str | None = None, workflow_path
             "A configured ComfyUI image-to-video workflow or production HTTP video provider",
             "Reference image placeholder for each scene keyframe",
             "Prompt placeholders for the director motion contract",
+            "Quality profile, repair action, and quality-pipeline placeholders for commercial repair passes",
             "A real video output node",
             "ComfyUI preflight passing against installed nodes and models, or API endpoint/key configured",
         ],
