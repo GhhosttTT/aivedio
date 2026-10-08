@@ -394,6 +394,11 @@ def _platform_reference_gate_passes(candidate: dict[str, Any]) -> bool:
     return not isinstance(gate, dict) or gate.get("status") == "passed"
 
 
+def _character_distinctiveness_gate_passes(candidate: dict[str, Any]) -> bool:
+    gate = candidate.get("character_distinctiveness_gate")
+    return not isinstance(gate, dict) or gate.get("status") == "passed"
+
+
 def image_selection_score(candidate: dict[str, Any]) -> float:
     platform_score = candidate.get("platform_score")
     average = candidate.get("average")
@@ -544,6 +549,7 @@ class ImageQualitySelector:
             candidates,
             key=lambda item: (
                 1 if _identity_gate(item, min_identity_score)[0] else 0,
+                1 if _character_distinctiveness_gate_passes(item) else 0,
                 1 if _platform_reference_gate_passes(item) else 0,
                 item.get("selection_score", 0),
                 item.get("platform_score", item.get("average", 0)),

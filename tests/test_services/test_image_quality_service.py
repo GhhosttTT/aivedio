@@ -263,6 +263,68 @@ def test_select_best_rejects_missing_character_distinctiveness_scores_for_multi_
     assert "regenerate_keyframe_with_role_separation" in report
 
 
+def test_select_best_prioritizes_character_distinctiveness_gate_before_selection_score(tmp_path, monkeypatch):
+    first = tmp_path / "same_face_but_polished.png"
+    second = tmp_path / "distinct_but_lower_score.png"
+    final = tmp_path / "final.png"
+    make_image(first, (150, 150, 150))
+    make_image(second, (115, 115, 115))
+    monkeypatch.setattr("src.services.image_quality_service.settings.GENERATION_CHARACTER_DISTINCTIVENESS_MIN_SCORE", 4.0)
+
+    scene = {
+        "scene_number": 1,
+        "visible_characters": [
+            {"name": "Alice", "appearance": "sharp eyes, black bob, green jacket"},
+            {"name": "Bob", "appearance": "round eyes, short crop, navy suit"},
+        ],
+    }
+    shared_review = {
+        "composition": {"score": 5, "evidence": "strong framing"},
+        "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
+        "visual_integrity": {"score": 5, "evidence": "clean render"},
+        "facial_identity": {"score": 5, "evidence": "faces match anchors"},
+        "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
+        "platform_aesthetic_scores": passed_platform_aesthetic_scores(),
+        "platform_reference_scores": passed_platform_reference_scores(),
+    }
+    same_face_scores = {
+        feature: {"score": 5, "evidence": "passes"}
+        for feature in CHARACTER_DISTINCTIVENESS_FEATURES
+    }
+    same_face_scores["no_same_face_casting"] = {"score": 2, "evidence": "same-face casting"}
+    distinct_scores = {
+        feature: {"score": 4, "evidence": "characters are distinct"}
+        for feature in CHARACTER_DISTINCTIVENESS_FEATURES
+    }
+
+    selector = ImageQualitySelector(reviewer=object())
+    report = selector.select_best([
+        {
+            "index": 1,
+            "path": str(first),
+            "average": 5.0,
+            "status": "passed",
+            "scene": scene,
+            "review": {**shared_review, "character_distinctiveness_scores": same_face_scores},
+            "metrics": {"technical_score": 5.0},
+        },
+        {
+            "index": 2,
+            "path": str(second),
+            "average": 4.0,
+            "status": "passed",
+            "scene": scene,
+            "review": {**shared_review, "character_distinctiveness_scores": distinct_scores},
+            "metrics": {"technical_score": 4.0},
+        },
+    ], final, tmp_path / "quality.json", min_average=4.0, min_identity_score=4.0)
+
+    assert report["best_index"] == 2
+    assert report["candidates"][0]["character_distinctiveness_gate"]["status"] == "passed"
+    assert report["candidates"][1]["character_distinctiveness_gate"]["status"] == "needs_review"
+    assert final.read_bytes() == second.read_bytes()
+
+
 def test_select_best_rejects_when_identity_scores_are_low(tmp_path):
     image = tmp_path / "candidate.png"
     make_image(image, (120, 120, 120))
