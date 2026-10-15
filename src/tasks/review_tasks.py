@@ -24,9 +24,16 @@ def current_story(project, scenes):
 def generation_signature(project, scenes):
     return fingerprint({"story": current_story(project, scenes), "assets": [
         {"scene": s.scene_number, "video": file_hash(Path(s.video_path)),
-         "image": file_hash(Path(s.image_path)) if s.image_path else None}
+         "image": file_hash(Path(s.image_path)) if s.image_path else None,
+         "audio": _optional_asset_hash(getattr(s, "audio_path", None)),
+         "subtitle": _optional_asset_hash(getattr(s, "subtitle_path", None)),
+         "audio_duration": getattr(s, "audio_duration", None) if isinstance(getattr(s, "audio_duration", None), (int, float)) else None}
         for s in scenes
     ]})
+
+
+def _optional_asset_hash(path):
+    return file_hash(Path(path)) if isinstance(path, (str, Path)) and path else None
 
 
 def require_generation_review(project, scenes):
@@ -85,6 +92,7 @@ def review_generation_task(self, project_id: int, task_id: int):
         reviewer = GenerationReviewService()
         references = {}
         from src.tasks.image_tasks import _visual_character, _get_reference_image
+        from src.tasks.video_tasks import _scene_review_payload
         for scene in scenes:
             if scene.image_path:
                 metadata = Path(scene.image_path).with_suffix(".generation.json")
@@ -93,10 +101,9 @@ def review_generation_task(self, project_id: int, task_id: int):
             character = _visual_character(scene, project_id, db)
             reference = None
             if character:
-                reference = _get_reference_image(character, project_id) or references.setdefault(character.id, scene.image_path)
-            payload = {"scene_number": scene.scene_number, "description": scene.visual_description,
-                       "dialogue": scene.dialogue, "image_prompt": scene.image_prompt,
-                       "identity": character.appearance if character else None}
+                reference = _get_reference_image(character, project_id, scene) or references.setdefault(character.id, scene.image_path)
+            payload = _scene_review_payload(scene, project_id, db)
+            payload["identity"] = character.appearance if character else None
             result = reviewer.review_video(scene.video_path, payload, root / f"scene_{scene.id}.json", reference)
             report["scenes"].append({"scene_id": scene.id, "scene_number": scene.scene_number,
                                      "status": result["status"], "average": result.get("average"),

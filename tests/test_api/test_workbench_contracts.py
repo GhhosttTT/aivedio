@@ -344,8 +344,8 @@ def test_repair_queue_auto_submits_batch_repair_tasks(setup, monkeypatch):
     }), encoding="utf-8")
     submitted = []
 
-    def fake_create_scene_repair_task(self, project_id, scene_number, action):
-        celery_task_id = f"repair-{scene_number}-{action}"
+    def fake_create_repair_batch_task(self, project_id, items):
+        celery_task_id = "repair-batch"
         self.db.add(Task(
             project_id=project_id,
             celery_task_id=celery_task_id,
@@ -355,10 +355,10 @@ def test_repair_queue_auto_submits_batch_repair_tasks(setup, monkeypatch):
             current_step=0,
         ))
         self.db.commit()
-        submitted.append((scene_number, action))
+        submitted.extend((item["scene_number"], item["action"]) for item in items)
         return celery_task_id
 
-    monkeypatch.setattr(TaskOrchestrator, "create_scene_repair_task", fake_create_scene_repair_task)
+    monkeypatch.setattr(TaskOrchestrator, "create_repair_batch_task", fake_create_repair_batch_task)
 
     response = client.post(
         "/api/projects/1/repair-queue/auto",
@@ -369,8 +369,8 @@ def test_repair_queue_auto_submits_batch_repair_tasks(setup, monkeypatch):
     payload = response.json()
     assert payload["status"] == "submitted"
     assert [item["task_id"] for item in payload["submitted"]] == [
-        "repair-1-regenerate_keyframe_with_identity_lock",
-        "repair-2-refine_face_aesthetic_detail",
+        "repair-batch",
+        "repair-batch",
     ]
     assert submitted == [
         (1, "regenerate_keyframe_with_identity_lock"),
@@ -1836,8 +1836,11 @@ def test_generate_turnaround_album_can_freeze_generated_views(setup, monkeypatch
     from src.services.character_identity_service import CharacterIdentityService
     from src.services.character_turnaround_album import PRODUCTION_TURNAROUND_VIEWS
 
+    generated = []
+
     class FakeTurnaroundGenerator:
         def generate_turnaround_album(self, **kwargs):
+            generated.append(kwargs)
             selected = {}
             colors = ("red", "orange", "yellow", "green", "blue", "purple", "white", "black")
             for view, color in zip(PRODUCTION_TURNAROUND_VIEWS, colors):
@@ -1873,6 +1876,7 @@ def test_generate_turnaround_album_can_freeze_generated_views(setup, monkeypatch
     assert set(payload["selected_views"]) == set(PRODUCTION_TURNAROUND_VIEWS)
     assert payload["album"]["status"] == "frozen"
     assert payload["album"]["views"]["side"]["path"].endswith("generated_side.png")
+    assert generated[0]["identity_spec"] == spec
 
 
 def test_production_readiness_reports_spatial_continuity_plan(setup):

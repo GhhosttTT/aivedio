@@ -46,7 +46,7 @@ def generate_subtitle_task(
         
         # 查询分镜
         scene = db.query(Scene).filter(Scene.id == scene_id).first()
-        if not scene:
+        if not scene or scene.project_id != project_id:
             raise ValueError(f"分镜不存在: {scene_id}")
         
         # 如果没有对话或音频，跳过
@@ -94,3 +94,5 @@ def generate_subtitle_task(
     except Exception as e:
         logger.error(f"字幕生成失败: scene_id={scene_id}, error={e}")
         raise
+    finally:
+        db.close()

@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import re
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -14,10 +15,16 @@ from src.services.character_identity_service import CharacterIdentityService, lo
 from src.services.character_turnaround_album import CharacterTurnaroundAlbumService
 from src.services.shot_prompt_service import ShotPromptService, CompiledShot
 from src.services.generation_review import ReviewError, write_report
-from src.services.image_quality_service import ImageQualitySelector, candidate_output_path
+from src.services.image_quality_service import (
+    ImageQualitySelector, candidate_output_path, image_candidate_error, image_candidate_rank,
+    image_selection_score, prepare_image_candidate,
+)
+from src.services.comfyui_service import ComfyUIError, ComfyUIWaitTimeout
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
-from src.services.generation_provider import ImageGenerationRequest, get_generation_provider
-from src.services.generation_quality_policy import image_quality_budget, image_quality_pipeline
+from src.services.generation_provider import (
+    ImageGenerationRequest, GenerationProviderError, get_generation_provider, release_generation_resources,
+)
+from src.services.generation_quality_policy import image_quality_budget, image_quality_pipeline, minimum_quality_passes
 from src.services.image_postprocess import ImagePostprocessor
 from src.services.repair_queue import build_repair_queue
 from src.services.visual_style_assets import VisualStyleAssetService
@@ -312,8 +319,8 @@ def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=Non
     )
     if artifact.is_file():
         cached = json.loads(artifact.read_text(encoding="utf-8"))
-        if cached.get("source_hash") == source_hash and cached.get("version") == 1:
-            compiler.validate_cached_prompt(cached["prompt"])
+        if cached.get("source_hash") == source_hash and cached.get("version") == 2:
+            compiler.validate_cached_prompt(cached["prompt"], identity_anchor=appearance_with_layout)
             return CompiledShot(**cached), character
     compiled = compiler.compile(prompt_with_layout, appearance_with_layout)
     compiled = CompiledShot(
@@ -688,7 +695,7 @@ def _apply_image_repair_action(
 
 def _review_feedback(reports: list[dict]) -> str:
     feedback = []
-    for report in sorted(reports, key=lambda item: item.get("average", 0))[:3]:
+    for report in sorted(reports, key=image_candidate_rank, reverse=True)[:3]:
         review = report.get("review") or {}
         for issue in review.get("issues", [])[:3]:
             reason = issue.get("reason") if isinstance(issue, dict) else None
@@ -727,6 +734,16 @@ def _feedback_repair_directive(feedback: str) -> tuple[str, str]:
     prompt_terms = []
     negative_terms = []
     rules = [
+        (
+            ("crop", "cropped", "framing"),
+            "complete head inside frame, deliberate headroom, balanced subject placement",
+            "bad crop, cropped head, accidental face cutoff",
+        ),
+        (
+            ("hand", "finger", "anatomy", "wrist"),
+            "anatomically coherent hands, natural fingers and wrist, clear object contact",
+            "broken fingers, fused fingers, twisted wrist, malformed hands",
+        ),
         (
             ("skin_texture", "plastic skin", "waxy", "airbrushed", "ai generated gloss", "ai gloss", "wax museum face", "over-beautified"),
             "natural skin texture with visible pores, soft but realistic facial highlights",
@@ -800,7 +817,7 @@ def _repair_action_from_reports(reports: list[dict]) -> str | None:
     if not reports:
         return None
     queue = build_repair_queue(
-        {"status": "needs_review", "candidates": sorted(reports, key=lambda item: item.get("average", 0))[:4]},
+        {"status": "needs_review", "candidates": sorted(reports, key=image_candidate_rank, reverse=True)[:1]},
         "image",
     )
     for item in queue:
@@ -827,7 +844,8 @@ def _generate_quality_candidates(
     next_candidate_index = 1
     while pass_index <= max_refinement_passes:
         pass_reports = []
-        feedback = _review_feedback(reports) if pass_index else ""
+        # Follow the strongest recent candidate rather than defects already repaired in old passes.
+        feedback = _review_feedback([best_report]) if pass_index and best_report else ""
         base_prompt = request.prompt
         platform_contract = scene_payload.get("platform_aesthetic_contract")
         shot_profile = scene_payload.get("shot_aesthetic_profile")
@@ -854,8 +872,6 @@ def _generate_quality_candidates(
         negative_prompt = _append_terms(request.negative_prompt, platform_negative)
         negative_prompt = _append_terms(negative_prompt, settings.GENERATION_QUALITY_NEGATIVE_APPEND)
         if feedback:
-            prompt = f"{prompt}. Correct previous candidate problems: {feedback}."
-            negative_prompt = _append_terms(negative_prompt, feedback)
             feedback_prompt, feedback_negative = _feedback_repair_directive(feedback)
             if feedback_prompt:
                 prompt = f"{prompt}. Repair directive: {feedback_prompt}."
@@ -882,8 +898,25 @@ def _generate_quality_candidates(
                 scene_type=request.scene_type,
                 quality_mode="ultra",
                 optimization_mode=request.optimization_mode,
+                character_references=request.character_references,
             )
-            result = provider.generate_image(candidate_request)
+            try:
+                result = provider.generate_image(candidate_request)
+            except ComfyUIWaitTimeout:
+                # Observation expiry does not prove that the queued GPU job stopped.
+                raise
+            except (ComfyUIError, GenerationProviderError, OSError) as exc:
+                release_generation_resources(provider)
+                failed = {
+                    "index": candidate_index, "path": output_path, "status": "error",
+                    "average": 0, "error": str(exc), "stage": "generation",
+                    "scene": {"scene_number": scene_payload.get("scene_number")},
+                    "request": {"seed": candidate_request.seed, "refinement_pass": pass_index},
+                }
+                reports.append(failed)
+                pass_reports.append(failed)
+                continue
+            release_generation_resources(provider)
             report = selector.review_candidate(
                 candidate_index,
                 result.output_path,
@@ -904,6 +937,8 @@ def _generate_quality_candidates(
                 "quality_pipeline": quality_pipeline.as_dict(),
             }
             report["request"] = {
+                "prompt": candidate_request.prompt,
+                "negative_prompt": candidate_request.negative_prompt,
                 "seed": candidate_request.seed,
                 "steps": candidate_request.steps,
                 "cfg_scale": candidate_request.cfg_scale,
@@ -912,6 +947,7 @@ def _generate_quality_candidates(
                 "reference_image": candidate_request.reference_image,
                 "use_ipadapter": candidate_request.use_ipadapter,
                 "character_sheet_references": scene_payload.get("character_sheet_references", []),
+                "character_references": candidate_request.character_references,
                 "identity_contrast_matrix": scene_payload.get("identity_contrast_matrix", {}),
                 "platform_aesthetic_contract": scene_payload.get("platform_aesthetic_contract", {}),
                 "shot_aesthetic_profile": scene_payload.get("shot_aesthetic_profile", {}),
@@ -923,10 +959,13 @@ def _generate_quality_candidates(
                 "quality_budget": pass_budget.as_dict(),
             }
             report["path"] = result.output_path
+            prepare_image_candidate(report)
             pass_reports.append(report)
             reports.append(report)
-        best_report = max(pass_reports if best_report is None else reports, key=lambda item: item.get("average", 0))
-        if best_report.get("average", 0) >= settings.GENERATION_IMAGE_MIN_SCORE and best_report.get("status") != "technical_only":
+        best_report = max(reports, key=image_candidate_rank)
+        if all(report.get("status") in {"technical_only", "error"} for report in pass_reports):
+            break
+        if image_candidate_error(best_report) is None and pass_index + 1 >= minimum_quality_passes(pass_budget):
             break
         if pass_index >= max_refinement_passes and max_refinement_passes < 4:
             next_repair_action = repair_action or _repair_action_from_reports(reports)
@@ -940,32 +979,63 @@ def _generate_quality_candidates(
         Path(request.output_path).with_suffix(".quality.json"),
     )
     selection["quality_budget"] = strongest_budget.as_dict()
-    postprocess_report = ImagePostprocessor().process(
-        request.output_path,
-        prompt=request.prompt,
-        negative_prompt=request.negative_prompt or "",
-        reference_image=reference_image,
-        report_path=Path(request.output_path).with_suffix(".postprocess.json"),
+    selection["search"] = {
+        "completed_passes": min(pass_index + 1, max_refinement_passes + 1),
+        "generated_candidates": len(reports),
+        "failed_generations": sum(report.get("status") == "error" for report in reports),
+        "minimum_passes": minimum_quality_passes(strongest_budget),
+    }
+    selected_candidate = selection["candidates"][0]
+    selected_path = Path(selected_candidate["path"])
+    workflow_artifact = selected_path.with_suffix(".workflow.json")
+    if workflow_artifact.is_file() and workflow_artifact.resolve() != Path(request.output_path).with_suffix(".workflow.json").resolve():
+        shutil.copy2(workflow_artifact, Path(request.output_path).with_suffix(".workflow.json"))
+    job_artifact = selected_path.with_suffix(".job.json")
+    if job_artifact.is_file() and job_artifact.resolve() != Path(request.output_path).with_suffix(".job.json").resolve():
+        shutil.copy2(job_artifact, Path(request.output_path).with_suffix(".job.json"))
+    accepted_source = Path(request.output_path).with_name(
+        f"{Path(request.output_path).stem}.accepted{Path(request.output_path).suffix}"
     )
+    shutil.copy2(request.output_path, accepted_source)
+    selection["accepted_source_path"] = str(accepted_source)
+    selected_request = selected_candidate.get("request") or {}
+    selected_prompt = selected_request.get("prompt", request.prompt)
+    selected_negative = selected_request.get("negative_prompt", request.negative_prompt or "")
+    try:
+        postprocess_report = ImagePostprocessor().process(
+            request.output_path,
+            prompt=selected_prompt,
+            negative_prompt=selected_negative,
+            reference_image=reference_image,
+            report_path=Path(request.output_path).with_suffix(".postprocess.json"),
+        )
+    except Exception as exc:
+        shutil.copy2(accepted_source, request.output_path)
+        selection["status"] = "needs_review"
+        selection["error"] = f"Image postprocess failed: {exc}"
+        selection["restored_selected_candidate"] = True
+        selection["repair_queue"] = build_repair_queue(selection, "image")
+        write_report(Path(request.output_path).with_suffix(".quality.json"), selection)
+        raise
     selection["postprocess"] = postprocess_report
     if postprocess_report.get("status") == "passed":
         postprocess_review = selector.review_candidate(
             0,
             request.output_path,
             scene_payload,
-            request.prompt,
+            selected_prompt,
             reference_image,
         )
         postprocess_review["stage"] = "postprocess_review"
+        postprocess_review["scene"] = scene_payload
+        prepare_image_candidate(postprocess_review)
         selection["postprocess_review"] = postprocess_review
-        postprocess_gate = postprocess_review.get("platform_aesthetic_gate")
         if settings.GENERATION_REQUIRE_IMAGE_REVIEW and (
-            postprocess_review.get("status") != "passed"
-            or (
-                isinstance(postprocess_gate, dict)
-                and postprocess_gate.get("status") != "passed"
-            )
+            image_candidate_error(postprocess_review) is not None
+            or image_selection_score(postprocess_review) < image_selection_score(selected_candidate)
         ):
+            shutil.copy2(accepted_source, request.output_path)
+            selection["restored_selected_candidate"] = True
             selection["status"] = "needs_review"
             selection["error"] = "Postprocessed image failed final local VLM review"
             selection["repair_queue"] = build_repair_queue(
@@ -1019,6 +1089,8 @@ def generate_image_task(
         reference_image = _get_reference_image(character, project_id, scene)
         visible_characters = _visible_character_payload(scene, project_id, db)
         character_sheet_contract = _character_sheet_generation_contract(visible_characters)
+        if len(visible_characters) > 1 and len(character_sheet_contract["references"]) != len(visible_characters):
+            raise ReviewError("Every visible character needs a frozen reference before multi-character generation")
         style_service = VisualStyleAssetService()
         platform_aesthetic_contract = style_service.platform_aesthetic_contract(project_id)
         shot_aesthetic_profile = style_service.shot_aesthetic_profile(scene, visible_count=len(visible_characters))
@@ -1052,6 +1124,7 @@ def generate_image_task(
             steps=kwargs.get("steps", settings.GENERATION_STEPS),
             cfg_scale=kwargs.get("cfg_scale", settings.GENERATION_CFG),
             reference_image=reference_image, use_ipadapter=reference_image is not None,
+            character_references=character_sheet_contract["references"] if len(visible_characters) > 1 else None,
         )
 
         self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "generation_provider"})
@@ -1086,7 +1159,7 @@ def generate_image_task(
                 {"output_path": final_image_path, "provider": provider_name, "metadata": {"quality": quality_report}},
             )()
         except Exception as exc:
-            if not draft_fallback_enabled():
+            if isinstance(exc, ComfyUIWaitTimeout) or not draft_fallback_enabled():
                 raise
             logger.warning("鐪熷疄鍥剧墖鐢熸垚澶辫触锛屼娇鐢ㄨ崏绋垮厹搴曞浘: scene_id={}, error={}", scene_id, exc)
             draft_path = get_draft_media_service().generate_image(

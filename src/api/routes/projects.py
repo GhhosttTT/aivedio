@@ -1014,28 +1014,26 @@ async def run_auto_repair_queue(
     task_orchestrator = TaskOrchestrator(db_session)
     from src.database.models import Task as TaskModel
 
-    for item in selected:
-        scene_number = item["scene_number"]
-        action = item["action"]
+    if selected:
         try:
-            celery_task_id = task_orchestrator.create_scene_repair_task(
-                project_id,
-                scene_number,
-                action,
-            )
+            if len(selected) == 1:
+                celery_task_id = task_orchestrator.create_scene_repair_task(
+                    project_id, selected[0]["scene_number"], selected[0]["action"],
+                )
+            else:
+                celery_task_id = task_orchestrator.create_repair_batch_task(project_id, selected)
             task_record = db_session.query(TaskModel).filter(
                 TaskModel.celery_task_id == celery_task_id
             ).first()
-            submitted.append({
-                **item,
-                "task_id": celery_task_id,
+            submitted.extend({
+                **item, "task_id": celery_task_id,
                 "status": task_record.status.value if task_record else "submitted",
-            })
+            } for item in selected)
         except ValueError as exc:
-            skipped.append({**item, "reason": str(exc)})
+            skipped.extend({**item, "reason": str(exc)} for item in selected)
         except Exception as exc:
             logger.error(f"自动返工任务创建失败: {exc}", exc_info=True)
-            skipped.append({**item, "reason": "task_submission_failed"})
+            skipped.extend({**item, "reason": "task_submission_failed"} for item in selected)
 
     if submitted and skipped:
         result_status = "partial"

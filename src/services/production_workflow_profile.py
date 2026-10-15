@@ -176,6 +176,8 @@ class ProductionWorkflowProfileService:
         if low_budget:
             missing.append("production_quality_budget")
         current_paths = self._current_workflow_paths()
+        if workflow_paths.get("multi_reference") and not current_paths.get("multi_reference"):
+            stale.append("multi_reference_path")
         current_video_contract = self._video_workflow_contract(current_paths.get("video", ""))
         stored_video_contract = profile.get("video_workflow_contract") if isinstance(profile.get("video_workflow_contract"), dict) else {}
         if current_video_contract.get("missing_groups"):
@@ -215,11 +217,14 @@ class ProductionWorkflowProfileService:
         }
 
     def _current_workflow_paths(self) -> dict[str, str]:
-        return {
+        paths = {
             "image": self._resolve_path(settings.COMFYUI_WORKFLOW_PATH),
             "reference": self._resolve_path(settings.COMFYUI_REFERENCE_WORKFLOW_PATH),
             "video": self._resolve_path(settings.COMFYUI_VIDEO_WORKFLOW_PATH),
         }
+        if settings.COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH:
+            paths["multi_reference"] = self._resolve_path(settings.COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH)
+        return paths
 
     def _profile_path(self, profile_path: str | None = None) -> Path:
         path = profile_path or settings.COMFYUI_PRODUCTION_PROFILE_PATH
@@ -271,6 +276,7 @@ class ProductionWorkflowProfileService:
             "image_candidates": settings.GENERATION_IMAGE_CANDIDATES,
             "image_refinement_passes": settings.GENERATION_IMAGE_REFINEMENT_PASSES,
             "max_image_candidates": settings.GENERATION_MAX_IMAGE_CANDIDATES,
+            "minimum_quality_passes": settings.GENERATION_MIN_QUALITY_PASSES,
             "repair_image_candidate_multiplier": settings.GENERATION_REPAIR_IMAGE_CANDIDATE_MULTIPLIER,
             "repair_extra_refinement_passes": settings.GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES,
             "video_candidates": settings.GENERATION_VIDEO_CANDIDATES,
@@ -282,8 +288,10 @@ class ProductionWorkflowProfileService:
             "effective_video_candidates": video_budget.candidate_count,
             "effective_video_refinement_passes": video_budget.refinement_passes,
             "video_end_frame_enabled": settings.GENERATION_VIDEO_END_FRAME_ENABLED,
+            "video_output_node": settings.COMFYUI_VIDEO_OUTPUT_NODE,
             "video_target_seconds": settings.GENERATION_VIDEO_TARGET_SECONDS,
             "video_max_frames": settings.GENERATION_VIDEO_MAX_FRAMES,
+            "video_max_freeze_seconds": settings.GENERATION_VIDEO_MAX_FREEZE_SECONDS,
             "video_model_fps": settings.GENERATION_VIDEO_MODEL_FPS,
             "video_output_fps": settings.GENERATION_VIDEO_OUTPUT_FPS,
             "width": settings.GENERATION_WIDTH,

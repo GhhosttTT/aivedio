@@ -7,6 +7,7 @@
 from typing import Dict, Optional, Any
 from enum import Enum
 from dataclasses import dataclass
+import math
 
 from src.utils.logger import logger
 
@@ -230,6 +231,8 @@ class ParameterOptimizer:
         Returns:
             优化后的宽度和高度
         """
+        if base_width <= 0 or base_height <= 0:
+            raise ValueError("Image dimensions must be positive")
         if gpu_vram_gb is None:
             # 没有提供显存信息，使用基础分辨率
             decision_reasons["resolution"] = f"使用基础分辨率 {base_width}x{base_height}"
@@ -240,13 +243,9 @@ class ParameterOptimizer:
             if gpu_vram_gb >= vram_threshold:
                 recommended_width, recommended_height = self.VRAM_RESOLUTION[vram_threshold]
                 
-                # 如果基础分辨率小于推荐分辨率，使用基础分辨率
-                width = min(base_width, recommended_width)
-                height = min(base_height, recommended_height)
-                
-                # 确保是 8 的倍数
-                width = (width // 8) * 8
-                height = (height // 8) * 8
+                width, height = self._fit_pixel_budget(
+                    base_width, base_height, recommended_width * recommended_height,
+                )
                 
                 decision_reasons["resolution"] = (
                     f"根据 {gpu_vram_gb}GB 显存选择 {width}x{height} "
@@ -255,11 +254,16 @@ class ParameterOptimizer:
                 return width, height
         
         # 显存不足，降低分辨率
-        width = 768
-        height = 768
+        width, height = self._fit_pixel_budget(base_width, base_height, 768 * 768)
         decision_reasons["resolution"] = f"显存不足 ({gpu_vram_gb}GB)，降低到 {width}x{height}"
         logger.warning(f"GPU 显存不足 ({gpu_vram_gb}GB)，自动降低分辨率到 {width}x{height}")
         return width, height
+
+    @staticmethod
+    def _fit_pixel_budget(width: int, height: int, max_pixels: int) -> tuple[int, int]:
+        # Scaling both axes together preserves vertical casting and framing.
+        scale = min(1.0, math.sqrt(max_pixels / (width * height)))
+        return max(8, int(width * scale) // 8 * 8), max(8, int(height * scale) // 8 * 8)
     
     def _optimize_ipadapter_weight(
         self,

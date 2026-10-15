@@ -52,3 +52,14 @@ def test_optional_image_postprocess_skips_when_unconfigured(tmp_path):
     )
 
     assert report["status"] == "skipped"
+
+
+def test_placeholder_like_text_inside_prompt_is_not_expanded_again(tmp_path):
+    processor = ImagePostprocessor(command="tool --prompt {prompt} --reference {reference}")
+    cmd = processor._build_command(
+        tmp_path / "input.png", tmp_path / "output.png",
+        prompt="an actor holding a {reference} label", negative_prompt="",
+        reference_image="actor.png",
+    )
+    assert "{reference} label" in cmd
+    assert cmd.endswith("actor.png")

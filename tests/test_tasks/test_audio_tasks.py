@@ -89,7 +89,7 @@ def test_generate_audio_task_marks_draft_fallback_audio_for_repair(tmp_path, mon
 
     monkeypatch.setattr(audio_tasks, "get_draft_media_service", lambda: FakeDraftMediaService())
 
-    scene = Mock(id=8, scene_number=8, audio_path=None, audio_duration=None, subtitle_path="old.srt")
+    scene = Mock(id=8, project_id=3, scene_number=8, audio_path=None, audio_duration=None, subtitle_path="old.srt")
     db = Mock()
     db.query.return_value.filter.return_value.first.return_value = scene
 

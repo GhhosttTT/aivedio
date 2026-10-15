@@ -1,0 +1,75 @@
+{
+  "workflow": {
+    "name": "SDXL identity-locked composition and detail pass",
+    "version": "1.0.0",
+    "description": "Local FaceID plus two-stage keyframe template. Requires the matching FaceID SDXL assets."
+  },
+  "nodes": {
+    "checkpoint_loader": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {"ckpt_name": "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors"}
+    },
+    "ipadapter_loader": {
+      "class_type": "IPAdapterUnifiedLoaderFaceID",
+      "inputs": {"model": ["checkpoint_loader", 0], "preset": "FACEID PLUS V2", "lora_strength": 0.6, "provider": "CPU"}
+    },
+    "reference_image": {"class_type": "LoadImage", "inputs": {"image": ""}},
+    "identity_adapter": {
+      "class_type": "IPAdapterFaceID",
+      "inputs": {
+        "model": ["ipadapter_loader", 0], "ipadapter": ["ipadapter_loader", 1],
+        "image": ["reference_image", 0], "weight": 0.75, "weight_faceidv2": 1.0,
+        "weight_type": "linear", "combine_embeds": "concat", "start_at": 0.0,
+        "end_at": 1.0, "embeds_scaling": "V only"
+      }
+    },
+    "positive": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {"text": "", "clip": ["checkpoint_loader", 1]}
+    },
+    "negative": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {"text": "", "clip": ["checkpoint_loader", 1]}
+    },
+    "latent": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {"width": 768, "height": 1344, "batch_size": 1}
+    },
+    "composition_sampler": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": 0, "steps": 40, "cfg": 5.2,
+        "sampler_name": "dpmpp_2m_sde", "scheduler": "karras", "denoise": 1.0,
+        "model": ["identity_adapter", 0], "positive": ["positive", 0],
+        "negative": ["negative", 0], "latent_image": ["latent", 0]
+      }
+    },
+    "latent_upscale": {
+      "class_type": "LatentUpscaleBy",
+      "inputs": {"samples": ["composition_sampler", 0], "upscale_method": "bislerp", "scale_by": 1.5}
+    },
+    "detail_sampler": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": 1, "steps": 20, "cfg": 4.8,
+        "sampler_name": "dpmpp_2m_sde", "scheduler": "karras", "denoise": 0.24,
+        "model": ["identity_adapter", 0], "positive": ["positive", 0],
+        "negative": ["negative", 0], "latent_image": ["latent_upscale", 0]
+      }
+    },
+    "decode_final": {
+      "class_type": "VAEDecode",
+      "inputs": {"samples": ["detail_sampler", 0], "vae": ["checkpoint_loader", 2]}
+    },
+    "save_final": {
+      "class_type": "SaveImage",
+      "inputs": {"images": ["decode_final", 0], "filename_prefix": "short_drama_multistage_reference"}
+    }
+  },
+  "parameters": {
+    "default": {"width": 768, "height": 1344, "steps": 40, "cfg_scale": 5.2, "output_node": "save_final", "ipadapter_weight": 0.75}
+  },
+  "negative_prompt": {
+    "default": "text, watermark, duplicate people, malformed hands, extra limbs, plastic skin, blurry, changed face, changed wardrobe, repair scars"
+  }
+}

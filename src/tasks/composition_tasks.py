@@ -4,6 +4,7 @@
 """
 
 import json
+import math
 import re
 from pathlib import Path
 from typing import Optional
@@ -54,7 +55,7 @@ def compose_final_video_task(
     
     # 更新任务状态
     self.update_state(state="PROGRESS", meta={"current": 0, "total": 100, "step": "视频合成"})
-    
+    db = None
     try:
         # 获取数据库会话
         db = next(get_db())
@@ -81,18 +82,15 @@ def compose_final_video_task(
         _require_passed_scene_videos(scenes)
         _require_passed_scene_audio(scenes)
         _require_scene_subtitles(scenes)
-        _require_audio_video_duration_alignment(scenes, video_composer)
+        audio_segments = _require_audio_video_duration_alignment(scenes, video_composer)
 
         # 收集所有分镜的视频和音频路径
         video_paths = []
-        audio_paths = []
         subtitle_paths = []
         
         for scene in scenes:
             if scene.video_path:
                 video_paths.append(scene.video_path)
-            if scene.audio_path:
-                audio_paths.append(scene.audio_path)
             if scene.subtitle_path:
                 subtitle_paths.append(scene.subtitle_path)
         
@@ -113,18 +111,15 @@ def compose_final_video_task(
         # 步骤 2: 同步音频（40%）
         self.update_state(state="PROGRESS", meta={"current": 40, "total": 100, "step": "同步音频"})
         
-        if audio_paths:
-            temp_video_with_audio = final_video_path.replace(".mp4", "_with_audio.mp4")
-            audio_path = audio_paths[0]
-            if len(audio_paths) > 1:
-                merged_audio_path = final_video_path.replace(".mp4", "_merged_audio.mp3")
-                audio_path = video_composer._concat_audio(audio_paths, merged_audio_path)
-            video_composer.sync_audio_video(
-                video_path=temp_video_path,
-                audio_path=audio_path,
-                output_path=temp_video_with_audio
-            )
-            temp_video_path = temp_video_with_audio
+        temp_video_with_audio = final_video_path.replace(".mp4", "_with_audio.mp4")
+        merged_audio_path = final_video_path.replace(".mp4", "_merged_audio.wav")
+        audio_path = video_composer.compose_scene_audio(audio_segments, merged_audio_path)
+        video_composer.sync_audio_video(
+            video_path=temp_video_path,
+            audio_path=audio_path,
+            output_path=temp_video_with_audio,
+        )
+        temp_video_path = temp_video_with_audio
         
         # 步骤 3: 添加背景音乐（60%）
         self.update_state(state="PROGRESS", meta={"current": 60, "total": 100, "step": "添加背景音乐"})
@@ -182,6 +177,7 @@ def compose_final_video_task(
         if task_model:
             task_model.status = TaskStatus.COMPLETED
             task_model.progress = 100.0
+            task_model.current_step = task_model.total_steps
             task_model.result_path = final_video_path
         db.commit()
         
@@ -200,17 +196,22 @@ def compose_final_video_task(
         logger.error(f"视频合成失败: project_id={project_id}, error={e}")
         
         # 更新项目状态为失败
-        db = next(get_db())
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if project:
-            project.status = ProjectStatus.FAILED
-        task_model = db.query(TaskModel).filter(TaskModel.id == task_id).first()
-        if task_model:
-            task_model.status = TaskStatus.FAILED
-            task_model.error_message = str(e)
-        db.commit()
+        if db is not None:
+            db.rollback()
+            project = db.query(Project).filter(Project.id == project_id).first()
+            if project:
+                project.status = ProjectStatus.FAILED
+                project.final_video_path = None
+            task_model = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+            if task_model and task_model.project_id == project_id:
+                task_model.status = TaskStatus.FAILED
+                task_model.error_message = str(e)
+            db.commit()
         
         raise
+    finally:
+        if db is not None:
+            db.close()
 
 
 def _merge_subtitles(subtitle_paths: list, output_path: str, scenes: list, video_composer=None) -> None:
@@ -413,42 +414,36 @@ def _require_audio_video_duration_alignment(
     video_composer,
     tolerance_seconds: float = 1.0,
     tolerance_ratio: float = 0.15,
-) -> None:
-    video_total = 0.0
-    audio_total = 0.0
-    video_count = 0
-    audio_count = 0
+) -> list[tuple[str | None, float]]:
+    segments = []
     failed = []
+    frame_tolerance = 1.0 / max(int(settings.GENERATION_VIDEO_OUTPUT_FPS), 1)
     for scene in scenes:
-        if scene.video_path:
-            duration = video_composer._get_duration(scene.video_path)
-            if duration <= 0:
-                failed.append(f"{scene.scene_number}: video duration is unreadable")
-            else:
-                video_total += duration
-                video_count += 1
+        video_duration = video_composer._get_duration(scene.video_path) if scene.video_path else 0.0
+        if not math.isfinite(video_duration) or video_duration <= 0:
+            failed.append(f"{scene.scene_number}: video duration is unreadable")
+            continue
+        audio_path = None
         if has_spoken_dialogue(scene.dialogue):
             if scene.audio_path:
-                duration = video_composer._get_duration(scene.audio_path)
-                if duration <= 0 and scene.audio_duration:
-                    duration = float(scene.audio_duration)
-                if duration <= 0:
+                audio_path = scene.audio_path
+                audio_duration = video_composer._get_duration(audio_path)
+                if not math.isfinite(audio_duration) or audio_duration <= 0:
                     failed.append(f"{scene.scene_number}: audio duration is unreadable")
-                else:
-                    audio_total += duration
-                    audio_count += 1
+                    continue
+                allowed_pause = max(tolerance_seconds, video_duration * tolerance_ratio)
+                if audio_duration > video_duration + frame_tolerance or video_duration - audio_duration > allowed_pause:
+                    failed.append(
+                        f"{scene.scene_number}: audio/video duration mismatch "
+                        f"video={video_duration:.2f}s, audio={audio_duration:.2f}s; "
+                        "regenerate or split this scene"
+                    )
+            else:
+                failed.append(f"{scene.scene_number}: spoken dialogue audio is missing")
+        segments.append((audio_path, video_duration))
     if failed:
         raise ValueError("Scene media durations are not production-ready: " + "; ".join(failed))
-    if not video_count or not audio_count:
-        return
-    allowed_delta = max(tolerance_seconds, video_total * tolerance_ratio)
-    delta = abs(video_total - audio_total)
-    if delta > allowed_delta:
-        raise ValueError(
-            "Scene audio/video duration mismatch before composition: "
-            f"video_total={video_total:.2f}s, audio_total={audio_total:.2f}s, "
-            f"delta={delta:.2f}s, allowed={allowed_delta:.2f}s"
-        )
+    return segments
 
 
 def _srt_has_timing(content: str) -> bool:
@@ -468,7 +463,7 @@ def _subtitle_matches_dialogue(content: str, dialogue: str) -> bool:
         return True
     if not subtitle_text:
         return False
-    return dialogue_text in subtitle_text or subtitle_text in dialogue_text
+    return dialogue_text == subtitle_text
 
 
 def _normalize_subtitle_text(text: str) -> str:

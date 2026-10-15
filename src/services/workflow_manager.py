@@ -156,7 +156,7 @@ class WorkflowManager:
             error_msg = f"工作流配置文件格式错误: {e}"
             logger.error(error_msg)
             # 尝试回退到默认工作流
-            if workflow_type != self.DEFAULT_WORKFLOW_TYPE:
+            if allow_fallback and workflow_type != self.DEFAULT_WORKFLOW_TYPE:
                 logger.warning(f"回退到默认工作流: {self.DEFAULT_WORKFLOW_TYPE}")
                 return self.load_workflow(workflow_type=self.DEFAULT_WORKFLOW_TYPE)
             raise WorkflowManagerError(error_msg) from e
@@ -169,7 +169,7 @@ class WorkflowManager:
             error_msg = f"加载工作流配置失败: {e}"
             logger.error(error_msg)
             # 尝试回退到默认工作流
-            if workflow_type != self.DEFAULT_WORKFLOW_TYPE:
+            if allow_fallback and workflow_type != self.DEFAULT_WORKFLOW_TYPE:
                 logger.warning(f"回退到默认工作流: {self.DEFAULT_WORKFLOW_TYPE}")
                 return self.load_workflow(workflow_type=self.DEFAULT_WORKFLOW_TYPE)
             raise WorkflowManagerError(error_msg) from e

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import subprocess
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -58,13 +60,16 @@ class ImagePostprocessor:
             if not source.is_file():
                 raise ImagePostprocessError(f"Input image does not exist: {source}")
             report["input_sha256"] = file_hash(source)
+            with Image.open(source) as image:
+                input_size = image.size
+            report["input_size"] = list(input_size)
             if not self.command.strip():
                 if self.required:
                     raise ImagePostprocessError("GENERATION_IMAGE_POSTPROCESS_COMMAND is required but not configured")
                 write_report(report_file, report)
                 return report
 
-            output = source.with_name(f"{source.stem}.postprocessed{source.suffix}")
+            output = source.with_name(f"{source.stem}.postprocessed-{uuid.uuid4().hex[:8]}{source.suffix}")
             command = self._build_command(
                 source,
                 output,
@@ -74,8 +79,8 @@ class ImagePostprocessor:
             )
             started = time.monotonic()
             result = subprocess.run(
-                command,
-                shell=True,
+                command if os.name == "nt" else shlex.split(command),
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
@@ -91,6 +96,13 @@ class ImagePostprocessor:
             if result.returncode != 0:
                 raise ImagePostprocessError(f"Image postprocess failed with exit code {result.returncode}")
             self._verify_image(output)
+            with Image.open(output) as image:
+                output_size = image.size
+            report["output_size"] = list(output_size)
+            if output_size[0] < input_size[0] or output_size[1] < input_size[1]:
+                raise ImagePostprocessError("Image postprocess reduced the accepted image resolution")
+            if abs((output_size[0] / output_size[1]) / (input_size[0] / input_size[1]) - 1.0) > 0.01:
+                raise ImagePostprocessError("Image postprocess changed the accepted framing aspect ratio")
             report["output_sha256"] = file_hash(output)
             if report["output_sha256"] == report["input_sha256"]:
                 raise ImagePostprocessError("Image postprocess output is identical to input")
@@ -123,10 +135,11 @@ class ImagePostprocessor:
             "negative_prompt": negative_prompt,
             "reference": reference_image or "",
         }
-        command = self.command
-        for key, value in replacements.items():
-            command = command.replace("{" + key + "}", _shell_quote(str(value)))
-        return command
+        return re.sub(
+            r"\{(input|output|prompt|negative_prompt|reference)\}",
+            lambda match: _shell_quote(str(replacements[match.group(1)])),
+            self.command,
+        )
 
     @staticmethod
     def _verify_image(path: Path) -> None:

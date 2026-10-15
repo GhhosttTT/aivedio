@@ -7,6 +7,10 @@ from pathlib import Path
 from celery import Celery
 from dotenv import load_dotenv
 from kombu import Exchange, Queue
+from sqlalchemy import case
+from src.services.comfyui_service import ComfyUIWaitTimeout
+from src.services.generation_review import ReviewError
+from src.services.image_postprocess import ImagePostprocessError
 
 env_path = Path(__file__).parent.parent.parent / ".env"
 if env_path.exists():
@@ -90,6 +94,7 @@ class BaseTask(celery_app.Task):
     """Common Celery task behavior."""
 
     autoretry_for = (Exception,)
+    dont_autoretry_for = (ComfyUIWaitTimeout, ReviewError, ImagePostprocessError, ValueError, TypeError, AttributeError)
     retry_kwargs = {"max_retries": 3}
     retry_backoff = True
     retry_backoff_max = 600
@@ -161,8 +166,29 @@ class BaseTask(celery_app.Task):
                 record.project.status = ProjectStatus.FAILED
                 db.commit()
             elif record and record.status == TaskStatus.RUNNING:
-                record.current_step = min(record.total_steps, record.current_step + 1)
-                record.progress = 100.0 * record.current_step / record.total_steps
+                # Audio/subtitle groups finish concurrently; increment in the database.
+                from src.database.models import Task as TaskModel
+                next_step = case(
+                    (TaskModel.current_step < TaskModel.total_steps, TaskModel.current_step + 1),
+                    else_=TaskModel.total_steps,
+                )
+                task_query = db.query(TaskModel).filter(
+                    TaskModel.id == record.id, TaskModel.status == TaskStatus.RUNNING,
+                )
+                task_query.update({
+                    TaskModel.current_step: next_step,
+                    TaskModel.progress: case(
+                        (TaskModel.total_steps > 0, 100.0 * next_step / TaskModel.total_steps),
+                        else_=100.0,
+                    ),
+                    TaskModel.status: case(
+                        (next_step >= TaskModel.total_steps, TaskStatus.COMPLETED.name),
+                        else_=TaskStatus.RUNNING.name,
+                    ),
+                }, synchronize_session=False)
+                db.refresh(record)
+                if record.status == TaskStatus.COMPLETED and record.project.status == ProjectStatus.IN_PRODUCTION and not record.project.final_video_path:
+                    record.project.status = ProjectStatus.SCRIPT_GENERATED
                 db.commit()
         finally:
             db.close()

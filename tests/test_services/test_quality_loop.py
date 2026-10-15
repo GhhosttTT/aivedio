@@ -108,6 +108,72 @@ def test_quality_loop_selects_audio_before_video_for_same_priority():
     ]
 
 
+def test_quality_loop_allows_audio_and_keyframe_repair_for_same_scene():
+    plan = build_quality_loop_plan({
+        "repair_queue": {
+            "items": [
+                {
+                    "scene_number": 7,
+                    "priority": "high",
+                    "stage": "image",
+                    "action": "regenerate_keyframe_with_identity_lock",
+                    "execution": "auto",
+                },
+                {
+                    "scene_number": 7,
+                    "priority": "high",
+                    "stage": "audio",
+                    "action": "refine_dialogue_audio_delivery",
+                    "execution": "auto",
+                },
+                {
+                    "scene_number": 7,
+                    "priority": "high",
+                    "stage": "video",
+                    "action": "lower_motion_and_regenerate_video",
+                    "execution": "auto",
+                },
+            ]
+        }
+    }, max_actions=5)
+
+    assert plan["status"] == "can_auto_repair"
+    assert [item["action"] for item in plan["selected"]] == [
+        "regenerate_keyframe_with_identity_lock",
+        "refine_dialogue_audio_delivery",
+    ]
+    assert any(
+        item["action"] == "lower_motion_and_regenerate_video" and item["reason"] == "scene_already_selected"
+        for item in plan["skipped"]
+    )
+
+
+def test_quality_loop_keeps_one_keyframe_repair_per_scene():
+    plan = build_quality_loop_plan({
+        "repair_queue": {
+            "items": [
+                {
+                    "scene_number": 9,
+                    "priority": "high",
+                    "stage": "image",
+                    "action": "regenerate_keyframe_with_identity_lock",
+                    "execution": "auto",
+                },
+                {
+                    "scene_number": 9,
+                    "priority": "high",
+                    "stage": "image",
+                    "action": "refine_prompt_composition",
+                    "execution": "auto",
+                },
+            ]
+        }
+    }, max_actions=5)
+
+    assert [item["action"] for item in plan["selected"]] == ["regenerate_keyframe_with_identity_lock"]
+    assert plan["skipped"][0]["reason"] == "stage_already_selected"
+
+
 def test_quality_loop_accepts_flat_validation_repair_queue():
     summary = {
         "status": "partial_needs_review",

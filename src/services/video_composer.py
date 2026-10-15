@@ -5,7 +5,9 @@
 """
 
 import os
+import math
 import subprocess
+import tempfile
 from typing import List, Optional, Tuple
 from pathlib import Path
 
@@ -136,6 +138,11 @@ class VideoComposer:
             logger.debug(
                 f"时长: video={video_duration:.2f}s, audio={audio_duration:.2f}s"
             )
+            if not all(math.isfinite(value) and value > 0 for value in (video_duration, audio_duration)):
+                raise ValueError("Cannot synchronize media with unreadable durations")
+            frame_tolerance = 1.0 / max(int(settings.GENERATION_VIDEO_OUTPUT_FPS), 1)
+            if audio_duration > video_duration + frame_tolerance:
+                raise ValueError("Dialogue is longer than the video; regenerate or split the scene")
             
             # 使用 FFmpeg 替换音轨
             cmd = [
@@ -146,7 +153,8 @@ class VideoComposer:
                 "-c:a", "aac",   # 音频重新编码为 AAC
                 "-map", "0:v:0", # 使用第一个输入的视频流
                 "-map", "1:a:0", # 使用第二个输入的音频流
-                "-shortest",     # 以最短的流为准
+                "-af", "apad",
+                "-t", f"{video_duration:.6f}",
                 "-y",
                 output_path
             ]
@@ -438,6 +446,47 @@ class VideoComposer:
             "-an",
         ]
     
+    def compose_scene_audio(
+        self,
+        segments: List[Tuple[Optional[str], float]],
+        output_path: str,
+    ) -> str:
+        """Preserve every scene boundary, including tail pauses and silent shots."""
+        if not segments:
+            raise ValueError("Scene audio segments cannot be empty")
+        frame_tolerance = 1.0 / max(int(settings.GENERATION_VIDEO_OUTPUT_FPS), 1)
+        for audio_path, duration in segments:
+            if not math.isfinite(duration) or duration <= 0:
+                raise ValueError("Scene timeline duration must be finite and positive")
+            if audio_path:
+                if not Path(audio_path).is_file():
+                    raise FileNotFoundError(f"Scene audio file does not exist: {audio_path}")
+                audio_duration = self._get_duration(audio_path)
+                if not math.isfinite(audio_duration) or audio_duration <= 0:
+                    raise ValueError("Scene audio duration is unreadable")
+                if audio_duration > duration + frame_tolerance:
+                    raise ValueError("Dialogue is longer than its scene; regenerate or split the scene")
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="scene_audio_", dir=output.parent) as temp_dir:
+            aligned_paths = []
+            for index, (audio_path, duration) in enumerate(segments):
+                aligned = str(Path(temp_dir) / f"scene_{index:05d}.wav")
+                source = ["-i", str(audio_path)] if audio_path else [
+                    "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+                ]
+                cmd = [
+                    "ffmpeg", *source, "-map", "0:a:0", "-af", "apad",
+                    "-t", f"{duration:.6f}", "-ar", "48000", "-ac", "2",
+                    "-c:a", "pcm_s16le", "-y", aligned,
+                ]
+                try:
+                    subprocess.run(cmd, capture_output=True, text=True, check=True)
+                except subprocess.CalledProcessError as exc:
+                    raise VideoComposerError(f"Scene audio alignment failed: {exc.stderr}") from exc
+                aligned_paths.append(aligned)
+            return self._concat_audio(aligned_paths, str(output))
+
     def _concat_audio(
         self,
         audio_files: List[str],
@@ -453,12 +502,16 @@ class VideoComposer:
         Returns:
             拼接后的音频文件路径
         """
+        concat_list_path = None
         try:
             # 创建文件列表
-            concat_list_path = Path(output_path).parent / "audio_concat_list.txt"
-            with open(concat_list_path, "w", encoding="utf-8") as f:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", suffix="_concat_list.txt",
+                dir=Path(output_path).parent, delete=False,
+            ) as f:
+                concat_list_path = Path(f.name)
                 for audio_file in audio_files:
-                    abs_path = os.path.abspath(audio_file)
+                    abs_path = Path(audio_file).resolve().as_posix().replace("'", "'\\''")
                     f.write(f"file '{abs_path}'\n")
             
             # 拼接音频
@@ -474,13 +527,13 @@ class VideoComposer:
             
             subprocess.run(cmd, capture_output=True, text=True, check=True)
             
-            # 清理临时文件
-            concat_list_path.unlink()
-            
             return output_path
             
         except Exception as e:
             raise VideoComposerError(f"音频拼接失败: {e}") from e
+        finally:
+            if concat_list_path:
+                concat_list_path.unlink(missing_ok=True)
     
     def _cleanup_temp_files(self, temp_dir: Path):
         """

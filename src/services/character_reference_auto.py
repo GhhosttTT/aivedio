@@ -3,15 +3,17 @@
 自动生成高质量的正面角色头像，用于后续的角色一致性生成
 """
 import json
+import re
 from pathlib import Path
 from typing import Dict, Optional
 from loguru import logger
 
 from src.config import settings
 from src.services.character_reference_generator import CharacterReferenceGenerator
-from src.services.comfyui_service import ComfyUIService
+from src.services.comfyui_service import ComfyUIError, ComfyUIService, ComfyUIWaitTimeout
 from src.services.generation_quality_policy import image_quality_budget
-from src.services.generation_review import ReviewError, write_report
+from src.services.generation_review import ReviewError, file_hash, fingerprint, write_report
+from src.services.generation_provider import release_generation_resources
 from src.services.image_quality_service import ImageQualitySelector
 from src.services.llm_service import get_llm_service
 from src.services.character_turnaround_album import PRODUCTION_TURNAROUND_VIEWS
@@ -23,15 +25,37 @@ class CharacterReferenceAutoGenerator:
     
     def __init__(self, comfyui_service: Optional[ComfyUIService] = None, generator: Optional[CharacterReferenceGenerator] = None):
         self.comfyui = comfyui_service or ComfyUIService()
-        self.llm_service = None if generator else get_llm_service()
-        self.generator = generator or CharacterReferenceGenerator(llm_service=self.llm_service)
+        self.llm_service = None
+        self._owns_generator = generator is None
+        self.generator = generator or CharacterReferenceGenerator()
+
+    def _character_data(self, name, role, personality, identity_spec=None):
+        if identity_spec:
+            return {
+                **identity_spec,
+                "name": name, "age": identity_spec.get("age", identity_spec.get("age_range", "adult")),
+                "gender": identity_spec.get("gender") or (
+                    identity_spec.get("gender_presentation")
+                    if "unspecified" not in str(identity_spec.get("gender_presentation", "unspecified")) else "person"
+                ),
+                "ethnicity": identity_spec.get("ethnicity", ""),
+                "body_type": identity_spec.get("body_type", "natural body proportions"),
+                "height": identity_spec.get("height", "average adult height"),
+                "outfit_details": identity_spec.get("wardrobe") or identity_spec.get("outfit_details", "consistent outfit"),
+                "distinctive_features": identity_spec.get("distinctive_mark") or identity_spec.get("distinctive_features", ""),
+            }
+        if self._owns_generator and self.generator.llm_service is None:
+            self.llm_service = get_llm_service()
+            self.generator.llm_service = self.llm_service
+        return self.generator.generate_character_description(character_name=name, role=role, personality=personality)
         
     def generate_character_reference(
         self,
         character_name: str,
         role: str = "主角",
         personality: str = "自信、专业",
-        save_dir: str = "./storage/characters"
+        save_dir: str = "./storage/characters",
+        identity_spec: Optional[Dict] = None,
     ) -> Dict:
         """
         自动生成角色参考图
@@ -61,11 +85,7 @@ class CharacterReferenceAutoGenerator:
             
             # 步骤 1: 使用 LLM 生成详细的角色描述
             logger.info(f"步骤 1/4: LLM 生成角色描述...")
-            character_data = self.generator.generate_character_description(
-                character_name=character_name,
-                role=role,
-                personality=personality
-            )
+            character_data = self._character_data(character_name, role, personality, identity_spec)
             logger.info(f"角色描述生成成功: {json.dumps(character_data, ensure_ascii=False)[:200]}")
             
             # 步骤 2: 生成正面特写的提示词
@@ -123,7 +143,8 @@ class CharacterReferenceAutoGenerator:
         role: str = "主角",
         personality: str = "自信、专业",
         count: int = 3,
-        save_dir: str = "./storage/characters"
+        save_dir: str = "./storage/characters",
+        identity_spec: Optional[Dict] = None,
     ) -> Dict:
         """
         生成多个不同角度的角色参考图
@@ -142,11 +163,7 @@ class CharacterReferenceAutoGenerator:
             logger.info(f"开始为角色 '{character_name}' 生成 {count} 张参考图")
             
             # 生成角色描述
-            character_data = self.generator.generate_character_description(
-                character_name=character_name,
-                role=role,
-                personality=personality
-            )
+            character_data = self._character_data(character_name, role, personality, identity_spec)
             
             # 生成提示词
             reference_prompts = self.generator.generate_reference_prompts(character_data)
@@ -193,6 +210,8 @@ class CharacterReferenceAutoGenerator:
         personality: str = "自信、专业",
         count_per_view: int = 3,
         save_dir: str = "./storage/characters",
+        identity_spec: Optional[Dict] = None,
+        identity_reference_image: Optional[str] = None,
     ) -> Dict:
         """
         Generate production character-sheet candidates and select the best image per view.
@@ -202,12 +221,19 @@ class CharacterReferenceAutoGenerator:
         """
         try:
             logger.info(f"开始为角色 '{character_name}' 生成生产级立体画册")
-            character_data = self.generator.generate_character_description(
-                character_name=character_name,
-                role=role,
-                personality=personality,
-            )
+            character_data = self._character_data(character_name, role, personality, identity_spec)
             reference_prompts = self.generator.generate_reference_prompts(character_data)
+            if identity_reference_image and not Path(identity_reference_image).is_file():
+                raise ValueError("The selected character identity reference image does not exist")
+            if not identity_reference_image:
+                front = reference_prompts["front_closeup"]
+                portrait = self._generate_and_select_reference(
+                    character_name, character_data, front["prompt"], front["negative"],
+                    count_per_view, save_dir, final_name="identity_master_selected.png",
+                    candidate_prefix="identity_master_candidate", report_name="identity_master_quality.json",
+                    generation_context={"identity_spec_hash": fingerprint(identity_spec) if identity_spec else None},
+                )
+                identity_reference_image = portrait["reference_image_path"]
             view_prompts = self._turnaround_view_prompts(reference_prompts, character_data)
             selected_views = {}
             quality_reports = {}
@@ -225,7 +251,11 @@ class CharacterReferenceAutoGenerator:
                     report_name=f"turnaround_{view}_quality.json",
                     review_payload=_turnaround_review_payload(character_name, character_data, view),
                     turnaround_view=view,
-                    generation_context={"turnaround_contract": prompt_data["turnaround_contract"]},
+                    reference_image=identity_reference_image,
+                    generation_context={
+                        "turnaround_contract": prompt_data["turnaround_contract"],
+                        "identity_spec_hash": fingerprint(identity_spec) if identity_spec else None,
+                    },
                 )
                 selected_views[view] = selected["reference_image_path"]
                 quality_reports[view] = selected["quality_report"]
@@ -237,6 +267,7 @@ class CharacterReferenceAutoGenerator:
                 "candidate_images": candidate_images,
                 "quality_reports": quality_reports,
                 "reference_prompts": reference_prompts,
+                "identity_reference_image": identity_reference_image,
                 "message": f"角色 '{character_name}' 生产级立体画册生成成功",
             }
         except Exception as e:
@@ -264,8 +295,10 @@ class CharacterReferenceAutoGenerator:
         review_payload: Optional[Dict] = None,
         turnaround_view: Optional[str] = None,
         generation_context: Optional[Dict] = None,
+        reference_image: Optional[str] = None,
     ) -> Dict:
-        character_dir = Path(save_dir) / character_name.replace(" ", "_")
+        safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", character_name).replace(" ", "_").strip(" .") or "character"
+        character_dir = Path(save_dir) / safe_name
         character_dir.mkdir(parents=True, exist_ok=True)
         final_path = character_dir / final_name
         selector = ImageQualitySelector()
@@ -273,29 +306,47 @@ class CharacterReferenceAutoGenerator:
         quality_budget = image_quality_budget()
         count = max(1, min(max(count, quality_budget.candidate_count), quality_budget.max_candidates))
         import hashlib
+        from src.services.llm_service import cleanup_llm_service
+        cleanup_llm_service()
+        if self._owns_generator:
+            self.generator.llm_service = None
+            self.llm_service = None
+        reference_sha256 = file_hash(Path(reference_image)) if reference_image else None
+        payload = review_payload or _reference_review_payload(character_name, character_data)
+        if turnaround_view != "back":
+            prompt = _reference_identity_anchor("", character_data) + ", " + prompt
         for index in range(count):
             output_path = character_dir / f"{candidate_prefix}_{index + 1:02d}.png"
             seed = int(hashlib.sha256(
                 f"{character_name}:{candidate_prefix}:{index}:{json.dumps(character_data, ensure_ascii=False, sort_keys=True)}".encode()
             ).hexdigest()[:8], 16)
-            result_path = self.comfyui.generate_image(
-                prompt=prompt,
-                negative_prompt=negative_prompt,
-                width=1024,
-                height=1024,
-                steps=min(max(settings.GENERATION_STEPS, 28) + index * 4, 48),
-                cfg_scale=settings.GENERATION_CFG,
-                seed=seed,
-                output_path=str(output_path),
-                reference_image=None,
-                use_ipadapter=False,
-            )
+            try:
+                result_path = self.comfyui.generate_image(
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    width=1024,
+                    height=1024,
+                    steps=min(max(settings.GENERATION_STEPS, 28) + index * 4, 48),
+                    cfg_scale=settings.GENERATION_CFG,
+                    seed=seed,
+                    output_path=str(output_path),
+                    reference_image=reference_image,
+                    use_ipadapter=bool(reference_image),
+                )
+            except ComfyUIWaitTimeout:
+                raise
+            except (ComfyUIError, OSError) as exc:
+                release_generation_resources(self.comfyui)
+                candidates.append({"index": index + 1, "status": "error", "average": 0,
+                                   "path": str(output_path), "error": str(exc), "stage": "generation"})
+                continue
+            release_generation_resources(self.comfyui)
             report = selector.review_candidate(
                 index + 1,
                 result_path,
-                review_payload or _reference_review_payload(character_name, character_data),
+                payload,
                 prompt,
-                None,
+                reference_image,
             )
             if turnaround_view:
                 attach_turnaround_quality_gate(
@@ -305,11 +356,15 @@ class CharacterReferenceAutoGenerator:
                     settings.GENERATION_TURNAROUND_FEATURE_MIN_SCORE,
                 )
             report["path"] = result_path
+            report["scene"] = payload
             report["request"] = {
                 "seed": seed,
                 "steps": min(max(settings.GENERATION_STEPS, 28) + index * 4, 48),
                 "cfg_scale": settings.GENERATION_CFG,
                 "quality_budget": quality_budget.as_dict(),
+                "reference_image": reference_image,
+                "reference_sha256": reference_sha256,
+                "use_ipadapter": bool(reference_image),
             }
             if turnaround_view:
                 report["request"]["turnaround_view"] = turnaround_view
@@ -361,32 +416,24 @@ class CharacterReferenceAutoGenerator:
         identity = _reference_identity_anchor(str(character_data.get("name") or ""), character_data)
         base = (
             "production character turnaround sheet, photorealistic short-drama character reference, "
-            "plain neutral background, full outfit visible, consistent hairstyle and wardrobe, "
+            "plain neutral background, consistent hairstyle and wardrobe, "
             f"{appearance}, identity anchor: {identity}"
         )
-        front_prompt = reference_prompts.get("front_closeup", {}).get("prompt")
-        side_prompt = reference_prompts.get("side_profile", {}).get("prompt")
-        back_prompt = reference_prompts.get("back_view", {}).get("prompt")
         prompts = {}
         prompt_map = {
             "front": {
-                "prompt": (
-                    front_prompt
-                    or f"{base}, front view, facing camera, readable face, shoulders square, arms relaxed"
-                ) + _turnaround_prompt_suffix("front"),
+                "prompt": f"{base}, front view, facing camera, readable face, shoulders square, arms relaxed" + _turnaround_prompt_suffix("front"),
                 "negative": negative,
             },
             "side": {
-                "prompt": (
-                    side_prompt
-                    or f"{base}, strict side profile view, nose silhouette, hair outline, outfit side seam visible"
-                ) + _turnaround_prompt_suffix("side"),
+                "prompt": f"{base}, strict side profile view, nose silhouette, hair outline, outfit side seam visible" + _turnaround_prompt_suffix("side"),
                 "negative": negative,
             },
             "back": {
                 "prompt": (
-                    back_prompt
-                    or f"{base}, back view, hairstyle back shape, outfit back silhouette, shoulders and full body visible"
+                    "photorealistic character reference, viewed entirely from behind, "
+                    f"{character_data.get('hair', '')}, {character_data.get('body_type', '')}, "
+                    f"{character_data.get('outfit_details', '')}, hairstyle back shape, outfit back silhouette"
                 ) + _turnaround_prompt_suffix("back"),
                 "negative": negative,
             },
@@ -438,15 +485,17 @@ def _reference_identity_anchor(character_name: str, character_data: Dict) -> str
     fields = [
         character_data.get("face_shape"),
         character_data.get("eyes"),
+        character_data.get("eyebrows"),
         character_data.get("nose"),
         character_data.get("mouth"),
+        character_data.get("jawline"),
         character_data.get("hair"),
         character_data.get("skin_tone"),
         character_data.get("distinctive_features"),
         character_data.get("outfit_details"),
     ]
     details = ", ".join(str(field).strip() for field in fields if str(field or "").strip())
-    return f"{character_name}: {details}" if details else character_name
+    return f"{character_name}: {details}" if details and character_name else details or character_name
 
 
 def _turnaround_sheet_contract(view: str, character_data: Dict) -> Dict:
@@ -475,9 +524,9 @@ def _turnaround_sheet_contract(view: str, character_data: Dict) -> Dict:
         "category": category,
         "layout": "single character on a neutral production sheet, centered on the same scale",
         "camera": view_camera[view],
-        "pose": "neutral A-pose or relaxed straight pose, feet visible, no dramatic action",
+        "pose": "head and shoulders expression portrait, no body pose" if category == "expression_reference" else "neutral A-pose or relaxed straight pose, feet visible, no dramatic action",
         "background": "plain light gray studio background, no props, no text, no watermark",
-        "scale": "match height, lens distance, and body proportions across production character-sheet views",
+        "scale": "match face scale and lens distance across expression references" if category == "expression_reference" else "match height, lens distance, and body proportions across production character-sheet views",
         "expected_features": turnaround_expected_features(view, character_data),
     }
 
@@ -493,6 +542,8 @@ def _turnaround_prompt_suffix(view: str) -> str:
         "expression_neutral": "neutral expression face sheet, close-up, relaxed mouth and eyes",
         "expression_intense": "intense short-drama expression sheet, close-up, same facial geometry",
     }[view]
+    if view.startswith("expression_"):
+        return f", {suffix}, head and shoulders portrait, face fills the frame, plain light gray background, no text, no watermark"
     return (
         f", {suffix}, production model sheet, full body head-to-toe visible, "
         "same scale as other views, centered neutral standing pose, plain light gray background, "
@@ -564,7 +615,11 @@ def _turnaround_review_payload(character_name: str, character_data: Dict, view: 
     payload["visual_description"] = f"{view} character turnaround reference"
     payload["turnaround_view"] = view
     payload["turnaround_contract"] = _turnaround_sheet_contract(view, character_data)
-    payload["reference_requirements"] = payload["reference_requirements"] + requirements[view]
+    payload["reference_requirements"] = [
+        "match the casting reference using identity traits visible at the requested angle",
+        "stable hairstyle, body proportions and wardrobe",
+        "clean production character-sheet quality",
+    ] + requirements[view]
     return payload
 
 

@@ -11,7 +11,7 @@ from pathlib import Path
 import httpx
 
 from src.config import settings
-from src.services.generation_provider import _extract_workflow_image_metadata
+from src.services.generation_provider import ImageGenerationRequest, LocalComfyUIProvider, _extract_workflow_image_metadata
 from src.services.comfyui_service import ComfyUIService
 from src.services.image_quality_service import ImageQualitySelector
 from src.services.video_engine_preflight import (
@@ -28,10 +28,11 @@ from src.services.generation_quality_scorecard import (
     production_score_meets_candidate_threshold,
 )
 from src.services.shot_prompt_service import ShotPromptService
+from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.repair_queue import attach_repair_queue, build_repair_queue
 from src.services.repair_plan import build_repair_execution_plan
 from src.services.quality_loop import build_quality_loop_plan
-from src.tasks.image_tasks import _apply_image_repair_action, _quality_parameters, _repair_parameter_profile
+from src.tasks.image_tasks import _apply_image_repair_action, _generate_quality_candidates, _quality_parameters, _repair_parameter_profile
 from scripts.compare_video_baseline import compare as compare_video_baseline
 
 REQUIRED_SAMPLE_COVERAGE = {
@@ -41,6 +42,7 @@ REQUIRED_SAMPLE_COVERAGE = {
     "distinct_role_reverse_shot": "second-role or reverse-shot identity distinctiveness shot",
     "prop_story_evidence": "story-critical prop readability shot",
     "stylized_generated_source": "stylized or fully generated source-look shot",
+    "two_character_regional_identity": "two-character frame with independent regional identity references",
 }
 
 REQUIRED_MANUAL_CASE_DIMENSIONS = {
@@ -156,6 +158,7 @@ def render_images(
     optimization_mode: str = "quality",
     repair_action: str | None = None,
     scene_number: int | None = None,
+    production_search: bool = False,
 ):
     steps, cfg_scale = _quality_parameters(
         0,
@@ -175,17 +178,21 @@ def render_images(
             "base_steps": steps,
             "base_cfg": cfg_scale,
             "uses_reference": bool(reference),
-            "prompt_optimization": True,
-            "parameter_optimization": quality_mode in {"high_quality", "ultra"},
+            "prompt_optimization": bool(settings.GENERATION_ENABLE_PROMPT_OPTIMIZATION) if production_search else True,
+            "parameter_optimization": quality_mode in {"high_quality", "ultra"} and (bool(settings.GENERATION_ENABLE_PARAMETER_OPTIMIZATION) if production_search else True),
             "repair_action": repair_action,
             "repair_parameter_profile": _repair_parameter_profile(repair_action),
             "target_scene_number": scene_number,
+            "production_search": production_search,
         },
         "cases": [],
         "skipped_cases": [],
     }
-    service = ComfyUIService(base_url=base_url, timeout=900)
+    service = None
     try:
+        if production_search and quality_mode not in {"high_quality", "ultra"}:
+            raise ValueError("Production search validation requires high_quality or ultra mode")
+        service = ComfyUIService(base_url=base_url, timeout=900)
         for case in cases:
             if not str(case["id"]).replace("_", "").isalnum():
                 raise ValueError("Case ID must be alphanumeric")
@@ -206,29 +213,60 @@ def render_images(
             )
             path = output / (case["id"] + ".png")
             case_reference = case.get("reference_image") or case.get("reference") or reference
+            character_references = case.get("character_references") or case_scene.get("character_sheet_references") or []
+            visible = case_scene.get("visible_characters") or []
+            if len(visible) > 1 and len(character_references) != len(visible):
+                raise ValueError("Multi-character validation needs one independent character_references image per visible role")
+            if len(character_references) == 1 and not case_reference:
+                case_reference = character_references[0].get("path")
+            scene_payload = dict(case_scene)
+            scene_payload["character_sheet_references"] = character_references
             started = time.monotonic()
-            image = service.generate_image(
-                prompt=prompt, negative_prompt=negative_prompt,
-                output_path=str(path), seed=case["seed"], reference_image=case_reference,
-                use_ipadapter=bool(case_reference), width=settings.GENERATION_WIDTH,
-                height=settings.GENERATION_HEIGHT, steps=steps,
-                cfg_scale=cfg_scale,
-                quality_mode=quality_mode,
-                optimization_mode=optimization_mode,
-                enable_prompt_optimization=True,
-                enable_parameter_optimization=quality_mode in {"high_quality", "ultra"},
-            )
+            selection = None
+            if production_search:
+                style = VisualStyleAssetService()
+                scene_payload.setdefault("platform_aesthetic_contract", style.platform_aesthetic_contract())
+                scene_payload.setdefault("shot_aesthetic_profile", style.shot_aesthetic_profile(scene_payload, visible_count=len(visible)))
+                image, selection = _generate_quality_candidates(
+                    LocalComfyUIProvider(service),
+                    ImageGenerationRequest(
+                        prompt=compiled.prompt, negative_prompt=compiled.negative_prompt,
+                        output_path=str(path), seed=case["seed"], reference_image=case_reference,
+                        use_ipadapter=bool(case_reference or character_references),
+                        character_references=character_references or None,
+                        width=settings.GENERATION_WIDTH, height=settings.GENERATION_HEIGHT,
+                        steps=settings.GENERATION_STEPS, cfg_scale=settings.GENERATION_CFG,
+                        quality_mode=quality_mode, optimization_mode=optimization_mode,
+                    ),
+                    scene_payload, case_reference, repair_action,
+                )
+            else:
+                image = service.generate_image(
+                    prompt=prompt, negative_prompt=negative_prompt,
+                    output_path=str(path), seed=case["seed"], reference_image=case_reference,
+                    use_ipadapter=bool(case_reference or character_references), width=settings.GENERATION_WIDTH,
+                    height=settings.GENERATION_HEIGHT, steps=steps,
+                    cfg_scale=cfg_scale,
+                    quality_mode=quality_mode,
+                    optimization_mode=optimization_mode,
+                    enable_prompt_optimization=True,
+                    enable_parameter_optimization=quality_mode in {"high_quality", "ultra"},
+                    **({"character_references": character_references} if character_references else {}),
+                )
+            selected_request = ((selection.get("candidates") or [{}])[0].get("request") or {}) if selection else {}
             report["cases"].append({
                 "id": case["id"],
                 "image": image,
                 "seed": case["seed"],
                 "source_prompt": case["prompt"],
-                "prompt": prompt,
-                "negative_prompt": negative_prompt,
-                "scene": case.get("scene", {}),
+                "prompt": selected_request.get("prompt", prompt),
+                "negative_prompt": selected_request.get("negative_prompt", negative_prompt),
+                "scene": scene_payload,
                 "validation_categories": case.get("validation_categories", []),
                 "elapsed_seconds": round(time.monotonic() - started, 2),
                 "actual_workflow": _extract_workflow_image_metadata(image),
+                "selection_report": str(path.with_suffix(".quality.json")) if selection else None,
+                "search": selection.get("search") if selection else None,
                 "request": {
                     "width": settings.GENERATION_WIDTH,
                     "height": settings.GENERATION_HEIGHT,
@@ -237,7 +275,8 @@ def render_images(
                     "quality_mode": quality_mode,
                     "optimization_mode": optimization_mode,
                     "reference_image": case_reference,
-                    "use_ipadapter": bool(case_reference),
+                    "use_ipadapter": bool(case_reference or character_references),
+                    "character_references": character_references,
                     "enable_prompt_optimization": True,
                     "enable_parameter_optimization": quality_mode in {"high_quality", "ultra"},
                     "repair_action": repair_action,
@@ -251,7 +290,14 @@ def render_images(
     except Exception as exc:
         report["error"] = str(exc)
     finally:
-        service.client.close()
+        if service:
+            try:
+                free = getattr(service, "free_memory", None)
+                if callable(free):
+                    free()
+            except Exception as exc:
+                report["resource_release_error"] = str(exc)
+            service.client.close()
     write_report(output / "render.json", report)
     return report
 
@@ -270,6 +316,7 @@ def review_images(output: Path, reference=None):
             image = output / image
         scene = case.get("scene") if isinstance(case.get("scene"), dict) else {}
         payload = {
+            **scene,
             "scene_number": int(scene.get("scene_number") or index),
             "visual_description": scene.get("visual_description") or case.get("prompt") or case.get("id") or "",
             "visible_characters": scene.get("visible_characters", []),
@@ -297,6 +344,7 @@ def review_images(output: Path, reference=None):
         case_report["id"] = case.get("id")
         case_report["image"] = str(image)
         case_report["scene"] = {
+            **payload,
             "scene_number": payload["scene_number"],
             "visual_description": payload["visual_description"],
         }
@@ -769,12 +817,19 @@ def _render_workflow_parameters_passed(render_report: dict | None) -> bool:
 def _sample_case_categories(case: dict) -> set[str]:
     categories = case.get("validation_categories") if isinstance(case.get("validation_categories"), list) else []
     detected = {str(item) for item in categories if str(item).strip()}
+    detected.discard("two_character_regional_identity")
     case_id = str(case.get("id") or "").lower()
     prompt = str(case.get("prompt") or case.get("source_prompt") or "").lower()
     scene = case.get("scene") if isinstance(case.get("scene"), dict) else {}
     description = str(scene.get("visual_description") or "").lower()
     requirements = " ".join(str(item).lower() for item in scene.get("reference_requirements", []) or [])
     visible_characters = scene.get("visible_characters", []) if isinstance(scene.get("visible_characters"), list) else []
+    bindings = (case.get("actual_workflow") or {}).get("identity_bindings") or []
+    references = scene.get("character_sheet_references") or (case.get("request") or {}).get("character_references") or []
+    if len(visible_characters) >= 2 and len(references) == len(visible_characters) and len(bindings) == len(visible_characters) and all(
+        isinstance(binding, dict) and binding.get("regional_mask") for binding in bindings
+    ):
+        detected.add("two_character_regional_identity")
     text = " ".join([case_id, prompt, description, requirements])
 
     if case_id == "establishing" or "empty office" in text or "establishing" in text:
@@ -1039,7 +1094,7 @@ def summarize_validation(output: Path):
     checks["render_profile_passed"] = bool(
         render_profile
         and render_profile.get("quality_mode") in {"high_quality", "ultra"}
-        and render_profile.get("optimization_mode") in {"quality", "realism"}
+        and render_profile.get("optimization_mode") in {"quality", "realism", "artistic"}
         and render_profile.get("prompt_optimization") is True
         and render_profile.get("parameter_optimization") is True
     )
@@ -1959,6 +2014,7 @@ def main():
         "regenerate_keyframe_with_prop_constraints",
     ], help="Apply targeted image repair constraints during render-images")
     parser.add_argument("--scene-number", type=int, help="Render only one validation scene number")
+    parser.add_argument("--production-search", action="store_true", help="Use production candidate selection, refinement, postprocess and review for render-images")
     parser.add_argument("--max-actions", type=int, default=5, help="Maximum automatic repairs to select for quality-loop")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -1979,6 +2035,7 @@ def main():
             args.reference,
             quality_mode=args.quality_mode,
             optimization_mode=args.optimization_mode,
+            production_search=args.production_search,
             repair_action=args.repair_action,
             scene_number=args.scene_number,
         )

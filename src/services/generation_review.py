@@ -496,6 +496,29 @@ def _encoded_images(images) -> list[str]:
     return encoded
 
 
+def review_reference_images(scene: dict, primary: str | None = None) -> tuple[list[str], list[dict]]:
+    """Label every cast reference so the VLM can compare actual faces, not prose alone."""
+    paths: list[str] = []
+    metadata: list[dict] = []
+    known: dict[str, int] = {}
+    references = scene.get("character_sheet_references") or []
+    if not isinstance(references, list):
+        references = []
+    for item in ([{"path": primary, "name": "primary reference"}] if primary else []) + references:
+        if not isinstance(item, dict) or not item.get("path"):
+            continue
+        path = str(item["path"])
+        resolved = str(Path(path).resolve())
+        if resolved not in known:
+            known[resolved] = len(paths)
+            paths.append(path)
+        metadata.append({
+            "image_position": known[resolved], "name": item.get("name"), "view": item.get("view"),
+            "role": "character_reference",
+        })
+    return paths, metadata
+
+
 class LocalReviewer:
     """Legacy Ollama reviewer. Prefer LlamaCppReviewer for current local VLM review."""
 
@@ -679,7 +702,8 @@ class GenerationReviewService:
             report["batches"] = batches
             for start in range(0, len(frames), 3):
                 batch = frames[start:start + 3]
-                images = ([reference] if reference else []) + [frame["path"] for frame in batch]
+                reference_paths, reference_metadata = review_reference_images(scene, reference)
+                images = reference_paths + [frame["path"] for frame in batch]
                 review = self.reviewer.evaluate(
                     RUBRIC + "Review actual images for story match, composition, mobile short-drama aesthetic quality, "
                     "visible anatomy/rendering defects, facial identity, identity consistency between sampled frames and reference when provided, "
@@ -720,8 +744,10 @@ class GenerationReviewService:
                     "whether motion progresses plausibly without flicker, warping, sudden missing or extra "
                     "people, or unrelated camera jumps; and whether action continuity matches the scene. "
                     "Animation is valid; judge against requested style. Frame indices are in metadata. "
-                    "A reference image, when present, is first and must not count as a reviewed video frame.",
-                    {"scene": scene, "frames": batch, "has_reference": bool(reference)}, FrameReview, images,
+                    "Character references appear first with zero-based image_position labels in reference_images metadata; "
+                    "compare each named character against its own image. References must not count as reviewed video frames.",
+                    {"scene": scene, "frames": batch, "has_reference": bool(reference_paths),
+                     "reference_images": reference_metadata, "first_frame_image_position": len(reference_paths)}, FrameReview, images,
                 )
                 if sorted(review.reviewed_frames) != [frame["index"] for frame in batch]:
                     raise ReviewError("Frame review omitted or duplicated samples")

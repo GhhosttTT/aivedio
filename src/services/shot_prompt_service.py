@@ -36,7 +36,7 @@ class CompiledShot:
     negative_prompt: str
     source_hash: str
     word_count: int
-    version: int = 1
+    version: int = 2
 
     def to_dict(self):
         return asdict(self)
@@ -44,6 +44,7 @@ class CompiledShot:
 
 class ShotPromptService:
     MAX_WORDS = 75
+    MAX_ANCHOR_WORDS = 250
     NEGATIVE_PROMPT = "text, watermark, duplicate people, extra limbs, malformed hands, blurry"
     AI_QUALITY_TAGS = {
         "masterpiece",
@@ -150,24 +151,25 @@ class ShotPromptService:
 
     @staticmethod
     def source_hash(description: str, appearance: Optional[str]) -> str:
-        data = json.dumps([1, description.strip(), appearance or ""], ensure_ascii=False)
+        data = json.dumps([2, description.strip(), appearance or ""], ensure_ascii=False)
         return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
     @classmethod
-    def validate_prompt(cls, prompt: str) -> str:
+    def validate_prompt(cls, prompt: str, max_words: int | None = None) -> str:
         prompt = " ".join(prompt.strip().strip('"').split())
         if not prompt or not re.search(r"[a-zA-Z]", prompt):
             raise ShotPlanningError("Keyframe needs an English visual description")
         if re.search(r"[\u3400-\u9fff]", prompt):
             raise ShotPlanningError("Translate the visual description to English before SDXL generation")
-        if len(prompt.split()) > cls.MAX_WORDS:
-            raise ShotPlanningError(f"Keyframe exceeds {cls.MAX_WORDS} words; simplify without truncating")
+        word_limit = cls.MAX_WORDS if max_words is None else max_words
+        if len(prompt.split()) > word_limit:
+            raise ShotPlanningError(f"Keyframe exceeds {word_limit} words; simplify without truncating")
         if cls.SEQUENCE.search(prompt):
             raise ShotPlanningError("Split sequential actions or camera movement into separate keyframes")
         return prompt
 
     @classmethod
-    def validate_cached_prompt(cls, prompt: str) -> str:
+    def validate_cached_prompt(cls, prompt: str, identity_anchor: str | None = None) -> str:
         try:
             return cls.validate_prompt(prompt)
         except ShotPlanningError as exc:
@@ -191,7 +193,11 @@ class ShotPromptService:
             if profile_marker in base_prompt:
                 base_prompt = base_prompt.split(profile_marker, 1)[0].rstrip(" ,.")
             base_prompt = strip_allowed_suffixes(base_prompt)
-            cls.validate_prompt(base_prompt)
+            if identity_anchor and base_prompt.startswith(identity_anchor):
+                cls.validate_prompt(identity_anchor, max_words=cls.MAX_ANCHOR_WORDS)
+                cls.validate_prompt(base_prompt[len(identity_anchor):].lstrip(" ,."))
+            else:
+                cls.validate_prompt(base_prompt)
             return " ".join(prompt.strip().strip('"').split())
 
     @staticmethod
@@ -246,13 +252,14 @@ class ShotPromptService:
             if clean and clean not in parts:
                 parts.append(clean)
 
-        if not any("shot" in part or "cafe" in part or "phone" in part for part in parts):
-            parts.append("static short-drama keyframe in a modern urban cafe")
-
+        if not any(source in text for source, _target in cls._FALLBACK_PHRASES) and not english_chunks:
+            raise ShotPlanningError("No faithful English fallback; rerun the local scene compiler")
+        untranslated = text
+        for source, _target in sorted(cls._FALLBACK_PHRASES, key=lambda item: len(item[0]), reverse=True):
+            untranslated = untranslated.replace(source, "")
+        if re.search(r"[\u3400-\u9fff]", untranslated):
+            raise ShotPlanningError("Scene fallback would lose untranslated content; rerun the local scene compiler")
         prompt = ", ".join(parts)
-        words = prompt.split()
-        if len(words) > cls.MAX_WORDS:
-            prompt = " ".join(words[: cls.MAX_WORDS])
         return cls.validate_prompt(prompt)
 
     def compile(self, description: str, appearance: Optional[str] = None) -> CompiledShot:
@@ -271,14 +278,8 @@ class ShotPromptService:
                 from src.services.llm_service import get_llm_service
                 self.llm_service = get_llm_service()
             except Exception as e:
-                # LLM服务不可用,直接使用描述作为提示词(跳过字数限制)
-                logger.warning(f"LLM服务不可用,直接使用描述作为提示词: {e}")
-                prompt = description.strip()
-                # 基本验证:必须有英文,不能有中文
-                if not re.search(r"[a-zA-Z]", prompt):
-                    raise RuntimeError("提示词需要包含英文描述")
-                if re.search(r"[\u3400-\u9fff]", prompt):
-                    raise RuntimeError("提示词包含中文,请使用英文描述")
+                logger.warning("Local scene compiler unavailable: %s", e)
+                prompt = self.validate_prompt(", ".join(part for part in (appearance, description) if part))
                 prompt, negative = self._apply_production_style(prompt, self.NEGATIVE_PROMPT)
                 return CompiledShot(prompt, negative, source_hash, len(prompt.split()))
         instruction = """Compile a short-drama scene into ONE static image for local SDXL.
@@ -307,11 +308,13 @@ For an empty location use the location as subject and a static state as action.
                 frame = Keyframe.model_validate_json(response)
                 if frame.needs_split:
                     raise ShotPlanningError("Scene requires separate shots: " + frame.reason)
-                parts = [appearance] if appearance else []
-                parts.extend(getattr(frame, key) for key in (
+                parts = [getattr(frame, key) for key in (
                     "subject", "action", "setting", "framing", "lighting", "style"
-                ))
+                )]
                 prompt = self.validate_prompt(", ".join(part.strip(" ,.") for part in parts if part))
+                if appearance:
+                    anchor = self.validate_prompt(appearance, max_words=self.MAX_ANCHOR_WORDS)
+                    prompt = f"{anchor}, {prompt}"
                 prompt, negative = self._apply_production_style(prompt, self.NEGATIVE_PROMPT)
                 return CompiledShot(prompt, negative, source_hash, len(prompt.split()))
             except ShotPlanningError as exc:

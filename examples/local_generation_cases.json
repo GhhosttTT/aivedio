@@ -120,5 +120,27 @@
         "style should still look polished for mobile short drama"
       ]
     }
+  },
+  {
+    "id": "two_character_confrontation",
+    "validation_categories": ["two_character_regional_identity"],
+    "prompt": "Alice on frame left, young woman with an oval face and short black hair in a green jacket, confronts Victor on frame right, middle-aged man with an angular face and gray hair in a black coat, both faces visible, medium two-shot in an office doorway, warm practical lighting, cinematic drama still",
+    "seed": 31007,
+    "character_references": [],
+    "scene": {
+      "scene_number": 7,
+      "visual_description": "Alice on frame left confronts Victor on frame right, with both distinct faces clearly visible.",
+      "visible_characters": [
+        {"name": "Alice", "appearance": "young woman, oval face, short black hair, green jacket"},
+        {"name": "Victor", "appearance": "middle-aged man, angular face, gray hair, black coat"}
+      ],
+      "reference_requirements": [
+        "configure one frozen character_references image for Alice and one for Victor in left-to-right order",
+        "each role matches its own reference image",
+        "distinct facial geometry, hair and wardrobe",
+        "both faces are readable on a vertical phone screen",
+        "no merged anatomy or swapped roles"
+      ]
+    }
   }
 ]

@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import Mock
 
 from PIL import Image
 
@@ -187,7 +188,7 @@ def test_turnaround_album_generation_selects_each_required_view(tmp_path, monkey
     assert set(result["selected_views"]) == set(PRODUCTION_TURNAROUND_VIEWS)
     assert set(result["quality_reports"]) == set(PRODUCTION_TURNAROUND_VIEWS)
     assert all(Path(path).is_file() for path in result["selected_views"].values())
-    assert len(fake_comfy.calls) == 40
+    assert len(fake_comfy.calls) == 45
     prompts = [call["prompt"] for call in fake_comfy.calls]
     assert any("strict front turnaround view" in prompt for prompt in prompts)
     assert any("strict left 45 degree three-quarter view" in prompt for prompt in prompts)
@@ -195,8 +196,13 @@ def test_turnaround_album_generation_selects_each_required_view(tmp_path, monkey
     assert any("intense short-drama expression sheet" in prompt for prompt in prompts)
     assert any("90 degree side view" in prompt for prompt in prompts)
     assert any("strict rear turnaround view" in prompt for prompt in prompts)
-    assert all("same scale as other views" in prompt for prompt in prompts)
-    assert all("plain light gray background" in prompt for prompt in prompts)
+    view_calls = fake_comfy.calls[5:]
+    assert all(call["reference_image"] == result["identity_reference_image"] for call in view_calls)
+    assert all(call["use_ipadapter"] for call in view_calls)
+    assert all("plain light gray background" in call["prompt"] for call in view_calls)
+    expression_calls = [call for call in view_calls if Path(call["output_path"]).name.startswith("turnaround_expression_")]
+    assert expression_calls and all("full body head-to-toe visible" not in call["prompt"] for call in expression_calls)
+    assert all("same scale as other views" in call["prompt"] for call in view_calls if call not in expression_calls)
     assert Path(tmp_path / "林安" / "turnaround_front_quality.json").is_file()
     assert result["quality_reports"]["front"]["turnaround_gate"]["status"] == "passed"
     assert result["quality_reports"]["front"]["turnaround_contract"]["layout"].startswith("single character")
@@ -214,6 +220,8 @@ def test_turnaround_album_generation_blocks_failed_feature_gate(tmp_path, monkey
 
     def low_review(self, index, image_path, scene, prompt, reference_image=None):
         report = _passed_review(index, image_path, scene, prompt, reference_image)
+        if not scene.get("turnaround_view"):
+            return report
         feature = TURNAROUND_FEATURES[scene["turnaround_view"]][0]
         report["review"]["turnaround_feature_scores"][feature] = {
             "score": 2,
@@ -245,3 +253,43 @@ def test_turnaround_review_payload_carries_model_sheet_contract():
     assert payload["turnaround_contract"]["camera"] == "strict 90 degree side profile camera, no three-quarter rotation"
     assert payload["turnaround_contract"]["expected_features"]["nose_silhouette"] == "straight nose bridge"
     assert "strict side profile, not three-quarter" in payload["reference_requirements"]
+
+
+def test_frozen_identity_and_master_image_are_reused_for_every_view(tmp_path, monkeypatch):
+    portrait = tmp_path / "approved.png"
+    Image.new("RGB", (64, 64), "green").save(portrait)
+    description = FakeDescriptionGenerator()
+    description.generate_character_description = Mock(side_effect=AssertionError("do not redesign the approved actor"))
+    comfy = FakeComfyUI()
+    comfy.release_generation_resources = Mock()
+    generator = CharacterReferenceAutoGenerator(comfyui_service=comfy, generator=description)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
+    monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_IMAGE_MIN_SCORE", 0.0)
+    monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE", 0.0)
+    monkeypatch.setattr("src.services.character_reference_auto.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+    reviewed_references = []
+
+    def review(self, index, image_path, scene, prompt, reference_image=None):
+        reviewed_references.append(reference_image)
+        assert scene["identity"]["face_shape"] == "square face with a broad jaw"
+        return _passed_review(index, image_path, scene, prompt, reference_image)
+
+    monkeypatch.setattr("src.services.character_reference_auto.ImageQualitySelector.review_candidate", review)
+    spec = {"name": "Alice", "face_shape": "square face with a broad jaw", "wardrobe": "red jacket", "distinctive_mark": "mole beside left eye"}
+    result = generator.generate_turnaround_album(
+        "Alice", save_dir=str(tmp_path), identity_spec=spec, identity_reference_image=str(portrait),
+    )
+    assert result["success"] is True
+    assert result["character_data"]["outfit_details"] == "red jacket"
+    assert result["character_data"]["distinctive_features"] == "mole beside left eye"
+    assert len(comfy.calls) == 40
+    assert reviewed_references == [str(portrait)] * 40
+    assert all(call["reference_image"] == str(portrait) and call["use_ipadapter"] for call in comfy.calls)
+    assert comfy.release_generation_resources.call_count == 40
+    description.generate_character_description.assert_not_called()
+
+
+def test_rear_turnaround_does_not_require_a_front_facing_face():
+    payload = _turnaround_review_payload("Alice", FakeDescriptionGenerator().generate_character_description("Alice"), "back")
+    assert "front-facing readable face" not in payload["reference_requirements"]
+    assert "no face or accidental front-facing pose" in payload["reference_requirements"]

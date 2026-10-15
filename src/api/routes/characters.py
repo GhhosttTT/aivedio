@@ -271,11 +271,18 @@ async def generate_reference_image(
         ).first()
         if not character:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"角色不存在: {character_id}")
+        identity_spec = load_identity_spec(character.visual_description)
+        if not identity_spec:
+            raise HTTPException(status_code=409, detail="请先生成角色身份方案，再生成定妆参考图")
+        from src.utils.storage import storage_manager
+        save_dir = storage_manager.base_path / "characters" / str(project_id) / str(character_id) / "reference_generated"
         result = CharacterReferenceAutoGenerator().generate_multiple_references(
             character_name=character.name,
             role=character.description or "short-drama character",
             personality=character.personality or "",
             count=request.count,
+            identity_spec=identity_spec,
+            save_dir=str(save_dir),
         )
         if not result.get("success") or not result.get("reference_image_path"):
             raise HTTPException(status_code=500, detail=result.get("message", "自动定妆失败"))
@@ -322,14 +329,20 @@ async def generate_turnaround_album(
         ).first()
         if not character:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"角色不存在: {character_id}")
+        identity_spec = load_identity_spec(character.visual_description)
+        if not identity_spec:
+            raise HTTPException(status_code=409, detail="请先生成角色身份方案，再生成立体画册")
         from src.utils.storage import storage_manager
         save_dir = storage_manager.base_path / "characters" / str(project_id) / str(character_id) / "turnaround_generated"
+        references = get_character_manager().get_character_references(character_id, project_id)
         result = CharacterReferenceAutoGenerator().generate_turnaround_album(
             character_name=character.name,
             role=character.description or "short-drama character",
             personality=character.personality or "",
             count_per_view=request.count_per_view,
             save_dir=str(save_dir),
+            identity_spec=identity_spec,
+            identity_reference_image=references[0] if references else None,
         )
         if not result.get("success"):
             raise HTTPException(status_code=500, detail=result.get("message", "立体画册生成失败"))

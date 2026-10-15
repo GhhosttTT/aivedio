@@ -86,6 +86,19 @@ class VideoDirectorService:
         action_intensity = self._action_intensity(visual, prompt)
         duration = self._target_duration(dialogue, shot_role)
         fps = max(8, int(settings.GENERATION_VIDEO_MODEL_FPS))
+        audio_duration = getattr(scene, "audio_duration", None)
+        if dialogue.lower() not in NO_DIALOGUE_MARKERS and isinstance(audio_duration, (int, float)):
+            if not math.isfinite(audio_duration) or audio_duration < 0:
+                raise ValueError("Dialogue audio duration must be finite and nonnegative")
+            if audio_duration > 0:
+                required = audio_duration + 0.3
+                capacity = min(float(settings.GENERATION_VIDEO_MAX_SECONDS), int(settings.GENERATION_VIDEO_MAX_FRAMES) / fps)
+                if required > capacity:
+                    raise ValueError(
+                        f"Dialogue needs {required:.2f}s including reaction room but this shot supports {capacity:.2f}s; "
+                        "split the dialogue into atomic shots or configure a longer video workflow"
+                    )
+                duration = min(capacity, max(duration, required))
         num_frames = max(8, min(int(settings.GENERATION_VIDEO_MAX_FRAMES), math.ceil(duration * fps)))
         motion, noise = self._motion_params(shot_role, action_intensity)
         spatial_plan = self._spatial_plan(prompt or visual, shot_role, visible)
@@ -99,6 +112,8 @@ class VideoDirectorService:
         ]
         if project_id is not None:
             notes.append(f"project_id={project_id}")
+        if isinstance(audio_duration, (int, float)) and audio_duration > 0:
+            notes.append(f"timed to measured dialogue audio: {audio_duration:.3f}s")
         return VideoShotPlan(
             shot_role=shot_role,
             action_intensity=action_intensity,
@@ -143,7 +158,12 @@ class VideoDirectorService:
         ]
         minimum = target_duration or settings.GENERATION_VIDEO_TARGET_SECONDS
         if duration < minimum:
-            filters.append(f"tpad=stop_mode=clone:stop_duration={minimum - duration:.3f}")
+            shortage = minimum - duration
+            if shortage > max(0.0, settings.GENERATION_VIDEO_MAX_FREEZE_SECONDS):
+                raise ValueError(
+                    f"Generated clip is {shortage:.3f}s too short; regenerate a longer clip instead of freezing the last frame"
+                )
+            filters.append(f"tpad=stop_mode=clone:stop_duration={shortage:.3f}")
         filters.append("format=yuv420p")
         command = [
             "ffmpeg", "-y", "-v", "error", "-i", str(source),

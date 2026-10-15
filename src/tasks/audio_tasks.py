@@ -145,7 +145,7 @@ def generate_audio_task(
     db = next(get_db())
     try:
         scene = db.query(Scene).filter(Scene.id == scene_id).first()
-        if not scene:
+        if not scene or scene.project_id != project_id:
             raise ValueError(f"Scene not found: {scene_id}")
 
         if not has_spoken_dialogue(text):

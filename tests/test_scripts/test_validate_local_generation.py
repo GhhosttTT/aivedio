@@ -4,7 +4,7 @@ import sys
 from scripts import validate_local_generation as validator
 from src.services import video_engine_preflight
 
-PRODUCTION_CASE_IDS = ("establishing", "discovery", "prop", "reaction", "reverse_shot", "stylized")
+PRODUCTION_CASE_IDS = ("establishing", "discovery", "prop", "reaction", "reverse_shot", "stylized", "two_character_confrontation")
 
 CASE_CATEGORIES = {
     "establishing": ["establishing"],
@@ -13,6 +13,7 @@ CASE_CATEGORIES = {
     "reaction": ["single_character_identity", "reaction_closeup"],
     "reverse_shot": ["distinct_role_reverse_shot"],
     "stylized": ["single_character_identity", "stylized_generated_source"],
+    "two_character_confrontation": ["two_character_regional_identity"],
 }
 
 
@@ -33,9 +34,14 @@ def rendered_cases(*ids, render_profile=None):
             {
                 "id": item,
                 "image": f"{item}.png",
-                "scene": {"scene_number": index + 1, "visual_description": f"{item} validation scene"},
+                "scene": {"scene_number": index + 1, "visual_description": f"{item} validation scene", **({
+                    "visible_characters": [{"name": "Alice"}, {"name": "Victor"}],
+                    "character_sheet_references": [{"name": "Alice", "path": "alice.png"}, {"name": "Victor", "path": "victor.png"}],
+                } if item == "two_character_confrontation" else {})},
                 "validation_categories": CASE_CATEGORIES.get(item, []),
-                "actual_workflow": {"steps": 45, "cfg": 7.0, "sampler_name": "dpmpp_2m"},
+                "actual_workflow": {"steps": 45, "cfg": 7.0, "sampler_name": "dpmpp_2m", **({
+                    "identity_bindings": [{"regional_mask": True}, {"regional_mask": True}],
+                } if item == "two_character_confrontation" else {})},
             }
             for index, item in enumerate(ids)
         ],
@@ -180,8 +186,10 @@ def test_default_validation_cases_carry_scene_review_context():
     assert all(case["scene"]["visible_characters"] for case in character_cases)
     assert any(case["scene"]["visible_characters"][0]["name"] == "Victor" for case in character_cases)
     coverage = validator._sample_coverage({"cases": cases})
-    assert coverage["passed"] is True
-    assert coverage["missing"] == []
+    declared = set().union(*(set(case["validation_categories"]) for case in cases))
+    assert declared == set(validator.REQUIRED_SAMPLE_COVERAGE)
+    assert coverage["passed"] is False
+    assert coverage["missing"] == ["two_character_regional_identity"]
 
 
 def test_installed_review_models_reads_openai_models(monkeypatch):
@@ -721,7 +729,7 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     report = validator.summarize_validation(tmp_path)
 
     assert report["status"] == "ready_for_seed_dance_candidate"
-    assert report["checks"]["manual_average_score"] == 4.08
+    assert report["checks"]["manual_average_score"] == 4.07
     assert report["checks"]["baseline_comparison_passed"] is True
     assert report["checks"]["baseline_contact_sheet_present"] is True
     assert report["checks"]["video_identity_gate_passed"] is True

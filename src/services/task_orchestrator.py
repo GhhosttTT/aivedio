@@ -115,6 +115,7 @@ class TaskOrchestrator:
                     "Expand the script or split multi-action scenes before production."
                 )
         # Persist the real task ID before a worker can consume the first step.
+        self._reserve_project(project_id)
         task_model = TaskModel(
             project_id=project_id, celery_task_id=str(uuid4()),
             status=TaskStatus.PENDING, progress=0.0,
@@ -150,18 +151,17 @@ class TaskOrchestrator:
         scene_number: int,
         action: str,
     ) -> str:
+        return self.create_repair_batch_task(project_id, [{"scene_number": scene_number, "action": action}])
+
+    def create_repair_batch_task(self, project_id: int, items: list[dict]) -> str:
+        """Run one review after all selected repairs, with audio before dependent video."""
         project = self.db.query(Project).filter(Project.id == project_id).first()
         if not project:
             raise ValueError(f"项目不存在: {project_id}")
         if project.status == ProjectStatus.IN_PRODUCTION:
             raise ValueError("项目正在制作，请等待当前任务结束")
-        scene = self.db.query(Scene).filter(
-            Scene.project_id == project_id,
-            Scene.scene_number == scene_number,
-        ).first()
-        if not scene:
-            raise ValueError(f"分镜不存在: {scene_number}")
-
+        if not items:
+            raise ValueError("返工动作不能为空")
         image_actions = {
             "regenerate_keyframe_with_identity_lock",
             "regenerate_keyframe_with_role_separation",
@@ -187,13 +187,35 @@ class TaskOrchestrator:
             "start_local_reviewer": "请先启动 llama.cpp 视觉审核服务，再重跑审核或生成。",
             "manual_review": "该问题需要人工复核后再选择具体返工动作。",
         }
-        if action in blocked_actions:
-            raise ValueError(blocked_actions[action])
-        if action not in image_actions | video_actions | audio_actions:
-            raise ValueError(f"不支持的返工动作: {action}")
-        if action in video_actions and not scene.image_path:
-            raise ValueError("视频返工需要先有已通过的关键帧，请先重做关键帧。")
-        if action not in audio_actions:
+        entries = []
+        scene_stages = set()
+        for item in items:
+            scene_number, action = item.get("scene_number"), item.get("action")
+            if isinstance(scene_number, bool) or not isinstance(scene_number, int) or scene_number <= 0:
+                raise ValueError("返工分镜编号必须为正整数")
+            if action in blocked_actions:
+                raise ValueError(blocked_actions[action])
+            if action not in image_actions | video_actions | audio_actions:
+                raise ValueError(f"不支持的返工动作: {action}")
+            scene = self.db.query(Scene).filter(
+                Scene.project_id == project_id, Scene.scene_number == scene_number,
+            ).first()
+            if not scene:
+                raise ValueError(f"分镜不存在: {scene_number}")
+            stage = "audio" if action in audio_actions else "visual"
+            if (scene_number, stage) in scene_stages:
+                raise ValueError("同一分镜每轮仅支持一个画面返工和一个音频返工")
+            scene_stages.add((scene_number, stage))
+            if action in video_actions and not scene.image_path:
+                raise ValueError("视频返工需要先有已通过的关键帧，请先重做关键帧。")
+            if action in audio_actions and not scene.dialogue:
+                raise ValueError("音频返工需要分镜有对白。")
+            entries.append((scene, action))
+        has_visual = any(action not in audio_actions for _scene, action in entries)
+        review_after_repair = has_visual or bool(entries and all(
+            scene.video_path for scene in self.db.query(Scene).filter(Scene.project_id == project_id).all()
+        ))
+        if has_visual:
             profile_report = ProductionWorkflowProfileService().validate_profile()
             if profile_report.get("status") != "valid":
                 details = []
@@ -208,69 +230,49 @@ class TaskOrchestrator:
                     + (": " + "; ".join(details) if details else "")
                 )
 
+        total_steps = sum(2 if action in image_actions | audio_actions else 1 for _scene, action in entries)
         task_model = TaskModel(
             project_id=project_id,
             celery_task_id=str(uuid4()),
             status=TaskStatus.PENDING,
             progress=0.0,
-            total_steps=self._repair_total_steps(action, image_actions, video_actions, audio_actions),
+            total_steps=total_steps + int(review_after_repair),
             current_step=0,
         )
+        previous_status, previous_final = project.status, project.final_video_path
+        self._reserve_project(project_id)
         self.db.add(task_model)
         self.db.flush()
 
         project.final_video_path = None
-        if action in image_actions:
-            scene.image_path = None
-            scene.video_path = None
-            task = chain(
-                generate_image_task.si(
-                    scene.id,
-                    scene.image_prompt or scene.visual_description,
-                    project_id,
-                    task_model.id,
-                    repair_action=action,
-                ),
-                generate_video_task.si(
-                    scene.id,
-                    project_id,
-                    task_model.id,
-                ),
-                review_generation_task.si(project_id, task_model.id),
-            )
-        elif action in video_actions:
-            scene.video_path = None
-            task = chain(
-                generate_video_task.si(
-                    scene.id,
-                    project_id,
-                    task_model.id,
-                    repair_action=action,
-                ),
-                review_generation_task.si(project_id, task_model.id),
-            )
-        else:
-            if not scene.dialogue:
-                raise ValueError("音频返工需要分镜有对白。")
-            scene.audio_path = None
-            scene.audio_duration = None
-            scene.subtitle_path = None
-            task = chain(
-                generate_audio_task.si(
-                    scene.id,
-                    scene.dialogue,
-                    scene.character_name or "default",
-                    project_id,
-                    task_model.id,
-                    repair_action=action,
-                ),
-                generate_subtitle_task.si(
-                    scene.id,
-                    project_id,
-                    task_model.id,
-                ),
-            )
-
+        previous_assets = {
+            scene.id: (scene, {key: getattr(scene, key) for key in (
+                "image_path", "video_path", "audio_path", "audio_duration", "subtitle_path",
+            )}) for scene, _action in entries
+        }
+        steps = []
+        for scene, action in sorted(entries, key=lambda entry: entry[1] not in audio_actions):
+            if action in audio_actions:
+                scene.audio_path = None
+                scene.audio_duration = None
+                scene.subtitle_path = None
+                steps.extend([
+                    generate_audio_task.si(scene.id, scene.dialogue, scene.character_name or "default", project_id, task_model.id, repair_action=action),
+                    generate_subtitle_task.si(scene.id, project_id, task_model.id),
+                ])
+            elif action in image_actions:
+                scene.image_path = None
+                scene.video_path = None
+                steps.extend([
+                    generate_image_task.si(scene.id, scene.image_prompt or scene.visual_description, project_id, task_model.id, repair_action=action),
+                    generate_video_task.si(scene.id, project_id, task_model.id),
+                ])
+            else:
+                scene.video_path = None
+                steps.append(generate_video_task.si(scene.id, project_id, task_model.id, repair_action=action))
+        if review_after_repair:
+            steps.append(review_generation_task.si(project_id, task_model.id))
+        task = chain(*steps)
         result = task.freeze()
         task_model.celery_task_id = result.id
         self.db.commit()
@@ -279,9 +281,20 @@ class TaskOrchestrator:
         except Exception as exc:
             task_model.status = TaskStatus.FAILED
             task_model.error_message = f"返工任务投递失败: {exc}"
+            project.status, project.final_video_path = previous_status, previous_final
+            for scene, values in previous_assets.values():
+                for key, value in values.items():
+                    setattr(scene, key, value)
             self.db.commit()
             raise
         return result.id
+
+    def _reserve_project(self, project_id: int) -> None:
+        reserved = self.db.query(Project).filter(
+            Project.id == project_id, Project.status != ProjectStatus.IN_PRODUCTION,
+        ).update({Project.status: ProjectStatus.IN_PRODUCTION}, synchronize_session="fetch")
+        if reserved == 0:
+            raise ValueError("项目正在制作，请等待当前任务结束")
 
     @staticmethod
     def _repair_total_steps(
@@ -348,10 +361,10 @@ class TaskOrchestrator:
         
         任务链结构：
         1. 并行生成所有分镜的图像
-        2. 并行生成所有分镜的视频（依赖图像）
-        3. 并行生成所有分镜的音频
+        2. 并行生成所有分镜的音频，确定实测对白时长
+        3. 串行生成所有分镜的视频（依赖图像与对白时长）
         4. 并行生成所有分镜的字幕（依赖音频）
-        5. 合成最终视频
+        5. 整批采样复审，然后合成最终视频
         
         Args:
             project_id: 项目ID
@@ -382,19 +395,7 @@ class TaskOrchestrator:
             ])
             tasks.append(image_tasks)
         
-        # 2. 视频生成任务（并行，依赖图像）
-        if generate_videos:
-            video_tasks = chain(*[
-                generate_video_task.si(
-                    scene.id,
-                    project_id,
-                    task_id
-                )
-                for scene in scenes
-            ])
-            tasks.append(video_tasks)
-        
-        # 3. 音频生成任务（并行）
+        # Measure speech before planning video duration.
         if generate_audios:
             audio_tasks = group([
                 generate_audio_task.si(
@@ -407,6 +408,18 @@ class TaskOrchestrator:
                 for scene in scenes
             ])
             tasks.append(audio_tasks)
+
+        # GPU video generation remains serialized after keyframes and dialogue audio.
+        if generate_videos:
+            video_tasks = chain(*[
+                generate_video_task.si(
+                    scene.id,
+                    project_id,
+                    task_id
+                )
+                for scene in scenes
+            ])
+            tasks.append(video_tasks)
         
         # 4. 字幕生成任务（并行，依赖音频）
         if generate_subtitles:

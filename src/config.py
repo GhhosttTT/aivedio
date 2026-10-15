@@ -36,7 +36,9 @@ class Settings(BaseSettings):
     COMFYUI_BASE_URL: str = "http://127.0.0.1:8188"
     COMFYUI_WORKFLOW_PATH: str = "./configs/comfyui_workflow_juggernaut.json"
     COMFYUI_REFERENCE_WORKFLOW_PATH: str = "./configs/comfyui_workflow_ipadapter_sdxl.json"
+    COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH: str = ""
     COMFYUI_VIDEO_WORKFLOW_PATH: str = ""
+    COMFYUI_VIDEO_OUTPUT_NODE: str = ""
     COMFYUI_PRODUCTION_PROFILE_PATH: str = "./configs/production_workflow_profile.json"
     COMFYUI_TIMEOUT: int = 900
     GENERATION_WIDTH: int = 768
@@ -48,6 +50,7 @@ class Settings(BaseSettings):
     GENERATION_IMAGE_CANDIDATES: int = 5
     GENERATION_IMAGE_REFINEMENT_PASSES: int = 2
     GENERATION_MAX_IMAGE_CANDIDATES: int = 12
+    GENERATION_MIN_QUALITY_PASSES: int = 2
     GENERATION_REPAIR_IMAGE_CANDIDATE_MULTIPLIER: float = 1.5
     GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES: int = 1
     GENERATION_IMAGE_MIN_SCORE: float = 4.0
@@ -114,6 +117,7 @@ class Settings(BaseSettings):
     GENERATION_VIDEO_MAX_SECONDS: float = 6.0
     GENERATION_VIDEO_MODEL_FPS: int = 8
     GENERATION_VIDEO_MAX_FRAMES: int = 40
+    GENERATION_VIDEO_MAX_FREEZE_SECONDS: float = 0.2
     GENERATION_VIDEO_OUTPUT_FPS: int = 24
     GENERATION_VIDEO_POSTPROCESS: bool = True
     GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK: bool = False

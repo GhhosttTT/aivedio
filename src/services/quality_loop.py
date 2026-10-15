@@ -8,7 +8,7 @@ from src.services.generation_quality_scorecard import (
     MIN_COMMERCIAL_PRODUCTION_SCORE,
     production_score_meets_candidate_threshold,
 )
-from src.services.repair_queue import repair_execution_mode
+from src.services.repair_queue import ACTION_RULES, repair_execution_mode
 
 
 SCORECARD_ACTION_STAGES = {
@@ -35,9 +35,35 @@ SCORECARD_ACTION_STAGES = {
 }
 
 
+def _build_action_repair_priority() -> dict[str, int]:
+    """Rank repair actions by the order ``ACTION_RULES`` declares them in.
+
+    Earlier rules describe more fundamental repairs (identity, role separation,
+    turnaround) while later ones describe refinements (composition, aesthetics).
+    When two actions target the same scene and stage only one of them can run in
+    an iteration, so the earlier rule must win. Reusing the queue builder's own
+    ordering keeps both modules on one priority notion instead of falling back
+    to an arbitrary alphabetical tie-break.
+    """
+
+    priority: dict[str, int] = {}
+    for index, (_keywords, action, _recommendation, _stage) in enumerate(ACTION_RULES):
+        priority.setdefault(action, index)
+    return priority
+
+
+ACTION_REPAIR_PRIORITY = _build_action_repair_priority()
+
+
+def _action_repair_rank(action: Any) -> int:
+    return ACTION_REPAIR_PRIORITY.get(str(action or ""), len(ACTION_RULES))
+
+
 def scene_number_from_repair_item(item: dict[str, Any]) -> int | None:
     value = item.get("scene_number")
-    if value is None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, float) and not value.is_integer():
         return None
     try:
         scene_number = int(value)
@@ -49,32 +75,43 @@ def scene_number_from_repair_item(item: dict[str, Any]) -> int | None:
 def auto_repair_candidates(repair_queue: dict[str, Any], max_actions: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Select executable repair actions for one quality loop iteration.
 
-    One scene is repaired at most once per iteration. Image/keyframe repairs are
+    Visual repairs are dependency-aware per scene. Image/keyframe repairs are
     selected before video repairs because accepted video depends on the keyframe.
+    Audio and keyframe repairs can share an iteration; the orchestrator runs
+    audio before dependent video and reviews only after the whole batch finishes.
+    When several actions target the same scene and stage, the more fundamental
+    repair wins.
     """
     priority_rank = {"high": 0, "medium": 1, "low": 2}
     stage_rank = {"image": 0, "keyframe": 0, "audio": 1, "video": 2}
     items = [
         dict(item)
-        for item in repair_queue.get("items", [])
+        for item in repair_queue.get("items", []) or []
         if isinstance(item, dict) and item.get("execution") == "auto"
     ]
+    for item in items:
+        item["stage"] = SCORECARD_ACTION_STAGES.get(str(item.get("action") or ""), item.get("stage"))
     items.sort(
         key=lambda item: (
             priority_rank.get(item.get("priority"), 9),
             stage_rank.get(item.get("stage"), 5),
+            _action_repair_rank(item.get("action")),
             item.get("source_report") or "",
-            item.get("action") or "",
         )
     )
 
     selected: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
-    seen_scenes = set()
+    selected_scene_stages: dict[int, set[str]] = {}
+    pending_keyframes = {
+        scene_number_from_repair_item(item) for item in items
+        if _stage_group(item.get("stage")) == "keyframe"
+    }
     seen_actions = set()
     for item in items:
         scene_number = scene_number_from_repair_item(item)
         action = item.get("action")
+        stage_group = _stage_group(item.get("stage"))
         item["scene_number"] = scene_number
         if scene_number is None:
             skipped.append({**item, "reason": "missing_scene_number"})
@@ -82,20 +119,41 @@ def auto_repair_candidates(repair_queue: dict[str, Any], max_actions: int) -> tu
         if not action:
             skipped.append({**item, "reason": "missing_action"})
             continue
-        if scene_number in seen_scenes:
-            skipped.append({**item, "reason": "scene_already_selected"})
-            continue
         key = (scene_number, action)
         if key in seen_actions:
             skipped.append({**item, "reason": "duplicate_action"})
+            continue
+        selected_stages = selected_scene_stages.setdefault(scene_number, set())
+        if stage_group in selected_stages:
+            skipped.append({**item, "reason": "stage_already_selected"})
+            continue
+        if stage_group == "video" and scene_number in pending_keyframes and "keyframe" not in selected_stages:
+            skipped.append({**item, "reason": "keyframe_repair_required"})
+            continue
+        if stage_group == "video" and "keyframe" in selected_stages:
+            skipped.append({**item, "reason": "scene_already_selected"})
+            continue
+        if stage_group == "keyframe" and "video" in selected_stages:
+            skipped.append({**item, "reason": "scene_already_selected"})
             continue
         if len(selected) >= max_actions:
             skipped.append({**item, "reason": "max_actions_reached"})
             continue
         selected.append(item)
-        seen_scenes.add(scene_number)
+        selected_stages.add(stage_group)
         seen_actions.add(key)
     return selected, skipped
+
+
+def _stage_group(stage: Any) -> str:
+    value = str(stage or "").lower().strip()
+    if value in {"image", "keyframe"}:
+        return "keyframe"
+    if value == "audio":
+        return "audio"
+    if value == "video":
+        return "video"
+    return value or "other"
 
 
 def normalize_repair_queue(repair_queue: Any) -> dict[str, list[dict[str, Any]]]:

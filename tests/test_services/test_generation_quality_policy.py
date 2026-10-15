@@ -166,7 +166,7 @@ def test_video_quality_pipeline_uses_dialogue_performance_contract():
     assert "dialogue_reaction_pass" in pipeline.stages
     assert "face_temporal_lock" in pipeline.stages
     assert "performance_direction" in pipeline.required_capabilities
-    assert "dialogue reaction timing" in pipeline.prompt_directive
+    assert "timely dialogue reaction" in pipeline.prompt_directive
     assert "face morphing" in pipeline.negative_directive
 
 
@@ -183,7 +183,7 @@ def test_video_quality_pipeline_adds_commercial_aesthetic_repair():
     assert "scroll_stop_review" in pipeline.stages
     assert "aesthetic_polish" in pipeline.required_capabilities
     assert "platform_reference_review" in pipeline.required_capabilities
-    assert "Seed Dance platform-reference gap" in pipeline.prompt_directive
+    assert "commercial short-drama lighting" in pipeline.prompt_directive
     assert "scroll-stopping first second" in pipeline.prompt_directive
     assert "AI generated gloss in motion" in pipeline.negative_directive
     assert "generic casting" in pipeline.negative_directive
@@ -254,7 +254,8 @@ def test_prop_interaction_pipeline_requires_hand_prop_and_face_quality():
     assert "face_detail" in pipeline.stages
     assert "upscale" in pipeline.stages
     assert "pose_control" in pipeline.required_capabilities
-    assert "final VLM review" in pipeline.prompt_directive
+    assert "readable fingers" in pipeline.prompt_directive
+    assert "VLM" not in pipeline.prompt_directive
     assert "disappearing prop" in pipeline.negative_directive
     assert "twisted wrist" in pipeline.negative_directive
 

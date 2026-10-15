@@ -315,7 +315,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
         setError('');
         try {
             const result = await projectApi.runAutoRepairQueue(projectId, {max_actions: 5});
-            setError(`已提交 ${result.submitted.length} 个自动返工任务，跳过 ${result.skipped.length} 个。`);
+            setError(`已提交 ${result.submitted.length} 个自动返工动作，跳过 ${result.skipped.length} 个。`);
             await load();
         } catch (e) {
             setError(errorText(e));

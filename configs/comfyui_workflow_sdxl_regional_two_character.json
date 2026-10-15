@@ -1,0 +1,74 @@
+{
+  "workflow": {
+    "name": "SDXL two-character regional identity and detail pass",
+    "version": "1.0.0",
+    "description": "Two independent FaceID references with disjoint left/right attention masks. Validate the cast and framing with real samples."
+  },
+  "nodes": {
+    "checkpoint": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {"ckpt_name": "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors"}
+    },
+    "ipadapter_loader": {
+      "class_type": "IPAdapterUnifiedLoaderFaceID",
+      "inputs": {"model": ["checkpoint", 0], "preset": "FACEID PLUS V2", "lora_strength": 0.6, "provider": "CPU"}
+    },
+    "left_reference": {"class_type": "LoadImage", "inputs": {"image": ""}},
+    "right_reference": {"class_type": "LoadImage", "inputs": {"image": ""}},
+    "left_region": {"class_type": "LoadImage", "inputs": {"image": ""}},
+    "right_region": {"class_type": "LoadImage", "inputs": {"image": ""}},
+    "left_mask": {"class_type": "ImageToMask", "inputs": {"image": ["left_region", 0], "channel": "red"}},
+    "right_mask": {"class_type": "ImageToMask", "inputs": {"image": ["right_region", 0], "channel": "red"}},
+    "left_identity": {
+      "class_type": "IPAdapterFaceID",
+      "inputs": {
+        "model": ["ipadapter_loader", 0], "ipadapter": ["ipadapter_loader", 1],
+        "image": ["left_reference", 0], "attn_mask": ["left_mask", 0],
+        "weight": 0.75, "weight_faceidv2": 1.0, "weight_type": "linear",
+        "combine_embeds": "concat", "start_at": 0.0, "end_at": 1.0, "embeds_scaling": "V only"
+      }
+    },
+    "right_identity": {
+      "class_type": "IPAdapterFaceID",
+      "inputs": {
+        "model": ["left_identity", 0], "ipadapter": ["ipadapter_loader", 1],
+        "image": ["right_reference", 0], "attn_mask": ["right_mask", 0],
+        "weight": 0.75, "weight_faceidv2": 1.0, "weight_type": "linear",
+        "combine_embeds": "concat", "start_at": 0.0, "end_at": 1.0, "embeds_scaling": "V only"
+      }
+    },
+    "positive": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["checkpoint", 1]}},
+    "negative": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["checkpoint", 1]}},
+    "latent": {"class_type": "EmptyLatentImage", "inputs": {"width": 768, "height": 1344, "batch_size": 1}},
+    "composition_sampler": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": 0, "steps": 40, "cfg": 5.2, "sampler_name": "dpmpp_2m_sde", "scheduler": "karras", "denoise": 1.0,
+        "model": ["right_identity", 0], "positive": ["positive", 0], "negative": ["negative", 0], "latent_image": ["latent", 0]
+      }
+    },
+    "latent_upscale": {
+      "class_type": "LatentUpscaleBy",
+      "inputs": {"samples": ["composition_sampler", 0], "upscale_method": "bislerp", "scale_by": 1.5}
+    },
+    "detail_sampler": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": 1, "steps": 20, "cfg": 4.8, "sampler_name": "dpmpp_2m_sde", "scheduler": "karras", "denoise": 0.24,
+        "model": ["right_identity", 0], "positive": ["positive", 0], "negative": ["negative", 0], "latent_image": ["latent_upscale", 0]
+      }
+    },
+    "decode_final": {"class_type": "VAEDecode", "inputs": {"samples": ["detail_sampler", 0], "vae": ["checkpoint", 2]}},
+    "save_final": {"class_type": "SaveImage", "inputs": {"images": ["decode_final", 0], "filename_prefix": "short_drama_two_character"}}
+  },
+  "parameters": {
+    "default": {
+      "width": 768, "height": 1344, "steps": 40, "cfg_scale": 5.2, "output_node": "save_final",
+      "reference_slots": [
+        {"adapter": "left_identity", "image": "left_reference", "mask": "left_region", "region": [0.0, 0.0, 0.5, 1.0]},
+        {"adapter": "right_identity", "image": "right_reference", "mask": "right_region", "region": [0.5, 0.0, 1.0, 1.0]}
+      ]
+    }
+  },
+  "negative_prompt": {"default": "same-face casting, swapped faces, merged people, copied wardrobe, extra people, malformed hands, plastic skin, text, watermark"}
+}

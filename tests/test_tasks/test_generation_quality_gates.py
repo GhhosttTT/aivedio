@@ -337,7 +337,7 @@ def test_video_director_normalize_clip_uses_production_frame_contract(tmp_path, 
     commands = []
 
     monkeypatch.setattr("src.services.video_director_service.shutil.which", lambda _name: "ffmpeg")
-    monkeypatch.setattr(director, "_probe_duration", lambda _path: 2.0)
+    monkeypatch.setattr(director, "_probe_duration", lambda _path: 3.5)
 
     def fake_run(command, **_kwargs):
         commands.append(command)
@@ -355,7 +355,7 @@ def test_video_director_normalize_clip_uses_production_frame_contract(tmp_path, 
     assert "pad=768:1344:(ow-iw)/2:(oh-ih)/2" in vf
     assert "setsar=1" in vf
     assert "fps=24" in vf
-    assert "tpad=stop_mode=clone:stop_duration=1.600" in vf
+    assert "tpad=stop_mode=clone:stop_duration=0.100" in vf
     assert "format=yuv420p" in vf
     assert command[command.index("-c:v") + 1] == "libx264"
     assert command[command.index("-preset") + 1] == "slow"
@@ -967,7 +967,7 @@ def test_image_repair_action_is_recorded_in_candidate_request(tmp_path, monkeypa
     assert "hand_prop_integrity" in candidate_request["quality_pipeline"]["stages"]
     assert "composition_vlm_review" in candidate_request["quality_pipeline"]["stages"]
     assert "important prop visible" in provider.requests[0].prompt
-    assert "hand-prop integrity pass" in provider.requests[0].prompt
+    assert "firm hand-object contact" in provider.requests[0].prompt
     assert "disappearing prop" in provider.requests[0].negative_prompt
     assert report["candidates"][0]["scene"]["scene_number"] == 1
     assert report["candidates"][0]["scene"]["repair_action"] == "refine_prompt_composition"
@@ -2321,7 +2321,7 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
     assert result == str(output)
     assert provider.request.prompt.startswith("directed emotional reaction")
     assert "End frame target: end frame emotional reaction" in provider.request.prompt
-    assert "short-drama micro-expression pass" in provider.request.prompt
+    assert "subtle facial micro-expressions" in provider.request.prompt
     assert "identity drift" in provider.request.negative_prompt
     assert "flat acting" in provider.request.negative_prompt
     assert "random color grade" in provider.request.negative_prompt
@@ -2477,11 +2477,15 @@ def test_quality_refinement_uses_previous_review_feedback(tmp_path, monkeypatch)
         seed=123,
     )
 
-    _generate_quality_candidates(FakeProvider(), request, {"scene_number": 1}, None)
+    provider = FakeProvider()
+    _, report = _generate_quality_candidates(provider, request, {"scene_number": 1}, None)
 
     assert "balanced lighting" in review_calls[0][1]
-    assert "bad crop on the main actor" in review_calls[1][1]
-    assert "face is cropped" in review_calls[1][1]
+    assert "bad crop on the main actor" not in review_calls[1][1]
+    assert "face is cropped" not in review_calls[1][1]
+    assert "complete head inside frame" in review_calls[1][1]
+    assert "bad crop" in provider.requests[1].negative_prompt
+    assert any("face is cropped" in item["request"]["feedback"] for item in report["candidates"])
 
 
 def test_image_candidate_report_records_reference_contract(tmp_path, monkeypatch):
@@ -2500,13 +2504,17 @@ def test_image_candidate_report_records_reference_contract(tmp_path, monkeypatch
             return GenerationResult("local_comfyui", request.output_path, "image", {"workflow": {"steps": request.steps}})
 
     def fake_review(self, index, image_path, scene, prompt, reference_image=None):
+        from src.services.turnaround_quality import TURNAROUND_FEATURES
         scene["review_prompt"] = prompt
         return {
             "index": index,
             "path": image_path,
             "status": "passed",
             "average": 4.6,
-            "review": {},
+            "review": {"turnaround_feature_scores": {
+                feature: {"score": 5, "evidence": "strict side profile matches the frozen reference features"}
+                for feature in TURNAROUND_FEATURES["side"]
+            }},
             "metrics": {"technical_score": 4.6},
         }
 

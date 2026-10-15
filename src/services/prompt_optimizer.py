@@ -7,6 +7,7 @@
 from typing import Optional, List, Dict, Any
 from enum import Enum
 from dataclasses import dataclass
+import re
 
 from src.utils.logger import logger
 
@@ -32,6 +33,10 @@ class OptimizedPrompt:
 
 class PromptOptimizer:
     """提示词优化引擎"""
+
+    STYLIZED_STYLE = re.compile(
+        r"\b(?:anime|animation|cartoon|watercolor|illustration|cel.shaded|comic)\b", re.I,
+    )
     
     # 生产质量标签：避免空泛榜单词，改为可被审核的短剧画面要求。
     QUALITY_TAGS = [
@@ -179,6 +184,8 @@ class PromptOptimizer:
         
         # 清理原始提示词
         cleaned_prompt = self._clean_prompt(prompt)
+        if mode in {OptimizationMode.BALANCED, OptimizationMode.QUALITY} and self.STYLIZED_STYLE.search(cleaned_prompt):
+            mode = OptimizationMode.ARTISTIC
         
         # 收集要添加的关键词
         added_keywords = []
@@ -371,6 +378,8 @@ class PromptOptimizer:
         current_word_count = 0
         
         for keyword in keywords:
+            if keyword.lower() in base_prompt.lower() or keyword in selected_keywords:
+                continue
             keyword_word_count = len(keyword.split())
             if current_word_count + keyword_word_count <= available_words:
                 selected_keywords.append(keyword)
@@ -380,8 +389,8 @@ class PromptOptimizer:
         
         # 构建最终提示词
         if selected_keywords:
-            # 将关键词添加到基础提示词前面
-            prompt_parts = selected_keywords + [base_prompt]
+            # Subject, identity, and blocking retain the strongest leading positions.
+            prompt_parts = [base_prompt] + selected_keywords
             final_prompt = ", ".join(prompt_parts)
         else:
             final_prompt = base_prompt
@@ -480,9 +489,9 @@ class PromptOptimizer:
         # 根据场景类型添加特定关键词
         custom_keywords = []
         if scene_type == "portrait":
-            custom_keywords = ["portrait photography", "face focus", "detailed face"]
+            custom_keywords = ["character portrait", "face focus", "detailed face"] if self.STYLIZED_STYLE.search(prompt) else ["portrait photography", "face focus", "detailed face"]
         elif scene_type == "landscape":
-            custom_keywords = ["landscape photography", "wide angle", "scenic view"]
+            custom_keywords = ["wide environmental composition", "scenic view"] if self.STYLIZED_STYLE.search(prompt) else ["landscape photography", "wide angle", "scenic view"]
         elif scene_type == "action":
             custom_keywords = ["action shot", "dynamic pose", "motion blur"]
         

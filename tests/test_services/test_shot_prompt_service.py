@@ -87,6 +87,18 @@ def test_invalid_second_response_uses_deterministic_english_fallback():
     assert llm.generate.call_count == 2
 
 
+def test_unknown_scene_cannot_be_replaced_with_an_unrelated_cafe():
+    llm = Mock()
+    llm.generate.return_value = "not JSON"
+    with pytest.raises(ShotPlanningError, match="Could not compile"):
+        ShotPromptService(llm).compile("战场上两名将军对峙，全景")
+
+
+def test_fallback_keeps_the_complete_identity_or_fails_without_truncation():
+    with pytest.raises(ShotPlanningError, match="exceeds"):
+        ShotPromptService._deterministic_prompt("咖啡店靠窗桌，全景", "identity " * 76)
+
+
 def test_prompt_hash_changes_on_identity_or_scene_edit():
     service = ShotPromptService()
     assert service.source_hash("letter", "red jacket") != service.source_hash("letter", "blue jacket")

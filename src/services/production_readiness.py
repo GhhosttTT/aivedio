@@ -85,6 +85,7 @@ class ProductionReadinessService:
             "spatial_continuity": self._spatial_continuity_check(project, scenes, characters, blockers, warnings),
             "visual_style": self._visual_style_check(project, scenes, blockers),
             "workflow_profile": self._workflow_profile_check(blockers),
+            "regional_identity": self._regional_identity_check(project, scenes, blockers),
             "reviewer": self._reviewer_check(blockers, probe_live=include_engine_preflight),
             "project_generation_quality": self._project_generation_quality_check(project, warnings),
             "sample_validation": self._sample_validation_check(warnings),
@@ -102,6 +103,31 @@ class ProductionReadinessService:
             "checks": checks,
             "action_items": action_items,
         }
+
+    def _regional_identity_check(self, project, scenes, blockers) -> dict:
+        script_scenes = self._script_scene_map(project)
+        required_counts = sorted({
+            len(self._visible_character_names(scene, script_scenes.get(scene.scene_number, {})))
+            for scene in scenes
+        } - {0, 1})
+        if not required_counts:
+            return {"status": "not_required", "required_character_counts": []}
+        path = settings.COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH
+        report = {"status": "blocked", "required_character_counts": required_counts, "workflow_path": path}
+        try:
+            if not path:
+                raise ValueError("Configure COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH for multi-character shots")
+            from src.models.workflow_config import WorkflowConfig
+            config = WorkflowConfig.from_json_file(path)
+            slots = config.parameters.default.get("reference_slots")
+            if not isinstance(slots, list) or any(count != len(slots) for count in required_counts):
+                raise ValueError("Regional reference_slots must cover every visible character; split shots with unsupported cast counts")
+            report["reference_slots"] = len(slots)
+            report["status"] = "configured"
+        except (OSError, ValueError, TypeError) as exc:
+            report["error"] = str(exc)
+            blockers.append(ReadinessIssue("regional_identity_workflow_missing", str(exc)))
+        return report
 
     def _script_check(self, project: Project, scenes: list[Scene], blockers: list[ReadinessIssue]) -> dict:
         scene_count = len(scenes)

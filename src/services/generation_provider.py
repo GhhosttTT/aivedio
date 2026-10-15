@@ -39,17 +39,57 @@ def _extract_workflow_image_metadata(output_path: str) -> dict[str, object]:
         workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         return {"workflow_path": str(workflow_path), "workflow_error": str(exc)}
-    sampler = next(
-        (node for node in workflow.values() if isinstance(node, dict) and node.get("class_type") == "KSampler"),
-        {},
-    )
+    if not isinstance(workflow, dict) or not all(
+        isinstance(node, dict) and isinstance(node.get("inputs", {}), dict)
+        and isinstance(node.get("class_type"), str) for node in workflow.values()
+    ):
+        return {"workflow_path": str(workflow_path), "workflow_error": "Invalid workflow node structure"}
+    from src.services.image_workflow_graph import ImageWorkflowGraph, ImageWorkflowGraphError
+    graph = ImageWorkflowGraph(workflow)
+    metadata: dict[str, object] = {"workflow_path": str(workflow_path)}
+    active = set(workflow)
+    try:
+        preferred = None
+        job_path = Path(output_path).with_suffix(".job.json")
+        if job_path.is_file():
+            try:
+                from src.services.generation_review import fingerprint
+                job = json.loads(job_path.read_text(encoding="utf-8"))
+                if isinstance(job, dict) and job.get("workflow_sha256") == fingerprint(workflow):
+                    preferred = job.get("output_node") if isinstance(job.get("output_node"), str) else None
+            except (OSError, ValueError):
+                pass
+        output_node = graph.output_node(preferred)
+        base_sampler = graph.base_sampler(output_node)
+        active = graph.ancestors(output_node)
+        metadata["output_node"] = output_node
+        metadata["samplers"] = [
+            {"node_id": node_id, "stage": "base" if node_id == base_sampler else "detail",
+             **{key: node["inputs"][key] for key in ("seed", "steps", "cfg", "denoise", "sampler_name", "scheduler")
+                if key in node.get("inputs", {})}}
+            for node_id, node in workflow.items()
+            if node_id in active and node.get("class_type") in {"KSampler", "FaceDetailer"}
+        ]
+        metadata["identity_bindings"] = [
+            {"node_id": node_id, "class_type": node["class_type"],
+             "image_node": graph.link(node["inputs"].get("image")),
+             "regional_mask": graph.link(node["inputs"].get("attn_mask")) is not None}
+            for node_id, node in workflow.items()
+            if node_id in graph.model_ancestors(base_sampler)
+            and node.get("class_type") in {"IPAdapterFaceID", "IPAdapterAdvanced"}
+        ]
+        sampler = workflow[base_sampler]
+    except ImageWorkflowGraphError as exc:
+        metadata["workflow_error"] = str(exc)
+        samplers = [node for node in workflow.values()
+                    if isinstance(node, dict) and node.get("class_type") == "KSampler"]
+        sampler = samplers[0] if len(samplers) == 1 else {}
     latent = next(
-        (node for node in workflow.values() if isinstance(node, dict) and node.get("class_type") == "EmptyLatentImage"),
+        (node for node_id, node in workflow.items() if node_id in active and isinstance(node, dict) and node.get("class_type") == "EmptyLatentImage"),
         {},
     )
     sampler_inputs = sampler.get("inputs") if isinstance(sampler.get("inputs"), dict) else {}
     latent_inputs = latent.get("inputs") if isinstance(latent.get("inputs"), dict) else {}
-    metadata: dict[str, object] = {"workflow_path": str(workflow_path)}
     for key in ("steps", "cfg", "seed", "sampler_name", "scheduler"):
         if key in sampler_inputs:
             metadata[key] = sampler_inputs[key]
@@ -87,6 +127,7 @@ class ImageGenerationRequest:
     scene_type: Optional[str] = None
     quality_mode: Optional[str] = None
     optimization_mode: Optional[str] = None
+    character_references: Optional[list[dict]] = None
 
 
 @dataclass
@@ -156,6 +197,9 @@ class LocalComfyUIProvider:
             settings.GENERATION_ENABLE_PARAMETER_OPTIMIZATION
             and high_quality_request
         )
+        reference_options = {}
+        if request.character_references:
+            reference_options["character_references"] = request.character_references
         output_path = self.comfyui_service.generate_image(
             prompt=request.prompt,
             negative_prompt=request.negative_prompt,
@@ -173,6 +217,7 @@ class LocalComfyUIProvider:
             enable_realism=False,
             enable_prompt_optimization=enable_prompt_optimization,
             enable_parameter_optimization=enable_parameter_optimization,
+            **reference_options,
         )
         return GenerationResult(
             provider=self.name.value,
@@ -226,6 +271,18 @@ class LocalComfyUIProvider:
                 "quality_pipeline": request.quality_pipeline,
             },
         )
+
+    def release_generation_resources(self) -> None:
+        self.comfyui_service.free_memory()
+
+
+def release_generation_resources(provider) -> None:
+    release = getattr(provider, "release_generation_resources", None)
+    if callable(release):
+        try:
+            release()
+        except Exception as exc:
+            logger.warning("Could not release generation GPU resources before review: {}", exc)
 
 
 class ApiVideoProvider:

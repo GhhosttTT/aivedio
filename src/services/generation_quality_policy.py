@@ -57,40 +57,46 @@ PROFILE_BUDGETS = {
 }
 
 
+def minimum_quality_passes(budget: QualityBudget) -> int:
+    if budget.profile not in {"seed_dance_reference", "ultra"}:
+        return 1
+    return min(max(1, settings.GENERATION_MIN_QUALITY_PASSES), budget.refinement_passes + 1, 5)
+
+
 SHOT_PIPELINE_STAGES = {
     "close_up": {
         "stages": ["identity_reference", "face_detail", "skin_texture_pass", "upscale", "final_vlm_review"],
-        "prompt": "production pipeline: face detail pass, natural skin texture pass, clean catchlight preservation, final VLM review",
+        "prompt": "distinct facial features, natural skin texture, clean catchlights, clear expressive eyes",
         "negative": "waxy face after detailer, over-sharpened pores, face repair scar, plastic close-up",
         "capabilities": ["character_identity", "face_repair", "upscale", "candidate_review"],
     },
     "reaction": {
         "stages": ["identity_reference", "expression_polish", "face_detail", "upscale", "final_vlm_review"],
-        "prompt": "production pipeline: expression polish pass, face detail pass, emotion readability check, final VLM review",
+        "prompt": "readable facial emotion, expressive eyes, natural skin detail, intentional gaze",
         "negative": "flat acting, dead eyes, overdone expression repair, waxy emotion close-up",
         "capabilities": ["character_identity", "face_repair", "upscale", "candidate_review"],
     },
     "two_shot": {
         "stages": ["identity_reference", "spatial_control", "role_separation", "upscale", "final_vlm_review"],
-        "prompt": "production pipeline: spatial control pass, role separation pass, both faces readable, final VLM review",
+        "prompt": "two distinct actors, separate facial features and wardrobes, both faces readable, coherent blocking",
         "negative": "same-face casting after upscale, merged bodies, hidden second actor, copied wardrobe silhouette",
         "capabilities": ["character_identity", "spatial_control", "upscale", "candidate_review"],
     },
     "full_body": {
         "stages": ["pose_control", "body_integrity", "wardrobe_silhouette", "upscale", "final_vlm_review"],
-        "prompt": "production pipeline: pose control pass, full-body proportion check, wardrobe silhouette preservation, final VLM review",
+        "prompt": "balanced full-body proportions, grounded feet, clear wardrobe silhouette, anatomically coherent pose",
         "negative": "floating feet, broken full-body pose, cropped shoes, distorted body after upscale",
         "capabilities": ["pose_control", "spatial_control", "upscale", "candidate_review"],
     },
     "prop_interaction": {
         "stages": ["pose_control", "hand_prop_integrity", "body_anatomy_integrity", "face_detail", "upscale", "final_vlm_review"],
-        "prompt": "production pipeline: hand-prop integrity pass, readable fingers, stable prop contact, local anatomy check, face detail pass, final VLM review",
+        "prompt": "readable fingers, natural wrist and arm anatomy, firm hand-object contact, detailed face",
         "negative": "broken fingers after detail pass, twisted wrist, broken local anatomy, disappearing prop, floating prop, unclear hand-object contact",
         "capabilities": ["pose_control", "face_repair", "upscale", "candidate_review"],
     },
     "establishing": {
         "stages": ["spatial_control", "set_dressing_polish", "color_grade_lock", "upscale", "final_vlm_review"],
-        "prompt": "production pipeline: set dressing polish pass, color grade lock, subject readability check, final VLM review",
+        "prompt": "purposeful practical set dressing, consistent color grade, clear subject and spatial depth",
         "negative": "generic empty set, low-budget background, dirty clutter after upscale, washed-out color grade",
         "capabilities": ["spatial_control", "upscale", "candidate_review"],
     },
@@ -99,31 +105,31 @@ SHOT_PIPELINE_STAGES = {
 VIDEO_PIPELINE_STAGES = {
     "action": {
         "stages": ["motion_planning", "temporal_identity_lock", "action_readability_pass", "final_vlm_review"],
-        "prompt": "video pipeline: readable action arc, stable limbs, temporal identity lock, no chaotic motion, final VLM review",
+        "prompt": "one readable action arc, stable limbs and facial identity, smooth purposeful motion",
         "negative": "chaotic action, unreadable movement, body warping, random camera jump, identity drift during action",
         "capabilities": ["motion_control", "temporal_identity", "candidate_review"],
     },
     "prop_interaction": {
         "stages": ["motion_planning", "hand_prop_continuity", "temporal_identity_lock", "final_vlm_review"],
-        "prompt": "video pipeline: hand and prop continuity, stable object contact, readable interaction timing, final VLM review",
+        "prompt": "continuous hand-object contact, consistent prop shape, readable interaction timing",
         "negative": "disappearing prop, fused fingers in motion, floating object, changed prop between frames",
         "capabilities": ["motion_control", "prop_continuity", "candidate_review"],
     },
     "emotion_reaction": {
         "stages": ["performance_direction", "micro_expression_pass", "face_temporal_lock", "final_vlm_review"],
-        "prompt": "video pipeline: short-drama micro-expression pass, stable face over time, readable emotional reaction, final VLM review",
+        "prompt": "subtle facial micro-expressions, consistent facial features, readable emotional reaction",
         "negative": "flat acting, dead eyes, face morphing, waxy face in motion, unreadable emotion",
         "capabilities": ["performance_direction", "temporal_identity", "candidate_review"],
     },
     "dialogue_reaction": {
         "stages": ["performance_direction", "dialogue_reaction_pass", "face_temporal_lock", "final_vlm_review"],
-        "prompt": "video pipeline: dialogue reaction timing, natural breathing, subtle eye movement, stable face, final VLM review",
+        "prompt": "timely dialogue reaction, natural breathing, subtle eye movement, consistent facial features",
         "negative": "no reaction to dialogue, stiff frozen face, dead eyes, face morphing during speech beat",
         "capabilities": ["performance_direction", "temporal_identity", "candidate_review"],
     },
     "establishing": {
         "stages": ["camera_drift_control", "background_stability", "color_grade_lock", "final_vlm_review"],
-        "prompt": "video pipeline: gentle camera drift, stable room geometry, locked color grade, final VLM review",
+        "prompt": "gentle camera drift, stable room geometry, consistent exposure and color grade",
         "negative": "background wobble, changing room geometry, random camera jump, color grade flicker",
         "capabilities": ["camera_control", "background_stability", "candidate_review"],
     },
@@ -132,39 +138,39 @@ VIDEO_PIPELINE_STAGES = {
 REPAIR_PIPELINE_STAGES = {
     "regenerate_keyframe_with_identity_lock": {
         "stages": ["identity_reference", "face_detail", "identity_vlm_review"],
-        "prompt": "repair pipeline: stricter identity reference lock and identity VLM review before acceptance",
+        "prompt": "facial geometry, hair and wardrobe matching the named character reference",
         "negative": "identity drift after repair, same-face cast, changed wardrobe after identity lock",
         "capabilities": ["character_identity", "face_repair", "candidate_review"],
     },
     "regenerate_keyframe_with_role_separation": {
         "stages": ["identity_reference", "spatial_control", "role_separation", "face_detail", "distinctiveness_vlm_review"],
-        "prompt": "repair pipeline: enforce identity contrast matrix, role separation, and character distinctiveness VLM review before acceptance",
+        "prompt": "distinct face geometry, hair and wardrobe for each named role, clearly separated actors",
         "negative": "same-face casting after repair, copied facial geometry, merged visual identity, hidden second actor",
         "capabilities": ["character_identity", "spatial_control", "face_repair", "candidate_review"],
     },
     "refine_project_style_consistency": {
         "stages": ["project_style_bible", "color_grade_lock", "lighting_continuity", "wardrobe_continuity", "style_vlm_review"],
-        "prompt": "repair pipeline: lock project visual bible, color grade, lighting continuity, wardrobe continuity, and set dressing continuity before acceptance",
+        "prompt": "consistent project color grade, lighting, wardrobe and set dressing",
         "negative": "style drift after repair, random color grade, mismatched lighting, wardrobe drift, inconsistent set dressing",
         "capabilities": ["spatial_control", "upscale", "candidate_review"],
     },
     "refine_face_aesthetic_detail": {
         "stages": ["face_detail", "skin_texture_pass", "upscale", "artifact_vlm_review"],
-        "prompt": "repair pipeline: high quality face detail pass, skin texture artifact check, upscale artifact review",
+        "prompt": "fine natural facial detail, lifelike skin texture, clean skin edges and catchlights",
         "negative": "face repair scar, wax museum skin, over-smoothed detailer result, noisy upscale face",
         "capabilities": ["face_repair", "upscale", "candidate_review"],
     },
     "refine_prompt_composition": {
         "stages": ["spatial_control", "composition_vlm_review"],
-        "prompt": "repair pipeline: composition control pass and phone-frame composition review",
+        "prompt": "balanced phone-readable composition, deliberate headroom, clear subject placement",
         "negative": "bad crop after composition repair, unreadable face, cluttered layout",
         "capabilities": ["spatial_control", "candidate_review"],
     },
     "regenerate_keyframe_with_prop_constraints": {
         "stages": ["pose_control", "hand_prop_integrity", "body_anatomy_integrity", "artifact_vlm_review", "prop_vlm_review"],
         "prompt": (
-            "repair pipeline: hand, prop, wrist, arm, and local anatomy constraint pass; "
-            "remove random text, inpaint scars, and upscale artifacts; prop VLM review before acceptance"
+            "coherent hands, fingers, wrists and arms; clear contact with a consistently shaped prop; "
+            "clean natural image surfaces"
         ),
         "negative": "changed prop after repair, fused fingers, twisted wrist, broken local anatomy, random text, inpaint scar, disappearing object",
         "capabilities": ["pose_control", "upscale", "candidate_review"],
@@ -174,19 +180,19 @@ REPAIR_PIPELINE_STAGES = {
 VIDEO_REPAIR_PIPELINE_STAGES = {
     "lower_motion_and_regenerate_video": {
         "stages": ["temporal_identity_stabilization", "motion_smoothing", "flicker_review"],
-        "prompt": "repair pipeline: reduce motion chaos, stabilize face and wardrobe frame to frame, smooth temporal artifacts before acceptance",
+        "prompt": "controlled continuous movement, consistent face and wardrobe, smooth frame-to-frame motion",
         "negative": "flicker after repair, identity drift after motion repair, sudden camera jump, warped body between frames",
         "capabilities": ["motion_control", "temporal_identity", "candidate_review"],
     },
     "increase_motion_and_regenerate_video": {
         "stages": ["motion_floor_recovery", "action_readability_pass", "performance_review"],
-        "prompt": "repair pipeline: recover short-drama motion floor, add one readable body or camera beat, avoid still-image slideshow",
+        "prompt": "one visible purposeful body movement or camera beat, natural breathing and eye reactions",
         "negative": "frozen still image, slideshow, lifeless motion, no body movement",
         "capabilities": ["motion_control", "performance_direction", "candidate_review"],
     },
     "regenerate_video_with_performance_direction": {
         "stages": ["performance_direction", "emotion_readability_pass", "dialogue_reaction_review"],
-        "prompt": "repair pipeline: direct the acting beat, readable gaze intent, emotional reaction, and dialogue response before acceptance",
+        "prompt": "intentional gaze, readable emotion, timed dialogue response, motivated body language",
         "negative": "flat acting after repair, dead eyes, no dialogue reaction, stiff body language",
         "capabilities": ["performance_direction", "candidate_review"],
     },
@@ -201,7 +207,7 @@ VIDEO_REPAIR_PIPELINE_STAGES = {
             "skin_texture_motion_review",
         ],
         "prompt": (
-            "repair pipeline: close the Seed Dance platform-reference gap, premium casting impression, "
+            "distinct expressive casting, "
             "commercial short-drama lighting, phone-readable face, high-value mobile frame, production design polish, "
             "scroll-stopping first second, stable skin texture"
         ),
@@ -213,7 +219,7 @@ VIDEO_REPAIR_PIPELINE_STAGES = {
     },
     "refine_final_composition_finish": {
         "stages": ["episode_finish_polish", "cut_continuity_review", "subtitle_integration_review"],
-        "prompt": "repair pipeline: final episode finish, consistent exposure and color grade across cuts, subtitle integration review",
+        "prompt": "consistent exposure, skin tones and color grade across cuts, readable cleanly placed subtitles",
         "negative": "exposure jump after final repair, skin tone mismatch, mixed color grade, subtitle covering faces",
         "capabilities": ["episode_continuity", "aesthetic_polish", "candidate_review"],
     },

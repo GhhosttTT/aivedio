@@ -8,6 +8,7 @@ ComfyUI 服务（ComfyUIService）
 import copy
 import json
 import time
+import tempfile
 import uuid
 from typing import Any, Optional, Dict, List
 from pathlib import Path
@@ -18,6 +19,7 @@ from src.utils.logger import logger
 from src.config import settings
 from src.services.workflow_manager import WorkflowManager
 from src.models.workflow_config import WorkflowType
+from src.services.image_workflow_graph import ImageWorkflowGraph, ImageWorkflowGraphError, stage_seed
 from src.services.parameter_optimizer import (
     get_parameter_optimizer,
     SceneType,
@@ -36,6 +38,11 @@ class ComfyUIError(Exception):
 
 class ComfyUIWaitTimeout(ComfyUIError):
     """The server may still be generating; do not submit the same shot again."""
+
+    def __init__(self, message: str, *, prompt_id: str | None = None, client_id: str | None = None):
+        super().__init__(message)
+        self.prompt_id = prompt_id
+        self.client_id = client_id
 
 
 class ComfyUIService:
@@ -59,7 +66,7 @@ class ComfyUIService:
         """
         self.base_url = (base_url or settings.COMFYUI_BASE_URL).rstrip("/")
         self.timeout = timeout if timeout is not None else settings.COMFYUI_TIMEOUT
-        self.max_retries = max_retries
+        self.max_retries = max(1, int(max_retries))
         
         # HTTP 客户端（禁用代理，直接连接本地服务）
         # httpx 0.24+ 版本使用 trust_env=False 来忽略环境变量中的代理设置
@@ -185,7 +192,8 @@ class ComfyUIService:
         enable_parameter_optimization: bool = False,
         enable_realism: bool = False,  # 是否启用真实感模式
         gpu_vram_gb: Optional[int] = None,  # GPU 显存大小（GB）
-        optimization_mode: Optional[str] = None  # 提示词优化模式（quality, realism, artistic, balanced）
+        optimization_mode: Optional[str] = None,  # 提示词优化模式（quality, realism, artistic, balanced）
+        character_references: Optional[List[Dict]] = None,
     ) -> str:
         """
         生成图像
@@ -221,16 +229,21 @@ class ComfyUIService:
             raise ValueError("Image dimensions must be positive multiples of eight")
 
         # Choose the graph before reading its defaults. Never swap model families implicitly.
-        if reference_image and use_ipadapter:
+        multiple_references = bool(character_references and len(character_references) > 1)
+        if multiple_references or (reference_image and use_ipadapter):
             base = self.workflow_manager.load_workflow(
                 workflow_path=self.workflow_path,
                 workflow_type=None if self.workflow_path else self.default_workflow_type,
                 allow_fallback=False,
             )
             checkpoints = {n.inputs["ckpt_name"] for n in base.nodes.values() if n.class_type == "CheckpointLoaderSimple"}
-            reference_path = settings.COMFYUI_REFERENCE_WORKFLOW_PATH
+            reference_path = (
+                settings.COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH if multiple_references
+                else settings.COMFYUI_REFERENCE_WORKFLOW_PATH
+            )
             if not reference_path:
-                raise ComfyUIError("Configure COMFYUI_REFERENCE_WORKFLOW_PATH for the selected model family")
+                setting = "COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH" if multiple_references else "COMFYUI_REFERENCE_WORKFLOW_PATH"
+                raise ComfyUIError(f"Configure {setting} for the selected model family")
             reference = self.workflow_manager.load_workflow(workflow_path=reference_path, allow_fallback=False)
             reference_checkpoints = {n.inputs["ckpt_name"] for n in reference.nodes.values() if n.class_type == "CheckpointLoaderSimple"}
             if checkpoints != reference_checkpoints:
@@ -364,36 +377,26 @@ class ComfyUIService:
             cfg_scale=cfg_scale,
             seed=seed,
             reference_image=reference_image,
-            use_ipadapter=use_ipadapter
+            use_ipadapter=use_ipadapter,
+            character_references=character_references,
         )
         
-        # 提交任务并等待完成（带重试）
+        # Only pre-connection failures and artifact downloads are safe to retry.
         self.preflight(workflow)
         if output_path:
             artifact = Path(output_path).with_suffix(".workflow.json")
             artifact.parent.mkdir(parents=True, exist_ok=True)
             artifact.write_text(json.dumps(workflow, ensure_ascii=False, indent=2), encoding="utf-8")
-        for attempt in range(self.max_retries):
-            try:
-                image_path = self._submit_and_wait(workflow, output_path)
-                logger.info(f"图像生成成功: {image_path}")
-                return image_path
-                
-            except Exception as e:
-                if isinstance(e, ComfyUIWaitTimeout):
-                    raise
-                error_str = str(e)
-                if "No face detected" in error_str and reference_image:
-                    raise ComfyUIError("Reference face was not detected; select another reference image") from e
-                
-                if attempt < self.max_retries - 1:
-                    wait_time = 2 ** attempt  # 指数退避
-                    logger.warning(f"生成失败（第 {attempt + 1} 次尝试），{wait_time} 秒后重试: {e}")
-                    time.sleep(wait_time)
-                else:
-                    error_msg = f"图像生成失败（已重试 {self.max_retries} 次）: {e}"
-                    logger.error(error_msg)
-                    raise ComfyUIError(error_msg) from e
+        try:
+            image_path = self._submit_and_wait(workflow, output_path)
+            logger.info(f"图像生成成功: {image_path}")
+            return image_path
+        except ComfyUIWaitTimeout:
+            raise
+        except ComfyUIError as exc:
+            if "No face detected" in str(exc) and reference_image:
+                raise ComfyUIError("Reference face was not detected; select another reference image") from exc
+            raise
     
     def _build_workflow(
         self,
@@ -405,7 +408,8 @@ class ComfyUIService:
         cfg_scale: float,
         seed: int,
         reference_image: Optional[str] = None,
-        use_ipadapter: bool = True
+        use_ipadapter: bool = True,
+        character_references: Optional[List[Dict]] = None,
     ) -> Dict:
         """
         构建 ComfyUI 工作流
@@ -467,72 +471,138 @@ class ComfyUIService:
         
         workflow = workflow_api
         
-        # 动态查找节点 ID（根据 class_type）
-        def find_node_id(class_type: str) -> Optional[str]:
-            for node_id, node_data in workflow.items():
-                if node_data.get("class_type") == class_type:
-                    return node_id
-            return None
-        
-        empty_latent_id = find_node_id("EmptyLatentImage")
-        ksampler_id = find_node_id("KSampler")
-        save_image_id = find_node_id("SaveImage")
-        load_image_id = find_node_id("LoadImage")
-        ipadapter_faceid_id = find_node_id("IPAdapterFaceID") or find_node_id("IPAdapterAdvanced")
-        
-        # Follow conditioning edges; JSON order says nothing about positive/negative roles.
-        if not ksampler_id:
-            raise ComfyUIError("Workflow must contain a KSampler")
-        for role, value in (("positive", prompt), ("negative", negative_prompt)):
-            link = workflow[ksampler_id]["inputs"].get(role)
-            node = workflow.get(link[0]) if isinstance(link, list) else None
-            if not node or node.get("class_type") != "CLIPTextEncode":
-                raise ComfyUIError(f"Unsupported {role} conditioning graph; use a CLIPTextEncode node")
-            node["inputs"]["text"] = value
-        
-        # 设置图像尺寸
-        if empty_latent_id:
-            workflow[empty_latent_id]["inputs"]["width"] = width
-            workflow[empty_latent_id]["inputs"]["height"] = height
-        
-        # 设置采样参数
-        if ksampler_id:
-            workflow[ksampler_id]["inputs"]["seed"] = seed
-            workflow[ksampler_id]["inputs"]["steps"] = steps
-            workflow[ksampler_id]["inputs"]["cfg"] = cfg_scale
-        
-        # 启用 IP-Adapter（如果有参考图像且启用了IP-Adapter）
-        if use_ipadapter and reference_image and ipadapter_faceid_id:
-            logger.info(f"启用 IP-Adapter，使用参考图像: {reference_image}")
-            # 连接 KSampler 到 IP-Adapter 应用节点
-            if ksampler_id:
-                workflow[ksampler_id]["inputs"]["model"] = [ipadapter_faceid_id, 0]
-            
-            if not load_image_id:
-                raise ComfyUIError("Reference workflow has no LoadImage node")
-            workflow[load_image_id]["inputs"]["image"] = self._upload_reference_image(reference_image)
-            
-            # 设置 IP-Adapter 权重（从配置中获取或使用默认值）
-            ipadapter_weight = workflow_config.parameters.default.get("ipadapter_weight", 0.8)
-            workflow[ipadapter_faceid_id]["inputs"]["weight"] = ipadapter_weight
-            
-            # 配置 FaceID Plus V2 模式（面部 + 全身一致性）
-            # 注意：ipadapter_config 可能不在 parameters.default 中，需要单独处理
-            if "weight_faceidv2" in workflow[ipadapter_faceid_id]["inputs"]:
-                workflow[ipadapter_faceid_id]["inputs"]["weight_faceidv2"] = 1.0
-                logger.info(f"IP-Adapter FaceID Plus V2 已配置，权重: {ipadapter_weight}")
-                logger.info("将保持角色面部、服装、体型的整体一致性（FaceID + LoRA 增强）")
-            else:
-                logger.info(f"IP-Adapter 已配置，权重: {ipadapter_weight}")
-        elif use_ipadapter and reference_image:
-            raise ComfyUIError("Reference workflow has no IPAdapterFaceID or IPAdapterAdvanced node")
-        
-        # 设置输出文件名前缀
-        if save_image_id:
-            filename_prefix = f"short_drama_{uuid.uuid4().hex[:8]}"
-            workflow[save_image_id]["inputs"]["filename_prefix"] = filename_prefix
+        graph = ImageWorkflowGraph(workflow)
+        configured_output = workflow_config.parameters.default.get("output_node")
+        if configured_output and configured_output not in node_name_to_id:
+            raise ComfyUIError(f"Unknown configured output_node: {configured_output}")
+        try:
+            save_image_id = graph.output_node(node_name_to_id.get(configured_output))
+            ksampler_id = graph.base_sampler(save_image_id)
+            active = graph.ancestors(save_image_id)
+            positive_nodes: set[str] = set()
+            negative_nodes: set[str] = set()
+            for node_id in active:
+                node = workflow[node_id]
+                if node["class_type"] in {"KSampler", "FaceDetailer"}:
+                    positive_nodes.update(graph.prompt_nodes(node_id, "positive"))
+                    negative_nodes.update(graph.prompt_nodes(node_id, "negative"))
+            if positive_nodes & negative_nodes:
+                raise ImageWorkflowGraphError("Positive and negative conditioning share a text node")
+            for nodes, value in ((positive_nodes, prompt), (negative_nodes, negative_prompt)):
+                for node_id in nodes:
+                    workflow[node_id]["inputs"]["text"] = value
+            for node_name, node_id in node_name_to_id.items():
+                if node_id not in active:
+                    continue
+                node = workflow[node_id]
+                if node["class_type"] == "EmptyLatentImage":
+                    node["inputs"].update({"width": width, "height": height, "batch_size": 1})
+                if node["class_type"] in {"KSampler", "FaceDetailer"}:
+                    node["inputs"]["seed"] = seed if node_id == ksampler_id else stage_seed(seed, node_name)
+            workflow[ksampler_id]["inputs"].update({"steps": steps, "cfg": cfg_scale})
+            sampling_stages = {
+                node_id for node_id in active
+                if workflow[node_id]["class_type"] in {"KSampler", "FaceDetailer"}
+            }
+            if character_references and len(character_references) > 1:
+                self._bind_regional_references(
+                    workflow, graph, ksampler_id, node_name_to_id,
+                    workflow_config.parameters.default.get("reference_slots"),
+                    character_references, width, height, sampling_stages,
+                )
+            elif use_ipadapter and reference_image:
+                adapter_id, loader_id = graph.reference_binding(ksampler_id)
+                graph.require_identity_stages(sampling_stages, {adapter_id})
+                workflow[loader_id]["inputs"]["image"] = self._upload_reference_image(reference_image)
+                weight = workflow_config.parameters.default.get("ipadapter_weight")
+                if weight is not None:
+                    workflow[adapter_id]["inputs"]["weight"] = weight
+            workflow[save_image_id]["inputs"]["filename_prefix"] = f"short_drama_{uuid.uuid4().hex[:8]}"
+        except ImageWorkflowGraphError as exc:
+            raise ComfyUIError(str(exc)) from exc
         
         return workflow
+
+    def _bind_regional_references(
+        self, workflow, graph, sampler_id, mapping, slots, references, width, height, sampling_stages,
+    ) -> None:
+        if not isinstance(slots, list) or len(slots) != len(references):
+            raise ComfyUIError("Regional workflow reference_slots must match the visible character count")
+        active = graph.model_ancestors(sampler_id)
+        bound_adapters = set()
+        bound_loaders = set()
+        bindings = []
+        regions = []
+        for index, (slot, reference) in enumerate(zip(slots, references)):
+            if not isinstance(slot, dict) or not isinstance(reference, dict) or not reference.get("path"):
+                raise ComfyUIError(f"Missing regional character reference at slot {index}")
+            adapter_id = mapping.get(slot.get("adapter"))
+            image_id = mapping.get(slot.get("image"))
+            mask_id = mapping.get(slot.get("mask"))
+            if adapter_id not in active or adapter_id in bound_adapters:
+                raise ComfyUIError("Regional identity adapters must be unique and connected to the sampler")
+            adapter = workflow[adapter_id]
+            if adapter["class_type"] not in {"IPAdapterFaceID", "IPAdapterAdvanced"}:
+                raise ComfyUIError("Regional adapter must support IPAdapter attention masks")
+            image_link = graph.link(adapter["inputs"].get("image"))
+            mask_link = graph.link(adapter["inputs"].get("attn_mask"))
+            if image_id != image_link or not mask_link:
+                raise ComfyUIError("Regional reference or attention mask is not connected to its adapter")
+            mask_node = workflow[mask_link]
+            if mask_node["class_type"] != "ImageToMask" or mask_node["inputs"].get("channel") != "red":
+                raise ComfyUIError("Regional mask must use ImageToMask with the red channel")
+            if mask_id != graph.link(mask_node["inputs"].get("image")):
+                raise ComfyUIError("Regional mask loader is not connected to ImageToMask")
+            for loader in (image_id, mask_id):
+                if loader in bound_loaders or loader not in workflow or workflow[loader]["class_type"] != "LoadImage":
+                    raise ComfyUIError("Regional references and masks need distinct LoadImage nodes")
+                bound_loaders.add(loader)
+            region = slot.get("region")
+            self._region_pixel_bounds(width, height, region)
+            if any(min(region[2], other[2]) > max(region[0], other[0])
+                   and min(region[3], other[3]) > max(region[1], other[1]) for other in regions):
+                raise ComfyUIError("Regional identity masks overlap; use separate character regions")
+            regions.append(region)
+            bound_adapters.add(adapter_id)
+            bindings.append((image_id, mask_id, reference["path"], region))
+        active_adapters = {node_id for node_id in active
+                           if workflow[node_id]["class_type"] in {"IPAdapterFaceID", "IPAdapterAdvanced"}}
+        if active_adapters != bound_adapters:
+            raise ComfyUIError("Every active identity adapter needs an explicit regional reference slot")
+        graph.require_identity_stages(sampling_stages, bound_adapters)
+        for image_id, mask_id, reference_path, region in bindings:
+            workflow[image_id]["inputs"]["image"] = self._upload_reference_image(str(reference_path))
+            workflow[mask_id]["inputs"]["image"] = self._upload_region_mask(width, height, region)
+
+    @staticmethod
+    def _region_pixel_bounds(width: int, height: int, region) -> tuple[int, int, int, int]:
+        import math
+
+        if (
+            not isinstance(region, list) or len(region) != 4
+            or any(isinstance(value, bool) or not isinstance(value, (int, float))
+                   or not math.isfinite(value) or not 0 <= value <= 1 for value in region)
+            or region[0] >= region[2] or region[1] >= region[3]
+        ):
+            raise ComfyUIError("Regional mask requires normalized [left, top, right, bottom] bounds")
+        left, top, right, bottom = (
+            round(region[0] * width), round(region[1] * height),
+            round(region[2] * width), round(region[3] * height),
+        )
+        if right <= left or bottom <= top:
+            raise ComfyUIError("Regional mask has no pixels at the requested resolution")
+        return left, top, right, bottom
+
+    def _upload_region_mask(self, width: int, height: int, region) -> str:
+        from PIL import Image, ImageDraw
+
+        left, top, right, bottom = self._region_pixel_bounds(width, height, region)
+        with tempfile.TemporaryDirectory(prefix="aivedio-mask-") as directory:
+            path = Path(directory) / "region.png"
+            mask = Image.new("RGB", (width, height), "black")
+            ImageDraw.Draw(mask).rectangle((left, top, right - 1, bottom - 1), fill="white")
+            mask.save(path)
+            return self._upload_reference_image(str(path))
     
     def _upload_reference_image(self, reference_image: str) -> str:
         path = Path(reference_image)
@@ -573,6 +643,9 @@ class ComfyUIService:
         response = self.client.post(f"{self.base_url}/free", json={"unload_models": True, "free_memory": True})
         response.raise_for_status()
 
+    def release_generation_resources(self) -> None:
+        self.free_memory()
+
     def _submit_and_wait(
         self,
         workflow: Dict,
@@ -592,16 +665,14 @@ class ComfyUIService:
             ComfyUIError: 如果提交或执行失败
         """
         try:
-            # 提交工作流
-            prompt_id = self._submit_workflow(workflow)
-            
-            # 等待完成
-            result = self._wait_for_completion(prompt_id)
-            
-            # 获取生成的图像
-            image_path = self._get_generated_image(result, output_path)
-            
-            return image_path
+            config = self.workflow_manager.get_current_workflow()
+            configured_output = config.parameters.default.get("output_node") if config else None
+            mapping = {name: str(index + 1) for index, name in enumerate(config.nodes)} if config else {}
+            output_node = ImageWorkflowGraph(workflow).output_node(mapping.get(configured_output))
+            return self._run_submitted_job(
+                workflow, output_path, "image", output_node,
+                lambda result: self._get_generated_image(result, output_path, output_node),
+            )
             
         except ComfyUIError:
             raise
@@ -670,13 +741,73 @@ class ComfyUIService:
             "quality_pipeline_negative": str(pipeline.get("negative_directive") or ""),
         }
         workflow = self._replace_workflow_placeholders(workflow, replacements)
+        output_node = settings.COMFYUI_VIDEO_OUTPUT_NODE.strip() or None
+        if output_node and output_node not in workflow:
+            raise ComfyUIError(f"Configured video output node does not exist: {output_node}")
+        if output_node is None:
+            save_nodes = [key for key, node in workflow.items()
+                          if node.get("class_type") in {"VHS_VideoCombine", "SaveVideo"}]
+            if len(save_nodes) == 1:
+                output_node = save_nodes[0]
+            elif len(save_nodes) > 1:
+                raise ComfyUIError("Video graph has several save nodes; configure COMFYUI_VIDEO_OUTPUT_NODE")
         self.preflight(workflow)
         artifact = Path(output_path).with_suffix(".workflow.json")
         artifact.parent.mkdir(parents=True, exist_ok=True)
         artifact.write_text(json.dumps(workflow, ensure_ascii=False, indent=2), encoding="utf-8")
-        prompt_id = self._submit_workflow(workflow)
-        result = self._wait_for_completion(prompt_id)
-        return self._get_generated_media(result, output_path, media_keys=("videos", "gifs", "images"))
+        return self._run_submitted_job(
+            workflow, output_path, "video", output_node,
+            lambda result: self._get_generated_media(
+                result, output_path, media_keys=("videos", "gifs", "images"), output_node_id=output_node,
+            ),
+        )
+
+    def _run_submitted_job(self, workflow, output_path, kind, output_node, download):
+        from src.services.generation_review import fingerprint, write_report
+
+        job = {
+            "status": "submitting", "kind": kind, "server": self.base_url,
+            "output_path": str(output_path) if output_path else None,
+            "output_node": output_node, "workflow_sha256": fingerprint(workflow),
+        }
+
+        def record():
+            if output_path:
+                try:
+                    write_report(Path(output_path).with_suffix(".job.json"), job)
+                except OSError as exc:
+                    logger.warning("Cannot persist ComfyUI job state: {}", exc)
+
+        record()
+        try:
+            prompt_id = self._submit_workflow(workflow)
+            job.update(status="observing", prompt_id=prompt_id)
+            record()
+            result = self._wait_for_completion(prompt_id)
+            job["status"] = "downloading"
+            record()
+            for attempt in range(self.max_retries):
+                try:
+                    path = download(result)
+                    job["status"] = "completed"
+                    record()
+                    return path
+                except (ComfyUIError, OSError):
+                    if attempt + 1 == self.max_retries:
+                        raise
+                    time.sleep(2 ** attempt)
+        except ComfyUIWaitTimeout as exc:
+            job.update(status="observation_required", error=str(exc))
+            if exc.prompt_id:
+                job["prompt_id"] = exc.prompt_id
+            if exc.client_id:
+                job["client_id"] = exc.client_id
+            record()
+            raise
+        except Exception as exc:
+            job.update(status="failed", error=str(exc))
+            record()
+            raise
 
     def _replace_workflow_placeholders(self, value: Any, replacements: Dict[str, Any]) -> Any:
         if isinstance(value, dict):
@@ -709,36 +840,49 @@ class ComfyUIService:
         Raises:
             ComfyUIError: 如果提交失败
         """
+        data = {"prompt": workflow, "client_id": str(uuid.uuid4())}
+        for attempt in range(self.max_retries):
+            try:
+                response = self.client.post(f"{self.base_url}/prompt", json=data)
+                break
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                if attempt + 1 == self.max_retries:
+                    raise ComfyUIError(f"Cannot connect to ComfyUI: {exc}") from exc
+                time.sleep(2 ** attempt)
+            except httpx.RequestError as exc:
+                raise ComfyUIWaitTimeout(
+                    f"Submission outcome is unknown; inspect ComfyUI queue/history for client_id={data['client_id']} before retrying",
+                    client_id=data["client_id"],
+                ) from exc
         try:
-            # 构建请求数据
-            data = {
-                "prompt": workflow,
-                "client_id": str(uuid.uuid4())
-            }
-            
-            # 提交工作流
-            response = self.client.post(
-                f"{self.base_url}/prompt",
-                json=data
-            )
-            
+            if response.status_code >= 500:
+                raise ComfyUIWaitTimeout(
+                    f"Submission returned HTTP {response.status_code}; inspect queue/history before retrying client_id={data['client_id']}",
+                    client_id=data["client_id"],
+                )
             if response.status_code != 200:
                 raise ComfyUIError(f"提交工作流失败: HTTP {response.status_code}: {response.text[:2000]}")
             
             result = response.json()
-            prompt_id = result.get("prompt_id")
+            prompt_id = result.get("prompt_id") if isinstance(result, dict) else None
             
-            if not prompt_id:
-                raise ComfyUIError("未获取到 prompt_id")
+            if not isinstance(prompt_id, str) or not prompt_id:
+                raise ComfyUIWaitTimeout(
+                    f"Missing prompt_id after submission; inspect queue/history before retrying client_id={data['client_id']}",
+                    client_id=data["client_id"],
+                )
             
             logger.debug(f"工作流已提交: prompt_id={prompt_id}")
             
             return prompt_id
             
-        except httpx.TimeoutException as e:
-            raise ComfyUIError(f"提交工作流超时: {e}") from e
-        except httpx.ConnectError as e:
-            raise ComfyUIError(f"无法连接到 ComfyUI 服务: {e}") from e
+        except ComfyUIError:
+            raise
+        except ValueError as exc:
+            raise ComfyUIWaitTimeout(
+                f"Invalid submission response; inspect queue/history before retrying client_id={data['client_id']}",
+                client_id=data["client_id"],
+            ) from exc
         except Exception as e:
             raise ComfyUIError(f"提交工作流异常: {e}") from e
     
@@ -756,16 +900,23 @@ class ComfyUIService:
         Raises:
             ComfyUIError: 如果执行失败或超时
         """
-        start_time = time.time()
+        start_time = time.monotonic()
         
         while True:
             # 检查超时
-            if time.time() - start_time > self.timeout:
-                raise ComfyUIWaitTimeout(f"ComfyUI job {prompt_id} observation timed out; inspect /history/{prompt_id} before retrying")
+            if time.monotonic() - start_time > self.timeout:
+                raise ComfyUIWaitTimeout(
+                    f"ComfyUI job {prompt_id} observation timed out; inspect /history/{prompt_id} before retrying",
+                    prompt_id=prompt_id,
+                )
             
             try:
                 # 查询历史记录
-                response = self.client.get(f"{self.base_url}/history/{prompt_id}")
+                remaining = self.timeout - (time.monotonic() - start_time)
+                response = self.client.get(
+                    f"{self.base_url}/history/{prompt_id}",
+                    timeout=min(15.0, max(0.1, remaining)),
+                )
                 
                 if response.status_code != 200:
                     logger.warning(f"查询历史记录失败: HTTP {response.status_code}")
@@ -787,9 +938,6 @@ class ComfyUIService:
                         logger.debug(f"工作流执行完成: prompt_id={prompt_id}")
                         return result
                     
-                    if status.get("status_str") == "error":
-                        error_msg = status.get("messages", ["未知错误"])
-                        raise ComfyUIError(f"工作流执行失败: {error_msg}")
                 
                 # 继续等待
                 time.sleep(poll_interval)
@@ -803,7 +951,8 @@ class ComfyUIService:
     def _get_generated_image(
         self,
         result: Dict,
-        output_path: Optional[str] = None
+        output_path: Optional[str] = None,
+        output_node_id: Optional[str] = None,
     ) -> str:
         """
         获取生成的图像
@@ -824,6 +973,8 @@ class ComfyUIService:
             
             # 查找 SaveImage 节点的输出
             for node_id, node_output in outputs.items():
+                if output_node_id is not None and str(node_id) != output_node_id:
+                    continue
                 if "images" in node_output:
                     images = node_output["images"]
                     
@@ -856,25 +1007,29 @@ class ComfyUIService:
         result: Dict,
         output_path: Optional[str] = None,
         media_keys: tuple[str, ...] = ("videos", "gifs", "images"),
+        output_node_id: Optional[str] = None,
     ) -> str:
         try:
             outputs = result.get("outputs", {})
-            for _node_id, node_output in outputs.items():
-                for key in media_keys:
-                    items = node_output.get(key)
-                    if items:
-                        media_info = items[0]
+            candidates = []
+            for key_index, key in enumerate(media_keys):
+                for _node_id, node_output in outputs.items():
+                    if output_node_id is not None and str(_node_id) != output_node_id:
+                        continue
+                    for media_info in node_output.get(key, []) or []:
                         filename = media_info.get("filename")
                         subfolder = media_info.get("subfolder", "")
                         media_type = media_info.get("type", "output")
                         if not filename:
                             raise ComfyUIError("未找到生成的媒体文件名")
-                        return self._download_media(
-                            filename=filename,
-                            subfolder=subfolder,
-                            media_type=media_type,
-                            output_path=output_path,
-                        )
+                        if Path(filename).suffix.lower() not in {".mp4", ".webm", ".mov", ".mkv", ".avi", ".gif"}:
+                            continue
+                        candidates.append((Path(filename).suffix.lower() == ".gif", key_index, filename, subfolder, media_type))
+            if candidates:
+                _animated, _key_index, filename, subfolder, media_type = min(candidates, key=lambda item: item[:2])
+                return self._download_media(
+                    filename=filename, subfolder=subfolder, media_type=media_type, output_path=output_path,
+                )
             raise ComfyUIError("未找到生成的视频或媒体输出")
         except ComfyUIError:
             raise
@@ -923,15 +1078,10 @@ class ComfyUIService:
                 # 使用临时目录
                 output_dir = Path("./storage/temp")
                 output_dir.mkdir(parents=True, exist_ok=True)
-                output_path = str(output_dir / filename)
+                output_path = str(output_dir / Path(filename).name)
             
             # 保存图像
-            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'wb') as f:
-                f.write(response.content)
-            from PIL import Image
-            with Image.open(output_path) as decoded:
-                decoded.verify()
+            self._save_download(response.content, Path(output_path), verify_image=True)
             
             logger.debug(f"图像已保存: {output_path}")
             
@@ -957,15 +1107,28 @@ class ComfyUIService:
             if not output_path:
                 output_dir = Path("./storage/temp")
                 output_dir.mkdir(parents=True, exist_ok=True)
-                output_path = str(output_dir / filename)
-            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-            Path(output_path).write_bytes(response.content)
-            if Path(output_path).stat().st_size == 0:
-                raise ComfyUIError("下载的媒体文件为空")
+                output_path = str(output_dir / Path(filename).name)
+            self._save_download(response.content, Path(output_path))
             logger.debug(f"媒体已保存: {output_path}")
             return output_path
         except Exception as e:
             raise ComfyUIError(f"下载媒体失败: {e}") from e
+
+    @staticmethod
+    def _save_download(content: bytes, target: Path, *, verify_image: bool = False) -> None:
+        if not content:
+            raise ComfyUIError("Downloaded media is empty")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(f"{target.name}.{uuid.uuid4().hex}.download")
+        try:
+            temporary.write_bytes(content)
+            if verify_image:
+                from PIL import Image
+                with Image.open(temporary) as decoded:
+                    decoded.verify()
+            temporary.replace(target)
+        finally:
+            temporary.unlink(missing_ok=True)
     
     def generate_batch(
         self,
@@ -999,6 +1162,8 @@ class ComfyUIService:
                 image_path = self.generate_image(prompt=prompt, **kwargs)
                 image_paths.append(image_path)
                 
+            except ComfyUIWaitTimeout:
+                raise
             except Exception as e:
                 logger.error(f"生成第 {i + 1} 张图像失败: {e}")
                 # 继续生成其他图像

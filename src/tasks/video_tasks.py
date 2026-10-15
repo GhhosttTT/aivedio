@@ -8,8 +8,13 @@ from src.config import settings
 from src.database.database import get_db
 from src.database.models import Scene
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
-from src.services.generation_provider import ImageGenerationRequest, VideoGenerationRequest, get_generation_provider
-from src.services.generation_quality_policy import video_quality_budget, video_quality_pipeline
+from src.services.generation_provider import (
+    ImageGenerationRequest, VideoGenerationRequest, GenerationProviderError,
+    get_generation_provider, release_generation_resources,
+)
+from src.services.image_workflow_graph import stage_seed
+from src.services.comfyui_service import ComfyUIError, ComfyUIWaitTimeout
+from src.services.generation_quality_policy import video_quality_budget, video_quality_pipeline, minimum_quality_passes
 from src.services.generation_review import (
     GenerationReviewService,
     ReviewError,
@@ -21,7 +26,7 @@ from src.services.generation_review import (
     write_report,
 )
 from src.services.repair_queue import attach_repair_queue, build_repair_queue
-from src.services.svd_service import get_svd_service
+from src.services.svd_service import SVDError, get_svd_service
 from src.services.video_quality_metrics import video_candidate_metrics
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
@@ -205,7 +210,11 @@ class _ComfyVideoGenerator:
             getattr(self, "repair_action", None),
         )
         negative_prompt = _project_video_negative_prompt(self.scene, negative_prompt)
-        seed = abs(hash((self.scene.id, output_path, motion_bucket_id, round(noise_aug_strength, 4)))) % (2 ** 31)
+        seed = stage_seed(
+            self.scene.id,
+            f"video:{Path(output_path).name}:{motion_bucket_id}:{noise_aug_strength:.4f}",
+        )
+        self.last_seed = seed
         result = self.provider.generate_video(VideoGenerationRequest(
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -233,6 +242,9 @@ class _ComfyVideoGenerator:
     def with_repair_action(self, repair_action: str | None):
         self.repair_action = repair_action
         return self
+
+    def release_generation_resources(self):
+        release_generation_resources(self.provider)
 
 
 def _candidate_video_path(final_path: str | Path, index: int) -> str:
@@ -288,7 +300,7 @@ def _apply_video_repair_action(
 
 def _scene_review_payload(scene: Scene, project_id: int | None = None, db=None) -> dict:
     visible_characters = []
-    character_sheet_contract = {"prompt": "", "negative": "", "references": []}
+    character_sheet_contract = {"prompt": "", "negative": "", "references": [], "identity_contrast_matrix": {}}
     style_service = VisualStyleAssetService()
     if project_id is not None and db is not None:
         from src.tasks.image_tasks import _character_sheet_generation_contract, _visible_character_payload
@@ -324,9 +336,20 @@ def _scene_end_frame_path(project_id: int, scene_id: int) -> str:
     return str(path)
 
 
-def _generate_end_frame(scene: Scene, project_id: int, shot_plan: VideoShotPlan, provider=None) -> str:
+def _generate_end_frame(
+    scene: Scene, project_id: int, shot_plan: VideoShotPlan, provider=None,
+    scene_payload: dict | None = None,
+) -> str:
     provider = provider or get_generation_provider("local_comfyui")
     output_path = _scene_end_frame_path(project_id, scene.id)
+    payload = {
+        **(scene_payload or {}),
+        "scene_number": scene.scene_number,
+        "visual_description": shot_plan.end_frame_prompt,
+        "dialogue": scene.dialogue,
+        "stage": "end_frame",
+    }
+    references = payload.get("character_sheet_references") or []
     request = ImageGenerationRequest(
         prompt=shot_plan.end_frame_prompt,
         negative_prompt=shot_plan.negative_prompt,
@@ -335,13 +358,15 @@ def _generate_end_frame(scene: Scene, project_id: int, shot_plan: VideoShotPlan,
         height=settings.GENERATION_HEIGHT,
         steps=settings.GENERATION_STEPS,
         cfg_scale=settings.GENERATION_CFG,
-        seed=abs(hash((scene.id, "end_frame", shot_plan.shot_role))) % (2 ** 31),
+        seed=stage_seed(scene.id, f"end_frame:{shot_plan.shot_role}"),
         reference_image=scene.image_path,
         use_ipadapter=bool(scene.image_path and settings.COMFYUI_REFERENCE_WORKFLOW_PATH),
         quality_mode=settings.GENERATION_QUALITY_PROFILE,
+        character_references=references if len(references) > 1 else None,
     )
-    result = provider.generate_image(request)
-    return result.output_path
+    from src.tasks.image_tasks import _generate_quality_candidates
+    path, _quality = _generate_quality_candidates(provider, request, payload, scene.image_path)
+    return path
 
 
 def _reference_for_scene(scene: Scene, project_id: int, db) -> str | None:
@@ -732,7 +757,7 @@ def _video_repair_action_from_candidates(candidates: list[dict]) -> str | None:
     if not candidates:
         return None
     queue = build_repair_queue(
-        {"status": "needs_review", "candidates": sorted(candidates, key=lambda item: item.get("average", 0))[:4]},
+        {"status": "needs_review", "candidates": sorted(candidates, key=_video_candidate_rank, reverse=True)[:1]},
         "video",
     )
     for item in queue:
@@ -747,29 +772,47 @@ def _video_repair_action_from_candidates(candidates: list[dict]) -> str | None:
     return None
 
 
+def _video_candidate_passes(candidate: dict) -> bool:
+    return _final_video_acceptance_error(
+        candidate,
+        _video_gate_passes(candidate)[0],
+        _video_aesthetic_gate_passes(candidate),
+        _platform_reference_gate_passes(candidate),
+        _video_character_distinctiveness_gate_passes(candidate),
+        _video_performance_gate_passes(candidate),
+        candidate.get("platform_score"),
+    ) is None
+
+
+def _video_candidate_rank(candidate: dict) -> tuple:
+    return (
+        _video_candidate_passes(candidate),
+        _video_gate_passes(candidate)[0],
+        _video_aesthetic_gate_passes(candidate),
+        _platform_reference_gate_passes(candidate),
+        _video_character_distinctiveness_gate_passes(candidate),
+        _video_performance_gate_passes(candidate),
+        _video_critical_floor_score(candidate) or 0,
+        _video_selection_score(candidate),
+        candidate.get("average", 0),
+    )
+
+
 def _select_best_video_candidate(
     candidates: list[dict],
     final_path: str,
     report_path: Path,
     quality_budget: dict | None = None,
 ) -> tuple[str, dict]:
+    if not candidates:
+        raise ReviewError("No video candidates were generated")
     for candidate in candidates:
         _attach_video_technical_metrics(candidate)
         candidate["critical_floor_score"] = _video_critical_floor_score(candidate)
         candidate["selection_score"] = _video_selection_score(candidate)
     ranked = sorted(
         candidates,
-        key=lambda item: (
-            1 if _video_gate_passes(item)[0] else 0,
-            1 if _video_aesthetic_gate_passes(item) else 0,
-            1 if _platform_reference_gate_passes(item) else 0,
-            1 if _video_character_distinctiveness_gate_passes(item) else 0,
-            1 if _video_performance_gate_passes(item) else 0,
-            item.get("critical_floor_score") or 0,
-            item.get("selection_score", 0),
-            item.get("platform_score", item.get("average", 0)),
-            item.get("average", 0),
-        ),
+        key=_video_candidate_rank,
         reverse=True,
     )
     best = ranked[0]
@@ -785,16 +828,7 @@ def _select_best_video_candidate(
     platform_score = best.get("platform_score")
     report = {
         "kind": "video_candidate_selection",
-        "status": "passed" if (
-            best.get("status") == "passed"
-            and best.get("average", 0) >= settings.GENERATION_VIDEO_MIN_SCORE
-            and (platform_score is None or platform_score >= settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE)
-            and gate_ok
-            and aesthetic_gate_ok
-            and reference_gate_ok
-            and distinctiveness_gate_ok
-            and performance_gate_ok
-        ) else "needs_review",
+        "status": "passed" if _video_candidate_passes(best) else "needs_review",
         "selected_path": best["path"],
         "selected_average": best.get("average", 0),
         "selected_platform_score": platform_score,
@@ -814,7 +848,9 @@ def _select_best_video_candidate(
     }
     if quality_budget:
         report["quality_budget"] = quality_budget
-    if not gate_ok:
+    if best.get("status") != "passed":
+        report["error"] = f"Selected video review status={best.get('status') or 'unknown'}"
+    elif not gate_ok:
         report["error"] = f"Selected video gate scores are below threshold: {gate_scores}"
     elif platform_score is not None and platform_score < settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE:
         report["error"] = (
@@ -920,14 +956,24 @@ def _generate_quality_video_candidates(
                 next_candidate_index += 1
                 candidate_path = _candidate_video_path(output_path, index)
                 motion, noise = _video_variant_params(pass_motion, pass_noise, offset)
-                generated_path = svd_service.generate_video(
-                    image_path=scene.image_path,
-                    output_path=candidate_path,
-                    num_frames=num_frames,
-                    fps=fps,
-                    motion_bucket_id=motion,
-                    noise_aug_strength=noise,
-                )
+                try:
+                    generated_path = svd_service.generate_video(
+                        image_path=scene.image_path,
+                        output_path=candidate_path,
+                        num_frames=num_frames,
+                        fps=fps,
+                        motion_bucket_id=motion,
+                        noise_aug_strength=noise,
+                    )
+                except ComfyUIWaitTimeout:
+                    raise
+                except (ComfyUIError, GenerationProviderError, SVDError, OSError) as exc:
+                    candidates.append({
+                        "index": index, "pass": pass_index, "path": candidate_path,
+                        "status": "error", "average": 0, "error": str(exc),
+                        "stage": "generation", "scene": dict(pass_scene),
+                    })
+                    continue
                 generated.append({
                     "index": index,
                     "pass": pass_index,
@@ -954,6 +1000,7 @@ def _generate_quality_video_candidates(
                     "repair_action": current_repair_action,
                 })
         finally:
+            release_generation_resources(svd_service)
             cleanup_svd_service()
 
         pass_candidates = []
@@ -1023,16 +1070,7 @@ def _generate_quality_video_candidates(
             candidate["selection_score"] = _video_selection_score(candidate)
             candidates.append(candidate)
             pass_candidates.append(candidate)
-        if any(
-            candidate.get("status") == "passed"
-            and candidate.get("average", 0) >= settings.GENERATION_VIDEO_MIN_SCORE
-            and _video_gate_passes(candidate)[0]
-            and _video_aesthetic_gate_passes(candidate)
-            and _platform_reference_gate_passes(candidate)
-            and _video_character_distinctiveness_gate_passes(candidate)
-            and _video_performance_gate_passes(candidate)
-            for candidate in candidates
-        ):
+        if any(_video_candidate_passes(candidate) for candidate in candidates) and pass_index + 1 >= minimum_quality_passes(pass_budget):
             break
         if all(candidate.get("status") == "error" for candidate in pass_candidates):
             break
@@ -1076,7 +1114,7 @@ def generate_video_task(
     db = next(get_db())
     try:
         scene = db.query(Scene).filter(Scene.id == scene_id).first()
-        if not scene:
+        if not scene or scene.project_id != project_id:
             raise ValueError(f"Scene not found: {scene_id}")
         if not scene.image_path:
             raise ValueError(f"Scene image is missing: {scene_id}")
@@ -1105,7 +1143,9 @@ def generate_video_task(
             provider_name = _configured_video_provider_name(kwargs)
             end_image = None
             if settings.GENERATION_VIDEO_END_FRAME_ENABLED and _uses_configured_video_provider(provider_name):
-                end_image = _generate_end_frame(scene, project_id, shot_plan)
+                end_image = _generate_end_frame(
+                    scene, project_id, shot_plan, scene_payload=_scene_review_payload(scene, project_id, db),
+                )
             video_generator = _build_video_generator(scene, shot_plan, provider_name, end_image)
             result_path, quality_report = _generate_quality_video_candidates(
                 video_generator,
@@ -1126,11 +1166,8 @@ def generate_video_task(
                 normalized_path,
                 shot_plan.target_duration_seconds,
             )
-            if normalized != result_path:
-                shutil.copyfile(normalized, video_path)
-                result_path = video_path
             quality_report = _review_final_video_after_postprocess(
-                result_path,
+                normalized,
                 scene,
                 project_id,
                 db,
@@ -1138,9 +1175,12 @@ def generate_video_task(
                 reference=_reference_for_scene(scene, project_id, db),
                 shot_plan=shot_plan,
             )
+            if normalized != result_path:
+                shutil.copyfile(normalized, video_path)
+                result_path = video_path
             logger.info("Video candidate selection completed: scene_id={}, report={}", scene_id, quality_report)
         except Exception as exc:
-            if not draft_fallback_enabled():
+            if isinstance(exc, ComfyUIWaitTimeout) or not draft_fallback_enabled():
                 raise
             duration = get_draft_media_service().estimate_dialogue_duration(scene.dialogue or "")
             logger.warning(
