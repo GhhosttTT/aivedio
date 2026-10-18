@@ -81,6 +81,62 @@ def build_generation_run_evidence(
     }
 
 
+def build_video_generation_evidence(
+    quality_report: dict[str, Any] | None,
+    *,
+    generated_at: int | None = None,
+) -> dict[str, Any]:
+    """Summarize provider attempts and promotion decisions for one video shot."""
+    quality_report = quality_report if isinstance(quality_report, dict) else {}
+    candidates = [item for item in quality_report.get("candidates", []) if isinstance(item, dict)]
+    elapsed = [
+        float(item["elapsed_seconds"])
+        for item in candidates
+        if _is_number(item.get("elapsed_seconds"))
+    ]
+    providers = sorted({
+        str((item.get("provider_metadata") or {}).get("provider_name"))
+        for item in candidates
+        if isinstance(item.get("provider_metadata"), dict)
+        and (item.get("provider_metadata") or {}).get("provider_name")
+    })
+    task_ids = sorted({
+        str((item.get("provider_metadata") or {}).get("provider_task_id"))
+        for item in candidates
+        if isinstance(item.get("provider_metadata"), dict)
+        and (item.get("provider_metadata") or {}).get("provider_task_id")
+    })
+    contract_hashes = sorted({
+        str((item.get("provider_metadata") or {}).get("request_contract_hash"))
+        for item in candidates
+        if isinstance(item.get("provider_metadata"), dict)
+        and (item.get("provider_metadata") or {}).get("request_contract_hash")
+    })
+    generated = [item for item in candidates if item.get("status") != "error" and item.get("path")]
+    passed = [item for item in candidates if item.get("status") == "passed"]
+    return {
+        "schema_version": 1,
+        "kind": "video_generation_run",
+        "generated_at": generated_at if generated_at is not None else round(time.time()),
+        "status": quality_report.get("status", "unknown"),
+        "selected_path": quality_report.get("selected_path"),
+        "promoted_path": quality_report.get("promoted_path"),
+        "attempts": {
+            "candidate_count": len(candidates),
+            "generated_count": len(generated),
+            "passed_count": len(passed),
+            "error_count": sum(1 for item in candidates if item.get("status") == "error"),
+            "elapsed_seconds_sum": round(sum(elapsed), 2),
+            "elapsed_seconds_max": round(max(elapsed), 2) if elapsed else 0.0,
+            "pass_rate": round(len(passed) / len(generated), 4) if generated else 0.0,
+        },
+        "providers": providers,
+        "provider_task_ids": task_ids,
+        "request_contract_hashes": contract_hashes,
+        "quality_budget": quality_report.get("quality_budget", {}),
+    }
+
+
 def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 

@@ -5,6 +5,7 @@ import os
 import json
 import hashlib
 import subprocess
+import time
 from math import gcd
 from pathlib import Path
 from uuid import uuid4
@@ -32,6 +33,7 @@ from src.services.generation_review import (
     platform_video_score,
     write_report,
 )
+from src.services.generation_run_evidence import build_video_generation_evidence
 from src.services.repair_queue import attach_repair_queue, build_repair_queue
 from src.services.svd_service import SVDError, get_svd_service
 from src.services.video_quality_metrics import (
@@ -1922,6 +1924,7 @@ def _select_best_video_candidate(
     }
     if quality_budget:
         report["quality_budget"] = quality_budget
+    report["generation_run_evidence"] = build_video_generation_evidence(report)
     if best.get("status") != "passed":
         report["error"] = f"Selected video review status={best.get('status') or 'unknown'}"
     elif not gate_ok:
@@ -2038,6 +2041,7 @@ def _generate_quality_video_candidates(
                 next_candidate_index += 1
                 candidate_path = _candidate_video_path(output_path, index)
                 motion, noise = _video_variant_params(pass_motion, pass_noise, offset)
+                started = time.monotonic()
                 try:
                     generated_path = svd_service.generate_video(
                         image_path=scene.image_path,
@@ -2054,6 +2058,7 @@ def _generate_quality_video_candidates(
                         "index": index, "pass": pass_index, "path": candidate_path,
                         "status": "error", "average": 0, "error": str(exc),
                         "stage": "generation", "scene": dict(pass_scene),
+                        "elapsed_seconds": round(time.monotonic() - started, 2),
                     })
                     continue
                 generated.append({
@@ -2098,6 +2103,7 @@ def _generate_quality_video_candidates(
                     "shot_plan": shot_plan_payload,
                     "quality_pipeline": quality_pipeline.as_dict(),
                     "repair_action": current_repair_action,
+                    "elapsed_seconds": round(time.monotonic() - started, 2),
                 })
         finally:
             release_generation_resources(svd_service)
@@ -2153,6 +2159,7 @@ def _generate_quality_video_candidates(
                 "request": generated_candidate["request"],
                 "provider_metadata": generated_candidate.get("provider_metadata", {}),
                 "technical_metrics": candidate_technical_metrics,
+                "elapsed_seconds": generated_candidate.get("elapsed_seconds"),
             }
             gate_scores = _video_gate_scores(review)
             if gate_scores:
@@ -2208,6 +2215,7 @@ def _generate_quality_video_candidates(
             "candidates": candidates,
             "quality_budget": strongest_budget.as_dict(),
         }
+        report["generation_run_evidence"] = build_video_generation_evidence(report)
         attach_repair_queue(report, "video")
         write_report(Path(output_path).with_suffix(".quality.json"), report)
         raise ReviewError("All video candidate reviews failed")

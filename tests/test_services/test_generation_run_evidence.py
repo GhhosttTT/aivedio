@@ -1,4 +1,8 @@
-from src.services.generation_run_evidence import build_generation_run_evidence, collect_gpu_evidence
+from src.services.generation_run_evidence import (
+    build_generation_run_evidence,
+    build_video_generation_evidence,
+    collect_gpu_evidence,
+)
 
 
 def test_build_generation_run_evidence_summarizes_cases_and_candidates():
@@ -41,3 +45,52 @@ def test_collect_gpu_evidence_degrades_without_nvidia_smi(monkeypatch):
     assert evidence["status"] == "unavailable"
     assert evidence["devices"] == []
     assert "nvidia-smi" in evidence["reason"]
+
+
+def test_build_video_generation_evidence_tracks_attempts_and_provider_contracts():
+    evidence = build_video_generation_evidence(
+        {
+            "status": "passed",
+            "selected_path": "clip.candidate_02.mp4",
+            "promoted_path": "clip.mp4",
+            "quality_budget": {"candidate_count": 2},
+            "candidates": [
+                {
+                    "path": "clip.candidate_01.mp4",
+                    "status": "needs_review",
+                    "elapsed_seconds": 3.4,
+                    "provider_metadata": {
+                        "provider_name": "seedance_api",
+                        "provider_task_id": "task-1",
+                        "request_contract_hash": "hash-a",
+                    },
+                },
+                {
+                    "path": "clip.candidate_02.mp4",
+                    "status": "passed",
+                    "elapsed_seconds": 4.6,
+                    "provider_metadata": {
+                        "provider_name": "seedance_api",
+                        "provider_task_id": "task-2",
+                        "request_contract_hash": "hash-b",
+                    },
+                },
+                {"path": "clip.candidate_03.mp4", "status": "error", "elapsed_seconds": 0.2},
+            ],
+        },
+        generated_at=456,
+    )
+
+    assert evidence["generated_at"] == 456
+    assert evidence["attempts"] == {
+        "candidate_count": 3,
+        "generated_count": 2,
+        "passed_count": 1,
+        "error_count": 1,
+        "elapsed_seconds_sum": 8.2,
+        "elapsed_seconds_max": 4.6,
+        "pass_rate": 0.5,
+    }
+    assert evidence["providers"] == ["seedance_api"]
+    assert evidence["provider_task_ids"] == ["task-1", "task-2"]
+    assert evidence["request_contract_hashes"] == ["hash-a", "hash-b"]
