@@ -388,6 +388,8 @@ def test_delivery_package_verification_rejects_stale_final_composition_report(tm
         })
         with zipfile.ZipFile(tampered, "w") as target:
             for item in source.infolist():
+                if item.filename == "reviews/final_composition.json":
+                    continue
                 payload = source.read(item.filename)
                 if item.filename == "metadata/delivery_manifest.json":
                     payload = (json.dumps(manifest) + "\n").encode("utf-8")
