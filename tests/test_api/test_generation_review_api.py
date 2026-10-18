@@ -710,6 +710,45 @@ def test_generation_review_summary_blocks_severe_style_boundary_evidence():
     assert any("sequence boundary" in item for item in summary["action_items"])
 
 
+def test_generation_review_summary_blocks_incomplete_sequence_manifest():
+    summary = _generation_review_summary({
+        "production_story": {"status": "passed"},
+        "generation": {"status": "passed"},
+        "seed_dance_baseline_comparison": {"status": "passed"},
+        "final_composition": {"status": "passed"},
+        "sequence_source_videos_sequence_42": {
+            "kind": "sequence_source_manifest",
+            "status": "failed",
+        },
+    })
+
+    assert summary["status"] == "blocked"
+    assert summary["sequence_source"] == {"status": "blocked", "reports": 1}
+    assert any("incomplete multi-shot sequence" in item for item in summary["action_items"])
+
+
+def test_generation_review_api_loads_sequence_manifest(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    manifest = storage_manager.get_project_path(1) / "videos" / "sequence_42.sequence.json"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(json.dumps({
+        "kind": "sequence_source_manifest",
+        "status": "completed",
+        "sequence_output_path": str(manifest.with_suffix(".mp4")),
+    }), encoding="utf-8")
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        id=1, scenes=[], final_video_path=None,
+    )
+
+    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+
+    assert result["reports"]["sequence_source_videos_sequence_42"]["status"] == "completed"
+    assert result["summary"]["sequence_source"] == {"status": "passed", "reports": 1}
+
+
 def test_seed_dance_baseline_endpoint_writes_project_review(tmp_path, monkeypatch):
     from src.utils.storage import storage_manager
     from scripts import compare_video_baseline

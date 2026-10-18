@@ -509,6 +509,14 @@ async def get_generation_review(
             reports[key] = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, TypeError, ValueError):
             logger.warning("Cannot read quality report: {}", path)
+    for path in sorted(project_root.rglob("*.sequence.json")):
+        try:
+            relative = path.relative_to(project_root)
+            manifest_stem = relative.name.removesuffix(".sequence.json")
+            key = "sequence_source_" + "_".join((*relative.parts[:-1], manifest_stem))
+            reports[key] = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError):
+            logger.warning("Cannot read sequence manifest: {}", path)
     final_video_path = getattr(project, "final_video_path", None)
     if final_video_path:
         composition_report_path = Path(final_video_path).with_suffix(".composition_review.json")
@@ -1109,6 +1117,13 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
     timeline_failed = any(report.get("status") != "passed" for report in timeline_reports)
     if timeline_failed:
         action_items.append("Resolve multi-shot sequence timeline duration drift before delivery.")
+    sequence_manifests = [
+        report for report in reports.values()
+        if isinstance(report, dict) and report.get("kind") == "sequence_source_manifest"
+    ]
+    sequence_manifest_failed = any(report.get("status") != "completed" for report in sequence_manifests)
+    if sequence_manifest_failed:
+        action_items.append("Resume or repair incomplete multi-shot sequence generation before delivery.")
 
     final_human_review_required = composition is not None
     final_human_review_decision = None
@@ -1139,6 +1154,7 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         or first_frame == "needs_review"
         or boundary_failed
         or timeline_failed
+        or sequence_manifest_failed
         or (final_human_review_required and final_human_review_decision != "approved")
     )
     return {
@@ -1159,6 +1175,10 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         "sequence_timeline": {
             "status": "blocked" if timeline_failed else ("passed" if timeline_reports else "not_applicable"),
             "reports": len(timeline_reports),
+        },
+        "sequence_source": {
+            "status": "blocked" if sequence_manifest_failed else ("passed" if sequence_manifests else "not_applicable"),
+            "reports": len(sequence_manifests),
         },
         "quality_scorecard": scorecard,
         "action_items": action_items,
