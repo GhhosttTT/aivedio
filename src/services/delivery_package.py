@@ -82,6 +82,7 @@ def verify_delivery_package(package_path: str | Path) -> dict:
                 return result
             result["manifest_schema_version"] = manifest.get("schema_version")
             listed_names: set[str] = set()
+            manifest_entries: dict[str, dict] = {}
             for item in manifest["files"]:
                 archive_name = item.get("path") if isinstance(item, dict) else None
                 archive_path = Path(archive_name) if isinstance(archive_name, str) else None
@@ -92,6 +93,8 @@ def verify_delivery_package(package_path: str | Path) -> dict:
                     result["errors"].append(f"Duplicate manifest path: {archive_name}")
                     continue
                 listed_names.add(archive_name)
+                if isinstance(item, dict):
+                    manifest_entries[archive_name] = item
                 if archive_name not in names:
                     result["errors"].append(f"Manifest file is missing from ZIP: {archive_name}")
                     continue
@@ -113,6 +116,41 @@ def verify_delivery_package(package_path: str | Path) -> dict:
                 result["errors"].append(
                     "ZIP contains files missing from manifest: " + ", ".join(unexpected)
                 )
+            review_index_name = "metadata/review_index.json"
+            if review_index_name in names:
+                try:
+                    review_index = json.loads(archive.read(review_index_name).decode("utf-8"))
+                except (UnicodeDecodeError, ValueError, TypeError) as exc:
+                    result["errors"].append(f"Review index is invalid: {exc}")
+                else:
+                    if not isinstance(review_index, dict):
+                        result["errors"].append("Review index is invalid")
+                    else:
+                        final_video_entry = next(
+                            (item for path, item in manifest_entries.items() if path.startswith("media/final_video")),
+                            None,
+                        )
+                        if (
+                            isinstance(final_video_entry, dict)
+                            and review_index.get("final_video_sha256")
+                            != final_video_entry.get("sha256")
+                        ):
+                            result["errors"].append("Review index final video hash does not match manifest")
+                        for item in review_index.get("review_files", []) or []:
+                            archive_name = item.get("path") if isinstance(item, dict) else None
+                            manifest_item = manifest_entries.get(archive_name)
+                            if manifest_item is None:
+                                result["errors"].append(
+                                    f"Review index references unmanifested file: {archive_name}"
+                                )
+                                continue
+                            if (
+                                item.get("sha256") != manifest_item.get("sha256")
+                                or item.get("size") != manifest_item.get("size")
+                            ):
+                                result["errors"].append(
+                                    f"Review index hash or size mismatch: {archive_name}"
+                                )
             result["status"] = "passed" if not result["errors"] else "failed"
     except (OSError, KeyError, ValueError, zipfile.BadZipFile) as exc:
         result["errors"].append(f"Cannot verify delivery package: {exc}")

@@ -1,4 +1,5 @@
 import json
+import hashlib
 import zipfile
 from types import SimpleNamespace
 
@@ -189,6 +190,40 @@ def test_delivery_package_verification_rejects_duplicate_manifest_path(tmp_path)
     verification = verify_delivery_package(tampered)
     assert verification["status"] == "failed"
     assert any("Duplicate manifest path" in error for error in verification["errors"])
+
+
+def test_delivery_package_verification_rejects_inconsistent_review_index(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+    build_delivery_package(
+        project,
+        tmp_path,
+        {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)},
+        {"status": "ready"},
+    )
+    package = tmp_path / "delivery" / "delivery_package.zip"
+    tampered = tmp_path / "inconsistent-review-index.zip"
+    with zipfile.ZipFile(package) as source:
+        review_index = json.loads(source.read("metadata/review_index.json"))
+        review_index["review_files"].append({"path": "reviews/missing.json", "size": 0, "sha256": "0" * 64})
+        review_payload = (json.dumps(review_index) + "\n").encode("utf-8")
+        manifest = json.loads(source.read("metadata/delivery_manifest.json"))
+        entry = next(item for item in manifest["files"] if item["path"] == "metadata/review_index.json")
+        entry["size"] = len(review_payload)
+        entry["sha256"] = hashlib.sha256(review_payload).hexdigest()
+        with zipfile.ZipFile(tampered, "w") as target:
+            for item in source.infolist():
+                payload = source.read(item.filename)
+                if item.filename == "metadata/review_index.json":
+                    payload = review_payload
+                elif item.filename == "metadata/delivery_manifest.json":
+                    payload = (json.dumps(manifest) + "\n").encode("utf-8")
+                target.writestr(item, payload)
+
+    verification = verify_delivery_package(tampered)
+    assert verification["status"] == "failed"
+    assert any("unmanifested file" in error for error in verification["errors"])
 
 
 def test_delivery_package_includes_scene_assets_and_quality_sidecars(tmp_path):
