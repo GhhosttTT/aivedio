@@ -358,6 +358,8 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
             evidence.append("video opening frame diverges from the locked scene keyframe")
     if video_metrics.get("temporal_jump_ratio", 0) > 0.35:
         evidence.append("video temporal visual resets between sampled frames")
+    if video_metrics.get("temporal_jump_p95", 0) > 0.75:
+        evidence.append("video extreme temporal visual reset in the worst sampled transitions")
     if video_metrics and isinstance(video_score, (int, float)) and video_score < 3:
         if video_metrics.get("motion_energy", 99) < 2:
             evidence.append("video motion too static or frozen")
@@ -493,7 +495,7 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
             "candidate_index": candidate.get("index"),
             "scene_number": _scene_number(candidate),
         }
-    if text.startswith("video temporal visual resets"):
+    if text.startswith("video temporal visual resets") or "extreme temporal visual reset" in text:
         return {
             "priority": "high",
             "stage": "video",
@@ -502,7 +504,7 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
             "reason": evidence[:240],
             "recommendation": (
                 "Regenerate from the accepted keyframe with lower motion/noise and stronger temporal continuity; "
-                "reject candidates with repeated scene resets before composition."
+                "reject candidates with repeated scene resets, including extreme single-frame resets, before composition."
             ),
             "candidate_index": candidate.get("index"),
             "scene_number": _scene_number(candidate),

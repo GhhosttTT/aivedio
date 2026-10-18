@@ -126,6 +126,29 @@ def test_repair_queue_maps_temporal_visual_resets_to_targeted_motion_repair():
     assert "repeated scene resets" in reset_items[0]["recommendation"]
 
 
+def test_repair_queue_maps_extreme_temporal_resets_to_targeted_motion_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 1,
+            "scene": {"scene_number": 7},
+            "average": 4.1,
+            "technical_metrics": {
+                "technical_score": 4.1,
+                "temporal_jump_ratio": 0.01,
+                "temporal_jump_p95": 0.9,
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    reset_items = [item for item in queue if "extreme temporal visual reset" in item["reason"]]
+    assert reset_items
+    assert reset_items[0]["action"] == "lower_motion_and_regenerate_video"
+    assert "extreme single-frame resets" in reset_items[0]["recommendation"]
+
+
 def test_repair_queue_maps_sequence_fps_mismatch_to_output_contract_repair():
     report = {
         "status": "needs_review",
