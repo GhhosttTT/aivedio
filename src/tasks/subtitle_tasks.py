@@ -4,6 +4,7 @@
 """
 
 import json
+import hashlib
 from pathlib import Path
 
 from src.tasks.celery_app import celery_app
@@ -91,6 +92,7 @@ def generate_subtitle_task(
             "cue_strategy": "punctuation_timed",
             "source_duration_seconds": duration,
             "generated_cue_count": len(dialogue_segments),
+            "subtitle_sha256": hashlib.sha256(subtitle_content.encode("utf-8")).hexdigest(),
         })
         Path(result_path).with_suffix(".quality.json").write_text(
             json.dumps(quality_report, ensure_ascii=False, indent=2),

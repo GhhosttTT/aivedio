@@ -1,4 +1,5 @@
 from pathlib import Path
+import hashlib
 import json
 import pytest
 from types import SimpleNamespace
@@ -249,12 +250,33 @@ def test_composition_accepts_matching_dialogue_subtitle(tmp_path):
         encoding="utf-8",
     )
     subtitle.with_suffix(".quality.json").write_text(
-        json.dumps({"status": "passed", "expected_text": "你为什么骗我？！"}),
+        json.dumps({
+            "status": "passed",
+            "expected_text": "你为什么骗我？！",
+            "subtitle_sha256": hashlib.sha256(subtitle.read_bytes()).hexdigest(),
+        }),
         encoding="utf-8",
     )
     scene = Mock(scene_number=1, dialogue="你为什么骗我？！", subtitle_path=str(subtitle))
 
     composition_tasks._require_scene_subtitles([scene])
+
+
+def test_composition_rejects_stale_subtitle_quality_hash(tmp_path):
+    subtitle = tmp_path / "scene_001.srt"
+    subtitle.write_text(
+        "1\n00:00:00,000 --> 00:00:00,800\n你为什么\n骗我\n",
+        encoding="utf-8",
+    )
+    subtitle.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "passed",
+        "expected_text": "你为什么骗我？！",
+        "subtitle_sha256": "0" * 64,
+    }), encoding="utf-8")
+    scene = Mock(scene_number=1, dialogue="你为什么骗我？！", subtitle_path=str(subtitle))
+
+    with pytest.raises(ValueError, match="subtitle quality report is stale for current file"):
+        composition_tasks._require_scene_subtitles([scene])
 
 
 def test_composition_requires_subtitle_quality_evidence(tmp_path):

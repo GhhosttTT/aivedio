@@ -685,6 +685,11 @@ def _require_scene_subtitles(scenes: list[Scene]) -> None:
         expected_text = quality_report.get("expected_text")
         if not isinstance(expected_text, str) or not expected_text.strip() or not _subtitle_matches_dialogue(content, expected_text):
             failed.append(f"{scene.scene_number}: subtitle quality report is stale for current dialogue")
+            continue
+        reported_hash = quality_report.get("subtitle_sha256")
+        current_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if not isinstance(reported_hash, str) or reported_hash.strip().lower() != current_hash:
+            failed.append(f"{scene.scene_number}: subtitle quality report is stale for current file")
     if missing:
         raise ValueError("Missing subtitle for spoken-dialogue scenes: " + ", ".join(missing))
     if failed:
