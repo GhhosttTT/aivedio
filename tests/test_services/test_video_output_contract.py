@@ -212,3 +212,21 @@ def test_sequence_request_plan_rejects_timeline_longer_than_request():
             sequence_level=True,
             expected_duration_seconds=5,
         )
+
+
+def test_sequence_request_plan_rejects_duration_field_drift():
+    with pytest.raises(VideoRequestPlanError, match="disagrees with start/end"):
+        validate_sequence_request_plan(
+            {
+                "shots": [{"scene_number": 1}],
+                "sequence_timeline": [
+                    {
+                        "scene_number": 1,
+                        "start_seconds": 0,
+                        "end_seconds": 2,
+                        "duration_seconds": 3,
+                    },
+                ],
+            },
+            sequence_level=True,
+        )

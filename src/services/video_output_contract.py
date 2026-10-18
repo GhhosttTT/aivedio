@@ -64,6 +64,14 @@ def validate_sequence_request_plan(
             raise VideoRequestPlanError(f"Sequence timeline entry {index} has invalid start/end seconds")
         if start < previous_end:
             raise VideoRequestPlanError("Sequence timeline overlaps or moves backwards")
+        declared_duration = item.get("duration_seconds")
+        if declared_duration is not None:
+            declared = _positive_number(declared_duration)
+            actual = end - start
+            if not declared or abs(declared - actual) > 0.01:
+                raise VideoRequestPlanError(
+                    f"Sequence timeline entry {index} duration_seconds disagrees with start/end"
+                )
         previous_end = end
     if expected_duration_seconds is not None:
         expected = _positive_number(expected_duration_seconds)
