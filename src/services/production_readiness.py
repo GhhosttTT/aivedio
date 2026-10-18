@@ -476,16 +476,10 @@ class ProductionReadinessService:
         warnings: list[ReadinessIssue],
     ) -> dict:
         report = StoryRoomQualityService().evaluate(project, scenes, self._script_scene_map(project)).to_dict()
-        if report["status"] == "weak":
+        if report["status"] != "passed":
             blockers.append(ReadinessIssue(
                 "weak_story_room_quality",
-                "Rewrite weak story-room quality before final production: " + ", ".join(report["missing"]),
-            ))
-        elif report["status"] == "warn":
-            warnings.append(ReadinessIssue(
-                "weak_story_room_quality",
-                "Improve story-room quality before final production: " + ", ".join(report["missing"]),
-                severity="warning",
+                "Rewrite story-room quality before final production: " + ", ".join(report["missing"]),
             ))
         return report
 

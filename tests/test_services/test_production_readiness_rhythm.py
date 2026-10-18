@@ -53,6 +53,33 @@ def test_production_readiness_keeps_soft_rhythm_findings_as_warnings(monkeypatch
     assert not blockers
 
 
+def test_production_readiness_blocks_story_room_warn_before_generation(monkeypatch):
+    monkeypatch.setattr(
+        "src.services.production_readiness.StoryRoomQualityService.evaluate",
+        lambda _self, project, scenes, script_scenes: SimpleNamespace(
+            to_dict=lambda: {
+                "status": "warn",
+                "score": 6,
+                "missing": ["reversal"],
+                "signals": {},
+                "rewrite_actions": ["Add a clear reversal."],
+                "scene_notes": [],
+                "repair_queue": [],
+            }
+        ),
+    )
+    service = ProductionReadinessService(None)
+    service._script_scene_map = lambda project: {}
+    blockers = []
+    warnings = []
+
+    result = service._story_room_check(SimpleNamespace(id=1), [], blockers, warnings)
+
+    assert result["status"] == "warn"
+    assert blockers[0].code == "weak_story_room_quality"
+    assert not warnings
+
+
 def test_production_readiness_maps_warning_findings_to_typed_repair_actions():
     service = ProductionReadinessService(None)
     actions = service._readiness_repair_actions([
