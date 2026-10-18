@@ -48,6 +48,18 @@ class ReadinessIssue:
 class ProductionReadinessService:
     """Build a single evidence report before expensive generation starts."""
 
+    READINESS_REPAIR_ACTIONS = {
+        "missing_spatial_asset_pack": ("refreeze_spatial_plan", "spatial", "setup_required"),
+        "stale_spatial_asset_pack": ("refreeze_spatial_plan", "spatial", "setup_required"),
+        "workflow_profile_not_ready": ("fix_workflow_profile", "workflow", "setup_required"),
+        "video_engine_not_ready": ("fix_workflow_profile", "workflow", "setup_required"),
+        "reviewer_not_configured": ("start_local_reviewer", "review", "setup_required"),
+        "review_backend_not_llama_cpp": ("start_local_reviewer", "review", "setup_required"),
+        "missing_character_turnaround_album": ("regenerate_turnaround_album", "character", "setup_required"),
+        "missing_character_asset_pack": ("regenerate_character_identity", "character", "setup_required"),
+        "missing_character_references": ("regenerate_character_identity", "character", "setup_required"),
+    }
+
     def __init__(self, db_session: Session):
         self.db = db_session
 
@@ -116,6 +128,7 @@ class ProductionReadinessService:
             )
 
         action_items = [issue.message for issue in blockers + warnings]
+        repair_actions = self._readiness_repair_actions(blockers)
         status = "blocked" if blockers else ("needs_review" if warnings else "ready")
         return {
             "project_id": project_id,
@@ -124,7 +137,29 @@ class ProductionReadinessService:
             "warnings": [issue.to_dict() for issue in warnings],
             "checks": checks,
             "action_items": action_items,
+            "repair_actions": repair_actions,
         }
+
+    def _readiness_repair_actions(self, blockers: list[ReadinessIssue]) -> list[dict]:
+        actions = []
+        seen = set()
+        for issue in blockers:
+            action, stage, execution = self.READINESS_REPAIR_ACTIONS.get(
+                issue.code,
+                ("manual_review", "review", "manual"),
+            )
+            if action in seen:
+                continue
+            seen.add(action)
+            actions.append({
+                "action": action,
+                "stage": stage,
+                "execution": execution,
+                "source_report": "production_readiness",
+                "reason": issue.message,
+                "recommendation": f"Resolve production readiness blocker: {issue.code}.",
+            })
+        return actions
 
     def _topic_brief_check(self, project: Project, warnings: list[ReadinessIssue]) -> dict:
         report = TopicBriefService().check(project.id)

@@ -38,6 +38,7 @@ export function ProductionReadinessPanel({
     const sampleValidation = report?.checks.sample_validation;
     const qualityScorecard = sampleValidation?.quality_scorecard;
     const scorecardFocus = sampleValidation?.checks?.quality_scorecard_next_focus || qualityScorecard?.next_focus;
+    const readinessActions = report?.repair_actions || [];
     return (
         <section className={`wb-panel wb-readiness ${blocked ? 'blocked' : warning ? 'needs_review' : 'ready'}`}>
             <div className="wb-row wb-between">
@@ -173,6 +174,17 @@ export function ProductionReadinessPanel({
                     ))}
                 </div>
             ) : null}
+            {readinessActions.length > 0 && (
+                <div className="wb-summary-actions">
+                    <h3>阻断修复动作</h3>
+                    {readinessActions.slice(0, 8).map((item) => (
+                        <div className="wb-issue blocker" key={item.action}>
+                            <span>{labelScorecardAction(item.action)}</span>
+                            <p>{item.recommendation} · {item.reason}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
             {issues.length > 0 && (
                 <div className="wb-summary-actions">
                     {issues.map(issue => (

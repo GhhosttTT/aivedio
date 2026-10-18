@@ -489,6 +489,14 @@ export interface ProductionReadinessReport {
     status: 'ready' | 'needs_review' | 'blocked' | string;
     blockers: ProductionReadinessIssue[];
     warnings: ProductionReadinessIssue[];
+    repair_actions?: Array<{
+        action: string;
+        stage: string;
+        execution: string;
+        source_report: string;
+        reason: string;
+        recommendation: string;
+    }>;
     checks: {
         script?: {
             scene_count: number;

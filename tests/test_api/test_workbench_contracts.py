@@ -2017,6 +2017,8 @@ def test_production_readiness_reports_spatial_continuity_plan(setup):
     assert spatial["status"] == "planned"
     assert spatial["asset_pack"]["status"] == "missing"
     assert spatial["asset_pack"]["control_gaps"] == []
+    assert spatial["status"] == "planned"
+    assert any(item["action"] == "refreeze_spatial_plan" for item in payload["repair_actions"])
     assert any(item["code"] == "missing_spatial_asset_pack" for item in payload["blockers"])
     assert spatial["scenes"][0]["shot_scale"] == "medium two-shot"
     assert spatial["scenes"][0]["character_positions"] == {"Alice": "frame left", "Bob": "frame right"}
