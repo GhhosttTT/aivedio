@@ -10,6 +10,8 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from src.services.video_quality_metrics import video_candidate_metrics
+
 
 PLATFORM_EXPORT_PRESETS = {
     "douyin": {"label": "抖音竖屏", "width": 1080, "height": 1920, "fps": 30},
@@ -71,6 +73,8 @@ def export_platform_video(final_video_path: str | Path, project_root: str | Path
             isinstance(cached, dict)
             and cached.get("source_signature") == source_version
             and cached.get("output_signature") == _signature(output)
+            and isinstance(cached.get("technical_metrics"), dict)
+            and cached["technical_metrics"].get("status") == "available"
         ):
             return cached
 
@@ -98,6 +102,9 @@ def export_platform_video(final_video_path: str | Path, project_root: str | Path
     finally:
         temporary.unlink(missing_ok=True)
 
+    technical_metrics = video_candidate_metrics(output, max_samples=8)
+    _validate_export_metrics(technical_metrics, config, output)
+
     result = {
         "status": "ready",
         "preset": str(preset).strip().lower(),
@@ -109,7 +116,32 @@ def export_platform_video(final_video_path: str | Path, project_root: str | Path
         "source_signature": source_version,
         "output_path": str(output),
         "output_signature": _signature(output),
+        "technical_metrics": technical_metrics,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     _write_json(manifest_path, result)
     return result
+
+
+def _validate_export_metrics(metrics: dict, config: dict, output: Path) -> None:
+    """Reject an export unless its decoded media honors the preset contract."""
+    if not isinstance(metrics, dict) or metrics.get("status") != "available":
+        detail = metrics.get("error") if isinstance(metrics, dict) else None
+        raise PlatformExportError(
+            "Platform export could not be decoded for technical validation"
+            + (f": {detail}" if detail else "")
+        )
+    actual_width = int(metrics.get("width") or 0)
+    actual_height = int(metrics.get("height") or 0)
+    if actual_width != int(config["width"]) or actual_height != int(config["height"]):
+        raise PlatformExportError(
+            f"Platform export geometry drifted to {actual_width}x{actual_height}; "
+            f"expected {config['width']}x{config['height']}"
+        )
+    actual_fps = float(metrics.get("fps") or 0.0)
+    if abs(actual_fps - float(config["fps"])) > 0.5:
+        raise PlatformExportError(
+            f"Platform export frame rate drifted to {actual_fps:g}fps; expected {config['fps']}fps"
+        )
+    if float(metrics.get("duration_seconds") or 0.0) <= 0:
+        raise PlatformExportError(f"Platform export has no positive duration: {output}")
