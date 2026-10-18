@@ -110,6 +110,20 @@ export function ProjectDetail() {
     };
     const executeReadinessAction = async (action: string) => {
         if (locked) return;
+        const automaticRepairActions = new Set([
+            'lower_motion_and_regenerate_video',
+            'regenerate_video_with_performance_direction',
+            'refine_video_commercial_aesthetic',
+        ]);
+        if (automaticRepairActions.has(action)) {
+            setBusy('提交自动视频返修'); setError('');
+            try {
+                await projectApi.runAutoRepairQueue(Number(id), {max_actions: 5});
+                await reload();
+            } catch(e) { setError(errorText(e)); }
+            finally { setBusy(''); }
+            return;
+        }
         if (action === 'refreeze_spatial_plan') {
             await run('冻结空间计划');
             return;
