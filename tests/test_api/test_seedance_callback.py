@@ -40,6 +40,33 @@ def test_seedance_callback_rejects_invalid_secret(tmp_path, monkeypatch):
     assert response.status_code == 401
 
 
+def test_seedance_callback_rejects_missing_secret_by_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    monkeypatch.delenv("SEEDANCE_CALLBACK_SECRET", raising=False)
+    monkeypatch.delenv("SEEDANCE_CALLBACK_ALLOW_UNSIGNED", raising=False)
+
+    response = TestClient(create_app()).post(
+        "/api/webhooks/seedance",
+        json={"id": "cgt-123", "status": "running"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_seedance_callback_unsigned_mode_requires_explicit_opt_in(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    monkeypatch.delenv("SEEDANCE_CALLBACK_SECRET", raising=False)
+    monkeypatch.setenv("SEEDANCE_CALLBACK_ALLOW_UNSIGNED", "true")
+
+    response = TestClient(create_app()).post(
+        "/api/webhooks/seedance",
+        json={"id": "cgt-123", "status": "running"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["unsigned_callbacks_allowed"] is True
+
+
 def test_seedance_callback_does_not_regress_terminal_state(tmp_path, monkeypatch):
     monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
     monkeypatch.setenv("SEEDANCE_CALLBACK_SECRET", "callback-secret")

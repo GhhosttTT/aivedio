@@ -32,13 +32,19 @@ def _callback_secret() -> str:
     ).strip()
 
 
+def _unsigned_callbacks_allowed() -> bool:
+    value = os.getenv("SEEDANCE_CALLBACK_ALLOW_UNSIGNED")
+    if value is None:
+        value = getattr(settings, "SEEDANCE_CALLBACK_ALLOW_UNSIGNED", False)
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _secret_is_valid(request: Request, token: str | None) -> bool:
     expected = _callback_secret()
     if not expected:
-        # Ark does not provide a universal signing header. The endpoint is
-        # still usable without a secret for backward compatibility, but the
-        # response exposes the insecure configuration to operators.
-        return True
+        # Never expose an unauthenticated production webhook by accident. A
+        # local gateway can explicitly opt in when it cannot send a header.
+        return _unsigned_callbacks_allowed()
     provided = request.headers.get("x-seedance-callback-secret") or token or ""
     return hmac.compare_digest(provided, expected)
 
@@ -125,4 +131,5 @@ async def receive_seedance_callback(request: Request, token: str | None = None):
         "status": state,
         "matched_pending_tasks": stored,
         "callback_secret_configured": bool(_callback_secret()),
+        "unsigned_callbacks_allowed": _unsigned_callbacks_allowed(),
     }

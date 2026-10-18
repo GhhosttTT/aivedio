@@ -95,7 +95,8 @@ python3 scripts/validate_seedance_gateway.py --dry-run --api-format ark_v3 \
 长任务可配置 `SEEDANCE_CALLBACK_URL`，Ark 会在任务状态变化时回调该地址；本项目提供
 `POST /api/webhooks/seedance` 接收器。生产环境请同时设置
 `SEEDANCE_CALLBACK_SECRET`，并通过 `X-Seedance-Callback-Secret` 请求头或 URL 的
-`?token=` 传递密钥；回调会按远端 task ID 写入 pending sidecar，provider 在终态回调到达时优先使用它，轮询仍作为兜底。
+`?token=` 传递密钥；未配置密钥时 webhook 默认拒绝请求。仅本地无法发送签名的网关可显式设置
+`SEEDANCE_CALLBACK_ALLOW_UNSIGNED=true`，生产环境不要开启。回调会按远端 task ID 写入 pending sidecar，provider 在终态回调到达时优先使用它，轮询仍作为兜底。
 本地任务仍保留轮询兜底，因此回调暂时不可用不会影响已有流程。
 
 拿到真实样片后，可用 `scripts/compare_video_baseline.py` 对候选视频和 Seedance

@@ -80,10 +80,11 @@ when the remote task is still queued. Ark rejects cancellation after a task
 enters `running`, so a successful local cancellation remains the authoritative
 user-visible state in that case.
 
-Native Ark callbacks are accepted at `/api/webhooks/seedance` with an optional
-shared secret. Matching terminal callback payloads are written next to the
-pending sidecar and consumed before the next status poll; polling remains the
-fallback when a webhook is delayed or unavailable.
+Native Ark callbacks are accepted at `/api/webhooks/seedance` with a required
+shared secret by default. Matching terminal callback payloads are written next
+to the pending sidecar and consumed before the next status poll; polling remains
+the fallback when a webhook is delayed or unavailable. Local-only gateways can
+explicitly opt into unsigned callbacks with `SEEDANCE_CALLBACK_ALLOW_UNSIGNED`.
 
 If a remote task has already been accepted but its status becomes ambiguous,
 the task runner will not create a second draft fallback job. This avoids

@@ -228,6 +228,9 @@ class Settings(BaseSettings):
     SEEDANCE_MAX_POLLS: int = 240
     SEEDANCE_CALLBACK_URL: str = ""
     SEEDANCE_CALLBACK_SECRET: str = ""
+    # Keep the public callback receiver authenticated by default. This is only
+    # useful for local gateways that cannot attach a callback header.
+    SEEDANCE_CALLBACK_ALLOW_UNSIGNED: bool = False
     SEEDANCE_MAX_RETRIES: int = 2
     SEEDANCE_RETRY_BACKOFF_SECONDS: float = 1.0
     SEEDANCE_AUTH_HEADER: str = "Authorization"
