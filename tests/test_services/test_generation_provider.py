@@ -1556,12 +1556,33 @@ def test_seedance_provider_native_ark_uses_first_last_frame_contract(tmp_path, m
         reference_image=str(first),
         end_image=str(last),
         duration_seconds=6,
+        draft=True,
     ))
 
     assert payload["ratio"] == "adaptive"
-    assert payload["resolution"] == "1080p"
+    assert payload["resolution"] == "480p"
+    assert payload["draft"] is True
     assert "omni_reference_task_type" not in payload
     assert [item["role"] for item in payload["content"][1:]] == ["first_frame", "last_frame"]
+
+
+def test_seedance_native_ark_25_requires_draft_for_first_last_frame(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
+    first = tmp_path / "first.png"
+    last = tmp_path / "last.png"
+    first.write_bytes(b"first")
+    last.write_bytes(b"last")
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    with pytest.raises(GenerationProviderError, match="requires Draft=true"):
+        provider._video_payload(VideoGenerationRequest(
+            prompt="A person turns toward camera",
+            output_path=str(tmp_path / "out.mp4"),
+            reference_image=str(first),
+            end_image=str(last),
+            duration_seconds=6,
+        ))
 
 
 @pytest.mark.parametrize(
@@ -1603,6 +1624,7 @@ def test_seedance_native_ark_rejects_non_public_direct_media_url(reference_url, 
 
 def test_seedance_native_ark_first_last_honors_explicit_resolution(tmp_path, monkeypatch):
     monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-0-260128")
     first = tmp_path / "first.png"
     last = tmp_path / "last.png"
     first.write_bytes(b"first")

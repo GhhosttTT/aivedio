@@ -1740,8 +1740,16 @@ class SeedanceApiProvider(ApiVideoProvider):
             raise GenerationProviderError(
                 f"Native Seedance model {model} does not support Draft generation; use Seedance 2.5"
             )
-        if first_last_frame and draft_requested:
-            raise GenerationProviderError("Seedance first/last-frame Draft generation is not supported; disable Draft")
+        # Seedance 2.5 first/last-frame generation is a two-phase workflow:
+        # the first request must create a 480p Draft task, then the returned
+        # draft_task_id is promoted to the final output.  Rejecting Draft here
+        # would make the documented keyframe workflow impossible and would
+        # leave callers with a task id that cannot be promoted reliably.
+        if first_last_frame and is_25 and not draft_requested:
+            raise GenerationProviderError(
+                "Seedance 2.5 first/last-frame generation requires Draft=true; "
+                "promote the returned draft task for the final video"
+            )
         resolution = (
             "480p"
             if draft_requested
