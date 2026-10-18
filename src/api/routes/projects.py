@@ -2048,7 +2048,9 @@ async def run_auto_repair_queue(
     budget = RepairBudget(project_id)
     if review.get("summary", {}).get("status") in {"ready", "ready_for_seed_dance_candidate"}:
         budget.reset()
-    loop_plan = build_quality_loop_plan(review.get("summary", {}), request.max_actions)
+    loop_plan = build_quality_loop_plan(
+        review.get("summary", {}), request.max_actions, request.action,
+    )
     selected, exhausted = budget.filter(loop_plan["selected"])
     skipped = loop_plan["skipped"] + exhausted
     if request.dry_run:

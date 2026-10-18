@@ -73,7 +73,11 @@ def scene_number_from_repair_item(item: dict[str, Any]) -> int | None:
     return scene_number if scene_number > 0 else None
 
 
-def auto_repair_candidates(repair_queue: dict[str, Any], max_actions: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def auto_repair_candidates(
+    repair_queue: dict[str, Any],
+    max_actions: int,
+    action_filter: str | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Select executable repair actions for one quality loop iteration.
 
     Visual repairs are dependency-aware per scene. Image/keyframe repairs are
@@ -88,7 +92,9 @@ def auto_repair_candidates(repair_queue: dict[str, Any], max_actions: int) -> tu
     items = [
         dict(item)
         for item in repair_queue.get("items", []) or []
-        if isinstance(item, dict) and item.get("execution") == "auto"
+        if isinstance(item, dict)
+        and item.get("execution") == "auto"
+        and (not action_filter or item.get("action") == action_filter)
     ]
     for item in items:
         item["stage"] = SCORECARD_ACTION_STAGES.get(str(item.get("action") or ""), item.get("stage"))
@@ -277,13 +283,17 @@ def _low_production_score_item(scorecard: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_quality_loop_plan(summary: dict[str, Any], max_actions: int) -> dict[str, Any]:
+def build_quality_loop_plan(
+    summary: dict[str, Any],
+    max_actions: int,
+    action_filter: str | None = None,
+) -> dict[str, Any]:
     repair_queue = normalize_repair_queue(summary.get("repair_queue"))
     repair_queue = augment_repair_queue_with_scorecard(
         repair_queue,
         summary.get("quality_scorecard") if isinstance(summary.get("quality_scorecard"), dict) else None,
     )
-    selected, skipped = auto_repair_candidates(repair_queue, max_actions)
+    selected, skipped = auto_repair_candidates(repair_queue, max_actions, action_filter)
     setup_required = repair_queue["setup_required"]
     manual_actions = repair_queue["manual_actions"]
     if selected:

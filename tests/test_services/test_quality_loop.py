@@ -352,3 +352,36 @@ def test_quality_loop_keeps_scorecard_focus_manual_without_scene_scope():
     assert plan["status"] == "manual_review_required"
     assert plan["manual_actions"][0]["action"] == "refine_prompt_composition"
     assert plan["manual_actions"][0]["missing_scope"] == "scene_number"
+
+
+def test_quality_loop_action_filter_only_selects_requested_repair():
+    summary = {
+        "repair_queue": {
+            "items": [
+                {
+                    "scene_number": 1,
+                    "priority": "high",
+                    "stage": "video",
+                    "action": "lower_motion_and_regenerate_video",
+                    "execution": "auto",
+                },
+                {
+                    "scene_number": 2,
+                    "priority": "high",
+                    "stage": "video",
+                    "action": "refine_video_commercial_aesthetic",
+                    "execution": "auto",
+                },
+            ]
+        }
+    }
+
+    plan = build_quality_loop_plan(
+        summary,
+        max_actions=5,
+        action_filter="refine_video_commercial_aesthetic",
+    )
+
+    assert [item["action"] for item in plan["selected"]] == [
+        "refine_video_commercial_aesthetic",
+    ]

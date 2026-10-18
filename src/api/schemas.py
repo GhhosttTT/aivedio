@@ -377,6 +377,7 @@ class RepairSceneRequest(BaseModel):
 class RepairQueueAutoRunRequest(BaseModel):
     max_actions: int = Field(5, ge=1, le=20, description="本次最多提交的自动返工任务数")
     dry_run: bool = Field(False, description="只返回将要提交的计划，不真正创建任务")
+    action: Optional[str] = Field(None, min_length=1, max_length=100, description="只执行指定的自动返工动作")
 
 
 class RepairQueueAutoRunResponse(BaseModel):

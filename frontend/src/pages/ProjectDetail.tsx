@@ -118,7 +118,7 @@ export function ProjectDetail() {
         if (automaticRepairActions.has(action)) {
             setBusy('提交自动视频返修'); setError('');
             try {
-                await projectApi.runAutoRepairQueue(Number(id), {max_actions: 5});
+                await projectApi.runAutoRepairQueue(Number(id), {max_actions: 5, action});
                 await reload();
             } catch(e) { setError(errorText(e)); }
             finally { setBusy(''); }
