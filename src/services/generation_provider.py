@@ -1559,12 +1559,16 @@ class SeedanceApiProvider(ApiVideoProvider):
                 "resolution": "1080p",
                 "output_format": output_format,
                 "watermark": _provider_bool_value(request.watermark, "SEEDANCE_WATERMARK"),
-                "return_last_frame": _provider_bool_value(request.return_last_frame, "SEEDANCE_RETURN_LAST_FRAME"),
             }
             self.last_result_metadata["requested_resolution"] = "1080p"
             self.last_result_metadata["requested_output_format"] = output_format
             self.last_result_metadata["requested_watermark"] = payload["watermark"]
-            self.last_result_metadata["requested_return_last_frame"] = payload["return_last_frame"]
+            # Draft promotion reuses the task's generation inputs. Keep the
+            # local request intent observable, but do not resend this field to
+            # Ark where the promotion contract only accepts output controls.
+            self.last_result_metadata["requested_return_last_frame"] = _provider_bool_value(
+                request.return_last_frame, "SEEDANCE_RETURN_LAST_FRAME"
+            )
             return payload
 
         self._validate_reference_limits(request, native_ark=True)

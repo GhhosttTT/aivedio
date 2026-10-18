@@ -1797,7 +1797,7 @@ def test_seedance_native_ark_draft_promotion_only_sends_reusable_output_controls
 
     assert payload["resolution"] == "1080p"
     assert set(payload) == {
-        "model", "content", "resolution", "output_format", "watermark", "return_last_frame",
+        "model", "content", "resolution", "output_format", "watermark",
     }
 
 
