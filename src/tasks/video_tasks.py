@@ -126,6 +126,15 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
             item = _reference_asset_evidence(role, value, index)
             if item:
                 reference_assets.append(item)
+    dialogue = str(shot_plan.get("dialogue") or "").strip()
+    dialogue_fingerprint = hashlib.sha256(
+        " ".join(dialogue.split()).encode("utf-8")
+    ).hexdigest() if dialogue else None
+    audio_binding_mode = (
+        "native_audio" if request.generate_audio
+        else "reference_audio" if request.audio_path or request.reference_audios
+        else "silent"
+    )
     contract = {
         "provider_request_version": 1,
         "request_mode": request_mode,
@@ -138,6 +147,8 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         "multi_shot": bool(request.multi_shot),
         "sequence_level_multi_shot": bool(sequence_level),
         "generate_audio": bool(request.generate_audio),
+        "audio_binding_mode": audio_binding_mode,
+        "dialogue_fingerprint": dialogue_fingerprint,
         "return_last_frame": bool(request.return_last_frame),
         "camera_fixed": bool(request.camera_fixed),
         "watermark": bool(request.watermark),

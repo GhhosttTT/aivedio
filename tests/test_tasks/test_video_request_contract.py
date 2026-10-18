@@ -56,6 +56,25 @@ def test_video_request_contract_hash_changes_when_a_quality_control_changes():
     assert first["contract_hash"] != second["contract_hash"]
 
 
+def test_video_request_contract_binds_dialogue_and_audio_mode(tmp_path):
+    audio = tmp_path / "dialogue.wav"
+    audio.write_bytes(b"audio")
+    request = VideoGenerationRequest(
+        prompt="shot",
+        output_path=str(tmp_path / "shot.mp4"),
+        audio_path=str(audio),
+        shot_plan={"dialogue": "你为什么骗我"},
+    )
+    reference = _video_request_contract(request, request_mode="reference", sequence_level=False)
+    changed = replace(request, shot_plan={"dialogue": "我没有骗你"})
+    changed_contract = _video_request_contract(changed, request_mode="reference", sequence_level=False)
+
+    assert reference["audio_binding_mode"] == "reference_audio"
+    assert reference["dialogue_fingerprint"]
+    assert reference["dialogue_fingerprint"] != changed_contract["dialogue_fingerprint"]
+    assert reference["contract_hash"] != changed_contract["contract_hash"]
+
+
 def test_video_request_contract_records_multicharacter_reference_bindings():
     request = VideoGenerationRequest(
         prompt="two characters confront each other",
