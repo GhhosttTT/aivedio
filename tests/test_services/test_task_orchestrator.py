@@ -113,7 +113,8 @@ class TestCreateProductionTask:
         
         # 创建生产任务
         celery_task_id = orchestrator.create_production_task(
-            project_id=sample_project.id
+            project_id=sample_project.id,
+            draft=True,
         )
         
         # 验证返回值
@@ -151,6 +152,7 @@ class TestCreateProductionTask:
         celery_task_id = orchestrator.create_production_task(
             project_id=sample_project.id,
             sequence_level_multi_shot=True,
+            draft=True,
         )
 
         assert celery_task_id == "sequence-celery-task-id"
@@ -176,6 +178,26 @@ class TestCreateProductionTask:
 
         with pytest.raises(ValueError, match="Production readiness is not ready"):
             orchestrator.create_production_task(project_id=sample_project.id)
+
+    def test_final_generation_cannot_bypass_readiness_with_svd_fallback(
+        self, orchestrator, sample_project, sample_scenes, monkeypatch
+    ):
+        monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", True)
+
+        class FakeReadiness:
+            def __init__(self, _db):
+                pass
+
+            def build_report(self, project_id, **kwargs):
+                return {
+                    "status": "blocked",
+                    "action_items": ["Freeze the spatial asset pack."],
+                }
+
+        monkeypatch.setattr("src.services.task_orchestrator.ProductionReadinessService", FakeReadiness)
+
+        with pytest.raises(ValueError, match="Production readiness is not ready"):
+            orchestrator.create_production_task(project_id=sample_project.id, draft=False)
 
     @patch('src.services.task_orchestrator.chain')
     def test_per_run_provider_is_used_by_readiness_and_engine_preflight(

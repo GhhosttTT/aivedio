@@ -146,13 +146,13 @@ def test_production_id_persistence_duplicate_submission_status_cancel(setup, mon
             submitted.append(task_id)
         return SimpleNamespace(freeze=lambda: SimpleNamespace(id=identifier), apply_async=publish)
     monkeypatch.setattr(TaskOrchestrator, "_build_task_chain", build)
-    result = client.post("/api/projects/1/produce")
+    result = client.post("/api/projects/1/produce", json={"draft": True})
     assert result.status_code == 200, result.text
     identifier = result.json()["task_id"]
     assert len(identifier) == 36 and submitted
     assert client.get(f"/api/tasks/{identifier}/status").json()["status"] == "running"
     assert client.get("/api/projects/1/production-task").json()["celery_task_id"] == identifier
-    assert client.post("/api/projects/1/produce").status_code == 409
+    assert client.post("/api/projects/1/produce", json={"draft": True}).status_code == 409
     assert client.put("/api/projects/1/scenes/1", json={"visual_description": "edit"}).status_code == 409
     monkeypatch.setattr("src.services.task_orchestrator.celery_app.control.revoke", Mock())
     assert client.post(f"/api/tasks/{identifier}/cancel").status_code == 200
@@ -165,7 +165,7 @@ def test_broker_failure_sets_failed(setup, monkeypatch):
     chain.freeze.return_value.id = str(uuid4())
     chain.apply_async.side_effect = RuntimeError("broker offline")
     monkeypatch.setattr(TaskOrchestrator, "_build_task_chain", lambda *a, **k: chain)
-    assert client.post("/api/projects/1/produce").status_code == 500
+    assert client.post("/api/projects/1/produce", json={"draft": True}).status_code == 500
     latest = client.get("/api/projects/1/production-task").json()
     assert latest["status"] == "failed" and "broker offline" in latest["error_message"]
     assert client.get("/api/projects/1").json()["status"] == "failed"

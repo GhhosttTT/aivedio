@@ -173,7 +173,7 @@ class TestTaskChain:
         orchestrator = TaskOrchestrator(mock_db_session)
         
         # 调用创建生产任务
-        task_id = orchestrator.create_production_task(project_id=1)
+        task_id = orchestrator.create_production_task(project_id=1, draft=True)
         
         # 验证返回了任务ID
         assert task_id == "test-task-id-123"
@@ -221,7 +221,7 @@ class TestTaskChain:
         monkeypatch.setattr(TaskOrchestrator, "_build_task_chain", Mock(return_value=task_chain))
 
         orchestrator = TaskOrchestrator(mock_db_session)
-        task_id = orchestrator.create_production_task(project_id=1)
+        task_id = orchestrator.create_production_task(project_id=1, draft=True)
 
         assert task_id == "draft-task-id"
         preflight.assert_not_called()

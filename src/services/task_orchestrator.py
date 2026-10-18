@@ -132,7 +132,13 @@ class TaskOrchestrator:
         
         if project.status == ProjectStatus.IN_PRODUCTION:
             raise ValueError("项目正在制作，请等待当前任务结束")
-        if generate_videos and not settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK:
+        # SVD fallback is an explicit draft-only escape hatch. It must never
+        # bypass the production readiness and engine contracts for final video.
+        fallback_draft = bool(
+            settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK
+            and (draft or draft_task_id or draft_task_ids)
+        )
+        if generate_videos and not fallback_draft:
             configured_provider = str(
                 os.getenv("GENERATION_PROVIDER") or settings.GENERATION_PROVIDER or ""
             ).strip().lower()

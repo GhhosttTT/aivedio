@@ -30,7 +30,7 @@ def submit(orchestrator, project):
     with patch("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", True), \
             patch("src.services.task_orchestrator.chain") as chain:
         chain.return_value.freeze.return_value = SimpleNamespace(id=identifier)
-        orchestrator.create_production_task(project.id)
+        orchestrator.create_production_task(project.id, draft=True)
     return orchestrator.db.query(Task).filter(Task.celery_task_id == identifier).one()
 
 @given(st.integers(1, 12))
@@ -38,7 +38,7 @@ def submit(orchestrator, project):
 def test_task_chain_structure_and_real_id(count):
     with case(count) as (service, project):
         task = submit(service, project)
-        assert task.total_steps == count * 4 + 3
+        assert task.total_steps == count * 4 + 1
         assert task.id > 0 and task.status == TaskStatus.PENDING
 
 @given(st.lists(st.floats(min_value=-10, max_value=110, allow_nan=False), min_size=1, max_size=20))
