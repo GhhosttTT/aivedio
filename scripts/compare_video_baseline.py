@@ -294,6 +294,14 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
                 and candidate_stats.audio_video_start_delta_seconds <= 0.35
             )
         ),
+        "audio_level_close": (
+            not baseline_stats.audio_present
+            or (
+                candidate_stats.audio_peak_db is not None
+                and baseline_stats.audio_peak_db is not None
+                and abs(candidate_stats.audio_peak_db - baseline_stats.audio_peak_db) <= 12.0
+            )
+        ),
     }
     score = _technical_similarity_score(differences, gates)
     status = "passed" if all(gates.values()) and score >= 4.0 else "needs_review"
