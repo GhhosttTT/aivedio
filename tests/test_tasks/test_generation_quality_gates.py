@@ -3309,6 +3309,21 @@ def test_seedance_multi_shot_generator_emits_bounded_plan_and_long_duration(proj
     assert "scene 2 4.250-8.500s" in provider.request.prompt
 
 
+def test_sequence_level_multi_shot_resolution_matches_provider_environment(monkeypatch):
+    from src.tasks.video_tasks import _sequence_level_multi_shot_enabled
+
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_MULTI_SHOT", False)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_SEQUENCE_LEVEL_MULTI_SHOT", False)
+    monkeypatch.setenv("SEEDANCE_MULTI_SHOT", "true")
+    monkeypatch.setenv("SEEDANCE_SEQUENCE_LEVEL_MULTI_SHOT", "true")
+
+    assert _sequence_level_multi_shot_enabled("seedance_api", {}) is True
+    assert _sequence_level_multi_shot_enabled(
+        "seedance_api",
+        {"MULTI_SHOT": False, "SEQUENCE_LEVEL_MULTI_SHOT": True},
+    ) is False
+
+
 def test_video_generator_applies_per_run_seedance_controls(project_data, tmp_path):
     _, _, scene, _, _ = project_data
 

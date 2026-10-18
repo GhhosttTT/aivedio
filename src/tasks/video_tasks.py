@@ -70,6 +70,40 @@ def _setting_enabled(value) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _sequence_level_multi_shot_enabled(provider_name: str, kwargs: dict | None = None) -> bool:
+    """Resolve the same sequence-level switch used by the provider adapter.
+
+    Task setup must agree with request construction: otherwise it can generate
+    an end-frame asset or load only one scene's references while the provider
+    is actually receiving a sequence-level multi-shot request.
+    """
+    options = kwargs or {}
+    explicit_sequence = options.get("sequence_level_multi_shot")
+    if explicit_sequence is None:
+        explicit_sequence = options.get("SEQUENCE_LEVEL_MULTI_SHOT")
+    explicit_multi = options.get("multi_shot")
+    if explicit_multi is None:
+        explicit_multi = options.get("MULTI_SHOT")
+    prefix = "SEEDANCE" if provider_name == "seedance_api" else "HTTP_VIDEO"
+    sequence_value = (
+        explicit_sequence
+        if explicit_sequence is not None
+        else os.getenv(
+            f"{prefix}_SEQUENCE_LEVEL_MULTI_SHOT",
+            getattr(settings, f"{prefix}_SEQUENCE_LEVEL_MULTI_SHOT", False),
+        )
+    )
+    multi_value = (
+        explicit_multi
+        if explicit_multi is not None
+        else os.getenv(
+            f"{prefix}_MULTI_SHOT",
+            getattr(settings, f"{prefix}_MULTI_SHOT", False),
+        )
+    )
+    return _setting_enabled(sequence_value) and _setting_enabled(multi_value)
+
+
 def _reference_asset_evidence(role: str, value: str | None, index: int | None = None) -> dict | None:
     """Describe the exact reference bound to a provider request without copying media."""
     if not isinstance(value, str) or not value.strip():
@@ -2525,9 +2559,7 @@ def generate_video_task(
             )
             provider_name = _configured_video_provider_name(kwargs)
             end_image = None
-            sequence_level_requested = _setting_enabled(
-                kwargs.get("sequence_level_multi_shot", kwargs.get("SEQUENCE_LEVEL_MULTI_SHOT", False))
-            )
+            sequence_level_requested = _sequence_level_multi_shot_enabled(provider_name, kwargs)
             if (
                 settings.GENERATION_VIDEO_END_FRAME_ENABLED
                 and _uses_configured_video_provider(provider_name)
@@ -2588,7 +2620,7 @@ def generate_video_task(
             )
             provider_ref["generator"] = video_generator
             sequence_scenes = None
-            if _setting_enabled(kwargs.get("sequence_level_multi_shot")):
+            if sequence_level_requested:
                 sequence_scenes = db.query(Scene).filter(
                     Scene.project_id == project_id,
                 ).order_by(Scene.scene_number).all()
