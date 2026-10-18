@@ -344,6 +344,10 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
 
     video_metrics = candidate.get("technical_metrics") if isinstance(candidate.get("technical_metrics"), dict) else {}
     video_score = video_metrics.get("technical_score")
+    if video_metrics.get("fps_mismatch_count", 0) > 0:
+        evidence.append("video sequence fps mismatch at shot boundaries")
+    if video_metrics.get("pixel_format_mismatch_count", 0) > 0:
+        evidence.append("video sequence pixel format mismatch at shot boundaries")
     if video_metrics.get("audio_signal_status") == "near_silent":
         evidence.append("audio signal is near-silent despite an expected output track")
     elif video_metrics.get("audio_signal_status") == "unavailable" and video_metrics.get("audio_expected") is True:
