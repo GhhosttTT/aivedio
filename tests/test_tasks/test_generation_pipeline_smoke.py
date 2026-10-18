@@ -1292,7 +1292,10 @@ def test_sequence_task_forwards_explicit_output_path_before_provider_generation(
     monkeypatch.setattr(
         video_tasks,
         "build_sequence_timeline",
-        lambda *_args, **_kwargs: [SimpleNamespace(as_dict=lambda: {"scene_number": 1})],
+        lambda *_args, **_kwargs: [
+            SimpleNamespace(as_dict=lambda: {"scene_number": 1, "start_seconds": 0.0, "end_seconds": 2.0, "duration_seconds": 2.0}),
+            SimpleNamespace(as_dict=lambda: {"scene_number": 2, "start_seconds": 2.0, "end_seconds": 4.0, "duration_seconds": 2.0}),
+        ],
     )
     output_path = tmp_path / "explicit-sequence.mp4"
     provider_source = tmp_path / "provider-sequence.mp4"
@@ -1317,6 +1320,7 @@ def test_sequence_task_forwards_explicit_output_path_before_provider_generation(
             Path(path).write_bytes(b"scene-video")
 
     monkeypatch.setattr(video_tasks, "split_sequence_video", fake_split)
+    monkeypatch.setattr(video_tasks, "video_candidate_metrics", lambda *_args, **_kwargs: {"duration_seconds": 2.0})
     monkeypatch.setattr(
         video_tasks,
         "video_boundary_continuity",

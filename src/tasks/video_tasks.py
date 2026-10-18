@@ -51,6 +51,7 @@ from src.services.spatial_control_assets import SpatialControlAssetService
 from src.services.video_output_contract import audit_video_output_contract
 from src.services.sequence_plan import build_sequence_context, build_sequence_timeline
 from src.services.sequence_video_service import split_sequence_video
+from src.services.sequence_timeline_audit import SequenceTimelineAuditService
 from src.tasks.celery_app import celery_app
 from src.utils.logger import get_logger
 from src.utils.storage import get_scene_video_path
@@ -2769,6 +2770,29 @@ def generate_sequence_video_task(
         ]
         self.update_state(state="PROGRESS", meta={"current": 70, "total": 100, "step": "sequence_splitting"})
         split_sequence_video(source, segments, staging_paths)
+        timeline_actual = []
+        for scene, staging_path in zip(scenes, staging_paths):
+            metrics = video_candidate_metrics(staging_path)
+            timeline_actual.append({
+                "scene_number": scene.scene_number,
+                "duration_seconds": metrics.get("duration_seconds") if isinstance(metrics, dict) else None,
+            })
+        timeline_report = SequenceTimelineAuditService().audit(
+            [segment.as_dict() for segment in segments], timeline_actual
+        ).to_dict()
+        timeline_report.update({"kind": "sequence_timeline_audit", "sequence_task_id": task_id})
+        from src.utils.storage import storage_manager
+        timeline_report_path = (
+            storage_manager.get_project_path(project_id)
+            / "reviews"
+            / f"sequence_timeline_{task_id}.json"
+        )
+        write_report(timeline_report_path, timeline_report)
+        if timeline_report.get("status") != "passed":
+            raise ReviewError(
+                "Sequence timeline contract failed: "
+                + "; ".join(item.get("message", item.get("code", "unknown")) for item in timeline_report.get("issues", []))
+            )
         sequence_provider_metadata = {}
         provider_metadata_path = _provider_metadata_path(source)
         if provider_metadata_path.is_file():
@@ -2784,7 +2808,6 @@ def generate_sequence_video_task(
             "sequence_task_id": task_id,
             **boundary_report,
         }
-        from src.utils.storage import storage_manager
         boundary_report_path = (
             storage_manager.get_project_path(project_id)
             / "reviews"
@@ -2841,6 +2864,7 @@ def generate_sequence_video_task(
                 "geometry_mismatch_count": int(boundary_report.get("geometry_mismatch_count") or 0),
                 "segment_count": len(segments),
                 "report_path": str(boundary_report_path),
+                "timeline_report_path": str(timeline_report_path),
             },
             "status": "completed",
         }

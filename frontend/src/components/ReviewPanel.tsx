@@ -17,6 +17,7 @@ const names: Record<string, string> = {
     dialogue_delivery_audit: '对白音频与字幕交付',
     generation_context_audit: '生成上下文一致性',
     atomic_video_motion_audit: '原子镜头运动质量',
+    sequence_timeline_audit: '多镜头时间轴一致性',
     seed_dance_baseline_comparison: 'Seed Dance 对比验收',
     causal_logic: '因果逻辑',
     character_motivation: '角色动机',
@@ -349,6 +350,28 @@ function AtomicVideoMotionEvidence({report}: {report: any}) {
         </div>)}
         {issues.slice(0, 6).map((issue: any, index: number) => <p className="wb-alert" key={`${issue.code}-${issue.scene_number}-${index}`}>
             分镜 {issue.scene_number || '-'} · {issue.code} · {issue.message}
+        </p>)}
+    </div>;
+}
+
+function SequenceTimelineEvidence({report}: {report: any}) {
+    if (report?.kind !== 'sequence_timeline_audit') return null;
+    const segments = Array.isArray(report.segments) ? report.segments : [];
+    const issues = Array.isArray(report.issues) ? report.issues : [];
+    return <div className="wb-summary-actions" aria-label="多镜头时间轴一致性证据">
+        <div className="wb-row wb-between">
+            <h4>多镜头时间轴一致性</h4>
+            <span className="wb-badge">计划 {report.planned_count || 0} · 实际 {report.actual_count || 0}</span>
+        </div>
+        <p className={issues.length ? 'wb-alert' : 'wb-muted'}>
+            {issues.length ? '分段后的实际时长与计划不一致，字幕和对白可能整体漂移。' : '多镜头分段时长与计划时间轴一致。'}
+        </p>
+        {segments.slice(0, 8).map((segment: any) => <div className="wb-kv" key={segment.scene_number}>
+            <span>分镜 {segment.scene_number}</span>
+            <strong>{segment.planned_duration_seconds ?? '-'}s → {segment.actual_duration_seconds ?? '-'}s</strong>
+        </div>)}
+        {issues.slice(0, 5).map((issue: any, index: number) => <p className="wb-alert" key={`${issue.code}-${index}`}>
+            {issue.scene_number ? `分镜 ${issue.scene_number} · ` : ''}{issue.code} · {issue.message}
         </p>)}
     </div>;
 }
@@ -758,6 +781,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <DialogueDeliveryEvidence report={report}/>
             <GenerationContextEvidence report={report}/>
             <AtomicVideoMotionEvidence report={report}/>
+            <SequenceTimelineEvidence report={report}/>
             <Scores review={report.review}/>
             {report.batches?.map((batch: any, index: number) => <div key={index}>
                 <p>帧组 {index + 1} · {statuses[batch.status] || batch.status} · {batch.average}/5</p>

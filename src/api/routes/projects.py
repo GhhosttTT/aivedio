@@ -978,6 +978,13 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
     )
     if boundary_failed:
         action_items.append("Resolve multi-shot sequence boundary continuity failures before delivery.")
+    timeline_reports = [
+        report for report in reports.values()
+        if isinstance(report, dict) and report.get("kind") == "sequence_timeline_audit"
+    ]
+    timeline_failed = any(report.get("status") != "passed" for report in timeline_reports)
+    if timeline_failed:
+        action_items.append("Resolve multi-shot sequence timeline duration drift before delivery.")
 
     final_human_review_required = composition is not None
     final_human_review_decision = None
@@ -1006,6 +1013,7 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         or generation_context == "needs_review"
         or atomic_motion == "needs_review"
         or boundary_failed
+        or timeline_failed
         or (final_human_review_required and final_human_review_decision != "approved")
     )
     return {
@@ -1022,6 +1030,10 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         "sequence_boundary": {
             "status": "blocked" if boundary_failed else ("passed" if boundary_reports else "not_applicable"),
             "reports": len(boundary_reports),
+        },
+        "sequence_timeline": {
+            "status": "blocked" if timeline_failed else ("passed" if timeline_reports else "not_applicable"),
+            "reports": len(timeline_reports),
         },
         "quality_scorecard": scorecard,
         "action_items": action_items,
