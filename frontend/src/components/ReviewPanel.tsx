@@ -190,6 +190,24 @@ function SeedDanceComparison({projectId, report}: {projectId: number; report: an
     </div>;
 }
 
+function SequenceBoundaryEvidence({report}: {report: any}) {
+    if (report?.kind !== 'sequence_boundary_continuity') return null;
+    const failed = report.status !== 'available'
+        || Number(report.severe_transition_count || 0) > 0
+        || Number(report.geometry_mismatch_count || 0) > 0;
+    return <div className="wb-summary-actions" aria-label="多镜头边界连续性证据">
+        <h4>多镜头边界连续性</h4>
+        <p className={failed ? 'wb-alert' : 'wb-muted'}>
+            {failed ? '边界证据未通过，禁止交付。' : `已检查 ${report.boundary_count || 0} 个镜头边界。`}
+        </p>
+        <div className="wb-grid compact">
+            <div className="wb-kv"><span>严重转场</span><strong>{report.severe_transition_count ?? '-'}</strong></div>
+            <div className="wb-kv"><span>画幅不一致</span><strong>{report.geometry_mismatch_count ?? '-'}</strong></div>
+            <div className="wb-kv"><span>报告任务</span><strong>{report.sequence_task_id || '-'}</strong></div>
+        </div>
+    </div>;
+}
+
 function ProviderTrace({report}: {report: any}) {
     const metadata = report?.selected_provider_metadata || report?.provider_metadata || report?.final_video_review?.provider_metadata;
     if (!metadata || typeof metadata !== 'object') return null;
@@ -588,6 +606,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <GenerationRunEvidence report={report}/>
             <FinalCompositionEvidence projectId={projectId} report={report}/>
             <SeedDanceComparison projectId={projectId} report={report}/>
+            <SequenceBoundaryEvidence report={report}/>
             <Scores review={report.review}/>
             {report.batches?.map((batch: any, index: number) => <div key={index}>
                 <p>帧组 {index + 1} · {statuses[batch.status] || batch.status} · {batch.average}/5</p>

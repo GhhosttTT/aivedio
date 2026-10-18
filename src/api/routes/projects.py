@@ -864,6 +864,19 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
     elif rhythm == "warn":
         action_items.append("Review episode rhythm warnings before delivery.")
 
+    boundary_reports = [
+        report for report in reports.values()
+        if isinstance(report, dict) and report.get("kind") == "sequence_boundary_continuity"
+    ]
+    boundary_failed = any(
+        report.get("status") != "available"
+        or int(report.get("severe_transition_count") or 0) > 0
+        or int(report.get("geometry_mismatch_count") or 0) > 0
+        for report in boundary_reports
+    )
+    if boundary_failed:
+        action_items.append("Resolve multi-shot sequence boundary continuity failures before delivery.")
+
     final_human_review_required = composition is not None
     final_human_review_decision = None
     if final_human_review_required:
@@ -885,6 +898,7 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         or baseline != "passed" or (composition is not None and composition != "passed")
         or continuity == "needs_review"
         or rhythm == "needs_review"
+        or boundary_failed
         or (final_human_review_required and final_human_review_decision != "approved")
     )
     return {
@@ -898,6 +912,10 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         },
         "repair_queue": repair_queue,
         "repair_execution_plan": repair_plan,
+        "sequence_boundary": {
+            "status": "blocked" if boundary_failed else ("passed" if boundary_reports else "not_applicable"),
+            "reports": len(boundary_reports),
+        },
         "quality_scorecard": scorecard,
         "action_items": action_items,
         "human_final_review_required": final_human_review_required,

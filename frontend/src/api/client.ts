@@ -368,6 +368,7 @@ export interface GenerationReviewSummary {
         manual?: Array<RepairExecutionPlanItem>;
         rerun_validation_commands?: string[];
     };
+    sequence_boundary?: {status?: string; reports?: number};
     action_items: string[];
     human_final_review_required?: boolean;
     human_final_review_status?: string | null;

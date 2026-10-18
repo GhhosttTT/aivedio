@@ -2779,7 +2779,17 @@ def generate_sequence_video_task(
             except (OSError, ValueError):
                 logger.warning("Could not read sequence provider metadata: {}", provider_metadata_path)
         boundary_report = video_boundary_continuity([str(path) for path in staging_paths])
-        boundary_report_path = sequence_path.with_suffix(".boundary.json")
+        boundary_report = {
+            "kind": "sequence_boundary_continuity",
+            "sequence_task_id": task_id,
+            **boundary_report,
+        }
+        from src.utils.storage import storage_manager
+        boundary_report_path = (
+            storage_manager.get_project_path(project_id)
+            / "reviews"
+            / f"sequence_boundary_{task_id}.json"
+        )
         write_report(boundary_report_path, boundary_report)
         _validate_sequence_boundary_report(boundary_report, boundary_report_path)
         segment_provider_metadata: dict[int, dict] = {}
