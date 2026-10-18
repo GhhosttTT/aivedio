@@ -1621,6 +1621,10 @@ class SeedanceApiProvider(ApiVideoProvider):
                 "choose reference, reference_to_video, auto, multi_shot, first_frame, "
                 "first_last_frame, edit, or extend"
             )
+        if request_mode == "first_frame" and not (is_10 or is_25):
+            raise GenerationProviderError(
+                f"Native Seedance model {model} does not support explicit first_frame mode"
+            )
         audio_public = _validate_native_ark_audio_references(
             audio_paths,
             maximum_duration=30.0 if is_25 else 15.0,
