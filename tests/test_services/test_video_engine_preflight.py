@@ -316,6 +316,23 @@ def test_seedance_preflight_reports_missing_ffprobe_for_output_validation(monkey
     assert any("ffprobe" in item for item in report["warnings"])
 
 
+def test_seedance_preflight_blocks_disabled_output_validation(monkeypatch):
+    from src.services.video_engine_preflight import settings
+
+    monkeypatch.setattr(settings, "GENERATION_PROVIDER", "seedance_api")
+    monkeypatch.setenv("SEEDANCE_ENDPOINT", "https://ark.example/tasks")
+    monkeypatch.setenv("SEEDANCE_API_KEY", "secret")
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_VALIDATE_OUTPUT", "false")
+
+    report = preflight_video_provider()
+
+    assert report["status"] == "blocked"
+    assert report["checks"]["output_validation_enabled"] is False
+    assert report["capabilities"]["output_artifact_validation"] is False
+    assert any("not allowed for production" in item for item in report["warnings"])
+
+
 def test_seedance_preflight_blocks_unsigned_callback_configuration(monkeypatch):
     from src.services.video_engine_preflight import settings
 

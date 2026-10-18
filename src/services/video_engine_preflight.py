@@ -679,7 +679,15 @@ def preflight_video_provider(
         report["capabilities"]["output_artifact_validation"] = bool(
             output_validation_enabled and checks["ffprobe_available"]
         )
-        if output_validation_enabled and not checks["ffprobe_available"]:
+        if not output_validation_enabled:
+            report.setdefault("warnings", []).append(
+                "SEEDANCE_VALIDATE_OUTPUT=false disables native Ark artifact validation and is not allowed for production runs."
+            )
+            configuration_ok = False
+            report.setdefault("action_items", []).append(
+                "Set SEEDANCE_VALIDATE_OUTPUT=true before submitting native Ark production generation tasks."
+            )
+        elif not checks["ffprobe_available"]:
             report.setdefault("warnings", []).append(
                 "SEEDANCE_VALIDATE_OUTPUT is enabled but ffprobe is unavailable; returned Ark artifacts cannot be validated immediately."
             )
