@@ -119,12 +119,14 @@ export function ProjectDetail() {
             setBusy('提交自动视频返修'); setError('');
             try {
                 const result = await projectApi.runAutoRepairQueue(Number(id), {max_actions: 5, action});
+                await reload();
                 if (result.status === 'no_auto_actions') {
                     setError('当前项目没有匹配该动作的可执行分镜返修；请先完成项目级视频审核或选择具体分镜。');
                 } else if (result.status === 'manual_review_required') {
                     setError('该动作已达到自动返修预算上限，请先完成人工审核后再继续。');
+                } else {
+                    setError(`已提交 ${result.submitted.length} 个自动视频返修动作，跳过 ${result.skipped.length} 个。`);
                 }
-                await reload();
             } catch(e) { setError(errorText(e)); }
             finally { setBusy(''); }
             return;
