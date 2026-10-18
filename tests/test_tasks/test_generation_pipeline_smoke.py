@@ -990,7 +990,8 @@ def test_sequence_task_forwards_explicit_output_path_before_provider_generation(
         return {"video_path": str(provider_source)}
 
     monkeypatch.setattr(video_tasks.generate_video_task, "run", fake_generate)
-    monkeypatch.setattr(video_tasks.generate_sequence_video_task, "update_state", Mock())
+    sequence_update_state = Mock()
+    monkeypatch.setattr(video_tasks.generate_sequence_video_task, "update_state", sequence_update_state)
     monkeypatch.setattr(
         video_tasks,
         "get_scene_video_path",
@@ -1028,3 +1029,10 @@ def test_sequence_task_forwards_explicit_output_path_before_provider_generation(
     assert captured["sequence_output_path"] == str(output_path)
     assert captured["sequence_level_multi_shot"] is True
     assert captured["multi_shot"] is True
+    captured["PROVIDER_PROGRESS_CALLBACK"](
+        42,
+        "processing",
+        {"provider_task_id": "sequence-remote-42", "provider_status": "running"},
+    )
+    assert sequence_update_state.call_args.kwargs["meta"]["provider_task_id"] == "sequence-remote-42"
+    assert sequence_update_state.call_args.kwargs["meta"]["provider_status"] == "running"
