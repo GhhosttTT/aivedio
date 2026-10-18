@@ -568,6 +568,7 @@ class ApiVideoProvider:
                         expected_duration=expected_duration,
                         request=request,
                     )
+                    self._record_output_hash(final_path)
                     self._report_progress(request.progress_callback, 100, "downloaded")
                     return GenerationResult(
                         provider=self.name.value,
@@ -617,6 +618,7 @@ class ApiVideoProvider:
                 expected_duration=expected_duration,
                 request=request,
             )
+            self._record_output_hash(final_path)
             # Ark's returned last-frame URL is intentionally short-lived. Save
             # it beside the accepted clip while it is still valid so a later
             # shot, retry, or project resume does not depend on the remote
@@ -649,6 +651,14 @@ class ApiVideoProvider:
         if is_25 and mode in {"edit", "extend"}:
             return None
         return requested
+
+    def _record_output_hash(self, output_path: str) -> None:
+        """Bind provider metadata to the exact accepted artifact bytes."""
+        digest = hashlib.sha256()
+        with Path(output_path).open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        self.last_result_metadata["video_sha256"] = digest.hexdigest()
 
     def _write_video_bytes(self, content: bytes, output_path: str) -> str:
         if not content:
@@ -2520,6 +2530,7 @@ def _deep_get(value, key: str):
 def _file_data_url(path: str | None) -> str | None:
     if not path:
         return None
+
     file_path = Path(path)
     if not file_path.is_file():
         return path

@@ -3652,6 +3652,7 @@ def test_seedance_provider_resolves_request_id_result_endpoint(tmp_path, monkeyp
 
     assert result.output_path == str(output)
     assert output.read_bytes() == b"seedance-bytes"
+    assert len(result.metadata["video_sha256"]) == 64
 
 
 def test_get_generation_provider_supports_http_video(monkeypatch):
