@@ -1130,6 +1130,10 @@ async def promote_seedance_drafts(
     project = db_session.query(Project).filter(Project.id == project_id).first()
     if not project or not project.scenes:
         raise HTTPException(status_code=404, detail="项目不存在或没有分镜")
+    if project.status == ProjectStatus.IN_PRODUCTION:
+        raise HTTPException(status_code=409, detail="项目正在制作，请等待当前 Draft 提升任务结束")
+    if project.status == ProjectStatus.COMPLETED and str(project.final_video_path or "").strip():
+        raise HTTPException(status_code=409, detail="项目已完成，不能重复提升 Draft")
     draft_ids: dict[int, str] = {}
     draft_models: set[str] = set()
     draft_output_formats: set[str] = set()

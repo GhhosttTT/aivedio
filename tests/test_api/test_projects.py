@@ -14,7 +14,7 @@ from datetime import datetime
 from src.api.app import create_app
 from src.api.dependencies import get_current_user, require_project_access
 from src.database.session import get_db_session
-from src.database.models import Project, Character, Scene, User, TaskStatus
+from src.database.models import Project, Character, Scene, User, TaskStatus, ProjectStatus
 from src.api.routes.projects import ProductionOptions, _normalized_production_options
 
 
@@ -534,6 +534,33 @@ def test_promote_drafts_reuses_requested_model(client, tmp_path):
     assert kwargs["output_format"] == "mov"
     assert kwargs["watermark"] is False
     assert kwargs["return_last_frame"] is True
+
+
+@pytest.mark.parametrize(
+    ("project_status", "final_video_path", "message"),
+    [
+        (ProjectStatus.IN_PRODUCTION, None, "正在制作"),
+        (ProjectStatus.COMPLETED, "/storage/final.mp4", "已完成"),
+    ],
+)
+def test_promote_drafts_is_idempotent_for_active_or_completed_project(
+    client, project_status, final_video_path, message
+):
+    project = Mock(spec=Project)
+    project.id = 1
+    project.status = project_status
+    project.final_video_path = final_video_path
+    project.scenes = [Mock(spec=Scene)]
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = project
+
+    with patch("src.api.routes.projects.TaskOrchestrator") as mock_orchestrator:
+        client.app.dependency_overrides[get_db_session] = lambda: db
+        response = client.post("/api/projects/1/promote-drafts")
+
+    assert response.status_code == 409
+    assert message in response.json()["detail"]
+    mock_orchestrator.assert_not_called()
 
 
 def test_promote_drafts_rejects_mixed_output_controls(client, tmp_path):
