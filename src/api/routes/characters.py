@@ -406,6 +406,11 @@ async def freeze_character_asset_pack(
                 identity_spec=identity_spec,
                 distinctiveness=distinctiveness,
                 notes=request.notes or "",
+                voice_profile={
+                    "voice_id": request.voice_id or "",
+                    "style": request.voice_style or "",
+                    "language": request.voice_language or "",
+                },
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc))

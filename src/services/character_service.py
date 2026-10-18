@@ -86,6 +86,7 @@ class CharacterManager:
         identity_spec: dict,
         distinctiveness: dict,
         notes: str = "",
+        voice_profile: Optional[dict] = None,
     ) -> dict:
         """
         Freeze the approved character bible and reference images for production.
@@ -112,11 +113,23 @@ class CharacterManager:
             "reference_paths": references,
             "reference_hashes": {path: self._file_hash(Path(path)) for path in references},
             "distinctiveness": distinctiveness,
+            "voice_profile": self._normalize_voice_profile(voice_profile),
             "notes": notes,
         }
         path = char_dir / "asset_pack.json"
         path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         return manifest
+
+    @staticmethod
+    def _normalize_voice_profile(profile: Optional[dict]) -> dict:
+        """Keep only stable, provider-neutral voice identity fields in the pack."""
+        if not isinstance(profile, dict):
+            return {}
+        return {
+            key: str(profile[key]).strip()
+            for key in ("voice_id", "style", "language")
+            if str(profile.get(key) or "").strip()
+        }
 
     def get_character_asset_pack(self, character_id: int, project_id: int) -> Optional[dict]:
         path = self.base_dir / str(project_id) / str(character_id) / "asset_pack.json"

@@ -20,10 +20,12 @@ def test_character_asset_pack_freezes_identity_and_reference_hashes(tmp_path):
         identity_spec=spec,
         distinctiveness={"status": "passed"},
         notes="approved closeup",
+        voice_profile={"voice_id": "voice-lin-an", "style": "calm", "ignored": "drop"},
     )
 
     assert manifest["status"] == "frozen"
     assert manifest["reference_paths"] == [saved]
+    assert manifest["voice_profile"] == {"voice_id": "voice-lin-an", "style": "calm"}
     assert Path(tmp_path / "characters" / "1" / "10" / "asset_pack.json").is_file()
     assert manager.validate_character_asset_pack(10, 1, spec)["status"] == "valid"
 

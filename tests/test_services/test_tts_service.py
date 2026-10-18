@@ -75,6 +75,14 @@ class TestTTSService:
             "configured_character_voice_map",
         )
 
+    def test_resolve_speaker_id_prefers_character_asset_pack_voice(self, monkeypatch):
+        monkeypatch.setenv("TTS_SPEAKER_MAP_JSON", '{"Alice": "environment_voice"}')
+
+        assert resolve_speaker_id("Alice", {"voice_id": "frozen_voice"}) == (
+            "frozen_voice",
+            "character_asset_pack",
+        )
+
     def test_resolve_speaker_id_rejects_invalid_mapping(self, monkeypatch):
         monkeypatch.setenv("TTS_SPEAKER_MAP_JSON", "not-json")
 

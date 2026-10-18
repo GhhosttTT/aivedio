@@ -21,7 +21,10 @@ except ImportError:
 from src.utils.logger import logger
 
 
-def resolve_speaker_id(character_name: str | None) -> tuple[str, str]:
+def resolve_speaker_id(
+    character_name: str | None,
+    voice_profile: dict | None = None,
+) -> tuple[str, str]:
     """Resolve a stable provider voice id for a screenplay character.
 
     ``speaker`` in a script is a human character name, while TTS providers
@@ -30,6 +33,10 @@ def resolve_speaker_id(character_name: str | None) -> tuple[str, str]:
     to freeze voice identity with ``TTS_SPEAKER_MAP_JSON`` and a default voice.
     """
     requested = str(character_name or "default").strip() or "default"
+    if isinstance(voice_profile, dict):
+        frozen_voice = str(voice_profile.get("voice_id") or "").strip()
+        if frozen_voice:
+            return frozen_voice, "character_asset_pack"
     raw_mapping = os.getenv("TTS_SPEAKER_MAP_JSON", "").strip()
     if raw_mapping:
         try:

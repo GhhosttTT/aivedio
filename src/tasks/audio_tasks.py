@@ -5,8 +5,9 @@ import hashlib
 from pathlib import Path
 
 from src.database.database import get_db
-from src.database.models import Scene
+from src.database.models import Character, Scene
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
+from src.services.character_service import get_character_manager
 from src.services.repair_queue import attach_repair_queue
 from src.services.subtitle_generator import get_subtitle_generator
 from src.services.tts_service import get_tts_service, resolve_speaker_id
@@ -202,7 +203,16 @@ def generate_audio_task(
         audio_path = get_scene_audio_path(project_id, scene_id)
         self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "tts_generation"})
         profile = dialogue_audio_profile(text, kwargs.get("repair_action"))
-        resolved_speaker, voice_source = resolve_speaker_id(speaker)
+        character = db.query(Character).filter(
+            Character.project_id == project_id,
+            Character.name == str(speaker or "").strip(),
+        ).first()
+        voice_profile = {}
+        if character:
+            asset_pack = get_character_manager().get_character_asset_pack(character.id, project_id)
+            if isinstance(asset_pack, dict) and asset_pack.get("status") == "frozen":
+                voice_profile = asset_pack.get("voice_profile") or {}
+        resolved_speaker, voice_source = resolve_speaker_id(speaker, voice_profile)
         profile = {
             **profile,
             "voice_id": resolved_speaker,

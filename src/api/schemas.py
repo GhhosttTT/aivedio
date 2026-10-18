@@ -162,6 +162,9 @@ class CharacterAssetFreezeRequest(BaseModel):
     冻结角色定妆资产包
     """
     notes: Optional[str] = Field(None, max_length=500, description="人工定妆备注")
+    voice_id: Optional[str] = Field(None, max_length=200, description="固定 TTS 声音 ID")
+    voice_style: Optional[str] = Field(None, max_length=200, description="声音风格约束")
+    voice_language: Optional[str] = Field(None, max_length=40, description="声音语言/地区")
 
 
 class CharacterAssetPackResponse(BaseModel):
