@@ -1050,6 +1050,12 @@ def _composition_review_error(report: dict) -> str | None:
                 "final composed video has severe exposure/black transitions across "
                 f"{severe_transition_count} shot boundary(s)"
             )
+        severe_style_transition_count = int(boundary.get("severe_style_transition_count") or 0)
+        if severe_style_transition_count > 0:
+            return (
+                "final composed video has severe color-grade/contrast transitions across "
+                f"{severe_style_transition_count} shot boundary(s)"
+            )
         geometry_mismatch_count = int(boundary.get("geometry_mismatch_count") or 0)
         if geometry_mismatch_count > 0:
             return (

@@ -386,10 +386,19 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
             current_probe = _probe(current)
             previous_gray = cv2.cvtColor(previous_frame, cv2.COLOR_BGR2GRAY)
             current_gray = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
+            previous_hsv = cv2.cvtColor(previous_frame, cv2.COLOR_BGR2HSV)
+            current_hsv = cv2.cvtColor(current_frame, cv2.COLOR_BGR2HSV)
             previous_small = cv2.resize(previous_frame, (256, 144), interpolation=cv2.INTER_AREA)
             current_small = cv2.resize(current_frame, (256, 144), interpolation=cv2.INTER_AREA)
             brightness_delta = abs(
                 float(np.mean(previous_gray)) - float(np.mean(current_gray))
+            ) / 255.0
+            saturation_delta = abs(
+                float(np.mean(previous_hsv[:, :, 1]))
+                - float(np.mean(current_hsv[:, :, 1]))
+            ) / 255.0
+            contrast_delta = abs(
+                float(np.std(previous_gray)) - float(np.std(current_gray))
             ) / 255.0
             pixel_delta = float(np.mean(cv2.absdiff(previous_small, current_small))) / 255.0
             previous_hist = cv2.calcHist([previous_small], [0, 1], None, [16, 16], [0, 256, 0, 256])
@@ -401,6 +410,10 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
                 min(1.0, float(cv2.compareHist(previous_hist, current_hist, cv2.HISTCMP_BHATTACHARYYA))),
             )
             severe = brightness_delta >= 0.65 and histogram_distance >= 0.7
+            severe_style = (
+                (saturation_delta >= 0.35 or contrast_delta >= 0.4)
+                and histogram_distance >= 0.7
+            )
             boundaries.append({
                 "boundary_index": index,
                 "previous_path": str(previous),
@@ -412,16 +425,21 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
                     and previous_probe["height"] == current_probe["height"]
                 ),
                 "brightness_delta": round(brightness_delta, 3),
+                "saturation_delta": round(saturation_delta, 3),
+                "contrast_delta": round(contrast_delta, 3),
                 "pixel_delta": round(pixel_delta, 3),
                 "histogram_distance": round(histogram_distance, 3),
                 "severe_exposure_or_black_transition": severe,
+                "severe_style_transition": severe_style,
             })
         severe_count = sum(item["severe_exposure_or_black_transition"] for item in boundaries)
+        severe_style_count = sum(item["severe_style_transition"] for item in boundaries)
         geometry_mismatch_count = sum(not item["geometry_match"] for item in boundaries)
         return {
             "status": "available",
             "boundary_count": len(boundaries),
             "severe_transition_count": severe_count,
+            "severe_style_transition_count": severe_style_count,
             "geometry_mismatch_count": geometry_mismatch_count,
             "boundaries": boundaries,
         }
