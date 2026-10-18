@@ -22,7 +22,12 @@ def test_spatial_control_pack_freezes_pose_depth_camera_contracts(tmp_path, monk
         "scenes": [{"scene_number": 1, "characters": ["Alice"]}]
     }))
     scenes = [Scene(project_id=1, scene_number=1, visual_description="Alice holds a letter at the office table.", dialogue="Look at this.")]
-    characters = [Character(project_id=1, name="Alice", appearance=spec["identity_anchor"], visual_description=json.dumps(spec))]
+    characters = [Character(id=1, project_id=1, name="Alice", appearance=spec["identity_anchor"], visual_description=json.dumps(spec))]
+    views = {
+        view: _image(tmp_path / f"alice-{view}.png", "red")
+        for view in PRODUCTION_TURNAROUND_VIEWS
+    }
+    CharacterTurnaroundAlbumService().freeze_album(characters[0], views)
     service = SpatialControlAssetService()
 
     pack = service.freeze_project_pack(project, scenes, characters, notes="approved blocking")
@@ -61,6 +66,28 @@ def test_spatial_control_pack_freezes_pose_depth_camera_contracts(tmp_path, monk
     assert stale["status"] == "stale"
     assert "scene_contracts" in stale["stale"]
     assert stale["scene_stale"][0]["scene_number"] == 1
+
+
+def test_spatial_control_pack_reports_missing_turnaround_control_per_character(tmp_path, monkeypatch):
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path / "storage")
+    spec = CharacterIdentityService().build_identity_spec("Alice", "lead", project_id=1)
+    project = Project(id=1, name="Drama", user_id=1, script=json.dumps({
+        "scenes": [{"scene_number": 1, "characters": ["Alice"]}]
+    }))
+    scenes = [Scene(project_id=1, scene_number=1, visual_description="Alice holds a letter.")]
+    character = Character(id=7, project_id=1, name="Alice", appearance=spec["identity_anchor"], visual_description=json.dumps(spec))
+    service = SpatialControlAssetService()
+    service.freeze_project_pack(project, scenes, [character])
+
+    report = service.validate_project_pack(project, scenes, [character])
+
+    assert report["status"] == "stale"
+    assert {
+        "scene_number": 1,
+        "control_type": "character_turnaround",
+        "character": "Alice",
+        "missing": ["turnaround_album"],
+    } in report["control_gaps"]
 
 
 def test_spatial_control_pack_embeds_turnaround_album_controls(tmp_path, monkeypatch):

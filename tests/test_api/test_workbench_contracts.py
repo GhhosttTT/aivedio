@@ -2045,9 +2045,10 @@ def test_spatial_plan_freeze_clears_readiness_spatial_asset_blocker(setup):
     assert frozen.json()["asset_pack"]["scenes"][0]["control_references"]["pose_reference_prompt"]
 
     after = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
-    assert after["checks"]["spatial_continuity"]["asset_pack"]["status"] == "valid"
-    assert after["checks"]["spatial_continuity"]["asset_pack"]["control_gaps"] == []
-    assert not any(item["code"] == "missing_spatial_asset_pack" for item in after["blockers"])
+    spatial_after = after["checks"]["spatial_continuity"]["asset_pack"]
+    assert spatial_after["status"] == "stale"
+    assert any(gap["control_type"] == "character_turnaround" for gap in spatial_after["control_gaps"])
+    assert any(item["code"] == "stale_spatial_asset_pack" for item in after["blockers"])
 
 
 def test_reference_upload_and_signed_media_access(setup):

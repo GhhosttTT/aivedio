@@ -557,7 +557,7 @@ export interface ProductionReadinessReport {
                 status?: string;
                 stale?: string[];
                 scene_stale?: Array<Record<string, unknown>>;
-                control_gaps?: Array<{scene_number: number; missing: string[]}>;
+                control_gaps?: Array<{scene_number: number; control_type?: string; character?: string; missing: string[]}>;
             };
             scenes: Array<{
                 scene_number: number;

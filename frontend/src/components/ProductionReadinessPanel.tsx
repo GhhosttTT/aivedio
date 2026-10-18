@@ -167,7 +167,7 @@ export function ProductionReadinessPanel({
                     </div>
                     {spatial.asset_pack.control_gaps.slice(0, 8).map((gap) => (
                         <div className="wb-issue blocker" key={gap.scene_number}>
-                            <span>分镜 {gap.scene_number}</span>
+                            <span>分镜 {gap.scene_number}{gap.character ? ` · ${gap.character}` : ''}</span>
                             <p>{gap.missing.join(' / ')}</p>
                         </div>
                     ))}

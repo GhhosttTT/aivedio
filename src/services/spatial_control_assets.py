@@ -87,6 +87,38 @@ class SpatialControlAssetService:
                 control_gaps.append({"scene_number": number, "missing": missing_controls})
                 scene_stale.append({"scene_number": number, "changed": ["missing_control_references"]})
                 stale.append("scene_contracts")
+            turnaround_controls = stored_item.get("character_turnaround_controls")
+            if not isinstance(turnaround_controls, dict):
+                turnaround_controls = {}
+            for character_name in current_item.get("visible_characters") or []:
+                character_control = turnaround_controls.get(character_name)
+                missing_turnaround = []
+                if not isinstance(character_control, dict):
+                    missing_turnaround = ["turnaround_album"]
+                else:
+                    if character_control.get("status") != "valid":
+                        missing_turnaround.extend(character_control.get("missing") or [])
+                        missing_turnaround.extend(character_control.get("stale") or [])
+                        if not missing_turnaround:
+                            missing_turnaround.append(str(character_control.get("status") or "invalid"))
+                    else:
+                        views = character_control.get("views") if isinstance(character_control.get("views"), dict) else {}
+                        for view in PRODUCTION_TURNAROUND_VIEWS:
+                            item = views.get(view)
+                            if not isinstance(item, dict) or not str(item.get("path") or "").strip():
+                                missing_turnaround.append(f"view:{view}")
+                            elif not str(item.get("control_prompt") or "").strip():
+                                missing_turnaround.append(f"control_prompt:{view}")
+                missing_turnaround = list(dict.fromkeys(str(item) for item in missing_turnaround))
+                if missing_turnaround:
+                    control_gaps.append({
+                        "scene_number": number,
+                        "control_type": "character_turnaround",
+                        "character": character_name,
+                        "missing": missing_turnaround,
+                    })
+                    scene_stale.append({"scene_number": number, "changed": ["missing_character_turnaround_controls"]})
+                    stale.append("scene_contracts")
         if scene_stale:
             stale.append("scene_contracts")
         return {
