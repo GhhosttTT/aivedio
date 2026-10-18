@@ -20,7 +20,7 @@ def test_build_generation_run_evidence_summarizes_cases_and_candidates():
         generated_at=123,
     )
 
-    assert evidence["schema_version"] == 1
+    assert evidence["schema_version"] == 2
     assert evidence["generated_at"] == 123
     assert evidence["runtime"] == {
         "status": "rendered_pending_human_review",
@@ -88,6 +88,7 @@ def test_build_video_generation_evidence_tracks_attempts_and_provider_contracts(
     )
 
     assert evidence["generated_at"] == 456
+    assert evidence["schema_version"] == 2
     assert evidence["attempts"] == {
         "candidate_count": 3,
         "generated_count": 2,

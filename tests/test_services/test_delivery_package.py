@@ -42,6 +42,7 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
     package = tmp_path / "delivery" / "delivery_package.zip"
     assert package.is_file()
     assert manifest["status"] == "ready"
+    assert manifest["schema_version"] == 2
     assert any(item["path"] == "media/final_video.mp4" and len(item["sha256"]) == 64 for item in manifest["files"])
     with zipfile.ZipFile(package) as archive:
         names = set(archive.namelist())

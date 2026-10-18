@@ -55,7 +55,7 @@ def build_generation_run_evidence(
         accepted_count += 1 if case.get("image") else 0
     elapsed = [float(case["elapsed_seconds"]) for case in cases if _is_number(case.get("elapsed_seconds"))]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": generated_at if generated_at is not None else round(time.time()),
         "host": {
             "platform": platform.platform(),
@@ -139,7 +139,7 @@ def build_video_generation_evidence(
     generated = [item for item in candidates if item.get("status") != "error" and item.get("path")]
     passed = [item for item in candidates if item.get("status") == "passed"]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "video_generation_run",
         "generated_at": generated_at if generated_at is not None else round(time.time()),
         "status": quality_report.get("status", "unknown"),

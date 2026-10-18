@@ -303,7 +303,7 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         if isinstance(report, dict) and report.get("status")
     }
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "project_id": getattr(project, "id", None),
         "project_name": getattr(project, "name", ""),
