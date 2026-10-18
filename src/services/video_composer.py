@@ -419,7 +419,9 @@ class VideoComposer:
                 # 没有背景音乐，直接移动到输出路径
                 if current_video != output_path:
                     import shutil
-                    shutil.move(current_video, output_path)
+                    # Keep the scene source available for review, repair, and
+                    # future re-composition; finalization must not consume it.
+                    shutil.copyfile(current_video, output_path)
             
             # 清理临时文件
             self._cleanup_temp_files(Path(output_path).parent)

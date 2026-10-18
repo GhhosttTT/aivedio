@@ -412,15 +412,14 @@ class TestVideoComposer:
         video_file.write_text("fake video")
         output_path = tmp_path / "output.mp4"
         
-        # Mock shutil.move
-        with patch('shutil.move') as mock_move:
-            result = service.compose_video(
-                [str(video_file)],
-                output_path=str(output_path)
-            )
+        result = service.compose_video(
+            [str(video_file)],
+            output_path=str(output_path)
+        )
         
         assert result == str(output_path)
-        mock_move.assert_called_once()
+        assert output_path.read_text() == "fake video"
+        assert video_file.read_text() == "fake video"
     
     def test_compose_video_with_concat(self, service, tmp_path):
         """测试：多个视频拼接"""
