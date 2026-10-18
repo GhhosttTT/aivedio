@@ -42,6 +42,7 @@ from src.services.video_quality_metrics import (
 )
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
+from src.services.video_output_contract import audit_video_output_contract
 from src.services.sequence_plan import build_sequence_context, build_sequence_timeline
 from src.services.sequence_video_service import split_sequence_video
 from src.tasks.celery_app import celery_app
@@ -1576,6 +1577,14 @@ def _review_final_video_after_postprocess(
         technical_metrics,
         quality_report.get("selected_provider_metadata"),
     )
+    provider_metadata = quality_report.get("selected_provider_metadata")
+    request_contract = provider_metadata.get("request_contract") if isinstance(provider_metadata, dict) else None
+    request_contract_audit = audit_video_output_contract(
+        request_contract,
+        provider_metadata,
+        technical_metrics,
+        video_path,
+    )
     if _quality_report_has_long_form(quality_report) and technical_metrics.get("status") == "available":
         technical_metrics["technical_score"] = video_technical_score(
             technical_metrics,
@@ -1627,6 +1636,7 @@ def _review_final_video_after_postprocess(
         final_review["video_performance_gate"] = performance_gate
         final_review["video_performance_score"] = performance_gate.get("average", 0)
     final_review["technical_metrics"] = technical_metrics
+    final_review["request_contract_audit"] = request_contract_audit
     if isinstance(technical_metrics.get("technical_score"), (int, float)):
         final_review["technical_score"] = technical_metrics["technical_score"]
     if review.get("error"):
@@ -1680,6 +1690,10 @@ def _final_video_acceptance_error(
         if isinstance(final_review.get("technical_metrics"), dict)
         else {}
     )
+    request_contract_audit = final_review.get("request_contract_audit")
+    if isinstance(request_contract_audit, dict) and request_contract_audit.get("status") == "needs_review":
+        issue = (request_contract_audit.get("issues") or [{}])[0]
+        return f"Video output contract failed: {issue.get('message') or 'provider output drifted from the requested contract'}"
     if technical_metrics.get("audio_expected") is True and technical_metrics.get("audio_quality_status") != "passed":
         return (
             "Final normalized video native-audio check failed: "
