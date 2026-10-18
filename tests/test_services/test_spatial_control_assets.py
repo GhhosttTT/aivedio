@@ -43,6 +43,16 @@ def test_spatial_control_pack_freezes_pose_depth_camera_contracts(tmp_path, monk
     assert contract["spatial_plan"] == pack["scenes"][0]["spatial_plan"]
     assert service.get_scene_contract(1, 99) is None
 
+    pack_path = service._pack_path(1)
+    tampered = json.loads(pack_path.read_text(encoding="utf-8"))
+    tampered["required_control_types"] = ["pose"]
+    tampered["scenes"][0]["control_references"].pop("depth_reference_prompt")
+    pack_path.write_text(json.dumps(tampered), encoding="utf-8")
+    invalid = service.validate_project_pack(project, scenes, characters)
+    assert invalid["status"] == "stale"
+    assert "required_control_types" in invalid["stale"]
+    assert "scene_contracts" in invalid["stale"]
+
     service.PLANNER_CONTRACT_VERSION = "spatial-director-v3"
     assert service.validate_project_pack(project, scenes, characters)["status"] == "stale"
 

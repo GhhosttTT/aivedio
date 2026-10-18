@@ -48,6 +48,10 @@ class SpatialControlAssetService:
         if stored.get("status") != "frozen":
             return {"status": "invalid", "missing": ["frozen_status"], "manifest": stored, "current": current}
         stale = []
+        if stored.get("planner_contract_version") != self.PLANNER_CONTRACT_VERSION:
+            stale.append("planner_contract_version")
+        if tuple(stored.get("required_control_types") or []) != self.REQUIRED_CONTROL_TYPES:
+            stale.append("required_control_types")
         if stored.get("project_signature") != current.get("project_signature"):
             stale.append("project_signature")
         stored_scenes = {item.get("scene_number"): item for item in stored.get("scenes", []) if isinstance(item, dict)}
@@ -70,6 +74,17 @@ class SpatialControlAssetService:
             ]
             if changed:
                 scene_stale.append({"scene_number": number, "changed": changed})
+            control_references = stored_item.get("control_references")
+            if not isinstance(control_references, dict):
+                control_references = {}
+            missing_controls = [
+                f"{control_type}_reference_prompt"
+                for control_type in ("pose", "depth", "camera")
+                if not str(control_references.get(f"{control_type}_reference_prompt") or "").strip()
+            ]
+            if missing_controls:
+                scene_stale.append({"scene_number": number, "changed": ["missing_control_references"]})
+                stale.append("scene_contracts")
         if scene_stale:
             stale.append("scene_contracts")
         return {
