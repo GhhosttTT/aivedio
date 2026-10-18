@@ -22,6 +22,7 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
     exports.mkdir()
     (exports / "douyin.mp4").write_bytes(b"platform-video")
     (exports / "douyin.json").write_text(json.dumps({"status": "ready", "preset": "douyin"}), encoding="utf-8")
+    (tmp_path / "topic_brief.json").write_text(json.dumps({"platform": "抖音", "genre": "都市悬疑"}), encoding="utf-8")
     project = SimpleNamespace(id=7, name="Pilot", theme="都市悬疑", outline="outline", script='{"scenes": []}', final_video_path=str(final), scenes=[])
 
     manifest = build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)}, {"status": "ready"})
@@ -35,6 +36,9 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
     assert {"media/final_video.mp4", "reviews/generation.json", "metadata/project.json", "metadata/delivery_manifest.json"}.issubset(names)
     assert "metadata/cover.json" in names
     assert {"exports/douyin.mp4", "exports/douyin.json"}.issubset(names)
+    with zipfile.ZipFile(package) as archive:
+        metadata = json.loads(archive.read("metadata/project.json").decode("utf-8"))
+    assert metadata["topic_brief"]["platform"] == "抖音"
 
 
 def test_delivery_package_requires_ready_review(tmp_path):

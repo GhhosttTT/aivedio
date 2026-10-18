@@ -222,12 +222,22 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
     files = _collect_files(project, root, reports)
 
     project_metadata = delivery_root / "project_metadata.json"
+    topic_brief = {}
+    topic_brief_path = root / "topic_brief.json"
+    if topic_brief_path.is_file():
+        try:
+            loaded_brief = json.loads(topic_brief_path.read_text(encoding="utf-8"))
+            if isinstance(loaded_brief, dict):
+                topic_brief = loaded_brief
+        except (OSError, ValueError):
+            topic_brief = {}
     _write_json_atomic(project_metadata, {
         "project_id": getattr(project, "id", None),
         "name": getattr(project, "name", ""),
         "theme": getattr(project, "theme", None),
         "outline": getattr(project, "outline", None),
         "script": getattr(project, "script", None),
+        "topic_brief": topic_brief,
     })
     files.append((project_metadata, "metadata/project.json"))
     if cover_report.get("status") == "ready":
