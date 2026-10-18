@@ -113,8 +113,7 @@ class TestVideoComposer:
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             service.concat_videos([str(video1), str(video2)], str(output_path), preserve_audio=True)
-
-        cmd = mock_run.call_args[0][0]
+        cmd = mock_run.call_args.args[0]
         filter_complex = cmd[cmd.index("-filter_complex") + 1]
         assert "concat=n=2:v=1:a=1[vout][aout]" in filter_complex
         assert "-map" in cmd
@@ -134,13 +133,36 @@ class TestVideoComposer:
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             service.concat_videos([str(video1), str(video2)], str(output_path), preserve_audio=True)
-
         cmd = mock_run.call_args.args[0]
         filter_complex = cmd[cmd.index("-filter_complex") + 1]
         assert "[0:a]aresample=48000" in filter_complex
         assert "anullsrc=channel_layout=stereo:sample_rate=48000" in filter_complex
         assert "atrim=duration=2.750000" in filter_complex
         assert "concat=n=2:v=1:a=1[vout][aout]" in filter_complex
+
+    def test_concat_videos_uses_reviewed_transition_plan(self, service, tmp_path):
+        video1 = tmp_path / "video1.mp4"
+        video2 = tmp_path / "video2.mp4"
+        video1.write_text("fake video 1")
+        video2.write_text("fake video 2")
+        output_path = tmp_path / "output.mp4"
+        service._get_duration = Mock(side_effect=[2.0, 3.0])
+        with patch.object(service, "has_audio_stream", return_value=False), patch(
+            "src.services.video_composer.subprocess.run"
+        ) as run:
+            service.concat_videos(
+                [str(video1), str(video2)],
+                str(output_path),
+                editing_plan=[
+                    {"scene_number": 1, "transition": {"video": "none", "duration_seconds": 0.0}},
+                    {"scene_number": 2, "transition": {"video": "crossfade", "duration_seconds": 0.12}},
+                ],
+            )
+        command = run.call_args.args[0]
+        filter_graph = command[command.index("-filter_complex") + 1]
+        assert "xfade=transition=fade" in filter_graph
+        assert "duration=0.120000" in filter_graph
+        assert "offset=1.880000" in filter_graph
 
     def test_concat_videos_preserves_high_bit_depth_when_requested(self, service, tmp_path):
         video1 = tmp_path / "video1.mp4"

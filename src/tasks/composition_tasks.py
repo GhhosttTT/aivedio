@@ -266,7 +266,7 @@ def compose_final_video_task(
         else:
             _require_passed_scene_audio(scenes)
         _require_scene_subtitles(scenes, video_composer)
-        _require_editing_plan(project, scenes)
+        editing_plan = _require_editing_plan(project, scenes)
         audio_segments = None if preserve_native_audio else _require_audio_video_duration_alignment(scenes, video_composer)
 
         # 收集所有分镜的视频和音频路径
@@ -302,6 +302,7 @@ def compose_final_video_task(
             temp_video_path,
             preserve_audio=preserve_native_audio,
             preserve_provider_quality=preserve_provider_quality,
+            editing_plan=editing_plan,
         )
         
         # 步骤 2: 同步音频（40%）

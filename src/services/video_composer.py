@@ -53,6 +53,7 @@ class VideoComposer:
         output_path: Optional[str] = None,
         preserve_audio: bool = False,
         preserve_provider_quality: bool = False,
+        editing_plan: Optional[List[dict]] = None,
     ) -> str:
         """
         拼接多个视频
@@ -101,7 +102,7 @@ class VideoComposer:
             else:
                 cmd = self._build_video_concat_cmd(
                     video_files, output_path, preserve_audio, preserve_provider_quality,
-                    provider_geometry,
+                    provider_geometry, editing_plan,
                 )
             
             logger.debug(f"FFmpeg 命令: {' '.join(cmd)}")
@@ -495,7 +496,17 @@ class VideoComposer:
         preserve_audio: bool = False,
         preserve_provider_quality: bool = False,
         target_geometry: tuple[int, int, float, str] | None = None,
+        editing_plan: Optional[List[dict]] = None,
     ) -> list[str]:
+        if editing_plan:
+            return self._build_video_transition_cmd(
+                video_files,
+                output_path,
+                preserve_audio,
+                preserve_provider_quality,
+                target_geometry,
+                editing_plan,
+            )
         inputs: list[str] = []
         filter_parts: list[str] = []
         labels: list[str] = []
@@ -543,6 +554,86 @@ class VideoComposer:
         ]
         if preserve_audio:
             command[command.index("-y"):command.index("-y")] = ["-map", "[aout]"]
+        return command
+
+    def _build_video_transition_cmd(
+        self,
+        video_files: List[str],
+        output_path: str,
+        preserve_audio: bool,
+        preserve_provider_quality: bool,
+        target_geometry: tuple[int, int, float, str] | None,
+        editing_plan: List[dict],
+    ) -> list[str]:
+        """Build a timeline-aware concat command from the reviewed edit plan."""
+        if len(editing_plan) != len(video_files):
+            raise ValueError("Editing plan must contain one entry per video input")
+        durations = [self._get_duration(path) for path in video_files]
+        if any(not math.isfinite(value) or value <= 0 for value in durations):
+            raise ValueError("Cannot apply editing transitions to unreadable video durations")
+
+        inputs: list[str] = []
+        filters: list[str] = []
+        video_labels: list[str] = []
+        audio_labels: list[str] = []
+        for index, video_file in enumerate(video_files):
+            inputs.extend(["-i", os.path.abspath(video_file)])
+            video_label = f"tv{index}"
+            video_labels.append(video_label)
+            filters.append(
+                f"[{index}:v]{self._production_video_filter(preserve_provider_quality, target_geometry)}"
+                f",setpts=PTS-STARTPTS[{video_label}]"
+            )
+            if preserve_audio:
+                audio_label = f"ta{index}"
+                audio_labels.append(audio_label)
+                if self.has_audio_stream(video_file):
+                    filters.append(
+                        f"[{index}:a]aresample=48000,aformat=sample_rates=48000:"
+                        f"channel_layouts=stereo,asetpts=PTS-STARTPTS[{audio_label}]"
+                    )
+                else:
+                    filters.append(
+                        f"anullsrc=channel_layout=stereo:sample_rate=48000,"
+                        f"atrim=duration={durations[index]:.6f},asetpts=PTS-STARTPTS[{audio_label}]"
+                    )
+
+        current_video = video_labels[0]
+        current_audio = audio_labels[0] if preserve_audio else None
+        elapsed = durations[0]
+        for index in range(1, len(video_files)):
+            transition = editing_plan[index].get("transition", {})
+            mode = transition.get("video")
+            requested = float(transition.get("duration_seconds", 0.0) or 0.0)
+            # A 1ms xfade is effectively a hard cut, while keeping one stable
+            # filter graph for mixed hard-cut/crossfade timelines.
+            fade_duration = requested if mode == "crossfade" else 0.001
+            fade_duration = max(0.001, min(fade_duration, 0.12, durations[index - 1], durations[index]))
+            offset = max(0.0, elapsed - fade_duration)
+            next_video = f"txv{index}"
+            filters.append(
+                f"[{current_video}][{video_labels[index]}]xfade=transition=fade:"
+                f"duration={fade_duration:.6f}:offset={offset:.6f}[{next_video}]"
+            )
+            current_video = next_video
+            if preserve_audio:
+                next_audio = f"txa{index}"
+                filters.append(
+                    f"[{current_audio}][{audio_labels[index]}]acrossfade="
+                    f"d={fade_duration:.6f}:c1=tri:c2=tri[{next_audio}]"
+                )
+                current_audio = next_audio
+            elapsed += durations[index] - fade_duration
+
+        command = [
+            "ffmpeg", *inputs,
+            "-filter_complex", ";".join(filters),
+            "-map", f"[{current_video}]",
+            *self._production_video_encode_args(preserve_audio, preserve_provider_quality, target_geometry),
+            "-y", output_path,
+        ]
+        if preserve_audio and current_audio:
+            command[command.index("-y"):command.index("-y")] = ["-map", f"[{current_audio}]"]
         return command
 
     def _production_video_filter(
