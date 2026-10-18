@@ -403,6 +403,8 @@ class TestVideoComposer:
         filter_complex = command[command.index("-filter_complex") + 1]
         assert "sidechaincompress" in filter_complex
         assert "amix=inputs=2:duration=longest" in filter_complex
+        assert "afade=t=in:st=0:d=0.350000" in filter_complex
+        assert "afade=t=out:st=9.500000:d=0.500000" in filter_complex
         assert "alimiter=limit=0.95" in filter_complex
         assert "loudnorm=I=-16:TP=-1.5:LRA=11:linear=true" in filter_complex
         assert command[command.index("-stream_loop") + 1] == "-1"

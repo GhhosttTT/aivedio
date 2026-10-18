@@ -281,11 +281,21 @@ class VideoComposer:
             # fixed mix ratio. This keeps speech intelligible when the
             # provider returns native audio and avoids clipping on loud cuts.
             bgm_volume = max(0.0, min(1.0, float(bgm_volume)))
+            # Keep music boundaries unobtrusive, including for very short
+            # vertical clips where a fixed fade duration would be invalid.
+            fade_in_duration = min(0.35, video_duration / 2.0)
+            fade_out_duration = min(0.5, video_duration / 2.0)
+            fade_out_start = max(0.0, video_duration - fade_out_duration)
+            music_filter = (
+                f"aresample=48000,volume={bgm_volume},"
+                f"afade=t=in:st=0:d={fade_in_duration:.6f},"
+                f"afade=t=out:st={fade_out_start:.6f}:d={fade_out_duration:.6f}"
+            )
             source_has_audio = self.has_audio_stream(video_path)
             if source_has_audio:
                 audio_filter = (
                     f"[0:a]aresample=48000,volume=1.0[dialogue];"
-                    f"[1:a]aresample=48000,volume={bgm_volume}[music];"
+                    f"[1:a]{music_filter}[music];"
                     "[music][dialogue]sidechaincompress=threshold=0.08:ratio=8:"
                     "attack=20:release=250:makeup=1[ducked];"
                     "[dialogue][ducked]amix=inputs=2:duration=longest:"
@@ -294,7 +304,7 @@ class VideoComposer:
                 )
             else:
                 audio_filter = (
-                    f"[1:a]aresample=48000,volume={bgm_volume},"
+                    f"[1:a]{music_filter},"
                     "alimiter=limit=0.95,loudnorm=I=-16:TP=-1.5:LRA=11:linear=true[aout]"
                 )
             cmd = [
