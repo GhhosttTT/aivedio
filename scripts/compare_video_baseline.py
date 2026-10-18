@@ -36,6 +36,7 @@ class VideoStats:
     audio_codec: str | None = None
     max_static_run_seconds: float = 0.0
     max_black_run_seconds: float = 0.0
+    black_frame_ratio: float = 0.0
     brightness_step_p95: float = 0.0
     motion_jitter_ratio: float = 0.0
     temporal_jump_ratio: float = 0.0
@@ -183,6 +184,7 @@ def video_stats(path: Path, max_samples: int = 16) -> VideoStats:
         max_black_run_seconds=round(
             _max_consecutive_true(black_flags) * sample_interval, 3
         ),
+        black_frame_ratio=round(float(np.mean(black_flags)) if black_flags else 0.0, 3),
         brightness_step_p95=round(
             float(np.percentile(brightness_steps, 95)) if brightness_steps else 0.0,
             3,
@@ -277,6 +279,7 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
         "brightness_stable": candidate_stats.brightness_variance <= max(900.0, baseline_stats.brightness_variance * 3.0),
         "no_prolonged_static_run": candidate_stats.max_static_run_seconds <= 1.8,
         "no_prolonged_black_run": candidate_stats.max_black_run_seconds <= 0.2,
+        "black_frame_ratio_acceptable": candidate_stats.black_frame_ratio <= settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO,
         "no_temporal_exposure_jumps": candidate_stats.brightness_step_p95 <= 36.0,
         "stable_motion_cadence": candidate_stats.motion_jitter_ratio <= 1.5,
         "no_temporal_visual_resets": candidate_stats.temporal_jump_ratio <= settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO,

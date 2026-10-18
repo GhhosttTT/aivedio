@@ -969,6 +969,23 @@ def test_composition_review_blocks_black_frame_run():
     )
 
 
+def test_composition_review_blocks_scattered_black_frames():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "black_frame_ratio": 0.2,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video contains too many black frames: "
+        "black_frame_ratio=0.200, limit=0.050"
+    )
+
+
 def test_composition_review_blocks_final_frozen_run():
     report = {
         "status": "passed",

@@ -1009,6 +1009,13 @@ class ApiVideoProvider:
                 "temporal quality gate: black-frame run "
                 f"{black_seconds:.3f}s exceeds {settings.GENERATION_VIDEO_MAX_BLACK_SECONDS:.3f}s"
             )
+        black_frame_ratio = float(metrics.get("black_frame_ratio") or 0.0)
+        if black_frame_ratio > float(settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO):
+            raise ValueError(
+                "temporal quality gate: too many black frames "
+                f"black_frame_ratio={black_frame_ratio:.3f}, "
+                f"limit={settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO:.3f}"
+            )
         brightness_step = float(metrics.get("brightness_step_p95") or 0.0)
         if brightness_step > float(settings.GENERATION_VIDEO_MAX_BRIGHTNESS_STEP_P95):
             raise ValueError(

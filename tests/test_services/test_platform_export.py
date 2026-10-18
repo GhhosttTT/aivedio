@@ -134,6 +134,7 @@ def test_platform_export_rejects_audio_loss_and_duration_drift(tmp_path, monkeyp
     [
         ("temporal_jump_ratio", 0.8, "temporal visual resets"),
         ("temporal_jump_p95", 0.9, "extreme temporal visual reset"),
+        ("black_frame_ratio", 0.2, "too many black frames"),
         ("motion_jitter_ratio", 2.0, "unstable motion cadence"),
         ("brightness_step_p95", 60.0, "temporal exposure jumps"),
     ],

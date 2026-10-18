@@ -1100,6 +1100,16 @@ def _composition_review_error(report: dict) -> str | None:
                 f"{max_black_run_seconds:.3f}s, above "
                 f"{settings.GENERATION_VIDEO_MAX_BLACK_SECONDS}s"
             )
+        black_frame_ratio = technical.get("black_frame_ratio")
+        if (
+            isinstance(black_frame_ratio, (int, float))
+            and black_frame_ratio > settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO
+        ):
+            return (
+                "final composed video contains too many black frames: "
+                f"black_frame_ratio={black_frame_ratio:.3f}, "
+                f"limit={settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO:.3f}"
+            )
         max_static_run_seconds = technical.get("max_static_run_seconds")
         motion_energy = technical.get("motion_energy")
         if (

@@ -273,6 +273,24 @@ def test_black_frame_run_floor_blocks_candidate(monkeypatch):
     assert "black-frame run" in error
 
 
+def test_black_frame_ratio_floor_blocks_scattered_black_frames(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO",
+        0.05,
+    )
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {"black_frame_ratio": 0.2},
+        },
+        True, True, True, True, True, 4.8, 4.8,
+    )
+
+    assert error is not None
+    assert "too many black frames" in error
+
+
 def test_frozen_static_run_floor_blocks_low_motion_candidate(monkeypatch):
     monkeypatch.setattr(
         "src.tasks.video_tasks.settings.GENERATION_VIDEO_MAX_STATIC_RUN_SECONDS",

@@ -172,6 +172,16 @@ def _validate_export_metrics(
         raise PlatformExportError(
             f"Platform export contains a black-frame run of {max_black_run:.3f}s"
         )
+    black_frame_ratio = metrics.get("black_frame_ratio")
+    if (
+        isinstance(black_frame_ratio, (int, float))
+        and black_frame_ratio > settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO
+    ):
+        raise PlatformExportError(
+            "Platform export contains too many black frames: "
+            f"black_frame_ratio={black_frame_ratio:.3f}, "
+            f"limit={settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO:.3f}"
+        )
     temporal_jump_ratio = metrics.get("temporal_jump_ratio")
     if (
         isinstance(temporal_jump_ratio, (int, float))

@@ -1302,6 +1302,11 @@ def _sequence_segment_quality_report(
     ):
         error = "sequence segment contains an excessive black-frame run"
     elif (
+        isinstance(metrics.get("black_frame_ratio"), (int, float))
+        and metrics["black_frame_ratio"] > settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO
+    ):
+        error = "sequence segment contains too many black frames"
+    elif (
         metrics.get("audio_expected") is True
         and metrics.get("audio_quality_status") != "passed"
     ):
@@ -2016,6 +2021,16 @@ def _final_video_acceptance_error(
             "Final normalized video contains a black-frame run of "
             f"{max_black_run_seconds:.3f}s, above "
             f"{settings.GENERATION_VIDEO_MAX_BLACK_SECONDS}s"
+        )
+    black_frame_ratio = technical_metrics.get("black_frame_ratio")
+    if (
+        isinstance(black_frame_ratio, (int, float))
+        and black_frame_ratio > settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO
+    ):
+        return (
+            "Final normalized video contains too many black frames: "
+            f"black_frame_ratio={black_frame_ratio:.3f}, "
+            f"limit={settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO:.3f}"
         )
     max_static_run_seconds = technical_metrics.get("max_static_run_seconds")
     motion_energy = technical_metrics.get("motion_energy")

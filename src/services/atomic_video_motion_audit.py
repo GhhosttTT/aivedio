@@ -72,6 +72,8 @@ class AtomicVideoMotionAuditService:
                 issues.append(self._issue(number, "technical_score_low", f"technical score {score:.2f} is below the production floor", "refine_video_commercial_aesthetic"))
             if float(item.get("max_black_run_seconds") or 0) > float(settings.GENERATION_VIDEO_MAX_BLACK_SECONDS):
                 issues.append(self._issue(number, "black_frame_run", "black-frame run exceeds the production limit", "refine_video_commercial_aesthetic"))
+            if float(item.get("black_frame_ratio") or 0) > float(settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO):
+                issues.append(self._issue(number, "black_frame_ratio_high", "sampled timeline contains too many black frames", "refine_video_commercial_aesthetic"))
             if float(item.get("motion_jitter_ratio") or 0) > float(settings.GENERATION_VIDEO_MAX_MOTION_JITTER_RATIO):
                 issues.append(self._issue(number, "motion_cadence_unstable", "motion cadence is unstable", "lower_motion_and_regenerate_video"))
             if float(item.get("static_transition_ratio") or 0) >= 0.75:
@@ -100,6 +102,7 @@ class AtomicVideoMotionAuditService:
             for key in (
                 "technical_score", "motion_energy", "static_transition_ratio",
                 "max_static_run_seconds", "max_black_run_seconds",
+                "black_frame_ratio",
                 "motion_jitter_ratio", "sharpness", "brightness",
                 "temporal_jump_ratio", "temporal_jump_p95",
             )

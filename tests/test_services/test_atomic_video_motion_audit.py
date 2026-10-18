@@ -40,6 +40,24 @@ def test_atomic_video_motion_audit_flags_freeze_and_jitter(tmp_path):
     }
 
 
+def test_atomic_video_motion_audit_flags_scattered_black_frames(tmp_path):
+    video = tmp_path / "scene_1.mp4"
+    _write_sidecar(
+        video,
+        technical_score=4.2,
+        motion_energy=10,
+        static_transition_ratio=0.1,
+        max_black_run_seconds=0.0,
+        black_frame_ratio=0.2,
+        motion_jitter_ratio=0.2,
+    )
+
+    report = AtomicVideoMotionAuditService().audit([_scene(1, video)])
+
+    assert report.status == "needs_review"
+    assert report.issues[0]["code"] == "black_frame_ratio_high"
+
+
 def test_atomic_video_motion_audit_flags_temporal_visual_resets(tmp_path):
     video = tmp_path / "scene_1.mp4"
     _write_sidecar(

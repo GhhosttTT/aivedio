@@ -350,6 +350,8 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
         evidence.append("video sequence fps mismatch at shot boundaries")
     if video_metrics.get("pixel_format_mismatch_count", 0) > 0:
         evidence.append("video sequence pixel format mismatch at shot boundaries")
+    if video_metrics.get("black_frame_ratio", 0) > settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO:
+        evidence.append("video contains too many scattered black frames")
     if video_metrics.get("audio_signal_status") == "near_silent":
         evidence.append("audio signal is near-silent despite an expected output track")
     elif video_metrics.get("audio_signal_status") == "unavailable" and video_metrics.get("audio_expected") is True:
