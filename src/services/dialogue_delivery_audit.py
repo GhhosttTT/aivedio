@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from src.utils.media_quality_paths import (
+    existing_audio_quality_report_path,
+    existing_subtitle_quality_report_path,
+)
 
 
 _TIMECODE = re.compile(
@@ -100,6 +105,15 @@ class DialogueDeliveryAuditService:
                     "missing_voice_identity_evidence",
                     "Dialogue audio is present but its voice identity quality report is missing or invalid.",
                 ))
+            if audio_path.is_file() and voice_report is not None:
+                self._audit_audio_evidence(
+                    number,
+                    scene.dialogue,
+                    audio_path,
+                    audio_duration,
+                    voice_report,
+                    issues,
+                )
             if voice_report:
                 voice_identity = voice_report.get("voice_identity")
                 if isinstance(voice_identity, dict):
@@ -132,9 +146,40 @@ class DialogueDeliveryAuditService:
                 issues.append(self._issue(number, "missing_subtitles", "Dialogue scene has no readable subtitle asset."))
                 scene_reports.append(report)
                 continue
+            subtitle_quality = self._read_subtitle_report(subtitle_path)
+            if subtitle_quality is None:
+                issues.append(self._issue(
+                    number,
+                    "missing_subtitle_quality_evidence",
+                    "Subtitle is present but its quality sidecar is missing or invalid.",
+                ))
             cues = self._parse_srt(subtitle_path)
             report["subtitle_cues"] = len(cues)
             cues_count += len(cues)
+            if subtitle_quality is not None:
+                if subtitle_quality.get("status") != "passed":
+                    issues.append(self._issue(
+                        number,
+                        "subtitle_quality_gate_failed",
+                        "Subtitle quality gate did not pass.",
+                    ))
+                expected_text = subtitle_quality.get("expected_text")
+                if not isinstance(expected_text, str) or self._normalize_text(expected_text) != self._normalize_text(scene.dialogue):
+                    issues.append(self._issue(
+                        number,
+                        "stale_subtitle_dialogue_evidence",
+                        "Subtitle quality evidence is bound to different dialogue text.",
+                    ))
+                try:
+                    subtitle_hash = hashlib.sha256(subtitle_path.read_bytes()).hexdigest()
+                except OSError:
+                    subtitle_hash = None
+                if subtitle_quality.get("subtitle_sha256") != subtitle_hash:
+                    issues.append(self._issue(
+                        number,
+                        "stale_subtitle_file_evidence",
+                        "Subtitle quality evidence does not match the current subtitle file.",
+                    ))
             if not cues:
                 issues.append(self._issue(number, "empty_subtitles", "Subtitle file contains no timed dialogue cues."))
                 scene_reports.append(report)
@@ -158,12 +203,70 @@ class DialogueDeliveryAuditService:
     def _read_voice_report(self, audio_path: Path) -> dict[str, Any] | None:
         if not audio_path.is_file():
             return None
-        report_path = audio_path.with_suffix(".quality.json")
+        report_path = existing_audio_quality_report_path(audio_path)
         try:
             payload = json.loads(report_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, TypeError, ValueError):
             return None
         return payload if isinstance(payload, dict) else None
+
+    def _read_subtitle_report(self, subtitle_path: Path) -> dict[str, Any] | None:
+        report_path = existing_subtitle_quality_report_path(subtitle_path)
+        try:
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, TypeError, ValueError):
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def _audit_audio_evidence(
+        self,
+        scene_number: int,
+        dialogue: str,
+        audio_path: Path,
+        audio_duration: float | None,
+        report: dict[str, Any],
+        issues: list[dict[str, Any]],
+    ) -> None:
+        gate = report.get("dialogue_audio_quality_gate")
+        if not isinstance(gate, dict) or gate.get("status") != "passed":
+            issues.append(self._issue(
+                scene_number,
+                "dialogue_audio_quality_gate_failed",
+                "Dialogue audio quality gate is missing or did not pass.",
+            ))
+        expected_fingerprint = hashlib.sha256(
+            " ".join(str(dialogue or "").split()).encode("utf-8")
+        ).hexdigest()
+        if report.get("dialogue_fingerprint") != expected_fingerprint:
+            issues.append(self._issue(
+                scene_number,
+                "stale_dialogue_audio_evidence",
+                "Dialogue audio quality evidence is bound to different dialogue text.",
+            ))
+        try:
+            audio_hash = hashlib.sha256(audio_path.read_bytes()).hexdigest()
+        except OSError:
+            audio_hash = None
+        if report.get("audio_sha256") != audio_hash:
+            issues.append(self._issue(
+                scene_number,
+                "stale_dialogue_audio_file_evidence",
+                "Dialogue audio quality evidence does not match the current audio file.",
+            ))
+        signal = report.get("audio_signal")
+        if not isinstance(signal, dict) or signal.get("audio_signal_status") != "usable":
+            issues.append(self._issue(
+                scene_number,
+                "unusable_dialogue_audio_signal",
+                "Dialogue audio has no usable decoded signal evidence.",
+            ))
+        measured_duration = self._positive_float(report.get("duration_measured"))
+        if audio_duration is not None and measured_duration is not None and abs(audio_duration - measured_duration) > self.END_TOLERANCE_SECONDS:
+            issues.append(self._issue(
+                scene_number,
+                "stale_dialogue_audio_duration",
+                f"Scene audio duration {audio_duration:.2f}s disagrees with measured report duration {measured_duration:.2f}s.",
+            ))
 
     def _parse_srt(self, path: Path) -> list[dict[str, Any]]:
         try:
@@ -201,6 +304,9 @@ class DialogueDeliveryAuditService:
         except (TypeError, ValueError):
             return None
         return result if result > 0 else None
+
+    def _normalize_text(self, value: str) -> str:
+        return re.sub(r"[^\w\u4e00-\u9fff]+", "", str(value or "").lower())
 
     def _issue(self, scene_number: int, code: str, message: str) -> dict[str, Any]:
         return {

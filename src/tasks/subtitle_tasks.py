@@ -15,6 +15,7 @@ from src.services.subtitle_quality_service import assess_subtitle_timeline
 from src.utils.storage import get_scene_subtitle_path
 from src.utils.logger import get_logger
 from src.tasks.audio_tasks import has_spoken_dialogue
+from src.utils.media_quality_paths import subtitle_quality_report_path
 
 logger = get_logger(__name__)
 
@@ -94,7 +95,7 @@ def generate_subtitle_task(
             "generated_cue_count": len(dialogue_segments),
             "subtitle_sha256": hashlib.sha256(subtitle_content.encode("utf-8")).hexdigest(),
         })
-        Path(result_path).with_suffix(".quality.json").write_text(
+        subtitle_quality_report_path(result_path).write_text(
             json.dumps(quality_report, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )

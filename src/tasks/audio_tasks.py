@@ -14,6 +14,7 @@ from src.services.video_quality_metrics import _audio_signal_metrics
 from src.tasks.celery_app import celery_app
 from src.utils.logger import get_logger
 from src.utils.storage import get_scene_audio_path
+from src.utils.media_quality_paths import audio_quality_report_path
 
 logger = get_logger(__name__)
 
@@ -258,7 +259,7 @@ def generate_audio_task(
             measured_duration=measured_duration,
             reported_duration=reported_duration,
         )
-        Path(result_path).with_suffix(".quality.json").write_text(
+        audio_quality_report_path(result_path).write_text(
             json.dumps(report, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )

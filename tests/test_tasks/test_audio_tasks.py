@@ -3,6 +3,7 @@ from unittest.mock import Mock
 
 from src.tasks import audio_tasks
 from src.tasks.audio_tasks import dialogue_audio_profile, dialogue_audio_quality_report
+from src.utils.media_quality_paths import audio_quality_report_path
 
 
 def test_dialogue_audio_profile_detects_short_drama_emotion_and_pacing():
@@ -183,7 +184,7 @@ def test_generate_audio_task_marks_draft_fallback_audio_for_repair(tmp_path, mon
     monkeypatch.setattr(audio_tasks.generate_audio_task, "update_state", Mock())
 
     result = audio_tasks.generate_audio_task.run(8, "你为什么骗我", "hero", 3, 4)
-    report = (tmp_path / result["audio_path"]).with_suffix(".quality.json")
+    report = audio_quality_report_path(tmp_path / result["audio_path"])
     quality = json.loads(report.read_text(encoding="utf-8"))
 
     assert result["quality_status"] == "needs_review"

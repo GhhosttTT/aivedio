@@ -29,6 +29,10 @@ from src.services.sequence_plan import build_sequence_context
 from src.services.subtitle_generator import get_subtitle_generator
 from src.tasks.audio_tasks import has_spoken_dialogue
 from src.utils.storage import get_project_final_video_path
+from src.utils.media_quality_paths import (
+    existing_audio_quality_report_path,
+    existing_subtitle_quality_report_path,
+)
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -656,7 +660,7 @@ def _require_passed_scene_audio(scenes: list[Scene]) -> None:
         if not audio_path.is_file():
             missing.append(str(scene.scene_number))
             continue
-        quality_path = audio_path.with_suffix(".quality.json")
+        quality_path = existing_audio_quality_report_path(audio_path)
         if not quality_path.is_file():
             failed.append(f"{scene.scene_number}: missing audio quality report")
             continue
@@ -744,7 +748,7 @@ def _require_scene_subtitles(scenes: list[Scene], video_composer=None) -> None:
         if not _subtitle_matches_dialogue(content, scene.dialogue or ""):
             failed.append(f"{scene.scene_number}: subtitle text does not cover spoken dialogue")
             continue
-        quality_path = subtitle_path.with_suffix(".quality.json")
+        quality_path = existing_subtitle_quality_report_path(subtitle_path)
         if not quality_path.is_file():
             failed.append(f"{scene.scene_number}: missing subtitle quality report")
             continue
