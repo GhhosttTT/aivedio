@@ -116,6 +116,40 @@ def verify_delivery_package(package_path: str | Path) -> dict:
                 result["errors"].append(
                     "ZIP contains files missing from manifest: " + ", ".join(unexpected)
                 )
+            final_video_entry = next(
+                (
+                    item for archive_name, item in manifest_entries.items()
+                    if archive_name.startswith("media/final_video")
+                ),
+                None,
+            )
+            final_review_name = "reviews/final_composition.json"
+            if final_review_name in names and isinstance(final_video_entry, dict):
+                try:
+                    final_review = json.loads(archive.read(final_review_name).decode("utf-8"))
+                except (UnicodeDecodeError, ValueError, TypeError) as exc:
+                    result["errors"].append(f"Final composition review is invalid: {exc}")
+                else:
+                    final_metrics = (
+                        final_review.get("final_technical_metrics")
+                        if isinstance(final_review, dict)
+                        else None
+                    )
+                    if (
+                        not isinstance(final_review, dict)
+                        or final_review.get("video_sha256") != final_video_entry.get("sha256")
+                    ):
+                        result["errors"].append(
+                            "Final composition review video hash does not match delivery manifest"
+                        )
+                    if (
+                        not isinstance(final_metrics, dict)
+                        or final_metrics.get("status") != "available"
+                        or final_metrics.get("temporal_sample_evidence") != "sufficient"
+                    ):
+                        result["errors"].append(
+                            "Final composition review technical evidence is missing or insufficient"
+                        )
             platform_exports = [
                 (archive_name, item)
                 for archive_name, item in manifest_entries.items()

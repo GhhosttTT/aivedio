@@ -30,7 +30,9 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path, monkeypat
     )
     final = tmp_path / "final.mp4"
     final.write_bytes(b"final-video")
-    final.with_suffix(".composition_review.json").write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+    final.with_suffix(".composition_review.json").write_text(
+        json.dumps(_passed_final_composition(final)), encoding="utf-8"
+    )
     reviews = tmp_path / "reviews"
     reviews.mkdir()
     (reviews / "generation.json").write_text(json.dumps({"status": "passed"}), encoding="utf-8")
@@ -264,6 +266,47 @@ def test_delivery_package_verification_rejects_inconsistent_review_index(tmp_pat
     verification = verify_delivery_package(tampered)
     assert verification["status"] == "failed"
     assert any("unmanifested file" in error for error in verification["errors"])
+
+
+def test_delivery_package_verification_rejects_stale_final_composition_report(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+    build_delivery_package(
+        project,
+        tmp_path,
+        {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)},
+        {"status": "ready"},
+    )
+    package = tmp_path / "delivery" / "delivery_package.zip"
+    final_review = json.dumps({
+        "status": "passed",
+        "video_path": str(final),
+        "video_sha256": "0" * 64,
+        "final_technical_metrics": {
+            "status": "available",
+            "temporal_sample_evidence": "sufficient",
+        },
+    }).encode("utf-8")
+    tampered = tmp_path / "stale-final-review.zip"
+    with zipfile.ZipFile(package) as source:
+        manifest = json.loads(source.read("metadata/delivery_manifest.json"))
+        manifest["files"].append({
+            "path": "reviews/final_composition.json",
+            "size": len(final_review),
+            "sha256": hashlib.sha256(final_review).hexdigest(),
+        })
+        with zipfile.ZipFile(tampered, "w") as target:
+            for item in source.infolist():
+                payload = source.read(item.filename)
+                if item.filename == "metadata/delivery_manifest.json":
+                    payload = (json.dumps(manifest) + "\n").encode("utf-8")
+                target.writestr(item, payload)
+            target.writestr("reviews/final_composition.json", final_review)
+    verification = verify_delivery_package(tampered)
+
+    assert verification["status"] == "failed"
+    assert any("Final composition review video hash" in error for error in verification["errors"])
 
 
 def test_delivery_package_rejects_stale_platform_export_manifest(tmp_path):
