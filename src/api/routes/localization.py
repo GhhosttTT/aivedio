@@ -174,6 +174,7 @@ async def get_localization_quality(job_id: int, db_session: Session = Depends(ge
 async def record_localization_quality_review(
     job_id: int,
     request: LocalizationReviewRequest,
+    current_user=Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
 ):
     job = db_session.query(LocalizationJob).filter(LocalizationJob.id == job_id).first()
@@ -181,7 +182,12 @@ async def record_localization_quality_review(
         raise HTTPException(status_code=404, detail="译制任务不存在")
     report, store = _load_quality_report(job)
     try:
-        decision = store.record(request.decision, request.note, report)
+        decision = store.record(
+            request.decision,
+            request.note,
+            report,
+            user_id=getattr(current_user, "id", None),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"job_id": job_id, "human_review": decision}
