@@ -334,6 +334,35 @@ def test_platform_export_rejects_audio_level_drift(tmp_path, monkeypatch):
         export_platform_video(source, tmp_path, "douyin")
 
 
+@pytest.mark.parametrize(
+    ("audio_rms_db", "expected"),
+    [(-40.0, "too quiet"), (-6.0, "too loud")],
+)
+def test_platform_export_rejects_extreme_audio_mix_level(tmp_path, monkeypatch, audio_rms_db, expected):
+    source = tmp_path / "final.mp4"
+    source.write_bytes(b"source")
+
+    def fake_run(command, **_kwargs):
+        output = tmp_path / "exports" / ".douyin.tmp.mp4"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"exported")
+
+    monkeypatch.setattr("src.services.platform_export.subprocess.run", fake_run)
+    metrics = {
+        "status": "available", "width": 1080, "height": 1920,
+        "fps": 30.0, "duration_seconds": 2.0, "audio_present": True,
+        "audio_signal_status": "usable", "audio_clipping_status": "ok",
+        "audio_rms_db": audio_rms_db,
+    }
+    monkeypatch.setattr(
+        "src.services.platform_export.video_candidate_metrics",
+        lambda *_args, **_kwargs: metrics,
+    )
+
+    with pytest.raises(PlatformExportError, match=expected):
+        export_platform_video(source, tmp_path, "douyin")
+
+
 def test_platform_export_rejects_unknown_preset(tmp_path):
     source = tmp_path / "final.mp4"
     source.write_bytes(b"source")

@@ -233,6 +233,20 @@ def _validate_export_metrics(
         )
     if metrics.get("audio_present") and metrics.get("audio_clipping_status") == "clipped":
         raise PlatformExportError("Platform export audio signal is clipped at digital full scale")
+    audio_rms_db = metrics.get("audio_rms_db")
+    if metrics.get("audio_present") and isinstance(audio_rms_db, (int, float)):
+        if audio_rms_db < settings.GENERATION_VIDEO_AUDIO_RMS_MIN_DB:
+            raise PlatformExportError(
+                "Platform export audio mix is too quiet: "
+                f"audio_rms_db={audio_rms_db:.2f}, minimum="
+                f"{settings.GENERATION_VIDEO_AUDIO_RMS_MIN_DB:.2f}"
+            )
+        if audio_rms_db > settings.GENERATION_VIDEO_AUDIO_RMS_MAX_DB:
+            raise PlatformExportError(
+                "Platform export audio mix is too loud: "
+                f"audio_rms_db={audio_rms_db:.2f}, maximum="
+                f"{settings.GENERATION_VIDEO_AUDIO_RMS_MAX_DB:.2f}"
+            )
     audio_start_delta = metrics.get("audio_video_start_delta_seconds")
     if (
         metrics.get("audio_present")
