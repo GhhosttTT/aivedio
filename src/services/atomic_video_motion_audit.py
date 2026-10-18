@@ -76,6 +76,8 @@ class AtomicVideoMotionAuditService:
                 issues.append(self._issue(number, "motion_cadence_unstable", "motion cadence is unstable", "lower_motion_and_regenerate_video"))
             if float(item.get("static_transition_ratio") or 0) >= 0.75:
                 issues.append(self._issue(number, "frozen_motion", "clip spends too much of its sampled timeline in near-static transitions", "increase_motion_and_regenerate_video"))
+            if float(item.get("temporal_jump_ratio") or 0) >= 0.35:
+                issues.append(self._issue(number, "temporal_visual_jump", "sampled frames contain repeated full-frame visual resets", "refine_video_commercial_aesthetic"))
         status = "needs_review" if any(issue["severity"] == "high" for issue in issues) else ("warn" if issues else "passed")
         return AtomicVideoMotionAuditReport(status, len(reports), reports, issues)
 
@@ -97,6 +99,7 @@ class AtomicVideoMotionAuditService:
                 "technical_score", "motion_energy", "static_transition_ratio",
                 "max_static_run_seconds", "max_black_run_seconds",
                 "motion_jitter_ratio", "sharpness", "brightness",
+                "temporal_jump_ratio", "temporal_jump_p95",
             )
         }
 

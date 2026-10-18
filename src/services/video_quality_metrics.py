@@ -29,6 +29,7 @@ def video_candidate_metrics(path: str | Path, max_samples: int | None = None) ->
             duration_seconds=float(probe["duration_seconds"]),
         )
         gray_frames = [cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) for frame in frames]
+        histogram_jump_values = _frame_histogram_distances(frames, cv2)
         motion_values = [
             float(np.mean(cv2.absdiff(gray_frames[index], gray_frames[index - 1])))
             for index in range(1, len(gray_frames))
@@ -62,6 +63,14 @@ def video_candidate_metrics(path: str | Path, max_samples: int | None = None) ->
             / max(motion_median, 1.0)
             if motion_values else 0.0
         )
+        temporal_jump_ratio = (
+            sum(value >= 0.55 for value in histogram_jump_values) / len(histogram_jump_values)
+            if histogram_jump_values else 0.0
+        )
+        temporal_jump_p95 = (
+            float(np.percentile(histogram_jump_values, 95))
+            if histogram_jump_values else 0.0
+        )
         black_frame_flags = [
             float(np.mean(gray < 12.0)) >= 0.98
             for gray in gray_frames
@@ -88,6 +97,8 @@ def video_candidate_metrics(path: str | Path, max_samples: int | None = None) ->
             "brightness_variance": round(brightness_variance, 3),
             "brightness_step_p95": round(brightness_step_p95, 3),
             "motion_jitter_ratio": round(motion_jitter_ratio, 3),
+            "temporal_jump_ratio": round(temporal_jump_ratio, 3),
+            "temporal_jump_p95": round(temporal_jump_p95, 3),
             "black_frame_ratio": round(
                 sum(black_frame_flags) / len(black_frame_flags), 3
             ) if black_frame_flags else 0.0,
@@ -161,7 +172,13 @@ def video_technical_score(
     black_score = max(0.0, 5.0 - min(max_black_run_seconds / 0.2 * 5.0, 5.0))
     exposure_step_score = max(0.0, 5.0 - min(brightness_step_p95 / 18.0, 5.0))
     motion_stability_score = max(0.0, 5.0 - min(motion_jitter_ratio * 2.5, 5.0))
-    temporal_stability_score = (exposure_step_score * 0.6) + (motion_stability_score * 0.4)
+    temporal_jump_ratio = float(metrics.get("temporal_jump_ratio") or 0.0)
+    temporal_stability_score = (
+        exposure_step_score * 0.6
+        + motion_stability_score * 0.4
+        - min(temporal_jump_ratio * 5.0, 5.0)
+    )
+    temporal_stability_score = max(0.0, temporal_stability_score)
 
     score = (
         resolution_score * 0.10
@@ -188,6 +205,21 @@ def _max_consecutive_true(values: list[bool]) -> int:
         else:
             current = 0
     return longest
+
+
+def _frame_histogram_distances(frames, cv2) -> list[float]:
+    """Measure large content resets between adjacent sampled frames."""
+    histograms = []
+    for frame in frames:
+        histogram = cv2.calcHist([frame], [0, 1], None, [16, 16], [0, 256, 0, 256])
+        cv2.normalize(histogram, histogram)
+        histograms.append(histogram)
+    return [
+        max(0.0, min(1.0, float(cv2.compareHist(
+            histograms[index], histograms[index - 1], cv2.HISTCMP_BHATTACHARYYA
+        ))))
+        for index in range(1, len(histograms))
+    ]
 
 
 def _range_score(value: float, *, low: float, high: float, soft_low: float, soft_high: float) -> float:

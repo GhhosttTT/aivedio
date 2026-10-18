@@ -212,6 +212,25 @@ def test_video_technical_score_penalizes_temporal_instability():
     assert stable - unstable >= 0.2
 
 
+def test_video_technical_score_penalizes_repeated_temporal_visual_jumps():
+    shared = {
+        "duration_seconds": 3.0,
+        "width": 768,
+        "height": 1344,
+        "fps": 24,
+        "sampled_frames": 8,
+        "motion_energy": 8.0,
+        "sharpness": 80.0,
+        "brightness": 128.0,
+        "brightness_variance": 12.0,
+        "static_transition_ratio": 0.0,
+        "max_black_run_seconds": 0.0,
+    }
+    stable = video_technical_score({**shared, "temporal_jump_ratio": 0.0})
+    reset_heavy = video_technical_score({**shared, "temporal_jump_ratio": 0.6})
+    assert stable - reset_heavy >= 0.15
+
+
 def test_probe_reports_audio_stream_and_duration(monkeypatch, tmp_path):
     class Result:
         stdout = json.dumps({
