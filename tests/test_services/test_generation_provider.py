@@ -713,6 +713,7 @@ def test_native_ark_output_validation_requires_audio_when_requested(tmp_path, mo
     [
         ({"audio_signal_status": "near_silent", "audio_duration_delta_seconds": 0.0}, "audio signal is not usable"),
         ({"audio_signal_status": "usable", "audio_duration_delta_seconds": 0.36}, "audio/video duration drift"),
+        ("audio_start_offset", "audio/video stream start offset"),
     ],
 )
 def test_native_ark_output_validation_rejects_invalid_requested_audio(
@@ -722,6 +723,12 @@ def test_native_ark_output_validation_rejects_invalid_requested_audio(
     monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")
     output = tmp_path / "invalid-audio.mp4"
     output.write_bytes(b"video")
+    if metrics == "audio_start_offset":
+        metrics = {
+            "audio_signal_status": "usable",
+            "audio_duration_delta_seconds": 0.0,
+            "audio_video_start_delta_seconds": -0.6,
+        }
     monkeypatch.setattr(
         generation_provider.subprocess,
         "run",

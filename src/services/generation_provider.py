@@ -988,10 +988,10 @@ class ApiVideoProvider:
                     f"{float(audio_delta):.3f}s exceeds 0.350s"
                 )
             start_delta = metrics.get("audio_video_start_delta_seconds")
-            if start_delta is not None and float(start_delta) > 0.35:
+            if start_delta is not None and abs(float(start_delta)) > 0.35:
                 raise ValueError(
                     "audio/video stream start offset: "
-                    f"{float(start_delta):.3f}s exceeds 0.350s"
+                    f"{abs(float(start_delta)):.3f}s exceeds 0.350s"
                 )
         static_seconds = float(metrics.get("max_static_run_seconds") or 0.0)
         motion_energy = float(metrics.get("motion_energy") or 0.0)
