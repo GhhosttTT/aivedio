@@ -448,6 +448,24 @@ def test_native_ark_output_validation_fails_closed_without_ffprobe(tmp_path, mon
     assert not output.exists()
 
 
+def test_legacy_seedance_output_validation_does_not_skip_media_gate(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "legacy")
+    monkeypatch.setenv("SEEDANCE_VALIDATE_OUTPUT", "true")
+    monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")
+    output = tmp_path / "legacy-invalid.mp4"
+    output.write_bytes(b"not a video")
+    monkeypatch.setattr(
+        generation_provider.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout="codec_type=audio\nduration=4.0\n"),
+    )
+    provider = SeedanceApiProvider(endpoint="https://gateway.example/video", api_key="secret")
+
+    with pytest.raises(GenerationProviderError, match="invalid video artifact"):
+        provider._validate_provider_video(str(output))
+    assert not output.exists()
+
+
 def test_native_ark_output_validation_accepts_video_stream(tmp_path, monkeypatch):
     monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
     monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")
@@ -1093,6 +1111,7 @@ def test_reference_audio_is_an_output_contract_for_provider_validation(tmp_path)
 
 
 def test_api_provider_preserves_last_frame_metadata(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_VALIDATE_OUTPUT", "false")
     class FakeResponse:
         headers = {"content-type": "application/json"}
         content = b"mp4-bytes"
@@ -1172,6 +1191,7 @@ def test_seedance_legacy_persists_requested_output_controls(tmp_path, monkeypatc
 
 
 def test_api_provider_persists_last_frame_for_cross_shot_continuity(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_VALIDATE_OUTPUT", "false")
     image_buffer = BytesIO()
     Image.new("RGB", (2, 2), (32, 64, 96)).save(image_buffer, format="PNG")
     valid_png = image_buffer.getvalue()
@@ -3588,6 +3608,7 @@ def test_seedance_native_cancellation_attempts_remote_queued_cancel(tmp_path, mo
 
 
 def test_seedance_provider_resolves_request_id_result_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_VALIDATE_OUTPUT", "false")
     class FakeResponse:
         def __init__(self, payload=None, content=b"video"):
             self.payload = payload or {}

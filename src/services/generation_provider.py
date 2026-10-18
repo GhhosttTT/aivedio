@@ -774,8 +774,7 @@ class ApiVideoProvider:
         if self.name != GenerationProviderName.SEEDANCE_API:
             return
         api_format = _seedance_api_format(self.endpoint)
-        if api_format not in {"ark", "ark_v3", "volcengine", "volcengine_v3"}:
-            return
+        native_ark_contract = api_format in {"ark", "ark_v3", "volcengine", "volcengine_v3"}
         validation_enabled = _provider_bool("SEEDANCE_VALIDATE_OUTPUT", True)
         if not validation_enabled:
             self.last_result_metadata["output_validation_status"] = "disabled_by_configuration"
@@ -786,7 +785,7 @@ class ApiVideoProvider:
             except OSError:
                 pass
             raise GenerationProviderError(
-                "Native Ark output validation requires ffprobe; install ffprobe or explicitly disable "
+                "Seedance output validation requires ffprobe; install ffprobe or explicitly disable "
                 "SEEDANCE_VALIDATE_OUTPUT for a non-production run"
             )
         try:
@@ -863,7 +862,7 @@ class ApiVideoProvider:
                 pixel_format = str(
                     self.last_result_metadata.get("video_pixel_format") or ""
                 ).lower()
-                if (
+                if native_ark_contract and (
                     _seedance_model_is_25(requested_model)
                     and requested_resolution == "1080p"
                     and requested_output_format == "mov"
@@ -876,7 +875,7 @@ class ApiVideoProvider:
                             "Native Seedance 2.5 1080p MOV output must use H.264 4:4:4; "
                             f"received codec={codec or 'unknown'}, pixel_format={pixel_format or 'unknown'}"
                         )
-                elif (
+                elif native_ark_contract and (
                     (
                         _seedance_model_is_25(requested_model)
                         and requested_resolution == "1080p"
@@ -913,7 +912,7 @@ class ApiVideoProvider:
             except OSError:
                 pass
             raise GenerationProviderError(
-                f"Native Ark returned an invalid video artifact: {output_path} ({exc})"
+                f"Seedance returned an invalid video artifact: {output_path} ({exc})"
             ) from exc
 
     def _validate_native_ark_geometry(
