@@ -626,8 +626,49 @@ async def get_generation_review(
         )
         baseline_path = Path(baseline_report.get("baseline_video_path") or "")
         active_candidate = str(getattr(project, "final_video_path", None) or "")
+        gates = baseline_report.get("gates")
+        score = baseline_report.get("score")
+        minimum_score = baseline_report.get("min_score")
+        required_baseline_gates = {
+            "sufficient_temporal_samples",
+            "duration_close",
+            "fps_close",
+            "pixel_format_not_lower",
+            "resolution_not_lower",
+            "aspect_ratio_close",
+            "motion_not_static",
+            "sharpness_not_collapsed",
+            "exposure_close",
+            "brightness_stable",
+            "no_prolonged_static_run",
+            "no_prolonged_black_run",
+            "black_frame_ratio_acceptable",
+            "no_temporal_exposure_jumps",
+            "stable_motion_cadence",
+            "no_temporal_visual_resets",
+            "no_extreme_temporal_visual_reset",
+            "audio_presence_matches",
+            "audio_duration_close",
+            "audio_signal_usable",
+            "audio_not_clipped",
+            "audio_start_aligned",
+            "audio_level_close",
+            "audio_rms_close",
+            "visual_structure_reference_available",
+            "visual_structure_not_diverged",
+        }
+        report_evidence_invalid = (
+            baseline_report.get("kind") != "seed_dance_baseline_comparison"
+            or not isinstance(gates, dict)
+            or not required_baseline_gates.issubset(gates)
+            or any(gates.get(name) is not True for name in required_baseline_gates)
+            or not isinstance(score, (int, float))
+            or not isinstance(minimum_score, (int, float))
+            or score < minimum_score
+        )
         if (
-            not active_candidate
+            report_evidence_invalid
+            or not active_candidate
             or str(candidate_path.resolve()) != str(Path(active_candidate).resolve())
             or not baseline_report.get("candidate_signature")
             or _video_version_signature(candidate_path) != baseline_report.get("candidate_signature")
