@@ -230,3 +230,15 @@ def _validate_export_metrics(
                 )
         if bool(metrics.get("audio_present")) != bool(source_metrics.get("audio_present")):
             raise PlatformExportError("Platform export changed source audio presence")
+        source_peak = source_metrics.get("audio_peak_db")
+        output_peak = metrics.get("audio_peak_db")
+        if (
+            source_metrics.get("audio_present")
+            and isinstance(source_peak, (int, float))
+            and isinstance(output_peak, (int, float))
+            and abs(float(output_peak) - float(source_peak)) > 12.0
+        ):
+            raise PlatformExportError(
+                "Platform export audio level drifted by "
+                f"{abs(float(output_peak) - float(source_peak)):.3f}dB"
+            )
