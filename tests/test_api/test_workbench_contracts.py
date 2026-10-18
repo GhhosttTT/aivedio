@@ -967,8 +967,8 @@ def test_production_readiness_reports_weak_story_rhythm(setup):
     assert story_room["status"] == "weak"
     assert "market_brief" in story_room["missing"]
     assert story_room["rewrite_actions"]
-    assert any(item["code"] == "weak_story_rhythm" for item in payload["warnings"])
-    assert any(item["code"] == "weak_story_room_quality" for item in payload["warnings"])
+    assert any(item["code"] == "weak_story_rhythm" for item in payload["blockers"])
+    assert any(item["code"] == "weak_story_room_quality" for item in payload["blockers"])
 
 
 def test_production_readiness_requires_real_sample_validation_summary(setup):
