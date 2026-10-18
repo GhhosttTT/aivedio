@@ -178,12 +178,29 @@ def test_composition_accepts_passed_audio_quality_report_for_dialogue(tmp_path):
     audio.with_suffix(".quality.json").write_text(json.dumps({
         "status": "passed",
         "audio_path": str(audio),
+        "audio_sha256": hashlib.sha256(audio.read_bytes()).hexdigest(),
         "dialogue_fingerprint": composition_tasks._dialogue_fingerprint("你为什么骗我"),
         "dialogue_audio_quality_gate": {"status": "passed", "low": {}, "missing": []},
     }), encoding="utf-8")
     scene = Mock(scene_number=1, dialogue="你为什么骗我", audio_path=str(audio))
 
     composition_tasks._require_passed_scene_audio([scene])
+
+
+def test_composition_rejects_stale_audio_quality_hash(tmp_path):
+    audio = tmp_path / "scene_001.mp3"
+    audio.write_bytes(b"current audio")
+    audio.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "passed",
+        "audio_path": str(audio),
+        "audio_sha256": "0" * 64,
+        "dialogue_fingerprint": composition_tasks._dialogue_fingerprint("你为什么骗我"),
+        "dialogue_audio_quality_gate": {"status": "passed", "low": {}, "missing": []},
+    }), encoding="utf-8")
+    scene = Mock(scene_number=1, dialogue="你为什么骗我", audio_path=str(audio))
+
+    with pytest.raises(ValueError, match="audio quality report is stale for current file"):
+        composition_tasks._require_passed_scene_audio([scene])
 
 
 def test_composition_input_signature_changes_when_bgm_mix_changes(tmp_path):

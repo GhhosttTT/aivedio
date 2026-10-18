@@ -123,6 +123,11 @@ def dialogue_audio_quality_report(
         "stage": "audio",
         "scene": {"scene_number": scene.scene_number},
         "audio_path": audio_path,
+        "audio_sha256": (
+            hashlib.sha256(Path(str(audio_path)).read_bytes()).hexdigest()
+            if audio_path and Path(str(audio_path)).is_file()
+            else None
+        ),
         "dialogue_fingerprint": hashlib.sha256(
             " ".join((text or "").split()).encode("utf-8")
         ).hexdigest(),

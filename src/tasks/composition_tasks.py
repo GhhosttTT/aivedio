@@ -617,6 +617,11 @@ def _require_passed_scene_audio(scenes: list[Scene]) -> None:
                 f"{scene.scene_number}: audio voice binding is {reported_speaker!r}, expected {expected_speaker!r}"
             )
             continue
+        reported_hash = report.get("audio_sha256")
+        current_hash = file_hash(audio_path)
+        if not isinstance(reported_hash, str) or reported_hash.strip().lower() != current_hash:
+            failed.append(f"{scene.scene_number}: audio quality report is stale for current file")
+            continue
         gate = report.get("dialogue_audio_quality_gate")
         if isinstance(gate, dict) and gate.get("status") != "passed":
             failed.append(f"{scene.scene_number}: dialogue audio quality gate failed")
