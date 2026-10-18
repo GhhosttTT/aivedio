@@ -274,6 +274,112 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
                 "python -m scripts.validate_seedance_gateway --dry-run --api-format ark_v3",
                 f"python -m scripts.validate_local_generation summarize --output {output_path}",
             ]
+        elif action == "regenerate_turnaround_album":
+            entry["rerun_strategy"] = (
+                "Regenerate the character turnaround album, select one approved front/side/back view, "
+                "freeze the album, then invalidate affected keyframes."
+            )
+            entry["parameter_hints"] = {
+                "repair_action": action,
+                "required_views": ["front", "side", "back"],
+                "freeze_approved_album": True,
+                "invalidate_stale_keyframes": True,
+            }
+            entry["required_inputs"] = ["project_id", "character_id", "approved_view_images"]
+            commands = [
+                "POST /api/projects/<project_id>/characters/<character_id>/generate-turnaround-album",
+                "POST /api/projects/<project_id>/characters/<character_id>/freeze-turnaround-album",
+                f"python -m scripts.validate_local_generation summarize --output {output_path}",
+            ]
+        elif action == "regenerate_character_identity":
+            entry["rerun_strategy"] = (
+                "Refresh the character identity specification and references, freeze the asset pack, "
+                "then regenerate only scenes that expose the stale identity."
+            )
+            entry["parameter_hints"] = {
+                "repair_action": action,
+                "refresh_identity_bible": True,
+                "freeze_asset_pack_before_render": True,
+                "invalidate_stale_references": True,
+            }
+            entry["required_inputs"] = ["project_id", "character_id", "identity_specification"]
+            commands = [
+                "POST /api/projects/<project_id>/characters/<character_id>/identity-plan",
+                "POST /api/projects/<project_id>/characters/<character_id>/freeze-asset-pack",
+                f"python -m scripts.validate_local_generation summarize --output {output_path}",
+            ]
+        elif action == "refreeze_spatial_plan":
+            entry["rerun_strategy"] = (
+                "Review stage map, screen direction, character positions, prop continuity, and camera axis; "
+                "freeze a new spatial plan before regenerating affected shots."
+            )
+            entry["parameter_hints"] = {
+                "repair_action": action,
+                "require_stage_map": True,
+                "require_camera_axis": True,
+                "require_character_positions": True,
+                "require_prop_positions": True,
+                "invalidate_affected_shots": True,
+            }
+            entry["required_inputs"] = ["project_id", "scene_numbers", "spatial_plan_review"]
+            commands = [
+                "POST /api/projects/<project_id>/spatial-plan/freeze",
+                f"python -m scripts.validate_local_generation summarize --output {output_path}",
+            ]
+        elif action == "fix_workflow_profile":
+            entry["rerun_strategy"] = (
+                "Repair and freeze the ComfyUI production workflow profile, verify hashes and required "
+                "capabilities, then rerun the affected generation stage."
+            )
+            entry["parameter_hints"] = {
+                "repair_action": action,
+                "verify_workflow_hash": True,
+                "require_identity_capability": True,
+                "require_spatial_control_capability": True,
+                "require_face_repair_capability": True,
+                "require_upscale_capability": True,
+                "freeze_before_generation": True,
+            }
+            entry["required_inputs"] = ["workflow_path", "workflow_capabilities", "workflow_sha256"]
+            commands = [
+                "POST /api/projects/workflow-profile/freeze",
+                "python -m scripts.validate_local_generation preflight-production-video",
+                f"python -m scripts.validate_local_generation summarize --output {output_path}",
+            ]
+        elif action == "start_local_reviewer":
+            entry["rerun_strategy"] = (
+                "Start the local VLM reviewer, verify its health endpoint, and rerun candidate review "
+                "before accepting any generated media."
+            )
+            entry["parameter_hints"] = {
+                "repair_action": action,
+                "require_health_check": True,
+                "require_candidate_review": True,
+                "require_human_review_for_unavailable_cases": True,
+            }
+            entry["required_inputs"] = ["reviewer_base_url", "reviewer_model"]
+            commands = [
+                "python -m scripts.start_llm_service --help",
+                f"python -m scripts.validate_local_generation review-images --output {output_path}",
+                f"python -m scripts.validate_local_generation summarize --output {output_path}",
+            ]
+        elif action == "split_scene":
+            entry["rerun_strategy"] = (
+                "Split the overloaded scene into atomic shots with one visible action and one camera intent, "
+                "then regenerate script, subtitles, audio, and video for the affected range."
+            )
+            entry["parameter_hints"] = {
+                "repair_action": action,
+                "one_visible_action_per_shot": True,
+                "one_camera_intent_per_shot": True,
+                "rebuild_downstream_assets": True,
+                "rerun_story_room_gate": True,
+            }
+            entry["required_inputs"] = ["project_id", "scene_number", "split_plan"]
+            commands = [
+                "POST /api/projects/<project_id>/generate-script",
+                f"python -m scripts.validate_local_generation summarize --output {output_path}",
+            ]
         else:
             entry["rerun_strategy"] = item.get("recommendation") or "Resolve this repair action and rerun summarize."
             commands = [f"python -m scripts.validate_local_generation summarize --output {output_path}"]

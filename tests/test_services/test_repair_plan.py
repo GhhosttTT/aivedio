@@ -260,3 +260,23 @@ def test_repair_execution_plan_handles_story_rhythm_rewrite(tmp_path):
     assert item["parameter_hints"]["requires_script_rewrite"] is True
     assert item["parameter_hints"]["early_hook_required"] is True
     assert item["parameter_hints"]["ending_hook_required"] is True
+
+
+def test_repair_execution_plan_makes_setup_repairs_explicit(tmp_path):
+    plan = build_repair_execution_plan(
+        tmp_path,
+        [
+            {"action": "regenerate_turnaround_album", "execution": "setup_required", "stage": "character"},
+            {"action": "refreeze_spatial_plan", "execution": "setup_required", "stage": "spatial"},
+            {"action": "fix_workflow_profile", "execution": "setup_required", "stage": "workflow"},
+            {"action": "split_scene", "execution": "setup_required", "stage": "script", "scene_number": 4},
+        ],
+    )
+
+    items = {item["action"]: item for item in plan["setup_required"]}
+    assert items["regenerate_turnaround_album"]["parameter_hints"]["required_views"] == ["front", "side", "back"]
+    assert items["refreeze_spatial_plan"]["parameter_hints"]["require_camera_axis"] is True
+    assert items["fix_workflow_profile"]["parameter_hints"]["verify_workflow_hash"] is True
+    assert items["split_scene"]["parameter_hints"]["one_visible_action_per_shot"] is True
+    assert all(item["required_inputs"] for item in items.values())
+    assert not plan["manual"]
