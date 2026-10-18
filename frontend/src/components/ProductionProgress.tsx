@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CheckCircle, Circle, Loader, RefreshCw, X } from 'lucide-react';
 import { errorText, ProductionTask, projectApi, taskApi } from '../api/client';
 import type { Project } from '../types';
@@ -16,7 +16,14 @@ export function ProductionProgress({project, task, onReload}: {project: Project;
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     const [outputUrl, setOutputUrl] = useState('');
+    const [outputRefresh, setOutputRefresh] = useState(0);
+    const [mediaError, setMediaError] = useState(false);
+    const refreshedMedia = useRef(false);
     const outputPath = task?.result?.output_path;
+    useEffect(() => {
+        setMediaError(false);
+        refreshedMedia.current = false;
+    }, [project.id, task?.status, outputPath]);
     useEffect(() => {
         let active = true;
         setOutputUrl('');
@@ -27,7 +34,7 @@ export function ProductionProgress({project, task, onReload}: {project: Project;
             .then(url => { if (active) setOutputUrl(url); })
             .catch(() => { if (active) setOutputUrl(''); });
         return () => { active = false; };
-    }, [project.id, task?.status, outputPath]);
+    }, [project.id, task?.status, outputPath, outputRefresh]);
     const steps = productionSteps(project.scenes?.length || 0);
     const running = task?.status === 'running' || task?.status === 'pending';
     const action = async (cancel: boolean) => {
@@ -54,7 +61,7 @@ export function ProductionProgress({project, task, onReload}: {project: Project;
         <progress value={progress} max={100} aria-label="总体进度"/>
         <p className="wb-muted">{Math.round(progress)}% · {task ? `${current} / ${task.total_steps} 步` : `${steps.length} 步`}</p>
         {task?.production_options && <p className="wb-muted">本次参数：{task.production_options.provider || '环境默认'} · {task.production_options.model || '环境默认模型'} · {task.production_options.resolution || '默认分辨率'} · {task.production_options.output_format || '默认格式'}</p>}
-        {outputUrl && <div className="wb-production-result"><div className="wb-row wb-between"><p className="wb-muted">最终成片</p><a className="wb-button" href={`${outputUrl}&download=true`} download>下载成片</a></div><video controls preload="metadata" src={outputUrl} aria-label="最终成片预览" style={{maxWidth: '100%', borderRadius: 8}} /></div>}
+        {outputUrl && <div className="wb-production-result"><div className="wb-row wb-between"><p className="wb-muted">最终成片</p><a className="wb-button" href={`${outputUrl}&download=true`} download>下载成片</a></div><video controls preload="metadata" src={outputUrl} aria-label="最终成片预览" onError={() => { if (!refreshedMedia.current) { refreshedMedia.current = true; setOutputRefresh(value => value + 1); } else setMediaError(true); }} style={{maxWidth: '100%', borderRadius: 8}} />{mediaError && <p className="wb-alert" role="alert">成片链接已失效或文件不可用，请重试。</p>}</div>}
         {running && task?.live_step && <p role="status">{liveScene ? `分镜 ${liveScene.scene_number} · ` : ''}{stageNames[task.live_step.stage] || task.live_step.stage}</p>}
         {(task?.provider_stage || task?.provider_task_id || task?.provider_status || task?.provider_error) && <p role="status" className="wb-muted">{task.provider_stage ? (providerStageNames[task.provider_stage] || task.provider_stage) : 'Seedance 远端任务'}{typeof task.provider_progress === 'number' ? ' · ' + Math.round(task.provider_progress) + '%' : ''}{task.provider_task_id ? ` · 远端 ${task.provider_task_id}` : ''}{task.provider_status ? ` · ${task.provider_status}` : ''}{task.provider_error ? ` · ${task.provider_error}` : ''}</p>}
         {(error || task?.error_message) && <p role="alert" className="wb-alert">{error || task?.error_message}</p>}
