@@ -49,6 +49,17 @@ def test_composition_requires_passed_video_quality_report(tmp_path):
         composition_tasks._require_passed_scene_videos([scene])
 
 
+def test_composition_rejects_provider_draft_even_with_passed_quality(tmp_path):
+    video = tmp_path / "scene_001.mp4"
+    video.write_bytes(b"draft video")
+    video.with_suffix(".provider.json").write_text(json.dumps({"requested_draft": True}), encoding="utf-8")
+    video.with_suffix(".quality.json").write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+    scene = Mock(scene_number=1, video_path=str(video))
+
+    with pytest.raises(ValueError, match="must be promoted"):
+        composition_tasks._require_passed_scene_videos([scene])
+
+
 def test_composition_candidate_publishes_video_and_review_together(tmp_path):
     candidate = tmp_path / ".final.candidate-7.mp4"
     final = tmp_path / "final.mp4"

@@ -522,6 +522,15 @@ def _require_passed_scene_videos(scenes: list[Scene]) -> None:
         if not video_path.is_file():
             missing.append(str(scene.scene_number))
             continue
+        provider_metadata_path = video_path.with_suffix(".provider.json")
+        if provider_metadata_path.is_file():
+            try:
+                provider_metadata = json.loads(provider_metadata_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                provider_metadata = {}
+            if isinstance(provider_metadata, dict) and provider_metadata.get("requested_draft") is True:
+                failed.append(f"{scene.scene_number}: provider Draft video must be promoted before composition")
+                continue
         quality_path = video_path.with_suffix(".quality.json")
         if not quality_path.is_file():
             failed.append(f"{scene.scene_number}: missing video quality report")
