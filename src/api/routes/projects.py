@@ -32,6 +32,8 @@ from src.api.schemas import (
     VisualStyleAssetPackResponse,
     WorkflowProfileFreezeRequest,
     WorkflowProfileResponse,
+    StoryRoomApprovalRequest,
+    StoryRoomApprovalResponse,
     HumanReviewDecisionRequest,
 )
 from src.api.dependencies import get_current_user, require_project_access
@@ -966,6 +968,37 @@ async def get_production_readiness(
     if duration_override is not None:
         readiness_kwargs["duration_override"] = duration_override
     return ProductionReadinessService(db_session).build_report(project_id, **readiness_kwargs)
+
+
+@router.post("/{project_id}/approve-story-room", response_model=StoryRoomApprovalResponse)
+async def approve_story_room(
+    project_id: int,
+    request: StoryRoomApprovalRequest,
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    """Freeze a passing story-room decision against the current script snapshot."""
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if project.status == ProjectStatus.IN_PRODUCTION:
+        raise HTTPException(status_code=409, detail="项目正在制作，不能修改故事房审批")
+    scenes = (
+        db_session.query(Scene)
+        .filter(Scene.project_id == project_id)
+        .order_by(Scene.scene_number)
+        .all()
+    )
+    try:
+        approval = StoryRoomQualityService().freeze_approval(
+            project,
+            scenes,
+            notes=request.notes or "",
+            reviewer=str(getattr(current_user, "username", "operator") or "operator"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return StoryRoomApprovalResponse(project_id=project_id, status="approved", approval=approval)
 
 
 @router.post("/{project_id}/freeze-spatial-plan", response_model=SpatialAssetPackResponse)

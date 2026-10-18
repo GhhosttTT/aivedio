@@ -1038,6 +1038,18 @@ def test_production_readiness_reports_weak_story_rhythm(setup):
     assert any(item["code"] == "weak_story_room_quality" for item in payload["blockers"])
 
 
+def test_story_room_approval_endpoint_fails_closed_for_weak_story(setup):
+    client, _, _ = setup
+
+    response = client.post(
+        "/api/projects/1/approve-story-room",
+        json={"notes": "not ready"},
+    )
+
+    assert response.status_code == 409
+    assert "requires a passing report" in response.json()["detail"]
+
+
 def test_production_readiness_requires_real_sample_validation_summary(setup):
     client, _, _ = setup
 

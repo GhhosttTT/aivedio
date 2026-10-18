@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from src.database.models import Project, Scene
 from src.services.repair_queue import build_repair_queue
 from src.services.topic_brief import TopicBriefService
+from src.services.generation_review import fingerprint, write_report
+from src.utils.storage import storage_manager
 
 
 @dataclass(frozen=True)
@@ -268,6 +271,84 @@ class StoryRoomQualityService:
             scene_notes=overloaded,
             repair_queue=repair_queue,
         )
+
+    @staticmethod
+    def approval_path(project_id: int) -> Path:
+        return storage_manager.get_project_path(project_id) / "reviews" / "story_room_approval.json"
+
+    @staticmethod
+    def input_signature(project: Project, scenes: list[Scene]) -> str:
+        """Fingerprint the story decisions that must be re-approved after edits."""
+        try:
+            script = __import__("json").loads(project.script) if project.script else {}
+        except (TypeError, ValueError):
+            script = {}
+        return fingerprint({
+            "project_id": project.id,
+            "script": script,
+            "theme": project.theme,
+            "outline": project.outline,
+            "scenes": [
+                {
+                    "scene_number": scene.scene_number,
+                    "visual_description": scene.visual_description,
+                    "dialogue": scene.dialogue,
+                    "character_name": scene.character_name,
+                    "location": getattr(scene, "location", None),
+                    "audio_duration": getattr(scene, "audio_duration", None),
+                }
+                for scene in sorted(scenes, key=lambda item: item.scene_number)
+            ],
+        })
+
+    @classmethod
+    def load_approval(cls, project_id: int) -> dict | None:
+        path = cls.approval_path(project_id)
+        try:
+            import json
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError):
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def freeze_approval(
+        self,
+        project: Project,
+        scenes: list[Scene],
+        notes: str = "",
+        reviewer: str = "",
+    ) -> dict:
+        report = self.evaluate(project, scenes, self._script_scene_map(project)).to_dict()
+        if report.get("status") != "passed":
+            missing = ", ".join(report.get("missing") or ["story_room_quality"])
+            raise ValueError(f"Story room approval requires a passing report: {missing}")
+        payload = {
+            "status": "approved",
+            "project_id": project.id,
+            "input_hash": self.input_signature(project, scenes),
+            "score": report.get("score"),
+            "approved_by": reviewer or "operator",
+            "notes": notes or "",
+            "approved_report": report,
+        }
+        write_report(self.approval_path(project.id), payload)
+        return payload
+
+    def _script_scene_map(self, project: Project) -> dict[int, dict]:
+        if not project.script:
+            return {}
+        try:
+            import json
+            payload = json.loads(project.script)
+        except (TypeError, ValueError):
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        return {
+            item["scene_number"]: item
+            for item in payload.get("scenes", [])
+            if isinstance(item, dict) and isinstance(item.get("scene_number"), int)
+        }
 
     def _scene_text(self, scene: Scene, script_scene: dict) -> str:
         parts = [

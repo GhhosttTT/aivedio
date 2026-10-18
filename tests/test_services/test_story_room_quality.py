@@ -122,3 +122,36 @@ def test_story_room_quality_does_not_pass_with_a_missing_critical_beat():
     assert report["status"] != "passed"
     assert report["signals"]["critical_missing"]
     assert "beat_order" in report["signals"]["critical_missing"]
+
+
+def test_story_room_approval_freezes_current_story_snapshot(monkeypatch, tmp_path):
+    from src.utils.storage import storage_manager
+
+    monkeypatch.setattr(storage_manager, "get_project_path", lambda _id: tmp_path)
+    project = Project(
+        id=1,
+        name="Approved drama",
+        theme="都市复仇短剧，目标女性受众，抖音竖屏平台",
+        outline="女主拿到背叛证据后逆袭，结尾保留下一集真相。",
+        description="platform: Douyin vertical short drama, audience: romance revenge viewers",
+    )
+    scenes = [
+        scene(1, "女主发现秘密证据，前夫威胁她闭嘴，震惊。", "你以为我还会怕你吗？"),
+        scene(2, "她握紧录音笔，身份线索露出，害怕转为坚定。", "这次轮到我选择。"),
+        scene(3, "家族会议上众人质问她，她拒绝交出证据，愤怒。", "证据在我手里。"),
+        scene(4, "反派冷笑逼迫她签字，她当众撕掉协议。", "我不会再退。"),
+        scene(5, "原来遗嘱揭露她的继承身份，全场震惊。", "现在谁该离开？"),
+        scene(6, "母亲哭着承认误会，女主失望地后退。", "你早就知道？"),
+        scene(7, "反派报警威胁，女主拿出第二份证据。", "真正该被带走的人是你。"),
+        scene(8, "电话响起，新的真相出现，门被推开，未完。", "还有一个人没到场。"),
+    ]
+    service = StoryRoomQualityService()
+
+    approval = service.freeze_approval(project, scenes, notes="approved", reviewer="producer")
+
+    assert approval["status"] == "approved"
+    assert approval["approved_by"] == "producer"
+    saved = service.load_approval(1)
+    assert saved["input_hash"] == service.input_signature(project, scenes)
+    scenes[0].dialogue = "changed after approval"
+    assert service.input_signature(project, scenes) != saved["input_hash"]

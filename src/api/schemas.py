@@ -259,6 +259,17 @@ class WorkflowProfileResponse(BaseModel):
     profile: dict
 
 
+class StoryRoomApprovalRequest(BaseModel):
+    """Approve a passing story-room report for the current script snapshot."""
+    notes: Optional[str] = Field(None, max_length=1000, description="故事房审批备注")
+
+
+class StoryRoomApprovalResponse(BaseModel):
+    project_id: int
+    status: str
+    approval: dict
+
+
 class SceneResponse(BaseModel):
     """
     分镜响应模型

@@ -64,6 +64,8 @@ class ProductionReadinessService:
         "market_evidence_low_confidence": ("complete_market_evidence", "story", "manual"),
         "weak_story_rhythm": ("rewrite_short_drama_story_rhythm", "script", "setup_required"),
         "weak_story_room_quality": ("rewrite_short_drama_story_rhythm", "script", "setup_required"),
+        "story_room_not_approved": ("approve_story_room", "script", "manual"),
+        "stale_story_room_approval": ("approve_story_room", "script", "manual"),
         "episode_rhythm_warning": ("rewrite_short_drama_story_rhythm", "script", "setup_required"),
         "complex_shot_warnings": ("split_scene", "script", "manual"),
         "weak_spatial_continuity": ("refreeze_spatial_plan", "spatial", "setup_required"),
@@ -494,6 +496,30 @@ class ProductionReadinessService:
                 "weak_story_room_quality",
                 "Rewrite story-room quality before final production: " + ", ".join(report["missing"]),
             ))
+        else:
+            service = StoryRoomQualityService()
+            approval = service.load_approval(project.id)
+            expected_hash = service.input_signature(project, scenes)
+            approval_status = "missing"
+            if isinstance(approval, dict) and approval.get("input_hash") == expected_hash:
+                approval_status = "approved"
+            elif isinstance(approval, dict):
+                approval_status = "stale"
+            report["approval"] = {
+                "status": approval_status,
+                "input_hash": expected_hash,
+                "approved_hash": approval.get("input_hash") if isinstance(approval, dict) else None,
+            }
+            if approval_status == "missing":
+                blockers.append(ReadinessIssue(
+                    "story_room_not_approved",
+                    "Approve the passing story-room report before final production.",
+                ))
+            elif approval_status == "stale":
+                blockers.append(ReadinessIssue(
+                    "stale_story_room_approval",
+                    "Story or scene decisions changed after story-room approval; review and approve again.",
+                ))
         return report
 
     def _episode_rhythm_check(
