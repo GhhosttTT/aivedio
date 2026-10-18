@@ -403,6 +403,34 @@ class TestGetTaskStatus:
         status = orchestrator.get_task_status("non-existent-task-id")
         assert status["status"] == "unknown"
 
+    @patch('src.services.task_orchestrator.AsyncResult')
+    def test_get_task_status_keeps_provider_trace_after_celery_failure(
+        self, mock_async_result, orchestrator, sample_project
+    ):
+        task = TaskModel(
+            project_id=sample_project.id,
+            status=TaskStatus.FAILED,
+            celery_task_id="failed-provider-task-id",
+            total_steps=10,
+        )
+        orchestrator.db.add(task)
+        orchestrator.db.commit()
+        mock_result = Mock()
+        mock_result.state = "FAILURE"
+        mock_result.info = {
+            "step": "provider_failed",
+            "provider_task_id": "ark-failed-42",
+            "provider_status": "expired",
+        }
+        mock_async_result.return_value = mock_result
+
+        status = orchestrator.get_task_status(task.celery_task_id)
+
+        assert status["provider_state"] == "FAILURE"
+        assert status["provider_task_id"] == "ark-failed-42"
+        assert status["provider_status"] == "expired"
+        assert "provider_progress" not in status
+
 
 class TestCancelTask:
     """测试取消任务"""

@@ -640,8 +640,8 @@ class TaskOrchestrator:
         try:
             async_result = AsyncResult(celery_task_id, app=celery_app)
             info = async_result.info
-            if async_result.state == "PROGRESS" and isinstance(info, dict):
-                if isinstance(info.get("current"), (int, float)):
+            if isinstance(info, dict):
+                if async_result.state == "PROGRESS" and isinstance(info.get("current"), (int, float)):
                     result["provider_progress"] = max(0, min(99, float(info["current"])))
                 stage = info.get("step") or info.get("stage")
                 if stage:
