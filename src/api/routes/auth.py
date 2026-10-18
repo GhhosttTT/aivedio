@@ -199,6 +199,13 @@ async def refresh_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="无效的刷新令牌"
         )
+
+    if payload.get("token_type") != "refresh":
+        logger.warning("令牌类型不是刷新令牌")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的刷新令牌"
+        )
     
     # 获取用户 ID（JWT sub 字段是字符串）
     user_id_str: Optional[str] = payload.get("sub")

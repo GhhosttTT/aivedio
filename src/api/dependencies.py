@@ -55,6 +55,14 @@ async def get_current_user(
             detail="无效的认证凭证",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    if payload.get("token_type") != "access":
+        logger.warning("令牌类型不是访问令牌")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的认证凭证",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     
     # 获取用户 ID（JWT sub 字段是字符串）
     user_id_str: Optional[str] = payload.get("sub")

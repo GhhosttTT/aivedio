@@ -10,7 +10,13 @@ from sqlalchemy.orm import sessionmaker
 from unittest.mock import patch
 
 from src.api.app import app
-from src.api.auth import hash_password, verify_password, create_access_token, decode_access_token
+from src.api.auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    create_refresh_token,
+    decode_access_token,
+)
 from src.database.session import get_db_session
 
 # 导入所有模型以确保它们注册到 Base.metadata
@@ -97,6 +103,7 @@ def test_create_and_decode_access_token():
     assert payload["sub"] == "1"
     assert payload["username"] == "testuser"
     assert "exp" in payload
+    assert payload["token_type"] == "access"
 
 
 def test_decode_invalid_token():
@@ -359,6 +366,17 @@ def test_refresh_token_invalid():
     assert "无效的刷新令牌" in response.json()["detail"]
 
 
+def test_access_token_cannot_be_used_as_refresh_token():
+    access_token = create_access_token({"sub": 1})
+    response = client.post(
+        "/api/auth/refresh",
+        json={"refresh_token": access_token},
+    )
+
+    assert response.status_code == 401
+    assert "无效的刷新令牌" in response.json()["detail"]
+
+
 # ==================== 获取当前用户测试 ====================
 
 def test_get_current_user_success():
@@ -411,5 +429,15 @@ def test_get_current_user_invalid_token():
         headers={"Authorization": "Bearer invalid.token.here"}
     )
     
+    assert response.status_code == 401
+
+
+def test_refresh_token_cannot_be_used_as_access_token():
+    refresh_token = create_refresh_token({"sub": 1})
+    response = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {refresh_token}"},
+    )
+
     assert response.status_code == 401
     assert "无效的认证凭证" in response.json()["detail"]
