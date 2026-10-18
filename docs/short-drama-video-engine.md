@@ -93,6 +93,12 @@ errors) are retried with exponential backoff. Configure the bounds with
 `SEEDANCE_MAX_RETRIES` and `SEEDANCE_RETRY_BACKOFF_SECONDS` (or the corresponding
 `HTTP_VIDEO_*` settings).
 
+Every new generation request also sends a stable SHA-256 request fingerprint as
+`Idempotency-Key` by default. This lets gateways deduplicate a paid POST when the
+network fails after acceptance but before the local pending-task sidecar is saved.
+Set `SEEDANCE_IDEMPOTENCY_ENABLED=false` (or the corresponding `HTTP_VIDEO_*`
+setting) only for gateways that explicitly reject idempotency headers.
+
 Set `SEEDANCE_CALLBACK_URL` when the Ark account has a reachable callback
 endpoint. The provider includes the documented callback field while retaining
 status polling as a recovery path.

@@ -516,6 +516,13 @@ class ApiVideoProvider:
         pending = self._load_pending_task(request.output_path, request)
         payload = None if pending else self._video_payload(request)
         headers = self._headers()
+        if not pending:
+            idempotency_key = self._idempotency_key(request)
+            if idempotency_key:
+                headers[idempotency_key[0]] = idempotency_key[1]
+                self.last_result_metadata["idempotency_key_hash"] = hashlib.sha256(
+                    idempotency_key[1].encode("utf-8")
+                ).hexdigest()
         with httpx.Client(timeout=self.timeout, trust_env=False) as client:
             self._check_cancelled(request.cancellation_check)
             if pending:
@@ -1002,6 +1009,18 @@ class ApiVideoProvider:
     def _headers(self) -> dict[str, str]:
         token = self.api_key if not self.auth_scheme else f"{self.auth_scheme} {self.api_key}"
         return {self.auth_header: token, "Accept": "application/json"}
+
+    def _idempotency_key(self, request: VideoGenerationRequest) -> tuple[str, str] | None:
+        """Return a stable create-request key when the gateway supports deduplication."""
+        enabled = _provider_setting(f"{self.env_prefix}_IDEMPOTENCY_ENABLED", "true")
+        if str(enabled).strip().lower() not in {"1", "true", "yes", "on"}:
+            return None
+        header = str(
+            _provider_setting(f"{self.env_prefix}_IDEMPOTENCY_KEY_HEADER", "Idempotency-Key")
+        ).strip()
+        if not header:
+            return None
+        return header, _video_request_fingerprint(request)
 
     def _request_with_retry(
         self,

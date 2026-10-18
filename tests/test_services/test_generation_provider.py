@@ -1056,6 +1056,27 @@ def test_api_provider_does_not_resubmit_ambiguous_generation_post(monkeypatch):
     assert client.calls == 1
 
 
+def test_api_provider_adds_stable_idempotency_key_to_new_generation_request(tmp_path, monkeypatch):
+    provider = HttpVideoApiProvider(endpoint="https://gateway.example/video", api_key="secret")
+    request = VideoGenerationRequest(prompt="same request", output_path=str(tmp_path / "clip.mp4"))
+
+    headers = provider._headers()
+    header_name, key = provider._idempotency_key(request)
+    headers[header_name] = key
+
+    assert header_name == "Idempotency-Key"
+    assert len(headers[header_name]) == 64
+    assert provider._idempotency_key(request)[1] == key
+
+
+def test_api_provider_can_disable_idempotency_key(monkeypatch, tmp_path):
+    monkeypatch.setenv("HTTP_VIDEO_IDEMPOTENCY_ENABLED", "false")
+    provider = HttpVideoApiProvider(endpoint="https://gateway.example/video", api_key="secret")
+    request = VideoGenerationRequest(prompt="no key", output_path=str(tmp_path / "clip.mp4"))
+
+    assert provider._idempotency_key(request) is None
+
+
 def test_api_provider_does_not_retry_ambiguous_generation_5xx(monkeypatch):
     class RetryResponse:
         status_code = 503
