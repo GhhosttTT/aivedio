@@ -83,3 +83,31 @@ def test_production_readiness_maps_warning_findings_to_typed_repair_actions():
             "recommendation": "Resolve production readiness warning: weak_story_rhythm.",
         },
     ]
+
+
+def test_production_readiness_maps_video_sample_failures_to_targeted_repairs():
+    service = ProductionReadinessService(None)
+    actions = service._readiness_repair_actions([
+        ReadinessIssue(
+            "sample_validation_video_temporal_gate_not_passed",
+            "Motion is unstable",
+            severity="warning",
+        ),
+        ReadinessIssue(
+            "sample_validation_video_performance_gate_not_passed",
+            "Acting is flat",
+            severity="warning",
+        ),
+        ReadinessIssue(
+            "sample_validation_video_aesthetic_gate_not_passed",
+            "Finish is weak",
+            severity="warning",
+        ),
+    ])
+
+    assert [item["action"] for item in actions] == [
+        "lower_motion_and_regenerate_video",
+        "regenerate_video_with_performance_direction",
+        "refine_video_commercial_aesthetic",
+    ]
+    assert all(item["execution"] == "auto" for item in actions)

@@ -67,6 +67,24 @@ class ProductionReadinessService:
         "episode_rhythm_warning": ("rewrite_short_drama_story_rhythm", "script", "setup_required"),
         "complex_shot_warnings": ("split_scene", "script", "manual"),
         "weak_spatial_continuity": ("refreeze_spatial_plan", "spatial", "setup_required"),
+        "sample_validation_video_temporal_gate_not_passed": (
+            "lower_motion_and_regenerate_video", "video", "auto",
+        ),
+        "sample_validation_video_identity_gate_not_passed": (
+            "regenerate_video_with_performance_direction", "video", "auto",
+        ),
+        "sample_validation_video_performance_gate_not_passed": (
+            "regenerate_video_with_performance_direction", "video", "auto",
+        ),
+        "sample_validation_video_aesthetic_gate_not_passed": (
+            "refine_video_commercial_aesthetic", "video", "auto",
+        ),
+        "sample_validation_video_platform_reference_gate_not_passed": (
+            "refine_video_commercial_aesthetic", "video", "auto",
+        ),
+        "sample_validation_repair_queue_not_empty": (
+            "manual_review", "review", "manual",
+        ),
     }
 
     def __init__(self, db_session: Session):
