@@ -383,7 +383,7 @@ def _audio_signal_stats(path: Path) -> dict[str, object]:
     try:
         result = subprocess.run(
             [
-                "ffmpeg", "-v", "error", "-i", str(path), "-vn",
+                "ffmpeg", "-v", "info", "-i", str(path), "-vn",
                 "-af", "volumedetect", "-f", "null", "-",
             ],
             capture_output=True,

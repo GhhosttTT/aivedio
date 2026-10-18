@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import pytest
 
-from scripts.compare_video_baseline import VideoStats, _parse_fps, _probe, compare
+from scripts.compare_video_baseline import VideoStats, _audio_signal_stats, _parse_fps, _probe, compare
 
 
 requires_ffprobe = pytest.mark.skipif(shutil.which("ffprobe") is None, reason="ffprobe is required")
@@ -28,6 +28,27 @@ def _write_test_video(path: Path, *, frames: int = 12, moving: bool = True, size
 
 def test_parse_fps_fraction():
     assert _parse_fps("30000/1001") == pytest.approx(29.970, rel=0.001)
+
+
+def test_audio_signal_stats_reads_ffmpeg_peak_level(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        return type("Result", (), {
+            "returncode": 0,
+            "stdout": "",
+            "stderr": "[Parsed_volumedetect_0 @ 0x0] max_volume: -12.3 dB",
+        })()
+
+    monkeypatch.setattr("scripts.compare_video_baseline.subprocess.run", fake_run)
+
+    result = _audio_signal_stats(tmp_path / "dialogue.mp4")
+
+    assert result["audio_signal_status"] == "usable"
+    assert result["audio_clipping_status"] == "ok"
+    assert result["audio_peak_db"] == pytest.approx(-12.3)
+    assert captured["command"][2] == "info"
 
 
 def test_probe_reads_video_and_audio_streams(monkeypatch, tmp_path):
