@@ -17,7 +17,11 @@ from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.production_readiness import ProductionReadinessService
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
 from src.services.video_engine_preflight import preflight_production_video_engine
-from src.services.task_recovery import load_pending_video_options
+from src.services.task_recovery import (
+    load_pending_video_options,
+    load_production_video_options,
+    save_production_video_options,
+)
 from src.tasks.celery_app import celery_app
 from src.tasks.image_tasks import generate_image_task, prepare_generation_task
 from src.tasks.review_tasks import review_generation_task
@@ -187,6 +191,23 @@ class TaskOrchestrator:
         )
         self.db.add(task_model)
         self.db.flush()
+        save_production_video_options(
+            project_id,
+            task_model.id,
+            {
+                "provider": provider,
+                "request_mode": request_mode,
+                "multi_shot": multi_shot,
+                "native_audio": native_audio,
+                "model": model,
+                "resolution": resolution,
+                "output_format": output_format,
+                "return_last_frame": return_last_frame,
+                "camera_fixed": camera_fixed,
+                "watermark": watermark,
+                "duration_seconds": duration_seconds,
+            },
+        )
         task_chain = self._build_task_chain(
             project_id, task_model.id, scenes, generate_images, generate_videos,
             generate_audios, generate_subtitles, add_bgm, bgm_path,
@@ -233,6 +254,11 @@ class TaskOrchestrator:
             raise ValueError("项目正在制作，请等待当前任务结束")
         if not items:
             raise ValueError("返工动作不能为空")
+        inherited_video_options = load_production_video_options(project_id) or {}
+        # Scene repairs are atomic; a project-level sequence request must not
+        # accidentally turn one repaired shot into another full sequence job.
+        inherited_video_options["sequence_level_multi_shot"] = False
+        inherited_video_options["draft"] = False
         image_actions = {
             "regenerate_keyframe_with_identity_lock",
             "regenerate_keyframe_with_role_separation",
@@ -336,11 +362,14 @@ class TaskOrchestrator:
                 scene.video_path = None
                 steps.extend([
                     generate_image_task.si(scene.id, scene.image_prompt or scene.visual_description, project_id, task_model.id, repair_action=action),
-                    generate_video_task.si(scene.id, project_id, task_model.id),
+                    generate_video_task.si(scene.id, project_id, task_model.id, **inherited_video_options),
                 ])
             else:
                 scene.video_path = None
-                steps.append(generate_video_task.si(scene.id, project_id, task_model.id, repair_action=action))
+                steps.append(generate_video_task.si(
+                    scene.id, project_id, task_model.id,
+                    **inherited_video_options, repair_action=action,
+                ))
         if review_after_repair:
             steps.append(review_generation_task.si(project_id, task_model.id))
         task = chain(*steps)

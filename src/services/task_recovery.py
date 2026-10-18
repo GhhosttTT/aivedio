@@ -7,6 +7,59 @@ from pathlib import Path
 from typing import Iterable
 
 from src.utils.storage import get_scene_video_path
+from src.utils.storage import storage_manager
+
+
+_PRODUCTION_OPTION_KEYS = (
+    "provider",
+    "request_mode",
+    "multi_shot",
+    "native_audio",
+    "model",
+    "resolution",
+    "output_format",
+    "return_last_frame",
+    "camera_fixed",
+    "watermark",
+    "duration_seconds",
+)
+
+
+def _production_options_path(project_id: int) -> Path:
+    return storage_manager.get_project_path(project_id) / "production_options.json"
+
+
+def save_production_video_options(project_id: int, task_id: int | str, options: dict) -> None:
+    """Persist the effective per-run video controls for later repair tasks."""
+    payload = {
+        "task_id": str(task_id),
+        "options": {
+            key: options[key]
+            for key in _PRODUCTION_OPTION_KEYS
+            if key in options and options[key] is not None
+        },
+    }
+    path = _production_options_path(project_id)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(path)
+
+
+def load_production_video_options(project_id: int) -> dict | None:
+    """Load the last successful run's controls, if a valid snapshot exists."""
+    path = _production_options_path(project_id)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    options = payload.get("options") if isinstance(payload, dict) else None
+    if not isinstance(options, dict):
+        return None
+    return {
+        key: options[key]
+        for key in _PRODUCTION_OPTION_KEYS
+        if key in options and options[key] is not None
+    } or None
 
 
 def load_pending_video_options(

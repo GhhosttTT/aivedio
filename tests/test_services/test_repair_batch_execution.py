@@ -57,6 +57,31 @@ def test_audio_and_visual_repairs_share_one_task_and_review_once_at_the_end(repa
     workflow.apply_async.assert_called_once()
 
 
+def test_visual_repair_inherits_last_production_video_options(repair_case, monkeypatch):
+    orchestrator, project, _scenes, workflow, chain = repair_case
+    monkeypatch.setattr(
+        "src.services.task_orchestrator.load_production_video_options",
+        lambda _project_id: {
+            "provider": "seedance_api",
+            "request_mode": "reference",
+            "model": "doubao-seedance-2-5-260628",
+            "resolution": "1080p",
+            "output_format": "mp4",
+            "sequence_level_multi_shot": True,
+        },
+    )
+
+    orchestrator.create_scene_repair_task(project.id, 1, "lower_motion_and_regenerate_video")
+
+    video_step = next(step for step in chain.call_args.args if step.task == "generate_video_task")
+    assert video_step.kwargs["provider"] == "seedance_api"
+    assert video_step.kwargs["model"] == "doubao-seedance-2-5-260628"
+    assert video_step.kwargs["resolution"] == "1080p"
+    assert video_step.kwargs["sequence_level_multi_shot"] is False
+    assert video_step.kwargs["draft"] is False
+    workflow.apply_async.assert_called_once()
+
+
 def test_batch_validation_is_complete_before_any_scene_is_invalidated(repair_case):
     orchestrator, project, scenes, workflow, _chain = repair_case
     with pytest.raises(ValueError, match="分镜不存在"):

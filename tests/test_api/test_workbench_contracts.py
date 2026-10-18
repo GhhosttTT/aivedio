@@ -234,7 +234,10 @@ def test_repair_scene_keyframe_creates_targeted_task(setup, monkeypatch):
     assert response.status_code == 200, response.text
     assert response.json()["task_id"] == "repair-task-id"
     assert generate.call_args.kwargs["repair_action"] == "refine_face_aesthetic_detail"
-    video.assert_called_once_with(1, 1, ANY)
+    video.assert_called_once()
+    assert video.call_args.args[:3] == (1, 1, ANY)
+    assert video.call_args.kwargs["sequence_level_multi_shot"] is False
+    assert video.call_args.kwargs["draft"] is False
     review.assert_called_once_with(1, ANY)
     scene = db.query(Scene).filter(Scene.project_id == 1, Scene.scene_number == 1).one()
     assert scene.image_path is None and scene.video_path is None
@@ -266,7 +269,10 @@ def test_repair_scene_identity_lock_creates_keyframe_task(setup, monkeypatch):
     assert response.status_code == 200, response.text
     assert response.json()["task_id"] == "identity-repair-task-id"
     assert generate.call_args.kwargs["repair_action"] == "regenerate_keyframe_with_identity_lock"
-    video.assert_called_once_with(1, 1, ANY)
+    video.assert_called_once()
+    assert video.call_args.args[:3] == (1, 1, ANY)
+    assert video.call_args.kwargs["sequence_level_multi_shot"] is False
+    assert video.call_args.kwargs["draft"] is False
     review.assert_called_once_with(1, ANY)
     scene = db.query(Scene).filter(Scene.project_id == 1, Scene.scene_number == 1).one()
     assert scene.image_path is None and scene.video_path is None

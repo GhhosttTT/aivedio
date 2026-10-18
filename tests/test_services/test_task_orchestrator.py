@@ -285,7 +285,11 @@ class TestCreateProductionTask:
 
         assert celery_task_id == "image-repair-task-id"
         assert generate_image.call_args.kwargs["repair_action"] == "refine_face_aesthetic_detail"
-        generate_video.assert_called_once_with(scene.id, sample_project.id, ANY)
+        generate_video.assert_called_once()
+        assert generate_video.call_args.args[:3] == (scene.id, sample_project.id, ANY)
+        assert generate_video.call_args.kwargs["provider"] == "seedance_api"
+        assert generate_video.call_args.kwargs["sequence_level_multi_shot"] is False
+        assert generate_video.call_args.kwargs["draft"] is False
         review.assert_called_once_with(sample_project.id, ANY)
         build_chain.assert_called_once()
         orchestrator.db.refresh(scene)

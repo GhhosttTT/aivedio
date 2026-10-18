@@ -59,3 +59,21 @@ def test_load_pending_video_options_rejects_sidecar_from_another_task(tmp_path, 
     assert task_recovery.load_pending_video_options(7, [1], local_task_id=41) == {
         "provider": "seedance_api",
     }
+
+
+def test_production_video_options_round_trip(tmp_path, monkeypatch):
+    monkeypatch.setattr(task_recovery.storage_manager, "get_project_path", lambda project_id: tmp_path)
+
+    task_recovery.save_production_video_options(7, 42, {
+        "provider": "seedance_api",
+        "model": "doubao-seedance-2-5-260628",
+        "resolution": "1080p",
+        "duration_seconds": None,
+        "draft": True,
+    })
+
+    assert task_recovery.load_production_video_options(7) == {
+        "provider": "seedance_api",
+        "model": "doubao-seedance-2-5-260628",
+        "resolution": "1080p",
+    }
