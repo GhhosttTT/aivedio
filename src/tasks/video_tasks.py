@@ -7,7 +7,7 @@ import hashlib
 import subprocess
 import time
 from dataclasses import replace
-from math import gcd
+from math import gcd, isfinite
 from pathlib import Path
 from uuid import uuid4
 
@@ -63,6 +63,31 @@ logger = get_logger(__name__)
 def _configured_video_provider_name(kwargs: dict | None = None) -> str:
     kwargs = kwargs or {}
     return kwargs.get("provider") or settings.GENERATION_PROVIDER
+
+
+def _sequence_duration_seconds(provider_name: str, kwargs: dict | None = None) -> float:
+    """Resolve one duration for planning, provider submission, and splitting."""
+    options = kwargs or {}
+    explicit = options.get("sequence_duration_seconds")
+    if explicit is None:
+        explicit = options.get("SEQUENCE_DURATION_SECONDS")
+    if explicit is None:
+        explicit = options.get("duration_seconds")
+    if explicit is None:
+        explicit = options.get("DURATION_SECONDS")
+    prefix = "SEEDANCE" if provider_name == "seedance_api" else "HTTP_VIDEO"
+    if explicit is None:
+        explicit = os.getenv(
+            f"{prefix}_MULTI_SHOT_DURATION_SECONDS",
+            getattr(settings, f"{prefix}_MULTI_SHOT_DURATION_SECONDS", 30),
+        )
+    try:
+        duration = float(explicit)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Sequence duration must be a number between 1 and 30 seconds") from exc
+    if not isfinite(duration) or not 1.0 <= duration <= 30.0:
+        raise ValueError("Sequence duration must be a number between 1 and 30 seconds")
+    return round(duration, 3)
 
 
 def _setting_enabled(value) -> bool:
@@ -2931,7 +2956,22 @@ def generate_sequence_video_task(
             raise ValueError("Every sequence scene needs a generated keyframe")
         previous_video_paths = {scene.id: scene.video_path for scene in scenes}
 
-        segments = build_sequence_timeline(scenes, max_duration_seconds=30.0)
+        provider_name = _configured_video_provider_name(kwargs)
+        sequence_duration = _sequence_duration_seconds(provider_name, kwargs)
+        segments = build_sequence_timeline(
+            scenes,
+            max_duration_seconds=sequence_duration,
+        )
+        # The provider request is exact-duration. If scene estimates do not
+        # consume the whole request, assign the remaining tail to the final
+        # scene so splitting and provider-side timing use the same contract.
+        if hasattr(segments[-1], "end_seconds") and segments[-1].end_seconds < sequence_duration:
+            final = segments[-1]
+            segments[-1] = type(final)(
+                final.scene_number,
+                final.start_seconds,
+                sequence_duration,
+            )
         first_scene = scenes[0]
         provider_kwargs = dict(kwargs)
         requested_sequence_path = provider_kwargs.get("sequence_output_path") or provider_kwargs.get(
@@ -2945,6 +2985,7 @@ def generate_sequence_video_task(
             "sequence_level_multi_shot": True,
             "request_mode": kwargs.get("request_mode") or "multi_shot",
             "output_path": str(sequence_path),
+            "DURATION_SECONDS": sequence_duration,
             "sequence_timeline": [segment.as_dict() for segment in segments],
         })
         def report_sequence_provider_progress(progress, state, metadata=None):

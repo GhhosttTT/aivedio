@@ -1697,3 +1697,18 @@ def test_sequence_boundary_gate_rejects_pixel_format_mismatch(tmp_path):
             },
             tmp_path / "sequence.boundary.json",
         )
+
+
+def test_sequence_duration_uses_one_exact_provider_contract(monkeypatch):
+    from src.tasks.video_tasks import _sequence_duration_seconds
+
+    monkeypatch.setenv("SEEDANCE_MULTI_SHOT_DURATION_SECONDS", "24")
+    assert _sequence_duration_seconds("seedance_api", {}) == 24.0
+    assert _sequence_duration_seconds("seedance_api", {"DURATION_SECONDS": 18}) == 18.0
+
+
+def test_sequence_duration_rejects_invalid_provider_contract():
+    from src.tasks.video_tasks import _sequence_duration_seconds
+
+    with pytest.raises(ValueError, match="between 1 and 30"):
+        _sequence_duration_seconds("seedance_api", {"DURATION_SECONDS": 31})
