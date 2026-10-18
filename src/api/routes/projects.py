@@ -67,6 +67,7 @@ from src.services.generation_provider import (
     _seedance_supported_resolutions,
 )
 from src.utils.logger import get_logger
+from src.utils.storage import storage_manager
 
 logger = get_logger(__name__)
 
@@ -102,6 +103,9 @@ class ProductionOptions(BaseModel):
     camera_fixed: Optional[bool] = None
     watermark: Optional[bool] = None
     duration_seconds: Optional[float] = None
+    add_bgm: bool = False
+    bgm_path: Optional[str] = None
+    bgm_volume: float = Field(0.3, ge=0.0, le=1.0)
 
 
 class TopicBriefRequest(BaseModel):
@@ -1378,6 +1382,41 @@ def regenerate_scene(project_id: int, request: RegenerateSceneRequest, db_sessio
         )
 
 
+@router.post("/{project_id}/bgm")
+async def upload_project_bgm(
+    project_id: int,
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    """Store a project-owned BGM asset for ducked final composition."""
+    project = db_session.query(Project).filter(
+        Project.id == project_id,
+        Project.user_id == current_user.id,
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if project.status == ProjectStatus.IN_PRODUCTION:
+        raise HTTPException(status_code=409, detail="项目正在制作，不能修改背景音乐")
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in {".mp3", ".wav", ".m4a", ".aac", ".ogg"}:
+        raise HTTPException(status_code=400, detail="BGM 仅支持 MP3、WAV、M4A、AAC 或 OGG")
+    music_dir = storage_manager.get_project_path(project_id) / "music"
+    music_dir.mkdir(parents=True, exist_ok=True)
+    destination = music_dir / f"bgm{suffix}"
+    with destination.open("wb") as stream:
+        shutil.copyfileobj(file.file, stream)
+    if destination.stat().st_size <= 0:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="BGM 文件为空")
+    return {
+        "project_id": project_id,
+        "bgm_path": str(destination),
+        "filename": Path(file.filename or destination.name).name,
+        "size": destination.stat().st_size,
+    }
+
+
 @router.post("/{project_id}/produce", response_model=ProductionTaskResponse)
 async def produce_video(
     project_id: int,
@@ -1421,6 +1460,17 @@ async def produce_video(
 
         # 创建生产任务
         options = request or ProductionOptions()
+        if options.add_bgm:
+            if not options.bgm_path:
+                raise HTTPException(status_code=422, detail="启用背景音乐时必须先上传 BGM")
+            bgm_candidate = Path(options.bgm_path).resolve()
+            project_root = storage_manager.get_project_path(project_id).resolve()
+            if (
+                bgm_candidate.suffix.lower() not in {".mp3", ".wav", ".m4a", ".aac", ".ogg"}
+                or not bgm_candidate.is_file()
+                or not bgm_candidate.is_relative_to(project_root)
+            ):
+                raise HTTPException(status_code=422, detail="BGM 必须是当前项目已上传的音频文件")
         normalized_options = _normalized_production_options(options)
         provider = options.provider.strip() or None if isinstance(options.provider, str) else options.provider
         request_mode = options.request_mode.strip() or None if isinstance(options.request_mode, str) else options.request_mode
@@ -1433,6 +1483,9 @@ async def produce_video(
             draft=options.draft,
             draft_task_id=options.draft_task_id,
             model=options.model,
+            add_bgm=options.add_bgm,
+            bgm_path=options.bgm_path,
+            bgm_volume=options.bgm_volume,
             **normalized_options,
         )
 

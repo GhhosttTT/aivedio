@@ -177,6 +177,7 @@ def compose_final_video_task(
     task_id: int,
     add_bgm: bool = False,
     bgm_path: Optional[str] = None,
+    bgm_volume: float = 0.3,
     **kwargs
 ):
     """
@@ -292,7 +293,7 @@ def compose_final_video_task(
                 video_path=temp_video_path,
                 bgm_path=bgm_path,
                 output_path=temp_video_with_bgm,
-                bgm_volume=kwargs.get("bgm_volume", 0.3)
+                bgm_volume=bgm_volume
             )
             temp_video_path = temp_video_with_bgm
         

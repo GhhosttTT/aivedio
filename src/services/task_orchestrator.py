@@ -78,6 +78,7 @@ class TaskOrchestrator:
         generate_subtitles: bool = True,
         add_bgm: bool = False,
         bgm_path: Optional[str] = None,
+        bgm_volume: float = 0.3,
         provider: Optional[str] = None,
         request_mode: Optional[str] = None,
         multi_shot: Optional[bool] = None,
@@ -229,6 +230,9 @@ class TaskOrchestrator:
                 "camera_fixed": camera_fixed,
                 "watermark": watermark,
                 "duration_seconds": duration_seconds,
+                "add_bgm": add_bgm,
+                "bgm_path": bgm_path,
+                "bgm_volume": bgm_volume,
             },
         )
         task_chain = self._build_task_chain(
@@ -244,6 +248,7 @@ class TaskOrchestrator:
             return_last_frame=return_last_frame, camera_fixed=camera_fixed,
             watermark=watermark, duration_seconds=duration_seconds,
             sequence_output_path=sequence_output_path,
+            bgm_volume=bgm_volume,
         )
         result = task_chain.freeze()
         task_model.celery_task_id = result.id
@@ -497,6 +502,7 @@ class TaskOrchestrator:
         watermark: Optional[bool] = None,
         duration_seconds: Optional[float] = None,
         sequence_output_path: Optional[str] = None,
+        bgm_volume: float = 0.3,
     ) -> chain:
         """
         构建任务链
@@ -613,7 +619,8 @@ class TaskOrchestrator:
             project_id,
             task_id,
             add_bgm=add_bgm,
-            bgm_path=bgm_path
+            bgm_path=bgm_path,
+            bgm_volume=bgm_volume,
         )
         tasks.append(compose_task)
         
@@ -774,7 +781,7 @@ class TaskOrchestrator:
                         "draft", "draft_task_id", "draft_task_ids", "model", "resolution",
                         "output_format", "return_last_frame", "camera_fixed",
                         "watermark", "duration_seconds", "sequence_level_multi_shot",
-                        "sequence_output_path",
+                        "sequence_output_path", "add_bgm", "bgm_path", "bgm_volume",
                     }
                 }
                 retry_options.update({

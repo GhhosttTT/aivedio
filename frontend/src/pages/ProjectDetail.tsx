@@ -26,7 +26,8 @@ export function ProjectDetail() {
     const [assetNotes, setAssetNotes] = useState('');
     const [platformExportUrls, setPlatformExportUrls] = useState<Record<string, string>>({});
     const [options, setOptions] = useState({num_scenes: 16, num_characters: 2, style: '现代都市'});
-    const [productionOptions, setProductionOptions] = useState({provider: '', request_mode: 'reference', multi_shot: true, sequence_level_multi_shot: false, native_audio: true, draft: false, model: '', resolution: '1080p', output_format: 'mp4', return_last_frame: true, camera_fixed: false, watermark: false, duration_seconds: null as number | null});
+    const [productionOptions, setProductionOptions] = useState({provider: '', request_mode: 'reference', multi_shot: true, sequence_level_multi_shot: false, native_audio: true, draft: false, model: '', resolution: '1080p', output_format: 'mp4', return_last_frame: true, camera_fixed: false, watermark: false, duration_seconds: null as number | null, add_bgm: false, bgm_path: null as string | null, bgm_volume: 0.3});
+    const [bgmName, setBgmName] = useState('');
     const reload = useCallback(async () => {
         try {
             const projectId = Number(id);
@@ -84,6 +85,15 @@ export function ProjectDetail() {
                 setTab('production');
             }
             await reload();
+        } catch(e) { setError(errorText(e)); }
+        finally { setBusy(''); }
+    };
+    const uploadBgm = async (file: File) => {
+        setBusy('上传 BGM'); setError('');
+        try {
+            const uploaded = await projectApi.uploadBgm(Number(id), file);
+            setProductionOptions(current => ({...current, add_bgm: true, bgm_path: uploaded.bgm_path}));
+            setBgmName(uploaded.filename);
         } catch(e) { setError(errorText(e)); }
         finally { setBusy(''); }
     };
@@ -342,6 +352,9 @@ export function ProjectDetail() {
                 <label className="wb-check"><input type="checkbox" disabled={locked} checked={productionOptions.return_last_frame} onChange={e => setProductionOptions({...productionOptions, return_last_frame: e.target.checked})}/>返回末帧</label>
                 <label className="wb-check"><input type="checkbox" disabled={locked} checked={productionOptions.camera_fixed} onChange={e => setProductionOptions({...productionOptions, camera_fixed: e.target.checked})}/>固定镜头</label>
                 <label className="wb-check"><input type="checkbox" disabled={locked} checked={productionOptions.watermark} onChange={e => setProductionOptions({...productionOptions, watermark: e.target.checked})}/>添加水印</label>
+                <label className="wb-check"><input type="checkbox" disabled={locked || !productionOptions.bgm_path} checked={productionOptions.add_bgm} onChange={e => setProductionOptions({...productionOptions, add_bgm: e.target.checked})}/>添加背景音乐{!productionOptions.bgm_path ? '（先上传）' : ''}</label>
+                <label>背景音乐<input type="file" accept="audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg" disabled={locked || Boolean(busy)} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void uploadBgm(file); }}/>{bgmName && <span className="wb-muted">已上传：{bgmName}</span>}</label>
+                {productionOptions.add_bgm && <label>音乐底噪音量<input type="range" min="0" max="1" step="0.05" disabled={locked} value={productionOptions.bgm_volume} onChange={e => setProductionOptions({...productionOptions, bgm_volume: Number(e.target.value)})}/><span className="wb-muted">{Math.round(productionOptions.bgm_volume * 100)}%（对白自动 ducking）</span></label>}
             </div>
             {productionOptionIssue && <p role="alert" className="wb-alert">{productionOptionIssue}</p>}
             <button className="wb-button" disabled={draftPromotionBlocked} title={draftPromotionTitle} onClick={() => run('提升 Draft 正式片')}>将已生成 Draft 提升为正式片</button>

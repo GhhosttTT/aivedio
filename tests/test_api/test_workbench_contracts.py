@@ -66,6 +66,31 @@ def test_project_crud_and_owner_isolation(setup):
         assert getattr(client, method)(url).status_code == 404
 
 
+def test_upload_bgm_stores_project_owned_audio(setup):
+    client, _, root = setup
+    response = client.post(
+        "/api/projects/1/bgm",
+        files={"file": ("tension.mp3", io.BytesIO(b"fake music"), "audio/mpeg")},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["filename"] == "tension.mp3"
+    bgm_path = root / "storage" / "projects" / "1" / "music" / "bgm.mp3"
+    assert payload["bgm_path"] == str(bgm_path)
+    assert bgm_path.read_bytes() == b"fake music"
+
+
+def test_upload_bgm_rejects_non_audio_extension(setup):
+    client, _, _ = setup
+    response = client.post(
+        "/api/projects/1/bgm",
+        files={"file": ("notes.txt", io.BytesIO(b"not music"), "text/plain")},
+    )
+
+    assert response.status_code == 400
+
+
 def test_scene_save_invalidates_media_and_rejects_manual_completion(setup):
     client, db, _ = setup
     result = client.put("/api/projects/1/scenes/1", json={"visual_description": "A new letter", "dialogue": "Changed"})

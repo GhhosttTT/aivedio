@@ -76,6 +76,14 @@ export const projectApi = {
     verifyDeliveryPackage: (id: number) => apiClient.get<any, {status: string; checked_files: number; errors: string[]}>(`/projects/${id}/delivery-package/verify`),
     topicBrief: (id: number) => apiClient.get<any, {status: string; missing: string[]; brief: Record<string, string>}>(`/projects/${id}/topic-brief`),
     updateTopicBrief: (id: number, data: Record<string, string>) => apiClient.put<any, Record<string, string>>(`/projects/${id}/topic-brief`, data),
+    uploadBgm: async (id: number, file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return apiClient.post<any, {project_id: number; bgm_path: string; filename: string; size: number}>(`/projects/${id}/bgm`, formData, {
+            headers: {'Content-Type': 'multipart/form-data'},
+            timeout: 300000,
+        });
+    },
     platformExport: (id: number, preset: string) => apiClient.post<any, {output_path: string; preset: string; label: string; width: number; height: number}>(`/projects/${id}/platform-export/${preset}`),
     qualityLoopPlan: (id: number, maxActions = 5) => apiClient.get<any, QualityLoopPlanResponse>(`/projects/${id}/quality-loop/plan`, {params: {max_actions: maxActions}}),
     runAutoRepairQueue: (id: number, data: {max_actions?: number; dry_run?: boolean}) => apiClient.post<any, RepairQueueAutoRunResponse>(`/projects/${id}/repair-queue/auto`, data),
@@ -191,6 +199,9 @@ export const projectApi = {
         camera_fixed?: boolean;
         watermark?: boolean;
         duration_seconds?: number | null;
+        add_bgm?: boolean;
+        bgm_path?: string | null;
+        bgm_volume?: number;
     }): Promise<{
         task_id: string;
         project_id: number;
