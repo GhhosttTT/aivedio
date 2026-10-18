@@ -283,11 +283,13 @@ class StoryRoomQualityService:
             script = __import__("json").loads(project.script) if project.script else {}
         except (TypeError, ValueError):
             script = {}
+        topic_brief = TopicBriefService().load(project.id) if project.id is not None else {}
         return fingerprint({
             "project_id": project.id,
             "script": script,
             "theme": project.theme,
             "outline": project.outline,
+            "topic_brief": topic_brief if isinstance(topic_brief, dict) else {},
             "scenes": [
                 {
                     "scene_number": scene.scene_number,

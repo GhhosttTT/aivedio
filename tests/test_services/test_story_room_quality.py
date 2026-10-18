@@ -155,3 +155,20 @@ def test_story_room_approval_freezes_current_story_snapshot(monkeypatch, tmp_pat
     assert saved["input_hash"] == service.input_signature(project, scenes)
     scenes[0].dialogue = "changed after approval"
     assert service.input_signature(project, scenes) != saved["input_hash"]
+
+
+def test_story_room_approval_invalidates_when_topic_brief_changes(monkeypatch, tmp_path):
+    from src.utils.storage import storage_manager
+
+    monkeypatch.setattr(storage_manager, "get_project_path", lambda _id: tmp_path)
+    project = Project(id=1, name="Topic-bound story", theme="都市复仇短剧，女性受众，抖音竖屏")
+    scenes = [scene(1, "秘密证据出现，反派威胁她，震惊。", "我必须保护孩子。")]
+    service = StoryRoomQualityService()
+    before = service.input_signature(project, scenes)
+
+    (tmp_path / "topic_brief.json").write_text(
+        '{"audience":"海外男性","platform":"Shorts","genre":"科幻","hook_type":"危机","region":"英语"}',
+        encoding="utf-8",
+    )
+
+    assert service.input_signature(project, scenes) != before
