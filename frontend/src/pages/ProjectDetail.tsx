@@ -23,6 +23,7 @@ export function ProjectDetail() {
     const [readinessLoading, setReadinessLoading] = useState(false);
     const [deliveryUrl, setDeliveryUrl] = useState('');
     const [topicBrief, setTopicBrief] = useState({audience: '', platform: '', genre: '', hook_type: '', region: '', policy_notes: ''});
+    const [assetNotes, setAssetNotes] = useState('');
     const [platformExportUrls, setPlatformExportUrls] = useState<Record<string, string>>({});
     const [options, setOptions] = useState({num_scenes: 16, num_characters: 2, style: '现代都市'});
     const [productionOptions, setProductionOptions] = useState({provider: '', request_mode: 'reference', multi_shot: true, sequence_level_multi_shot: false, native_audio: true, draft: false, model: '', resolution: '1080p', output_format: 'mp4', return_last_frame: true, camera_fixed: false, watermark: false, duration_seconds: null as number | null});
@@ -69,6 +70,10 @@ export function ProjectDetail() {
                 setDeliveryUrl(await projectApi.mediaUrl(Number(id), exported.package_path, true));
             } else if (operation === '保存选题定位') {
                 await projectApi.updateTopicBrief(Number(id), topicBrief);
+            } else if (operation === '冻结空间计划') {
+                await projectApi.freezeSpatialPlan(Number(id), assetNotes);
+            } else if (operation === '冻结视觉风格') {
+                await projectApi.freezeVisualStyle(Number(id), {notes: assetNotes});
             } else if (operation.startsWith('导出平台:')) {
                 const preset = operation.split(':')[1];
                 const exported = await projectApi.platformExport(Number(id), preset);
@@ -270,6 +275,22 @@ export function ProjectDetail() {
         {busy && <p role="status" className="wb-alert"><RefreshCw size={15} className="inline animate-spin"/> {busy}进行中</p>}
         <VideoEngineStatus/>
         <ProductionReadinessPanel report={readiness} loading={readinessLoading} onRefresh={refreshReadiness}/>
+        <section className="wb-item" aria-label="连续性资产锁">
+            <div className="wb-row wb-between">
+                <div>
+                    <strong>连续性资产锁</strong>
+                    <p className="wb-muted">冻结空间走位和视觉风格后，后续镜头会使用同一套控制约束。</p>
+                </div>
+                <span className="wb-badge">
+                    空间：{readiness?.checks.spatial_continuity?.asset_pack?.status || '未冻结'} · 风格：{readiness?.checks.visual_style?.status || '未冻结'}
+                </span>
+            </div>
+            <label>审核备注<input disabled={locked} value={assetNotes} onChange={e => setAssetNotes(e.target.value)} placeholder="可选：记录机位、色调和连续性审核结论" /></label>
+            <div className="wb-row">
+                <button className="wb-button" disabled={locked || !project.scenes?.length} onClick={() => run('冻结空间计划')}>冻结空间计划</button>
+                <button className="wb-button" disabled={locked || !project.scenes?.length} onClick={() => run('冻结视觉风格')}>冻结视觉风格</button>
+            </div>
+        </section>
         <section className="wb-item" aria-label="选题定位">
             <div className="wb-row wb-between"><strong>选题定位锁</strong><span className="wb-muted">让剧本、镜头和审核共享同一商业目标</span></div>
             <div className="wb-fields">
