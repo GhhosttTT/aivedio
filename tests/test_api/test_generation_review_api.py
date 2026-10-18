@@ -137,6 +137,20 @@ def test_review_api_persists_version_bound_project_audits(tmp_path, monkeypatch)
             }
         ),
     )
+    monkeypatch.setattr(
+        "src.api.routes.projects.DialogueDeliveryAuditService.audit",
+        lambda self, scenes: SimpleNamespace(
+            to_dict=lambda: {
+                "kind": "dialogue_delivery_audit",
+                "status": "passed",
+                "dialogue_scene_count": 2,
+                "checked_scene_count": 2,
+                "cues_count": 2,
+                "issues": [],
+                "repair_queue": [],
+            }
+        ),
+    )
     db = Mock()
     db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
         id=1, user_id=2, script="{}", scenes=scenes, final_video_path=None,
@@ -150,12 +164,15 @@ def test_review_api_persists_version_bound_project_audits(tmp_path, monkeypatch)
     assert result["reports"]["episode_style_consistency"]["input_hash"]
     assert result["reports"]["character_identity_consistency"]["evidence_schema_version"] == 1
     assert result["reports"]["character_identity_consistency"]["input_hash"]
+    assert result["reports"]["dialogue_delivery_audit"]["evidence_schema_version"] == 1
+    assert result["reports"]["dialogue_delivery_audit"]["input_hash"]
     assert result["reports"]["story_room_quality"]["evidence_schema_version"] == 1
     assert result["reports"]["story_room_quality"]["input_hash"]
     assert (storage_manager.get_project_path(1) / "reviews" / "continuity_audit.json").is_file()
     assert (storage_manager.get_project_path(1) / "reviews" / "rhythm_audit.json").is_file()
     assert (storage_manager.get_project_path(1) / "reviews" / "episode_style_consistency.json").is_file()
     assert (storage_manager.get_project_path(1) / "reviews" / "character_identity_consistency.json").is_file()
+    assert (storage_manager.get_project_path(1) / "reviews" / "dialogue_delivery_audit.json").is_file()
     assert (storage_manager.get_project_path(1) / "reviews" / "story_room_quality.json").is_file()
 
 

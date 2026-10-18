@@ -14,6 +14,7 @@ const names: Record<string, string> = {
     rhythm_audit: '整集节奏与对白时序',
     episode_style_consistency: '全集视觉风格一致性',
     character_identity_consistency: '角色跨镜头身份一致性',
+    dialogue_delivery_audit: '对白音频与字幕交付',
     seed_dance_baseline_comparison: 'Seed Dance 对比验收',
     causal_logic: '因果逻辑',
     character_motivation: '角色动机',
@@ -280,6 +281,28 @@ function CharacterIdentityConsistencyEvidence({report}: {report: any}) {
         </div>)}
         {issues.slice(0, 6).map((issue: any, index: number) => <p className="wb-alert" key={`${issue.code}-${issue.character}-${index}`}>
             {issue.character || '角色'} · {issue.evidence || issue.recommendation}
+        </p>)}
+    </div>;
+}
+
+function DialogueDeliveryEvidence({report}: {report: any}) {
+    if (report?.kind !== 'dialogue_delivery_audit') return null;
+    const scenes = Array.isArray(report.scenes) ? report.scenes : [];
+    const issues = Array.isArray(report.issues) ? report.issues : [];
+    return <div className="wb-summary-actions" aria-label="对白音频与字幕交付证据">
+        <div className="wb-row wb-between">
+            <h4>对白音频与字幕交付</h4>
+            <span className="wb-badge">{report.cues_count || 0} 条字幕 cue</span>
+        </div>
+        <p className={issues.length ? 'wb-alert' : 'wb-muted'}>
+            {issues.length ? `发现 ${issues.length} 项对白交付问题，成片暂不可交付。` : `已检查 ${report.checked_scene_count || 0} 个对白镜头。`}
+        </p>
+        {scenes.slice(0, 8).map((scene: any) => <div className="wb-kv" key={scene.scene_number}>
+            <span>分镜 {scene.scene_number}</span>
+            <strong>{scene.audio_present ? '音频' : '缺音频'} · {scene.subtitle_cues || 0} cue</strong>
+        </div>)}
+        {issues.slice(0, 6).map((issue: any, index: number) => <p className="wb-alert" key={`${issue.code}-${issue.scene_number}-${index}`}>
+            分镜 {issue.scene_number || '-'} · {issue.code} · {issue.message}
         </p>)}
     </div>;
 }
@@ -686,6 +709,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <StoryRoomEvidence report={report}/>
             <EpisodeStyleConsistencyEvidence report={report}/>
             <CharacterIdentityConsistencyEvidence report={report}/>
+            <DialogueDeliveryEvidence report={report}/>
             <Scores review={report.review}/>
             {report.batches?.map((batch: any, index: number) => <div key={index}>
                 <p>帧组 {index + 1} · {statuses[batch.status] || batch.status} · {batch.average}/5</p>
