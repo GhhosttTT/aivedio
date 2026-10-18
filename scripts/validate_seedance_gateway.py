@@ -126,7 +126,10 @@ def _validate_live_output(
     )
     actual_duration = float(metrics["duration_seconds"])
     if requested_duration > 0:
-        duration_tolerance = max(0.35, requested_duration * 0.08)
+        duration_tolerance = max(
+            settings.GENERATION_VIDEO_DURATION_SYNC_TOLERANCE_SECONDS,
+            requested_duration * 0.08,
+        )
         if abs(actual_duration - requested_duration) > duration_tolerance:
             raise GenerationProviderError(
                 "Seedance result duration is out of sync: "

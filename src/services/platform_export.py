@@ -248,7 +248,10 @@ def _validate_export_metrics(
         source_duration = float(source_metrics.get("duration_seconds") or 0.0)
         output_duration = float(metrics.get("duration_seconds") or 0.0)
         if source_duration > 0:
-            tolerance = max(0.35, source_duration * 0.08)
+            tolerance = max(
+                settings.GENERATION_VIDEO_DURATION_SYNC_TOLERANCE_SECONDS,
+                source_duration * 0.08,
+            )
             if abs(output_duration - source_duration) > tolerance:
                 raise PlatformExportError(
                     f"Platform export duration drifted to {output_duration:.3f}s; "

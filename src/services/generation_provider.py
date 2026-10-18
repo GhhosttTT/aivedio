@@ -885,7 +885,10 @@ class ApiVideoProvider:
             if not has_video or duration <= 0:
                 raise ValueError("ffprobe found no video stream or a non-positive duration")
             if expected_duration is not None and float(expected_duration) > 0:
-                tolerance = max(0.35, float(expected_duration) * 0.08)
+                tolerance = max(
+                    settings.GENERATION_VIDEO_DURATION_SYNC_TOLERANCE_SECONDS,
+                    float(expected_duration) * 0.08,
+                )
                 if abs(duration - float(expected_duration)) > tolerance:
                     raise ValueError(
                         f"duration drift: requested {float(expected_duration):.3f}s, got {duration:.3f}s"

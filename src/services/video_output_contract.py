@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+from src.config import settings
+
 
 RESOLUTION_SHORT_EDGE = {"480p": 480, "720p": 720, "1080p": 1080, "4k": 2160}
 
@@ -44,7 +46,10 @@ def audit_video_output_contract(
         actual_duration = _positive_number(metrics.get("duration_seconds"))
         if requested_duration and actual_duration:
             checked.append("duration")
-            tolerance = max(0.35, requested_duration * 0.08)
+            tolerance = max(
+                settings.GENERATION_VIDEO_DURATION_SYNC_TOLERANCE_SECONDS,
+                requested_duration * 0.08,
+            )
             if abs(actual_duration - requested_duration) > tolerance:
                 issues.append(_issue("duration_drift", f"Requested {requested_duration:.3f}s but output is {actual_duration:.3f}s."))
         audio_requested = bool(contract.get("generate_audio") or contract.get("reference_audio_count"))
