@@ -2701,13 +2701,19 @@ def generate_sequence_video_task(
                     f"severe_transitions={severe_count}, geometry_mismatches={geometry_count}; "
                     f"report={boundary_report_path}"
                 )
+        segment_provider_metadata: dict[int, dict] = {}
         for scene, staging_path, segment in zip(scenes, staging_paths, segments):
+            derived_metadata = _derive_sequence_segment_provider_metadata(
+                sequence_provider_metadata,
+                expected_duration_seconds=getattr(segment, "duration_seconds", None),
+            )
+            segment_provider_metadata[scene.id] = derived_metadata
             segment_report = _sequence_segment_quality_report(
                 scene,
                 str(staging_path),
                 project_id,
                 db,
-                sequence_provider_metadata,
+                derived_metadata,
                 expected_duration_seconds=getattr(segment, "duration_seconds", None),
             )
             if segment_report.get("status") != "passed":
@@ -2720,13 +2726,17 @@ def generate_sequence_video_task(
 
         for scene, output_path in zip(scenes, output_paths):
             scene.video_path = str(output_path)
+            published_provider_metadata = segment_provider_metadata.get(
+                scene.id,
+                sequence_provider_metadata,
+            )
             last_frame_path = _extract_video_last_frame(output_path)
             if last_frame_path:
                 _write_scene_continuity_metadata(
                     output_path,
-                    {**sequence_provider_metadata, "last_frame_path": last_frame_path},
+                    {**published_provider_metadata, "last_frame_path": last_frame_path},
                 )
-            _write_provider_metadata(output_path, sequence_provider_metadata)
+            _write_provider_metadata(output_path, published_provider_metadata)
         db.commit()
         self.update_state(state="PROGRESS", meta={"current": 100, "total": 100, "step": "sequence_completed"})
         return {
