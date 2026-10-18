@@ -418,6 +418,7 @@ class TaskStatusResponse(BaseModel):
     provider_progress: Optional[float] = None
     provider_stage: Optional[str] = None
     provider_state: Optional[str] = None
+    production_options: Optional[dict] = None
 
 
 # ==================== 通用响应模型 ====================

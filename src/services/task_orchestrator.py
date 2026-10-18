@@ -626,6 +626,12 @@ class TaskOrchestrator:
             "created_at": task_model.created_at.isoformat() if task_model.created_at else None,
             "updated_at": task_model.updated_at.isoformat() if task_model.updated_at else None,
         }
+        production_options = load_production_video_options(
+            task_model.project_id,
+            task_id=task_model.id,
+        )
+        if production_options:
+            result["production_options"] = production_options
         # Provider polling progress lives in Celery metadata while the
         # production task counters live in the database. Expose both so the
         # workbench can show a live Seedance stage without corrupting the

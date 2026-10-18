@@ -566,6 +566,30 @@ class TestRetryFailedTask:
         assert kwargs.get("generate_videos", True) is True
 
 
+def test_task_status_exposes_effective_production_options(orchestrator, sample_project, sample_scenes, monkeypatch):
+    task = TaskModel(
+        project_id=sample_project.id,
+        status=TaskStatus.RUNNING,
+        celery_task_id="traceable-task-id",
+        total_steps=10,
+    )
+    orchestrator.db.add(task)
+    orchestrator.db.commit()
+    monkeypatch.setattr(
+        "src.services.task_orchestrator.load_production_video_options",
+        lambda project_id, task_id=None: {
+            "provider": "seedance_api",
+            "model": "doubao-seedance-2-5-260628",
+            "resolution": "1080p",
+            "output_format": "mp4",
+        },
+    )
+
+    status = orchestrator.get_task_status(task.celery_task_id)
+
+    assert status["production_options"]["model"] == "doubao-seedance-2-5-260628"
+
+
 class TestUpdateTaskProgress:
     """测试更新任务进度"""
     
