@@ -1,6 +1,7 @@
 """Tests for generation provider abstraction."""
 
 import json
+import os
 from io import BytesIO
 from types import SimpleNamespace
 
@@ -589,6 +590,23 @@ def test_video_request_fingerprint_binds_multimodal_reference_file_state(tmp_pat
     )
     first = generation_provider._video_request_fingerprint(request)
     reference.write_bytes(b"reference-v2")
+    second = generation_provider._video_request_fingerprint(request)
+
+    assert first != second
+
+
+def test_video_request_fingerprint_detects_content_change_with_preserved_mtime(tmp_path):
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(b"reference-v1")
+    original_stat = reference.stat()
+    request = VideoGenerationRequest(
+        prompt="a shot",
+        output_path="scene.mp4",
+        reference_images=[str(reference)],
+    )
+    first = generation_provider._video_request_fingerprint(request)
+    reference.write_bytes(b"reference-v2")
+    os.utime(reference, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
     second = generation_provider._video_request_fingerprint(request)
 
     assert first != second

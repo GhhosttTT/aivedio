@@ -2060,6 +2060,12 @@ def _video_request_fingerprint(request: VideoGenerationRequest) -> str:
         try:
             stat = path.stat()
             identity.update({"size": stat.st_size, "mtime_ns": stat.st_mtime_ns})
+            if stat.st_size <= 64 * 1024 * 1024 and path.is_file():
+                digest = hashlib.sha256()
+                with path.open("rb") as stream:
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                identity["sha256"] = digest.hexdigest()
         except OSError:
             pass
         return identity
