@@ -466,6 +466,17 @@ def preflight_video_provider(
             report["capabilities"]["multimodal_references"] = _seedance_model_supports_multimodal_references(model_name)
             report["capabilities"]["first_last_frame"] = _seedance_model_supports_first_last_frame(model_name)
             report["capabilities"]["edit_and_extend"] = not model_is_10
+            minimum_duration, maximum_duration = _seedance_duration_bounds(model_name, request_mode)
+            report["capabilities"].update({
+                "supported_resolutions": sorted(valid_resolutions),
+                "duration_min_seconds": minimum_duration,
+                "duration_max_seconds": maximum_duration,
+                "supports_draft": model_is_25,
+                "supports_auto_mode": model_is_25,
+                "supports_edit": not model_is_10,
+                "supports_extend": not model_is_10,
+                "supports_mov": model_is_25,
+            })
         report["capabilities"]["reference_item_limit"] = (
             50 if model_is_25 and ark_native else (15 if ark_native else None)
         )

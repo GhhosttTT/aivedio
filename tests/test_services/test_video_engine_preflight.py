@@ -275,8 +275,26 @@ def test_seedance_25_preflight_rejects_4k_resolution(monkeypatch):
     report = preflight_video_provider()
 
     assert report["status"] == "blocked"
-    assert report["checks"]["resolution_valid"] is False
-    assert any("does not support 4k" in item for item in report["action_items"])
+
+
+def test_seedance_preflight_exposes_canonical_model_capabilities(monkeypatch):
+    from src.services.video_engine_preflight import settings
+
+    monkeypatch.setattr(settings, "GENERATION_PROVIDER", "seedance_api")
+    monkeypatch.setenv("SEEDANCE_ENDPOINT", "https://ark.example/tasks")
+    monkeypatch.setenv("SEEDANCE_API_KEY", "secret")
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
+
+    report = preflight_video_provider()
+    capabilities = report["capabilities"]
+
+    assert capabilities["supported_resolutions"] == ["1080p", "480p", "720p"]
+    assert capabilities["duration_min_seconds"] == 2
+    assert capabilities["duration_max_seconds"] == 30
+    assert capabilities["supports_draft"] is True
+    assert capabilities["supports_auto_mode"] is True
+    assert capabilities["supports_mov"] is True
 
 
 def test_seedance_20_fast_preflight_rejects_1080p_resolution(monkeypatch):

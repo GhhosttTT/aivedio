@@ -96,24 +96,47 @@ export function ProjectDetail() {
     const seedance20Limited = seedance20 && (selectedModel.includes('fast') || selectedModel.includes('mini'));
     const nativeSeedance25 = nativeArk && seedance25;
     const nativeSeedanceNon25 = nativeArk && !seedance25;
-    const selectedSupportedResolutions = seedance25
+    const providerCapabilities = providerPreflight?.capabilities || {};
+    const capabilityResolutions = Array.isArray(providerCapabilities.supported_resolutions)
+        ? providerCapabilities.supported_resolutions.map(String)
+        : [];
+    const selectedSupportedResolutions = nativeArk && capabilityResolutions.length
+        ? capabilityResolutions
+        : seedance25
         ? ['480p', '720p', '1080p']
         : seedance20Limited
             ? ['480p', '720p']
             : seedance10
                 ? ['480p', '720p', '1080p']
                 : ['480p', '720p', '1080p', '4k'];
+    const capabilityMinDuration = Number(providerCapabilities.duration_min_seconds);
+    const capabilityMaxDuration = Number(providerCapabilities.duration_max_seconds);
+    const minimumDuration = nativeArk && Number.isFinite(capabilityMinDuration)
+        ? capabilityMinDuration
+        : (seedance25 && ['edit', 'extend'].includes(productionOptions.request_mode) ? 4 : seedance20 ? 4 : (seedance25 || seedance10) ? 2 : 4);
+    const maximumDuration = nativeArk && Number.isFinite(capabilityMaxDuration)
+        ? capabilityMaxDuration
+        : (seedance25 ? 30 : seedance10 ? 12 : 15);
+    const supportsAutoMode = nativeArk && typeof providerCapabilities.supports_auto_mode === 'boolean'
+        ? providerCapabilities.supports_auto_mode
+        : seedance25;
+    const supportsDraft = nativeArk && typeof providerCapabilities.supports_draft === 'boolean'
+        ? providerCapabilities.supports_draft
+        : seedance25;
+    const supportsMov = nativeArk && typeof providerCapabilities.supports_mov === 'boolean'
+        ? providerCapabilities.supports_mov
+        : seedance25;
     const productionOptionIssue = nativeArk && selectedSeedance
         ? selectedModel && !selectedSupportedResolutions.includes(productionOptions.resolution)
             ? `${selectedModel} 不支持 ${productionOptions.resolution}，可用：${selectedSupportedResolutions.join('、')}`
-            : productionOptions.request_mode === 'auto' && !seedance25
+            : productionOptions.request_mode === 'auto' && !supportsAutoMode
                 ? `原生自动识别任务类型仅支持 Seedance 2.5，当前模型为 ${selectedModel}`
             : seedance10 && ['edit', 'extend'].includes(productionOptions.request_mode)
                 ? `原生 ${selectedModel} 不支持${productionOptions.request_mode === 'edit' ? '编辑' : '延长'}任务，请使用 Seedance 2.0 或 2.5`
                 : productionOptions.duration_seconds !== null
-                    && (productionOptions.duration_seconds < (seedance25 && ['edit', 'extend'].includes(productionOptions.request_mode) ? 4 : seedance20 ? 4 : (seedance25 || seedance10) ? 2 : 4)
-                        || productionOptions.duration_seconds > (seedance25 ? 30 : seedance10 ? 12 : 15))
-                    ? `${selectedModel} 单镜头时长必须在 ${seedance25 && ['edit', 'extend'].includes(productionOptions.request_mode) ? 4 : seedance20 ? 4 : (seedance25 || seedance10) ? 2 : 4}–${seedance25 ? 30 : seedance10 ? 12 : 15} 秒之间`
+                    && (productionOptions.duration_seconds < minimumDuration
+                        || productionOptions.duration_seconds > maximumDuration)
+                    ? `${selectedModel} 单镜头时长必须在 ${minimumDuration}–${maximumDuration} 秒之间`
                     : ''
         : '';
     const setModel = (model: string) => {
@@ -186,10 +209,10 @@ export function ProjectDetail() {
                 <label className="wb-check"><input type="checkbox" disabled={locked} checked={productionOptions.native_audio} onChange={e => setProductionOptions({...productionOptions, native_audio: e.target.checked})}/>原生音频</label>
                 <label className="wb-check"><input type="checkbox" disabled={locked} checked={productionOptions.multi_shot} onChange={e => setProductionOptions({...productionOptions, multi_shot: e.target.checked})}/>启用多镜头</label>
                 <label className="wb-check"><input type="checkbox" disabled={locked || productionOptions.request_mode !== 'multi_shot'} checked={productionOptions.sequence_level_multi_shot} onChange={e => setProductionOptions({...productionOptions, sequence_level_multi_shot: e.target.checked})}/>生成完整 30 秒序列并按时间轴切回分镜</label>
-                <label className="wb-check"><input type="checkbox" disabled={locked || nativeSeedanceNon25} checked={productionOptions.draft} onChange={e => setProductionOptions({...productionOptions, draft: e.target.checked})}/>先生成 Draft 样片{nativeSeedanceNon25 ? '（原生仅 2.5 支持）' : ''}</label>
+                <label className="wb-check"><input type="checkbox" disabled={locked || (nativeArk && !supportsDraft)} checked={productionOptions.draft} onChange={e => setProductionOptions({...productionOptions, draft: e.target.checked})}/>先生成 Draft 样片{nativeArk && !supportsDraft ? '（当前模型不支持）' : ''}</label>
                 <label>输出分辨率<select disabled={locked} value={productionOptions.resolution} onChange={e => setProductionOptions({...productionOptions, resolution: e.target.value})}><option value="480p" disabled={nativeArk && !selectedSupportedResolutions.includes('480p')}>480p</option><option value="720p" disabled={nativeArk && !selectedSupportedResolutions.includes('720p')}>720p</option><option value="1080p" disabled={nativeArk && !selectedSupportedResolutions.includes('1080p')}>1080p{nativeArk && !selectedSupportedResolutions.includes('1080p') ? '（当前模型不支持）' : ''}</option><option value="4k" disabled={nativeArk && !selectedSupportedResolutions.includes('4k')}>4K{nativeArk && !selectedSupportedResolutions.includes('4k') ? '（当前模型不支持）' : ''}</option></select></label>
                 <label>单镜头时长<select disabled={locked || (nativeSeedance25 && ['edit', 'extend'].includes(productionOptions.request_mode))} value={productionOptions.duration_seconds ?? ''} onChange={e => setProductionOptions({...productionOptions, duration_seconds: e.target.value ? Number(e.target.value) : null})}><option value="">{nativeSeedance25 && ['edit', 'extend'].includes(productionOptions.request_mode) ? '按输入视频自动保持（-1）' : '自动按分镜/对白'}</option><option value={2} disabled={nativeSeedance25 && ['edit', 'extend'].includes(productionOptions.request_mode)}>2 秒{nativeSeedance25 && ['edit', 'extend'].includes(productionOptions.request_mode) ? '（编辑/延长最低 4 秒）' : ''}</option><option value={5}>5 秒</option><option value={10}>10 秒</option><option value={15}>15 秒</option><option value={30}>30 秒</option></select></label>
-                <label>输出格式<select disabled={locked} value={productionOptions.output_format} onChange={e => setProductionOptions({...productionOptions, output_format: e.target.value})}><option value="mp4">MP4</option><option value="mov" disabled={nativeSeedanceNon25}>MOV{nativeSeedanceNon25 ? '（原生非 2.5 不支持）' : ''}</option></select></label>
+                <label>输出格式<select disabled={locked} value={productionOptions.output_format} onChange={e => setProductionOptions({...productionOptions, output_format: e.target.value})}><option value="mp4">MP4</option><option value="mov" disabled={nativeArk && !supportsMov}>MOV{nativeArk && !supportsMov ? '（当前模型不支持）' : ''}</option></select></label>
                 <label className="wb-check"><input type="checkbox" disabled={locked} checked={productionOptions.return_last_frame} onChange={e => setProductionOptions({...productionOptions, return_last_frame: e.target.checked})}/>返回末帧</label>
                 <label className="wb-check"><input type="checkbox" disabled={locked} checked={productionOptions.camera_fixed} onChange={e => setProductionOptions({...productionOptions, camera_fixed: e.target.checked})}/>固定镜头</label>
                 <label className="wb-check"><input type="checkbox" disabled={locked} checked={productionOptions.watermark} onChange={e => setProductionOptions({...productionOptions, watermark: e.target.checked})}/>添加水印</label>
