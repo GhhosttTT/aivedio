@@ -43,6 +43,7 @@ ACTION_RULES = [
             "skin_tone_uniformity", "color_grade_uniformity", "sharpness_uniformity",
             "subtitle_visual_integration", "overall_finish_polish", "finishing pass",
             "mixed generated clips", "exposure jumps", "skin tone jumps", "subtitle integration",
+            "color-grade/contrast transitions", "severe style transition", "style transition",
         ),
         "refine_final_composition_finish",
         "Rerun final composition finishing with unified exposure, skin tone, color grade, sharpness, subtitle integration, and publishable polish.",
@@ -532,6 +533,7 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
             "subtitle_visual_integration", "overall_finish_polish", "finishing pass",
             "mixed generated clips", "exposure jumps", "skin tone jumps",
             "severe exposure/black transitions", "severe shot boundary",
+            "color-grade/contrast transitions", "severe style transition",
         )
     ):
         return {

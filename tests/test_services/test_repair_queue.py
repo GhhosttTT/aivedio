@@ -303,6 +303,19 @@ def test_repair_queue_maps_final_composition_finish_to_episode_polish_repair():
     assert queue[0]["execution"] == "auto"
 
 
+def test_repair_queue_maps_style_boundary_jump_to_episode_polish_repair():
+    report = {
+        "status": "needs_review",
+        "stage": "final_composition",
+        "error": "final composed video has severe color-grade/contrast transitions across 1 shot boundary(s)",
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "refine_final_composition_finish"
+    assert queue[0]["stage"] == "video"
+
+
 def test_repair_queue_maps_dialogue_audio_gate_to_audio_repair():
     report = {
         "status": "needs_review",
