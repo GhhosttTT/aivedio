@@ -1284,6 +1284,9 @@ class ApiVideoProvider:
         task_id = _extract_first(data, ("task_id", "job_id", "request_id", "id"))
         if task_id:
             self.last_result_metadata["provider_task_id"] = str(task_id)
+        created_at = _extract_first(data, ("created_at", "createdAt", "create_time"))
+        if created_at is not None and not isinstance(created_at, (dict, list)):
+            self.last_result_metadata["provider_created_at"] = str(created_at)
         duration = _extract_first(data, ("duration", "duration_seconds", "video_duration"))
         try:
             if duration is not None:

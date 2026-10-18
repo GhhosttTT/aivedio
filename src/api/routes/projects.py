@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 import shutil
 import json
 import os
+from datetime import datetime, timedelta, timezone
 
 from src.api.schemas import (
     ProjectCreate,
@@ -214,6 +215,26 @@ def _normalized_production_options(options: ProductionOptions) -> dict:
         "duration_seconds": options.duration_seconds,
         "sequence_level_multi_shot": options.sequence_level_multi_shot,
     }
+
+
+def _draft_expired(created_at: object, *, now: datetime | None = None) -> bool:
+    """Seedance Draft tasks are promotable for seven days after creation."""
+    if created_at is None:
+        return False
+    value: datetime | None = None
+    if isinstance(created_at, (int, float)):
+        value = datetime.fromtimestamp(float(created_at), tz=timezone.utc)
+    elif isinstance(created_at, str):
+        try:
+            value = datetime.fromisoformat(created_at.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+    if value is None:
+        return False
+    reference = now or datetime.now(timezone.utc)
+    return reference - value.astimezone(timezone.utc) > timedelta(days=7)
 
 
 @router.post("/workflow-profile/freeze", response_model=WorkflowProfileResponse)
@@ -1139,6 +1160,7 @@ async def promote_seedance_drafts(
     draft_output_formats: set[str] = set()
     draft_watermarks: set[bool] = set()
     draft_return_last_frames: set[bool] = set()
+    expired = []
     missing = []
     for scene in sorted(project.scenes, key=lambda item: item.scene_number):
         provider_path = Path(scene.video_path).with_suffix(".provider.json") if scene.video_path else None
@@ -1151,6 +1173,8 @@ async def promote_seedance_drafts(
         task_id = data.get("provider_task_id") if isinstance(data, dict) else None
         is_draft = bool(data.get("requested_draft")) if isinstance(data, dict) else False
         if isinstance(task_id, str) and task_id.strip() and is_draft:
+            if isinstance(data, dict) and _draft_expired(data.get("provider_created_at")):
+                expired.append(scene.scene_number)
             draft_ids[scene.id] = task_id.strip()
             requested_model = data.get("requested_model") if isinstance(data, dict) else None
             if isinstance(requested_model, str) and requested_model.strip():
@@ -1170,6 +1194,11 @@ async def promote_seedance_drafts(
         raise HTTPException(
             status_code=400,
             detail=f"以下分镜没有可提升的 Draft 任务 ID: {', '.join(map(str, missing))}",
+        )
+    if expired:
+        raise HTTPException(
+            status_code=410,
+            detail=f"以下分镜的 Seedance Draft 已超过 7 天有效期，无法提升: {', '.join(map(str, expired))}",
         )
     if len(draft_models) > 1:
         raise HTTPException(

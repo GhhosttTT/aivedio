@@ -467,6 +467,18 @@ def test_provider_reads_terminal_seedance_callback(tmp_path):
     assert provider._load_provider_callback(str(output), "other-task") is None
 
 
+def test_provider_remembers_draft_creation_time():
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    provider._remember_result_metadata({
+        "id": "draft-1",
+        "created_at": "2026-10-10T12:00:00Z",
+        "status": "succeeded",
+    })
+
+    assert provider.last_result_metadata["provider_created_at"] == "2026-10-10T12:00:00Z"
+
+
 def test_video_request_fingerprint_resolves_environment_defaults(monkeypatch):
     monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-0-260128")
     monkeypatch.setenv("SEEDANCE_REQUEST_MODE", "reference")

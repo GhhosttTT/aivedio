@@ -563,6 +563,34 @@ def test_promote_drafts_is_idempotent_for_active_or_completed_project(
     mock_orchestrator.assert_not_called()
 
 
+def test_promote_drafts_rejects_expired_draft(client, tmp_path):
+    project = Mock(spec=Project)
+    project.id = 1
+    project.status = ProjectStatus.SCRIPT_GENERATED
+    project.final_video_path = None
+    scene = Mock(spec=Scene)
+    scene.id = 1
+    scene.scene_number = 1
+    scene.video_path = str(tmp_path / "scene-01.mp4")
+    Path(scene.video_path).with_suffix(".provider.json").write_text(json.dumps({
+        "provider_task_id": "expired-draft",
+        "requested_draft": True,
+        "requested_model": "doubao-seedance-2-5-260628",
+        "provider_created_at": "2026-10-01T00:00:00Z",
+    }), encoding="utf-8")
+    project.scenes = [scene]
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = project
+
+    with patch("src.api.routes.projects.TaskOrchestrator") as mock_orchestrator:
+        client.app.dependency_overrides[get_db_session] = lambda: db
+        response = client.post("/api/projects/1/promote-drafts")
+
+    assert response.status_code == 410
+    assert "超过 7 天" in response.json()["detail"]
+    mock_orchestrator.assert_not_called()
+
+
 def test_promote_drafts_rejects_mixed_output_controls(client, tmp_path):
     project = Mock(spec=Project)
     project.id = 1
