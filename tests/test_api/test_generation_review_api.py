@@ -546,6 +546,16 @@ def test_human_approval_cannot_override_baseline_failure():
     assert _effective_review_status(report) == "needs_review"
 
 
+def test_human_approval_cannot_override_missing_generation_evidence():
+    report = {
+        "status": "needs_review",
+        "evidence": {"passed": False, "invalid": [1]},
+        "human_decision": {"decision": "approved"},
+    }
+
+    assert _effective_review_status(report) == "needs_review"
+
+
 def test_generation_review_summary_requires_final_human_approval():
     summary = _generation_review_summary({
         "production_story": {"status": "passed"},

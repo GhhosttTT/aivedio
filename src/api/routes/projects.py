@@ -1122,6 +1122,12 @@ def _effective_review_status(report: dict) -> str | None:
         "seed_dance_baseline_comparison",
     } and status_value != "passed":
         return status_value
+    # A human can resolve a subjective visual disagreement, but cannot waive
+    # missing/stale per-scene evidence or incomplete coverage.
+    for evidence_key in ("scene_coverage", "evidence"):
+        evidence = report.get(evidence_key)
+        if isinstance(evidence, dict) and evidence.get("passed") is False:
+            return status_value
     decision = report.get("human_decision")
     if (
         status_value in {"needs_review", "review_unavailable"}
