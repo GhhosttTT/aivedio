@@ -113,7 +113,11 @@ def test_platform_export_rejects_audio_loss_and_duration_drift(tmp_path, monkeyp
 
     monkeypatch.setattr("src.services.platform_export.subprocess.run", fake_run)
     metrics = iter([
-        {"status": "available", "width": 1080, "height": 1920, "fps": 30.0, "duration_seconds": 2.0, "audio_present": True},
+        {
+            "status": "available", "width": 1080, "height": 1920,
+            "fps": 30.0, "duration_seconds": 2.0, "audio_present": True,
+            "audio_signal_status": "usable", "audio_clipping_status": "ok",
+        },
         {"status": "available", "width": 1080, "height": 1920, "fps": 30.0, "duration_seconds": 3.0, "audio_present": False},
     ])
     monkeypatch.setattr(
@@ -182,6 +186,29 @@ def test_platform_export_rejects_clipped_audio(tmp_path, monkeypatch):
     })
 
     with pytest.raises(PlatformExportError, match="audio signal is clipped"):
+        export_platform_video(source, tmp_path, "douyin")
+
+
+def test_platform_export_rejects_unmeasurable_audio_signal(tmp_path, monkeypatch):
+    source = tmp_path / "final.mp4"
+    source.write_bytes(b"source")
+
+    def fake_run(command, **_kwargs):
+        output = tmp_path / "exports" / ".douyin.tmp.mp4"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"exported")
+
+    monkeypatch.setattr("src.services.platform_export.subprocess.run", fake_run)
+    monkeypatch.setattr("src.services.platform_export.video_candidate_metrics", lambda *_args, **_kwargs: {
+        "status": "available",
+        "width": 1080,
+        "height": 1920,
+        "fps": 30.0,
+        "duration_seconds": 2.0,
+        "audio_present": True,
+    })
+
+    with pytest.raises(PlatformExportError, match="audio signal is not usable: unavailable"):
         export_platform_video(source, tmp_path, "douyin")
 
 

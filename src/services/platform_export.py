@@ -202,9 +202,10 @@ def _validate_export_metrics(
             f"brightness_step_p95={brightness_step_p95:.3f}, "
             f"limit={settings.GENERATION_VIDEO_MAX_BRIGHTNESS_STEP_P95:.3f}"
         )
-    if metrics.get("audio_present") and metrics.get("audio_signal_status") not in {None, "usable"}:
+    if metrics.get("audio_present") and metrics.get("audio_signal_status") != "usable":
         raise PlatformExportError(
-            f"Platform export audio signal is not usable: {metrics.get('audio_signal_status')}"
+            "Platform export audio signal is not usable: "
+            f"{metrics.get('audio_signal_status') or 'unavailable'}"
         )
     if metrics.get("audio_present") and metrics.get("audio_clipping_status") == "clipped":
         raise PlatformExportError("Platform export audio signal is clipped at digital full scale")
