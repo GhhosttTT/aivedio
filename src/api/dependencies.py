@@ -130,3 +130,22 @@ async def require_task_access(request: Request, user=Depends(get_current_user), 
     task = db.query(Task).join(Project).filter(Task.celery_task_id == request.path_params["task_id"], Project.user_id == user.id).first()
     if task is None:
         raise HTTPException(404, "任务不存在")
+
+
+async def require_localization_job_access(
+    request: Request,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+):
+    """Ensure localization job/report routes stay within the user's project."""
+    from src.database.models import LocalizationJob, Project, SourceVideo
+    job_id = request.path_params.get("job_id")
+    job = (
+        db.query(LocalizationJob)
+        .join(SourceVideo, LocalizationJob.source_video_id == SourceVideo.id)
+        .join(Project, SourceVideo.project_id == Project.id)
+        .filter(LocalizationJob.id == job_id, Project.user_id == user.id)
+        .first()
+    )
+    if job is None:
+        raise HTTPException(404, "译制任务不存在")

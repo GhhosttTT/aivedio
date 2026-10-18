@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.database.models import LocalizationJob, SourceVideo
+from src.api.dependencies import get_current_user, require_localization_job_access, require_project_access
 from src.database.session import get_db_session
 from src.services.localization_pipeline import LocalizationPipeline
 from src.services.localization_review import LocalizationReviewStore
@@ -20,7 +21,7 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/api/localization", tags=["源片出海译制"])
+router = APIRouter(prefix="/api/localization", tags=["源片出海译制"], dependencies=[Depends(get_current_user)])
 
 
 class SourceVideoResponse(BaseModel):
@@ -92,6 +93,7 @@ def _job_response(job: LocalizationJob) -> LocalizationJobResponse:
     "/projects/{project_id}/source-videos",
     response_model=SourceVideoResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_project_access)],
 )
 async def upload_source_video(
     project_id: int,
@@ -112,9 +114,17 @@ async def upload_source_video(
 @router.post("/jobs", response_model=LocalizationJobResponse, status_code=status.HTTP_201_CREATED)
 async def create_localization_job(
     request: CreateLocalizationJobRequest,
+    current_user=Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
 ):
     try:
+        source = db_session.query(SourceVideo).filter(SourceVideo.id == request.source_video_id).first()
+        if not source:
+            raise ValueError("source video does not exist")
+        from src.database.models import Project
+        owned = db_session.query(Project).filter(Project.id == source.project_id, Project.user_id == current_user.id).first()
+        if not owned:
+            raise HTTPException(status_code=404, detail="源片不存在")
         pipeline = LocalizationPipeline(db_session)
         job = pipeline.create_job(request.source_video_id, request.target_languages)
         if request.auto_start:
@@ -130,7 +140,7 @@ async def create_localization_job(
         raise HTTPException(status_code=500, detail="创建出海译制任务失败") from exc
 
 
-@router.get("/jobs/{job_id}", response_model=LocalizationJobResponse)
+@router.get("/jobs/{job_id}", response_model=LocalizationJobResponse, dependencies=[Depends(require_localization_job_access)])
 async def get_localization_job(job_id: int, db_session: Session = Depends(get_db_session)):
     job = db_session.query(LocalizationJob).filter(LocalizationJob.id == job_id).first()
     if not job:
@@ -151,7 +161,7 @@ def _load_quality_report(job: LocalizationJob) -> tuple[dict, LocalizationReview
     return report, LocalizationReviewStore(path)
 
 
-@router.get("/jobs/{job_id}/quality")
+@router.get("/jobs/{job_id}/quality", dependencies=[Depends(require_localization_job_access)])
 async def get_localization_quality(job_id: int, db_session: Session = Depends(get_db_session)):
     job = db_session.query(LocalizationJob).filter(LocalizationJob.id == job_id).first()
     if not job:
@@ -160,7 +170,7 @@ async def get_localization_quality(job_id: int, db_session: Session = Depends(ge
     return {"job_id": job_id, "report": report, "human_review": store.apply(report)}
 
 
-@router.post("/jobs/{job_id}/quality-review")
+@router.post("/jobs/{job_id}/quality-review", dependencies=[Depends(require_localization_job_access)])
 async def record_localization_quality_review(
     job_id: int,
     request: LocalizationReviewRequest,
@@ -177,7 +187,7 @@ async def record_localization_quality_review(
     return {"job_id": job_id, "human_review": decision}
 
 
-@router.get("/projects/{project_id}/source-videos", response_model=List[SourceVideoResponse])
+@router.get("/projects/{project_id}/source-videos", response_model=List[SourceVideoResponse], dependencies=[Depends(require_project_access)])
 async def list_source_videos(project_id: int, db_session: Session = Depends(get_db_session)):
     return (
         db_session.query(SourceVideo)
@@ -187,7 +197,7 @@ async def list_source_videos(project_id: int, db_session: Session = Depends(get_
     )
 
 
-@router.get("/projects/{project_id}/jobs", response_model=List[LocalizationJobResponse])
+@router.get("/projects/{project_id}/jobs", response_model=List[LocalizationJobResponse], dependencies=[Depends(require_project_access)])
 async def list_project_localization_jobs(project_id: int, db_session: Session = Depends(get_db_session)):
     jobs = (
         db_session.query(LocalizationJob)
