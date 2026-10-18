@@ -78,18 +78,26 @@ def configure_cors(app: FastAPI):
     
     允许前端应用跨域访问 API
     """
-    # 从环境变量获取允许的源
-    allowed_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+    # 从环境变量获取允许的源。通配符与凭据不能同时启用，否则浏览器会
+    # 拒绝响应；需要 Cookie/凭据时必须配置明确的前端 Origin。
+    raw_origins = os.getenv("CORS_ORIGINS", "*")
+    allowed_origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    if not allowed_origins:
+        allowed_origins = ["*"]
+    allow_credentials = "*" not in allowed_origins
     
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
-        allow_credentials=True,
+        allow_credentials=allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
     )
     
-    logger.info(f"CORS 配置完成: allowed_origins={allowed_origins}")
+    logger.info(
+        f"CORS 配置完成: allowed_origins={allowed_origins}, "
+        f"allow_credentials={allow_credentials}"
+    )
 
 
 def configure_middlewares(app: FastAPI):

@@ -71,6 +71,35 @@ def test_cors_headers(client):
     assert "access-control-allow-origin" in response.headers
 
 
+def test_cors_wildcard_does_not_advertise_credentials(client):
+    response = client.options(
+        "/health",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.headers["access-control-allow-origin"] == "*"
+    assert "access-control-allow-credentials" not in response.headers
+
+
+def test_cors_explicit_origin_allows_credentials(monkeypatch):
+    monkeypatch.setenv("CORS_ORIGINS", " http://localhost:5173 , http://localhost:3000 ")
+    app = create_app()
+    client = TestClient(app)
+    response = client.options(
+        "/health",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert response.headers["access-control-allow-credentials"] == "true"
+
+
 def test_request_logging_middleware(client):
     """
     测试请求日志中间件
