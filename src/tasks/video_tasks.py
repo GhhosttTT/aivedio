@@ -840,6 +840,14 @@ class _ComfyVideoGenerator:
                     if isinstance(item, dict)
                 ]
                 if normalized_timeline:
+                    requested_sequence_duration = round(float(duration), 3)
+                    timeline_end = normalized_timeline[-1]["end_seconds"]
+                    if timeline_end < requested_sequence_duration:
+                        final_item = normalized_timeline[-1]
+                        final_item["end_seconds"] = requested_sequence_duration
+                        final_item["duration_seconds"] = round(
+                            requested_sequence_duration - final_item["start_seconds"], 3
+                        )
                     shot_plan_payload["sequence_timeline"] = normalized_timeline
                     timing_text = "; ".join(
                         f"scene {item['scene_number']} {item['start_seconds']:.3f}-{item['end_seconds']:.3f}s"
@@ -859,6 +867,7 @@ class _ComfyVideoGenerator:
         validate_sequence_request_plan(
             shot_plan_payload,
             sequence_level=sequence_level_multi_shot,
+            expected_duration_seconds=duration if sequence_level_multi_shot else None,
         )
         request = VideoGenerationRequest(
             prompt=prompt,

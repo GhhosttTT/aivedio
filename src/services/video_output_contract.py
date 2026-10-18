@@ -15,7 +15,12 @@ class VideoRequestPlanError(ValueError):
     """Raised when a sequence plan cannot be safely submitted to a provider."""
 
 
-def validate_sequence_request_plan(shot_plan: dict | None, *, sequence_level: bool) -> None:
+def validate_sequence_request_plan(
+    shot_plan: dict | None,
+    *,
+    sequence_level: bool,
+    expected_duration_seconds: float | None = None,
+) -> None:
     """Fail closed on malformed sequence plans before a provider request is sent."""
     if not sequence_level:
         return
@@ -58,6 +63,12 @@ def validate_sequence_request_plan(shot_plan: dict | None, *, sequence_level: bo
         if start < previous_end:
             raise VideoRequestPlanError("Sequence timeline overlaps or moves backwards")
         previous_end = end
+    if expected_duration_seconds is not None:
+        expected = _positive_number(expected_duration_seconds)
+        if expected and abs(previous_end - expected) > 0.01:
+            raise VideoRequestPlanError(
+                f"Sequence timeline ends at {previous_end:.3f}s but request duration is {expected:.3f}s"
+            )
 
 
 def audit_video_output_contract(

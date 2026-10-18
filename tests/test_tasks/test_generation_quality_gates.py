@@ -3490,6 +3490,12 @@ def test_seedance_multi_shot_generator_emits_bounded_plan_and_long_duration(proj
         "end_seconds": 8.5,
         "duration_seconds": 4.25,
     }
+    assert provider.request.shot_plan["sequence_timeline"][-1] == {
+        "scene_number": 3,
+        "start_seconds": 8.5,
+        "end_seconds": 15.0,
+        "duration_seconds": 6.5,
+    }
     assert "scene 2 4.250-8.500s" in provider.request.prompt
 
 

@@ -129,3 +129,17 @@ def test_sequence_request_plan_accepts_ordered_timeline():
         },
         sequence_level=True,
     )
+
+
+def test_sequence_request_plan_rejects_timeline_longer_than_request():
+    with pytest.raises(VideoRequestPlanError, match="request duration"):
+        validate_sequence_request_plan(
+            {
+                "shots": [{"scene_number": 1}],
+                "sequence_timeline": [
+                    {"scene_number": 1, "start_seconds": 0, "end_seconds": 6},
+                ],
+            },
+            sequence_level=True,
+            expected_duration_seconds=5,
+        )
