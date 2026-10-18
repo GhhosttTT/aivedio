@@ -132,11 +132,17 @@ def _publish_composition_candidate(
     """Publish a reviewed composition and its report as one filesystem transaction."""
     candidate = Path(candidate_path)
     final = Path(final_path)
+    published_review = dict(review) if isinstance(review, dict) else None
     if not candidate.is_file() or candidate.stat().st_size <= 0:
         raise ValueError(f"Composition candidate is missing or empty: {candidate}")
+    if isinstance(published_review, dict):
+        reviewed_hash = published_review.get("video_sha256")
+        if isinstance(reviewed_hash, str) and reviewed_hash.strip():
+            current_hash = file_hash(candidate)
+            if reviewed_hash.strip().lower() != current_hash:
+                raise ValueError("Composition review is stale for the current candidate video")
 
     pairs: list[tuple[Path, Path]] = [(candidate, final)]
-    published_review = dict(review) if isinstance(review, dict) else None
     if published_review is not None:
         source_report = candidate.with_suffix(".composition_review.json")
         destination_report = final.with_suffix(".composition_review.json")
@@ -174,12 +180,15 @@ def _publish_composition_candidate(
                 backup.unlink(missing_ok=True)
     if published_review is not None:
         final_signature = _video_version_signature(final)
+        final_hash = file_hash(final)
         published_review["video_signature"] = final_signature
+        published_review["video_sha256"] = final_hash
         destination_report = final.with_suffix(".composition_review.json")
         if destination_report.is_file():
             report_payload = json.loads(destination_report.read_text(encoding="utf-8"))
             if isinstance(report_payload, dict):
                 report_payload["video_signature"] = final_signature
+                report_payload["video_sha256"] = final_hash
                 write_report(destination_report, report_payload)
     return published_review
 
@@ -1053,6 +1062,7 @@ def _review_final_composed_video(
     )
     report["path"] = str(report_path)
     report["video_path"] = str(final_video_path)
+    report["video_sha256"] = file_hash(Path(final_video_path))
     report["video_signature"] = _video_version_signature(final_video_path)
     report["composition_input_signature"] = composition_input_signature(
         project,

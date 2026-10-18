@@ -85,9 +85,11 @@ def test_composition_candidate_publishes_video_and_review_together(tmp_path):
     report = json.loads(final.with_suffix(".composition_review.json").read_text(encoding="utf-8"))
     assert report["path"] == str(final.with_suffix(".composition_review.json"))
     assert report["video_path"] == str(final)
+    assert report["video_sha256"] == composition_tasks.file_hash(final)
     assert report["video_signature"] == composition_tasks._video_version_signature(final)
     assert review["path"] == str(final.with_suffix(".composition_review.json"))
     assert review["video_path"] == str(final)
+    assert review["video_sha256"] == composition_tasks.file_hash(final)
     assert review["video_signature"] == composition_tasks._video_version_signature(final)
 
 
@@ -135,6 +137,19 @@ def test_composition_rejects_stale_video_quality_hash(tmp_path):
 
     with pytest.raises(ValueError, match="stale for current file"):
         composition_tasks._require_passed_scene_videos([scene])
+
+
+def test_composition_publish_rejects_stale_reviewed_candidate(tmp_path):
+    candidate = tmp_path / "candidate.mp4"
+    final = tmp_path / "final.mp4"
+    candidate.write_bytes(b"current candidate")
+
+    with pytest.raises(ValueError, match="review is stale"):
+        composition_tasks._publish_composition_candidate(
+            candidate,
+            final,
+            {"status": "passed", "video_sha256": "0" * 64},
+        )
 
 
 def test_composition_requires_passed_audio_quality_report_for_dialogue(tmp_path):
