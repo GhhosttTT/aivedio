@@ -24,7 +24,7 @@ def test_video_request_contract_captures_effective_generation_controls():
         fps=24,
     )
     contract = _video_request_contract(request, request_mode="multi_shot", sequence_level=True)
-    assert contract["provider_request_version"] == 2
+    assert contract["provider_request_version"] == 3
     assert contract["model"] == "doubao-seedance-2-5-260628"
     assert contract["sequence_level_multi_shot"] is True
     assert contract["reference_video_count"] == 1
@@ -54,6 +54,27 @@ def test_video_request_contract_hash_changes_when_a_quality_control_changes():
     first = _video_request_contract(base, request_mode="reference", sequence_level=False)
     changed = replace(base, return_last_frame=True)
     second = _video_request_contract(changed, request_mode="reference", sequence_level=False)
+    assert first["contract_hash"] != second["contract_hash"]
+
+
+def test_video_request_contract_records_motion_and_repair_controls():
+    base = VideoGenerationRequest(
+        prompt="shot",
+        output_path="/tmp/shot.mp4",
+        seed=11,
+        motion_bucket_id=92,
+        noise_aug_strength=0.012,
+        quality_mode="commercial",
+        repair_action="increase_motion_and_regenerate_video",
+        quality_pipeline={"stages": ["motion_control"]},
+    )
+    first = _video_request_contract(base, request_mode="reference", sequence_level=False)
+    changed = replace(base, motion_bucket_id=118)
+    second = _video_request_contract(changed, request_mode="reference", sequence_level=False)
+
+    assert first["motion_bucket_id"] == 92
+    assert first["repair_action"] == "increase_motion_and_regenerate_video"
+    assert first["quality_pipeline_fingerprint"]
     assert first["contract_hash"] != second["contract_hash"]
 
 

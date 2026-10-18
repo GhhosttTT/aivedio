@@ -146,6 +146,15 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
     shot_plan_fingerprint = hashlib.sha256(
         json.dumps(shot_plan, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest() if shot_plan else None
+    quality_pipeline_fingerprint = hashlib.sha256(
+        json.dumps(
+            request.quality_pipeline,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest() if request.quality_pipeline else None
     spatial_contract = shot_plan.get("spatial_asset_pack") if isinstance(shot_plan.get("spatial_asset_pack"), dict) else {}
     raw_bindings = shot_plan.get("character_reference_bindings")
     character_bindings = [
@@ -200,14 +209,22 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         else "silent"
     )
     contract = {
-        "provider_request_version": 2,
+        "provider_request_version": 3,
         "request_mode": request_mode,
         "model": request.model,
         "resolution": request.resolution,
         "output_format": request.output_format,
         "duration_seconds": request.duration_seconds,
         "aspect_ratio": request.aspect_ratio,
+        "width": request.width,
+        "height": request.height,
         "fps": request.fps,
+        "seed": request.seed,
+        "motion_bucket_id": request.motion_bucket_id,
+        "noise_aug_strength": request.noise_aug_strength,
+        "quality_mode": request.quality_mode,
+        "repair_action": request.repair_action,
+        "quality_pipeline_fingerprint": quality_pipeline_fingerprint,
         "prompt_fingerprint": fingerprint(request.prompt),
         "negative_prompt_fingerprint": fingerprint(request.negative_prompt),
         "shot_plan_fingerprint": shot_plan_fingerprint,
