@@ -83,7 +83,12 @@ def dialogue_audio_quality_report(
     audio_path: str | None,
     profile: dict[str, object],
     speaker: str | None = None,
+    measured_duration: float | None = None,
+    reported_duration: float | None = None,
 ) -> dict[str, object]:
+    reported_duration_value = duration if reported_duration is None else reported_duration
+    if measured_duration is not None:
+        duration = measured_duration
     low: dict[str, dict[str, object]] = {}
     missing: list[str] = []
     audio_signal: dict[str, object] = {}
@@ -145,6 +150,8 @@ def dialogue_audio_quality_report(
             " ".join((text or "").split()).encode("utf-8")
         ).hexdigest(),
         "duration": duration or 0.0,
+        "duration_reported": reported_duration_value or 0.0,
+        "duration_measured": measured_duration if measured_duration is not None else duration or 0.0,
         "audio_signal": audio_signal,
         "speaker": str(speaker or "default").strip() or "default",
         "voice_identity": {
@@ -224,6 +231,11 @@ def generate_audio_task(
                 "fallback_error": str(exc),
             }
 
+        reported_duration = duration
+        measured_duration = get_subtitle_generator()._get_audio_duration(result_path)
+        duration = measured_duration if measured_duration and measured_duration > 0 else 0.0
+        if not duration:
+            logger.warning("Generated audio duration could not be decoded: scene_id={}", scene_id)
         if not duration or duration <= 0:
             duration = get_draft_media_service().estimate_dialogue_duration(text)
 
@@ -231,7 +243,14 @@ def generate_audio_task(
         scene.audio_duration = duration
         scene.subtitle_path = None
         report = dialogue_audio_quality_report(
-            scene, text, duration, result_path, profile, speaker=resolved_speaker
+            scene,
+            text,
+            duration,
+            result_path,
+            profile,
+            speaker=resolved_speaker,
+            measured_duration=measured_duration,
+            reported_duration=reported_duration,
         )
         Path(result_path).with_suffix(".quality.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2),

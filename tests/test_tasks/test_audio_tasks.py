@@ -113,6 +113,28 @@ def test_dialogue_audio_quality_report_accepts_measurable_signal(tmp_path, monke
     assert report["audio_signal"]["audio_signal_status"] == "usable"
 
 
+def test_dialogue_audio_quality_report_keeps_reported_and_measured_duration(tmp_path, monkeypatch):
+    audio = tmp_path / "scene_011.mp3"
+    audio.write_bytes(b"audio")
+    monkeypatch.setattr(audio_tasks, "_audio_signal_metrics", lambda *_args: {
+        "audio_signal_status": "usable",
+    })
+    report = dialogue_audio_quality_report(
+        Mock(scene_number=11),
+        "你好啊",
+        duration=1.0,
+        audio_path=str(audio),
+        profile={"emotion": "neutral", "speed": 1.0, "source": "tts"},
+        measured_duration=1.5,
+        reported_duration=1.0,
+    )
+
+    assert report["status"] == "passed"
+    assert report["duration"] == 1.5
+    assert report["duration_reported"] == 1.0
+    assert report["duration_measured"] == 1.5
+
+
 def test_generate_audio_task_marks_draft_fallback_audio_for_repair(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("ENABLE_DRAFT_MEDIA_FALLBACK", "true")
