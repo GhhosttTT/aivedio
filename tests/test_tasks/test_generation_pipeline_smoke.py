@@ -1043,6 +1043,52 @@ def test_native_audio_composition_requires_measurable_sync(tmp_path, monkeypatch
         "status": "available",
         "audio_present": True,
         "audio_duration_delta_seconds": 0.5,
+        "audio_video_start_delta_seconds": 0.0,
+        "audio_signal_status": "usable",
+        "audio_clipping_status": "ok",
+    })
+
+    assert composition_tasks._native_audio_is_ready_for_video_paths([str(video)], composer) is False
+
+
+@pytest.mark.parametrize(
+    "metrics",
+    [
+        {
+            "audio_duration_delta_seconds": 0.0,
+            "audio_video_start_delta_seconds": -0.6,
+            "audio_signal_status": "usable",
+            "audio_clipping_status": "ok",
+        },
+        {
+            "audio_duration_delta_seconds": 0.0,
+            "audio_video_start_delta_seconds": 0.0,
+            "audio_signal_status": "near_silent",
+            "audio_clipping_status": "ok",
+        },
+        {
+            "audio_duration_delta_seconds": 0.0,
+            "audio_video_start_delta_seconds": 0.0,
+            "audio_signal_status": "usable",
+            "audio_clipping_status": "clipped",
+        },
+    ],
+)
+def test_native_audio_composition_rejects_unusable_audio_metrics(tmp_path, monkeypatch, metrics):
+    video = tmp_path / "scene.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".provider.json").write_text(
+        json.dumps({
+            "native_audio_requested": True,
+            "video_sha256": composition_tasks.file_hash(video),
+        }), encoding="utf-8",
+    )
+    composer = Mock()
+    composer.has_audio_stream.return_value = True
+    monkeypatch.setattr(composition_tasks, "video_candidate_metrics", lambda _path: {
+        "status": "available",
+        "audio_present": True,
+        **metrics,
     })
 
     assert composition_tasks._native_audio_is_ready_for_video_paths([str(video)], composer) is False

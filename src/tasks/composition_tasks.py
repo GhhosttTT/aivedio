@@ -100,11 +100,18 @@ def _native_audio_is_ready_for_video_paths(video_paths: list[str], video_compose
             return False
         metrics = video_candidate_metrics(video_path)
         audio_delta = metrics.get("audio_duration_delta_seconds")
+        audio_start_delta = metrics.get("audio_video_start_delta_seconds")
         if (
             metrics.get("status") != "available"
             or not metrics.get("audio_present")
             or not isinstance(audio_delta, (int, float))
-            or audio_delta > 0.35
+            or abs(float(audio_delta)) > 0.35
+            or (
+                not isinstance(audio_start_delta, (int, float))
+                or abs(float(audio_start_delta)) > 0.35
+            )
+            or metrics.get("audio_signal_status") != "usable"
+            or metrics.get("audio_clipping_status") == "clipped"
         ):
             return False
     return True
