@@ -226,24 +226,29 @@ def _normalized_production_options(options: ProductionOptions) -> dict:
     }
 
 
-def _draft_expired(created_at: object, *, now: datetime | None = None) -> bool:
+def _draft_expired(created_at: object, expires_at: object = None, *, now: datetime | None = None) -> bool:
     """Seedance Draft tasks are promotable for seven days after creation."""
-    if created_at is None:
-        return False
-    value: datetime | None = None
-    if isinstance(created_at, (int, float)):
-        value = datetime.fromtimestamp(float(created_at), tz=timezone.utc)
-    elif isinstance(created_at, str):
+    def parse_time(raw: object) -> datetime | None:
+        if isinstance(raw, (int, float)):
+            return datetime.fromtimestamp(float(raw), tz=timezone.utc)
+        if not isinstance(raw, str):
+            return None
         try:
-            value = datetime.fromisoformat(created_at.strip().replace("Z", "+00:00"))
+            value = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
         except ValueError:
-            return False
+            return None
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    reference = now or datetime.now(timezone.utc)
+    explicit_expiry = parse_time(expires_at)
+    if explicit_expiry is not None:
+        return reference >= explicit_expiry
+    value = parse_time(created_at)
     if value is None:
         return False
-    reference = now or datetime.now(timezone.utc)
-    return reference - value.astimezone(timezone.utc) > timedelta(days=7)
+    return reference - value > timedelta(days=7)
 
 
 @router.post("/workflow-profile/freeze", response_model=WorkflowProfileResponse)
@@ -1204,7 +1209,9 @@ async def promote_seedance_drafts(
         task_id = data.get("provider_task_id") if isinstance(data, dict) else None
         is_draft = bool(data.get("requested_draft")) if isinstance(data, dict) else False
         if isinstance(task_id, str) and task_id.strip() and is_draft:
-            if isinstance(data, dict) and _draft_expired(data.get("provider_created_at")):
+            if isinstance(data, dict) and _draft_expired(
+                data.get("provider_created_at"), data.get("provider_expires_at")
+            ):
                 expired.append(scene.scene_number)
             draft_ids[scene.id] = task_id.strip()
             requested_model = data.get("requested_model") if isinstance(data, dict) else None

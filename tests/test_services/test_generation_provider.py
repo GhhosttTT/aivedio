@@ -479,6 +479,17 @@ def test_provider_remembers_draft_creation_time():
     assert provider.last_result_metadata["provider_created_at"] == "2026-10-10T12:00:00Z"
 
 
+def test_provider_remembers_draft_expiry_time():
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    provider._remember_result_metadata({
+        "id": "draft-1",
+        "expires_at": "2026-10-17T12:00:00Z",
+    })
+
+    assert provider.last_result_metadata["provider_expires_at"] == "2026-10-17T12:00:00Z"
+
+
 def test_video_request_fingerprint_resolves_environment_defaults(monkeypatch):
     monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-0-260128")
     monkeypatch.setenv("SEEDANCE_REQUEST_MODE", "reference")

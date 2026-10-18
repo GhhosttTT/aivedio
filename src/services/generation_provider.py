@@ -1287,6 +1287,9 @@ class ApiVideoProvider:
         created_at = _extract_first(data, ("created_at", "createdAt", "create_time"))
         if created_at is not None and not isinstance(created_at, (dict, list)):
             self.last_result_metadata["provider_created_at"] = str(created_at)
+        expires_at = _extract_first(data, ("expires_at", "expiresAt", "expire_time", "expiration_time"))
+        if expires_at is not None and not isinstance(expires_at, (dict, list)):
+            self.last_result_metadata["provider_expires_at"] = str(expires_at)
         duration = _extract_first(data, ("duration", "duration_seconds", "video_duration"))
         try:
             if duration is not None:
