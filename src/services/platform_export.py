@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.services.video_quality_metrics import video_candidate_metrics
+from src.config import settings
 
 
 PLATFORM_EXPORT_PRESETS = {
@@ -113,8 +114,9 @@ def export_platform_video(final_video_path: str | Path, project_root: str | Path
     finally:
         temporary.unlink(missing_ok=True)
 
+    source_metrics = video_candidate_metrics(source, max_samples=8)
     technical_metrics = video_candidate_metrics(output, max_samples=8)
-    _validate_export_metrics(technical_metrics, config, output)
+    _validate_export_metrics(technical_metrics, config, output, source_metrics=source_metrics)
 
     result = {
         "status": "ready",
@@ -130,13 +132,20 @@ def export_platform_video(final_video_path: str | Path, project_root: str | Path
         "output_signature": _signature(output),
         "output_sha256": _sha256(output),
         "technical_metrics": technical_metrics,
+        "source_technical_metrics": source_metrics,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     _write_json(manifest_path, result)
     return result
 
 
-def _validate_export_metrics(metrics: dict, config: dict, output: Path) -> None:
+def _validate_export_metrics(
+    metrics: dict,
+    config: dict,
+    output: Path,
+    *,
+    source_metrics: dict | None = None,
+) -> None:
     """Reject an export unless its decoded media honors the preset contract."""
     if not isinstance(metrics, dict) or metrics.get("status") != "available":
         detail = metrics.get("error") if isinstance(metrics, dict) else None
@@ -158,3 +167,24 @@ def _validate_export_metrics(metrics: dict, config: dict, output: Path) -> None:
         )
     if float(metrics.get("duration_seconds") or 0.0) <= 0:
         raise PlatformExportError(f"Platform export has no positive duration: {output}")
+    max_black_run = float(metrics.get("max_black_run_seconds") or 0.0)
+    if max_black_run > settings.GENERATION_VIDEO_MAX_BLACK_SECONDS:
+        raise PlatformExportError(
+            f"Platform export contains a black-frame run of {max_black_run:.3f}s"
+        )
+    if metrics.get("audio_present") and metrics.get("audio_signal_status") not in {None, "usable"}:
+        raise PlatformExportError(
+            f"Platform export audio signal is not usable: {metrics.get('audio_signal_status')}"
+        )
+    if isinstance(source_metrics, dict) and source_metrics.get("status") == "available":
+        source_duration = float(source_metrics.get("duration_seconds") or 0.0)
+        output_duration = float(metrics.get("duration_seconds") or 0.0)
+        if source_duration > 0:
+            tolerance = max(0.35, source_duration * 0.08)
+            if abs(output_duration - source_duration) > tolerance:
+                raise PlatformExportError(
+                    f"Platform export duration drifted to {output_duration:.3f}s; "
+                    f"source is {source_duration:.3f}s"
+                )
+        if bool(metrics.get("audio_present")) != bool(source_metrics.get("audio_present")):
+            raise PlatformExportError("Platform export changed source audio presence")

@@ -102,6 +102,29 @@ def test_platform_export_rejects_unreadable_output(tmp_path, monkeypatch):
         export_platform_video(source, tmp_path, "douyin")
 
 
+def test_platform_export_rejects_audio_loss_and_duration_drift(tmp_path, monkeypatch):
+    source = tmp_path / "final.mp4"
+    source.write_bytes(b"source")
+
+    def fake_run(command, **_kwargs):
+        output = tmp_path / "exports" / ".douyin.tmp.mp4"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"exported")
+
+    monkeypatch.setattr("src.services.platform_export.subprocess.run", fake_run)
+    metrics = iter([
+        {"status": "available", "width": 1080, "height": 1920, "fps": 30.0, "duration_seconds": 2.0, "audio_present": True},
+        {"status": "available", "width": 1080, "height": 1920, "fps": 30.0, "duration_seconds": 3.0, "audio_present": False},
+    ])
+    monkeypatch.setattr(
+        "src.services.platform_export.video_candidate_metrics",
+        lambda *_args, **_kwargs: next(metrics),
+    )
+
+    with pytest.raises(PlatformExportError, match="duration drifted"):
+        export_platform_video(source, tmp_path, "douyin")
+
+
 def test_platform_export_rejects_unknown_preset(tmp_path):
     source = tmp_path / "final.mp4"
     source.write_bytes(b"source")
