@@ -483,6 +483,14 @@ def _write_provider_metadata(video_path: str | Path, metadata: dict | None) -> s
     return str(path)
 
 
+def _write_sequence_manifest(path: str | Path, payload: dict) -> str:
+    """Persist the source-sequence provenance after atomic scene splitting."""
+    manifest_path = Path(path).with_suffix(".sequence.json")
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_json_sidecar(manifest_path, payload)
+    return str(manifest_path)
+
+
 def _normalization_duration_for_provider(
     provider_name: str,
     request_mode: str | None,
@@ -2943,6 +2951,8 @@ def generate_sequence_video_task(
     self.update_state(state="PROGRESS", meta={"current": 0, "total": 100, "step": "sequence_planning"})
     db = next(get_db())
     sequence_path: Path | None = None
+    sequence_manifest_path: Path | None = None
+    sequence_manifest: dict | None = None
     previous_video_paths: dict[int, str | None] = {}
     staging_paths: list[Path] = []
     try:
@@ -2980,6 +2990,17 @@ def generate_sequence_video_task(
         sequence_path = Path(requested_sequence_path) if requested_sequence_path else Path(
             get_scene_video_path(project_id, first_scene.id)
         ).with_name(f"sequence_{task_id}.mp4")
+        sequence_manifest_path = sequence_path.with_suffix(".sequence.json")
+        sequence_manifest = {
+            "kind": "sequence_source_manifest",
+            "status": "processing",
+            "project_id": project_id,
+            "task_id": task_id,
+            "sequence_output_path": str(sequence_path),
+            "scene_ids": list(scene_ids),
+            "segments": [segment.as_dict() for segment in segments],
+        }
+        _write_sequence_manifest(sequence_path, sequence_manifest)
         provider_kwargs.update({
             "multi_shot": True,
             "sequence_level_multi_shot": True,
@@ -3067,6 +3088,11 @@ def generate_sequence_video_task(
         )
         write_report(boundary_report_path, boundary_report)
         _validate_sequence_boundary_report(boundary_report, boundary_report_path)
+        sequence_manifest.update({
+            "provider_metadata_path": str(provider_metadata_path) if provider_metadata_path.is_file() else None,
+            "timeline_report_path": str(timeline_report_path),
+            "boundary_report_path": str(boundary_report_path),
+        })
         segment_provider_metadata: dict[int, dict] = {}
         for scene, staging_path, segment in zip(scenes, staging_paths, segments):
             derived_metadata = _derive_sequence_segment_provider_metadata(
@@ -3104,6 +3130,11 @@ def generate_sequence_video_task(
                 )
             _write_provider_metadata(output_path, published_provider_metadata)
         db.commit()
+        sequence_manifest.update({
+            "status": "completed",
+            "published_video_paths": [str(path) for path in output_paths],
+        })
+        _write_sequence_manifest(sequence_path, sequence_manifest)
         self.update_state(state="PROGRESS", meta={"current": 100, "total": 100, "step": "sequence_completed"})
         return {
             "project_id": project_id,
@@ -3123,6 +3154,12 @@ def generate_sequence_video_task(
             "status": "completed",
         }
     except Exception:
+        if sequence_manifest is not None and sequence_manifest_path is not None:
+            sequence_manifest.update({"status": "failed"})
+            try:
+                _write_sequence_manifest(sequence_manifest_path, sequence_manifest)
+            except OSError:
+                logger.warning("Could not persist failed sequence manifest: {}", sequence_manifest_path)
         db.rollback()
         if previous_video_paths:
             for scene_id, video_path in previous_video_paths.items():
@@ -3138,7 +3175,13 @@ def generate_sequence_video_task(
                     artifact.unlink(missing_ok=True)
         if sequence_path and sequence_path.exists():
             for artifact in sequence_path.parent.glob(f"{sequence_path.stem}*"):
-                if artifact.name.endswith(".provider.pending.json"):
+                if artifact.name.endswith((
+                    ".sequence.json",
+                    ".provider.pending.json",
+                    ".provider.json",
+                    ".quality.json",
+                    ".final_review.json",
+                )):
                     continue
                 if artifact.is_file():
                     artifact.unlink(missing_ok=True)

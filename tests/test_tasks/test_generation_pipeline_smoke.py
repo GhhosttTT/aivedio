@@ -1646,6 +1646,9 @@ def test_sequence_task_forwards_explicit_output_path_before_provider_generation(
     )
 
     assert captured["sequence_output_path"] == str(output_path)
+    manifest = output_path.with_suffix(".sequence.json")
+    assert manifest.is_file()
+    assert json.loads(manifest.read_text(encoding="utf-8"))["sequence_output_path"] == str(output_path)
     assert captured["sequence_level_multi_shot"] is True
     assert captured["multi_shot"] is True
     captured["PROVIDER_PROGRESS_CALLBACK"](
