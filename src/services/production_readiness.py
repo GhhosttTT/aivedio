@@ -57,6 +57,7 @@ class ProductionReadinessService:
         "review_backend_not_llama_cpp": ("start_local_reviewer", "review", "setup_required"),
         "missing_character_turnaround_album": ("regenerate_turnaround_album", "character", "setup_required"),
         "missing_character_asset_pack": ("regenerate_character_identity", "character", "setup_required"),
+        "missing_character_voice_profile": ("freeze_character_voice_identity", "character", "manual"),
         "missing_character_references": ("regenerate_character_identity", "character", "setup_required"),
         "topic_brief_incomplete": ("complete_topic_brief", "story", "manual"),
         "topic_brief_low_specificity": ("refine_topic_brief", "story", "manual"),
@@ -578,6 +579,8 @@ class ProductionReadinessService:
         stale_asset_packs = []
         missing_turnaround_albums = []
         stale_turnaround_albums = []
+        missing_voice_profiles = []
+        configured_voice_names = self._configured_voice_names()
         album_service = CharacterTurnaroundAlbumService()
         for name in required_names:
             character = by_name.get(name)
@@ -611,6 +614,12 @@ class ProductionReadinessService:
                 })
             if not (character.appearance or "").strip():
                 missing_appearance.append(name)
+            manifest = asset_pack.get("manifest") if isinstance(asset_pack, dict) else {}
+            voice_profile = manifest.get("voice_profile") if isinstance(manifest, dict) else {}
+            has_frozen_voice = isinstance(voice_profile, dict) and bool(str(voice_profile.get("voice_id") or "").strip())
+            has_configured_voice = name in configured_voice_names or name.lower() in configured_voice_names
+            if not has_frozen_voice and not has_configured_voice:
+                missing_voice_profiles.append(name)
             character_payload.append({
                 "id": character.id,
                 "name": character.name,
@@ -620,6 +629,7 @@ class ProductionReadinessService:
                 "reference_count": len(references),
                 "asset_pack_status": asset_pack.get("status"),
                 "turnaround_album_status": turnaround_album.get("status"),
+                "voice_binding": "asset_pack" if has_frozen_voice else "configured_mapping" if has_configured_voice else "missing",
             })
         if missing_identity_specs:
             blockers.append(ReadinessIssue(
@@ -675,6 +685,12 @@ class ProductionReadinessService:
                 "Add detailed face/body/outfit anchors for characters: " + ", ".join(missing_appearance),
                 severity="warning",
             ))
+        if missing_voice_profiles:
+            warnings.append(ReadinessIssue(
+                "missing_character_voice_profile",
+                "Bind a stable voice ID for dialogue characters before production: " + ", ".join(missing_voice_profiles),
+                severity="warning",
+            ))
         distinctiveness = CharacterIdentityService().distinctiveness_report(identity_specs)
         if distinctiveness.get("status") == "needs_revision":
             blockers.append(ReadinessIssue(
@@ -693,10 +709,26 @@ class ProductionReadinessService:
             "missing_turnaround_albums": missing_turnaround_albums,
             "stale_turnaround_albums": stale_turnaround_albums,
             "missing_appearance": missing_appearance,
+            "missing_voice_profiles": missing_voice_profiles,
             "distinctiveness": distinctiveness,
             "characters": character_payload,
             "scenes": scene_payload,
         }
+
+    @staticmethod
+    def _configured_voice_names() -> set[str]:
+        """Return character names covered by the deployment voice registry."""
+        raw_mapping = os.getenv("TTS_SPEAKER_MAP_JSON", "").strip()
+        if not raw_mapping:
+            return set()
+        try:
+            mapping = json.loads(raw_mapping)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return set()
+        if not isinstance(mapping, dict):
+            return set()
+        names = {str(name).strip() for name, voice in mapping.items() if str(name).strip() and str(voice).strip()}
+        return names | {name.lower() for name in names}
 
     def _shot_complexity_check(
         self,

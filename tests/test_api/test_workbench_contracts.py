@@ -694,6 +694,8 @@ def test_visual_style_freeze_clears_readiness_visual_style_blocker(setup):
     )
     assert frozen.status_code == 200, frozen.text
     assert frozen.json()["status"] == "frozen"
+    before_voice = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
+    assert before_voice["checks"]["characters"]["missing_voice_profiles"] == []
     assert frozen.json()["asset_pack"]["style_prompt"] == "consistent premium red-and-teal short drama look"
 
     after = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
