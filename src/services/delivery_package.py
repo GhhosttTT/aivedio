@@ -116,6 +116,43 @@ def verify_delivery_package(package_path: str | Path) -> dict:
                 result["errors"].append(
                     "ZIP contains files missing from manifest: " + ", ".join(unexpected)
                 )
+            platform_exports = [
+                (archive_name, item)
+                for archive_name, item in manifest_entries.items()
+                if archive_name.startswith("exports/")
+                and Path(archive_name).suffix.lower() in {".mp4", ".mov"}
+            ]
+            if platform_exports:
+                from src.services.video_quality_metrics import video_candidate_metrics
+
+                with tempfile.TemporaryDirectory(prefix="delivery-verify-") as temporary_root:
+                    for archive_name, manifest_item in platform_exports:
+                        export_path = Path(temporary_root) / Path(archive_name).name
+                        export_path.write_bytes(archive.read(archive_name))
+                        observed = video_candidate_metrics(export_path, max_samples=8)
+                        declared = None
+                        manifest_path = f"{Path(archive_name).with_suffix('')}.json"
+                        if manifest_path in names:
+                            try:
+                                declared = json.loads(archive.read(manifest_path).decode("utf-8"))
+                            except (UnicodeDecodeError, ValueError, TypeError):
+                                declared = None
+                        declared_metrics = (
+                            declared.get("technical_metrics")
+                            if isinstance(declared, dict)
+                            else None
+                        )
+                        if (
+                            not isinstance(declared_metrics, dict)
+                            or declared_metrics.get("status") != "available"
+                            or declared_metrics.get("temporal_sample_evidence") != "sufficient"
+                            or not isinstance(observed, dict)
+                            or observed.get("status") != "available"
+                            or observed.get("temporal_sample_evidence") != "sufficient"
+                        ):
+                            result["errors"].append(
+                                f"Platform export technical evidence failed: {archive_name}"
+                            )
             review_index_name = "metadata/review_index.json"
             if review_index_name in names:
                 try:

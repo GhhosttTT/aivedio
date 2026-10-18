@@ -20,7 +20,14 @@ def _passed_final_composition(final):
     }
 
 
-def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
+def test_delivery_package_contains_media_evidence_and_hashes(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "src.services.video_quality_metrics.video_candidate_metrics",
+        lambda path, max_samples=8: {
+            "status": "available",
+            "temporal_sample_evidence": "sufficient",
+        },
+    )
     final = tmp_path / "final.mp4"
     final.write_bytes(b"final-video")
     final.with_suffix(".composition_review.json").write_text(json.dumps({"status": "passed"}), encoding="utf-8")
