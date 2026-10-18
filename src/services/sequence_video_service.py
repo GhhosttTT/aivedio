@@ -127,7 +127,18 @@ def split_sequence_video(
     outputs: list[str] = []
     prepared: list[tuple[Path, Path]] = []
     current_scene_number: int | str = "unknown"
+    source_duration = _probe_duration(source)
+    if source_duration is not None:
+        if any(segment.end_seconds > source_duration + 0.12 for segment in segment_list):
+            raise SequenceVideoError(
+                "Sequence segment extends beyond the generated source duration: "
+                f"source={source_duration:.3f}s"
+            )
     source_stream_types = _probe_stream_types(source)
+    if source_stream_types is None:
+        raise SequenceVideoError(
+            "Could not inspect source stream types; refusing to split without audio continuity evidence"
+        )
     source_has_audio = source_stream_types is not None and "audio" in source_stream_types
     source_pixel_format = _source_pixel_format(source) or ""
     high_bit_depth = any(token in source_pixel_format for token in ("p10", "p12", "10le", "12le"))
@@ -137,13 +148,6 @@ def split_sequence_video(
         output_pixel_format = "yuv422p10le" if high_bit_depth else "yuv422p"
     else:
         output_pixel_format = "yuv420p10le" if high_bit_depth else "yuv420p"
-    source_duration = _probe_duration(source)
-    if source_duration is not None:
-        if any(segment.end_seconds > source_duration + 0.12 for segment in segment_list):
-            raise SequenceVideoError(
-                "Sequence segment extends beyond the generated source duration: "
-                f"source={source_duration:.3f}s"
-            )
     try:
         for segment, destination in zip(segment_list, destination_list):
             current_scene_number = segment.scene_number

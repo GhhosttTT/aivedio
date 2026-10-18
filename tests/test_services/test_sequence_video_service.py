@@ -259,3 +259,18 @@ def test_split_sequence_video_rejects_dropped_source_audio(tmp_path, monkeypatch
     with pytest.raises(SequenceVideoError, match="dropped the source audio"):
         split_sequence_video(source, [SequenceSegment(1, 0.0, 2.0)], [output])
     assert not output.exists()
+
+
+def test_split_sequence_video_rejects_unknown_source_streams(tmp_path, monkeypatch):
+    source = tmp_path / "sequence.mp4"
+    source.write_bytes(b"sequence")
+    monkeypatch.setattr("src.services.sequence_video_service.shutil.which", lambda _name: "/usr/bin/ffprobe")
+    monkeypatch.setattr("src.services.sequence_video_service._probe_duration", lambda _path: 2.0)
+    monkeypatch.setattr("src.services.sequence_video_service._probe_stream_types", lambda _path: None)
+
+    with pytest.raises(SequenceVideoError, match="audio continuity evidence"):
+        split_sequence_video(
+            source,
+            [SequenceSegment(1, 0.0, 2.0)],
+            [tmp_path / "scene.mp4"],
+        )
