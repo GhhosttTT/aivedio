@@ -2024,12 +2024,8 @@ def main():
     parser.add_argument("--description", help="Expected scene content for frame review")
     parser.add_argument("--quality-mode", default="ultra", choices=["fast", "normal", "high_quality", "ultra"], help="Image quality mode for render-images")
     parser.add_argument("--optimization-mode", default="quality", choices=["quality", "realism", "artistic", "balanced"], help="Prompt optimization mode for render-images")
-    parser.add_argument("--repair-action", choices=[
-        "regenerate_keyframe_with_identity_lock",
-        "refine_prompt_composition",
-        "refine_face_aesthetic_detail",
-        "regenerate_keyframe_with_prop_constraints",
-    ], help="Apply targeted image repair constraints during render-images")
+    parser.add_argument("--repair-action", choices=IMAGE_REPAIR_ACTIONS,
+                        help="Apply targeted image repair constraints during render-images")
     parser.add_argument("--scene-number", type=int, help="Render only one validation scene number")
     parser.add_argument("--production-search", action="store_true", help="Use production candidate selection, refinement, postprocess and review for render-images")
     parser.add_argument("--max-actions", type=int, default=5, help="Maximum automatic repairs to select for quality-loop")
@@ -2089,3 +2085,11 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+IMAGE_REPAIR_ACTIONS = (
+    "regenerate_keyframe_with_identity_lock",
+    "regenerate_keyframe_with_role_separation",
+    "refine_prompt_composition",
+    "refine_project_style_consistency",
+    "refine_face_aesthetic_detail",
+    "regenerate_keyframe_with_prop_constraints",
+)

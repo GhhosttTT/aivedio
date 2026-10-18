@@ -17,6 +17,17 @@ CASE_CATEGORIES = {
 }
 
 
+def test_cli_repair_actions_cover_every_image_repair_profile():
+    assert set(validator.IMAGE_REPAIR_ACTIONS) == {
+        "regenerate_keyframe_with_identity_lock",
+        "regenerate_keyframe_with_role_separation",
+        "refine_prompt_composition",
+        "refine_project_style_consistency",
+        "refine_face_aesthetic_detail",
+        "regenerate_keyframe_with_prop_constraints",
+    }
+
+
 def write_json(path, payload):
     path.write_text(json.dumps(payload), encoding="utf-8")
 
