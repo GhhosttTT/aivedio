@@ -389,6 +389,17 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         raise DeliveryPackageError(
             "Core delivery reviews are missing or not passed: " + ", ".join(missing_or_failed)
         )
+    report_missing_or_failed = [
+        name for name in required_reports
+        if not isinstance(reports, dict)
+        or not isinstance(reports.get(name), dict)
+        or reports[name].get("status") != "passed"
+    ]
+    if report_missing_or_failed:
+        raise DeliveryPackageError(
+            "Core delivery report evidence is missing or not passed: "
+            + ", ".join(report_missing_or_failed)
+        )
 
     root = Path(project_root).resolve()
     final_path = Path(getattr(project, "final_video_path", None) or "").resolve()

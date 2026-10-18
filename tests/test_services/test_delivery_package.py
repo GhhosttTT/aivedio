@@ -29,6 +29,12 @@ def build_delivery_package(project, project_root, reports, review_summary):
     # function with the same core statuses returned by the API summary.
     if review_summary == {"status": "ready"}:
         review_summary = _ready_summary()
+        reports = {
+            "production_story": {"status": "passed"},
+            "generation": {"status": "passed"},
+            "seed_dance_baseline_comparison": {"status": "passed"},
+            **reports,
+        }
     return _build_delivery_package(project, project_root, reports, review_summary)
 
 
@@ -131,6 +137,14 @@ def test_delivery_package_requires_core_review_statuses(tmp_path):
             tmp_path,
             {},
             {"status": "ready", "reports": {"generation": "passed"}},
+        )
+
+    with pytest.raises(DeliveryPackageError, match="Core delivery report evidence"):
+        _build_delivery_package(
+            project,
+            tmp_path,
+            {"generation": {"status": "passed"}},
+            _ready_summary(),
         )
 
 

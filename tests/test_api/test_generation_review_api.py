@@ -310,9 +310,11 @@ def test_delivery_package_endpoint_exports_approved_project(tmp_path, monkeypatc
     )
     async def approved_review(*_args, **_kwargs):
         return {
-            "reports": {
-                "generation": {"status": "passed"},
-                "final_composition": {
+                "reports": {
+                    "production_story": {"status": "passed"},
+                    "generation": {"status": "passed"},
+                    "seed_dance_baseline_comparison": {"status": "passed"},
+                    "final_composition": {
                     "status": "passed",
                     "video_path": str(final_video),
                     "video_sha256": _sha256(final_video),
