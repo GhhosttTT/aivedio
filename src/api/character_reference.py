@@ -2,8 +2,10 @@
 角色参考图生成 API
 """
 import asyncio
+import os
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict
 from loguru import logger
@@ -11,9 +13,33 @@ from loguru import logger
 from src.services.character_reference_generator import CharacterReferenceGenerator
 from src.services.character_reference_auto import CharacterReferenceAutoGenerator
 from src.services.llm_service import get_llm_service
+from src.api.dependencies import get_current_user
+from src.config import settings
 
 
-router = APIRouter(prefix="/character", tags=["character"])
+router = APIRouter(
+    prefix="/character",
+    tags=["character"],
+    dependencies=[Depends(get_current_user)],
+)
+
+
+def _safe_reference_dir(requested: str | None) -> str:
+    """Resolve a reference output directory without allowing path traversal."""
+    storage_root = Path(
+        os.getenv("STORAGE_PATH")
+        or getattr(settings, "STORAGE_PATH", "./storage")
+        or "./storage"
+    ).resolve()
+    reference_root = (storage_root / "characters").resolve()
+    candidate = Path(requested or str(reference_root)).resolve()
+    if not candidate.is_relative_to(reference_root):
+        raise HTTPException(
+            status_code=400,
+            detail="save_dir must be inside the configured character storage directory",
+        )
+    candidate.mkdir(parents=True, exist_ok=True)
+    return str(candidate)
 
 
 class CharacterRequest(BaseModel):
@@ -23,7 +49,7 @@ class CharacterRequest(BaseModel):
     personality: Optional[str] = "自信、专业"
     generate_images: Optional[bool] = False  # 是否立即生成参考图
     count: Optional[int] = 3  # 生成候选参考图数量
-    save_dir: Optional[str] = "./storage/characters"
+    save_dir: Optional[str] = None
 
 
 class CharacterResponse(BaseModel):
@@ -112,6 +138,7 @@ async def generate_reference_images(request: CharacterRequest):
             }
 
         count = max(1, min(int(request.count or 3), 8))
+        safe_save_dir = _safe_reference_dir(request.save_dir)
         generator = CharacterReferenceAutoGenerator(generator=generator)
         result = await asyncio.to_thread(
             generator.generate_multiple_references,
@@ -119,7 +146,7 @@ async def generate_reference_images(request: CharacterRequest):
             role=request.role or "主角",
             personality=request.personality or "自信、专业",
             count=count,
-            save_dir=request.save_dir or "./storage/characters",
+            save_dir=safe_save_dir,
         )
 
         return {
@@ -127,6 +154,8 @@ async def generate_reference_images(request: CharacterRequest):
             "prompts": result.get("reference_prompts", prompts),
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"生成参考图失败: {e}")
         raise HTTPException(status_code=500, detail=f"生成失败: {str(e)}")

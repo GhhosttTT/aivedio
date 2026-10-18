@@ -1,15 +1,20 @@
 """
 角色参考图自动生成 API
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict, List
 from loguru import logger
 
 from src.services.character_reference_auto import CharacterReferenceAutoGenerator
+from src.api.dependencies import get_current_user
 
 
-router = APIRouter(prefix="/character-auto", tags=["character-auto"])
+router = APIRouter(
+    prefix="/character-auto",
+    tags=["character-auto"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 class AutoGenerateRequest(BaseModel):
