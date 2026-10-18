@@ -28,6 +28,8 @@ export function ProjectDetail() {
     const [marketEvidence, setMarketEvidence] = useState({comparables: '', differentiation: '', success_metric: '', notes: ''});
     const [marketScore, setMarketScore] = useState<{status: string; score: number; score_max: number; recommendations?: string[]}>({status: 'missing', score: 0, score_max: 5});
     const [assetNotes, setAssetNotes] = useState('');
+    const [stylePrompt, setStylePrompt] = useState('');
+    const [styleNegativePrompt, setStyleNegativePrompt] = useState('');
     const [platformExports, setPlatformExports] = useState<Record<string, {url: string; width: number; height: number; fps: number; technicalStatus?: string}>>({});
     const [options, setOptions] = useState({num_scenes: 16, num_characters: 2, style: '现代都市'});
     const [productionOptions, setProductionOptions] = useState({provider: '', request_mode: 'reference', multi_shot: true, sequence_level_multi_shot: false, native_audio: true, draft: false, model: '', resolution: '1080p', output_format: 'mp4', return_last_frame: true, camera_fixed: false, watermark: false, duration_seconds: null as number | null, add_bgm: false, bgm_path: null as string | null, bgm_volume: 0.3});
@@ -46,6 +48,12 @@ export function ProjectDetail() {
                 projectApi.reviews(projectId),
             ]);
             setProject(data); setTask(latest); setReadiness(ready); setReviewSummary(review); setTopicBrief(current => ({...current, ...(brief.brief || {})}));
+            const visualStyleManifest = (ready.checks as any)?.visual_style?.manifest;
+            if (visualStyleManifest) {
+                setStylePrompt(String(visualStyleManifest.style_prompt || ''));
+                setStyleNegativePrompt(String(visualStyleManifest.negative_prompt || ''));
+                setAssetNotes(String(visualStyleManifest.notes || ''));
+            }
             setMarketScore(signals); setMarketEvidence(current => ({...current, comparables: (signals.evidence?.comparables || []).map((item: any) => [item.title, item.platform, item.genre, item.signal].filter(Boolean).join(' | ')).join('\n'), differentiation: signals.evidence?.differentiation || '', success_metric: signals.evidence?.success_metric || '', notes: signals.evidence?.notes || ''})); setError('');
         } catch(e) { setError(errorText(e)); }
         finally { setLoading(false); }
@@ -90,7 +98,11 @@ export function ProjectDetail() {
             } else if (operation === '冻结空间计划') {
                 await projectApi.freezeSpatialPlan(Number(id), assetNotes);
             } else if (operation === '冻结视觉风格') {
-                await projectApi.freezeVisualStyle(Number(id), {notes: assetNotes});
+                await projectApi.freezeVisualStyle(Number(id), {
+                    style_prompt: stylePrompt,
+                    negative_prompt: styleNegativePrompt,
+                    notes: assetNotes,
+                });
             } else if (operation.startsWith('导出平台:')) {
                 const preset = operation.split(':')[1];
                 const exported = await projectApi.platformExport(Number(id), preset);
@@ -392,6 +404,10 @@ export function ProjectDetail() {
                 </span>
             </div>
             <label>审核备注<input disabled={locked} value={assetNotes} onChange={e => setAssetNotes(e.target.value)} placeholder="可选：记录机位、色调和连续性审核结论" /></label>
+            <div className="wb-fields">
+                <label>统一风格正向约束<textarea disabled={locked} value={stylePrompt} onChange={e => setStylePrompt(e.target.value)} placeholder="如：写实短剧、自然肤质、统一 35mm 电影感、柔和侧光" rows={2}/></label>
+                <label>统一风格负向约束<textarea disabled={locked} value={styleNegativePrompt} onChange={e => setStyleNegativePrompt(e.target.value)} placeholder="如：卡通感、塑料皮肤、过度锐化、随机色调、文字水印" rows={2}/></label>
+            </div>
             <div className="wb-row">
                 <button className="wb-button" disabled={locked || !project.scenes?.length} onClick={() => run('冻结空间计划')}>冻结空间计划</button>
                 <button className="wb-button" disabled={locked || !project.scenes?.length} onClick={() => run('冻结视觉风格')}>冻结视觉风格</button>
