@@ -266,6 +266,7 @@ def compose_final_video_task(
         else:
             _require_passed_scene_audio(scenes)
         _require_scene_subtitles(scenes, video_composer)
+        _require_editing_plan(project, scenes)
         audio_segments = None if preserve_native_audio else _require_audio_video_duration_alignment(scenes, video_composer)
 
         # 收集所有分镜的视频和音频路径
@@ -963,6 +964,40 @@ def _project_final_review_payload(project: Project, scenes: list[Scene]) -> dict
             },
         },
     }
+
+
+def _require_editing_plan(project: Project, scenes: list[Scene]) -> list[dict]:
+    """Validate the editorial contract before any final media is rendered.
+
+    Rhythm reports are evidence for the reviewer, but they also define the
+    boundary policy the compositor is expected to honor. Reject malformed or
+    unsafe plans here so a stale/missing report cannot silently produce a
+    different edit than the one that was reviewed.
+    """
+    report = RhythmAuditService().audit(project, scenes).to_dict()
+    plan = report.get("editing_plan")
+    ordered = sorted(list(scenes or []), key=lambda scene: scene.scene_number)
+    if not isinstance(plan, list) or len(plan) != len(ordered):
+        raise ValueError("Editing plan must cover every scene before final composition")
+    allowed_video = {"none", "hard_cut", "crossfade"}
+    for scene, item in zip(ordered, plan):
+        if not isinstance(item, dict) or item.get("scene_number") != scene.scene_number:
+            raise ValueError(f"Editing plan scene order is stale at scene {scene.scene_number}")
+        transition = item.get("transition")
+        if not isinstance(transition, dict):
+            raise ValueError(f"Editing plan transition is missing at scene {scene.scene_number}")
+        video_transition = transition.get("video")
+        if video_transition not in allowed_video:
+            raise ValueError(f"Unsupported editing transition at scene {scene.scene_number}")
+        try:
+            duration = float(transition.get("duration_seconds"))
+        except (TypeError, ValueError):
+            raise ValueError(f"Editing transition duration is invalid at scene {scene.scene_number}")
+        if not math.isfinite(duration) or duration < 0 or duration > 0.12:
+            raise ValueError(f"Editing transition duration exceeds safe limit at scene {scene.scene_number}")
+        if transition.get("dialogue_protected") is not True:
+            raise ValueError(f"Editing transition does not protect dialogue at scene {scene.scene_number}")
+    return plan
 
 
 def _composition_review_error(report: dict) -> str | None:

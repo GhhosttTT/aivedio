@@ -9,6 +9,7 @@ import pytest
 from src.services.video_composer import VideoComposer, VideoComposerError
 from src.tasks.composition_tasks import (
     _require_audio_video_duration_alignment,
+    _require_editing_plan,
     _subtitle_readability_issue,
     _subtitle_matches_dialogue,
 )
@@ -26,6 +27,38 @@ def test_scene_errors_cannot_cancel_each_other_in_the_total_duration():
     composer._get_duration.side_effect = [4.0, 2.0, 2.0, 4.0]
     with pytest.raises(ValueError, match="1: audio/video duration mismatch.*2: audio/video duration mismatch"):
         _require_audio_video_duration_alignment([scene(1), scene(2)], composer)
+
+
+def test_editing_plan_must_cover_all_scenes_and_protect_dialogue(monkeypatch):
+    monkeypatch.setattr(
+        "src.services.rhythm_audit.VideoDirectorService.plan_scene",
+        lambda _self, current, project_id=None: SimpleNamespace(
+            shot_role="dialogue_reaction", target_duration_seconds=2.0, action_intensity="low"
+        ),
+    )
+    plan = _require_editing_plan(SimpleNamespace(id=1), [scene(1), scene(2)])
+    assert len(plan) == 2
+    assert all(item["transition"]["dialogue_protected"] for item in plan)
+
+
+def test_editing_plan_rejects_unsafe_transition_contract(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.composition_tasks.RhythmAuditService.audit",
+        lambda _self, project, scenes: SimpleNamespace(
+            to_dict=lambda: {
+                "editing_plan": [{
+                    "scene_number": 1,
+                    "transition": {
+                        "video": "crossfade",
+                        "duration_seconds": 0.5,
+                        "dialogue_protected": True,
+                    },
+                }]
+            }
+        ),
+    )
+    with pytest.raises(ValueError, match="safe limit"):
+        _require_editing_plan(SimpleNamespace(id=1), [scene(1)])
 
 
 def test_silent_shot_preserves_its_own_timeline_slot():
