@@ -2091,6 +2091,7 @@ def _video_candidate_passes(candidate: dict) -> bool:
         _video_performance_gate_passes(candidate),
         candidate.get("platform_score"),
         candidate.get("technical_score"),
+        enforce_technical_evidence=settings.GENERATION_REQUIRE_VIDEO_REVIEW,
     ) is None
 
 
@@ -2162,6 +2163,15 @@ def _select_best_video_candidate(
     report["generation_run_evidence"] = build_video_generation_evidence(report)
     if best.get("status") != "passed":
         report["error"] = f"Selected video review status={best.get('status') or 'unknown'}"
+    elif (
+        settings.GENERATION_REQUIRE_VIDEO_REVIEW
+        and isinstance(best.get("technical_metrics"), dict)
+        and best["technical_metrics"].get("status") == "unavailable"
+    ):
+        report["error"] = (
+            "Selected video technical metrics are unavailable: "
+            f"{best['technical_metrics'].get('error') or 'ffprobe/OpenCV could not inspect the video'}"
+        )
     elif not gate_ok:
         report["error"] = f"Selected video gate scores are below threshold: {gate_scores}"
     elif platform_score is not None and platform_score < settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE:

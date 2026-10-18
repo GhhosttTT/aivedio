@@ -1784,6 +1784,10 @@ def test_video_generation_selects_best_reviewed_candidate(project_data, tmp_path
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_CANDIDATES", 2)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.video_candidate_metrics",
+        lambda path: {"status": "available", "path": str(path), "technical_score": 4.5},
+    )
 
     shot_plan = VideoShotPlan(
         shot_role="prop_interaction",
@@ -1872,6 +1876,10 @@ def test_video_selection_prefers_identity_safe_candidate(project_data, tmp_path,
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.video_candidate_metrics",
+        lambda path: {"status": "available", "path": str(path), "technical_score": 4.5},
+    )
 
     final_path, report = _generate_quality_video_candidates(
         FakeSVD(), scene, project.id, str(tmp_path / "scene.mp4"), db,
@@ -1969,6 +1977,10 @@ def test_required_video_review_blocks_low_platform_score(project_data, tmp_path,
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE", 4.1)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.video_candidate_metrics",
+        lambda path: {"status": "available", "path": str(path), "technical_score": 4.5},
+    )
 
     with pytest.raises(ReviewError, match="platform score"):
         _generate_quality_video_candidates(
@@ -2028,6 +2040,10 @@ def test_video_selection_uses_aesthetic_breakdown(project_data, tmp_path, monkey
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.video_candidate_metrics",
+        lambda path: {"status": "available", "path": str(path), "technical_score": 4.5},
+    )
 
     _, report = _generate_quality_video_candidates(
         FakeSVD(), scene, project.id, str(tmp_path / "scene.mp4"), db,
@@ -2114,6 +2130,10 @@ def test_video_selection_prefers_character_distinctiveness(project_data, tmp_pat
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_CHARACTER_DISTINCTIVENESS_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.video_candidate_metrics",
+        lambda path: {"status": "available", "path": str(path), "technical_score": 4.5},
+    )
 
     final_path, report = _generate_quality_video_candidates(
         FakeSVD(), scene, project.id, str(tmp_path / "scene.mp4"), db,
@@ -2178,6 +2198,34 @@ def test_video_selection_rejects_candidate_below_technical_floor(tmp_path, monke
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_TECHNICAL_MIN_SCORE", 3.0)
 
     with pytest.raises(ReviewError, match="technical score"):
+        _select_best_video_candidate(
+            [{
+                "index": 1,
+                "path": str(candidate_path),
+                "status": "passed",
+                "average": 4.8,
+                "platform_score": 4.8,
+                "gate_scores": {
+                    "facial_identity": 5.0,
+                    "identity_consistency": 5.0,
+                    "temporal_consistency": 5.0,
+                },
+            }],
+            str(tmp_path / "final.mp4"),
+            tmp_path / "quality.json",
+        )
+
+
+def test_video_selection_rejects_candidate_with_unavailable_technical_evidence(tmp_path, monkeypatch):
+    candidate_path = tmp_path / "unreadable.mp4"
+    candidate_path.write_bytes(b"not-a-video")
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.video_candidate_metrics",
+        lambda _path: {"status": "unavailable", "technical_score": None, "error": "invalid media"},
+    )
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    with pytest.raises(ReviewError, match="technical metrics are unavailable"):
         _select_best_video_candidate(
             [{
                 "index": 1,
@@ -2303,6 +2351,10 @@ def test_video_refinement_pass_reduces_motion_after_low_score(project_data, tmp_
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 1)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.video_candidate_metrics",
+        lambda path: {"status": "available", "path": str(path), "technical_score": 4.5},
+    )
 
     final_path, report = _generate_quality_video_candidates(
         fake_svd, scene, project.id, str(tmp_path / "scene.mp4"), db,
@@ -2437,6 +2489,10 @@ def test_video_refinement_converts_motion_failure_into_repair_action(project_dat
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.video_candidate_metrics",
+        lambda path: {"status": "available", "path": str(path), "technical_score": 4.5},
+    )
 
     _, report = _generate_quality_video_candidates(
         fake_svd, scene, project.id, str(tmp_path / "scene.mp4"), db,
@@ -2495,6 +2551,10 @@ def test_video_repair_generation_expands_quality_budget(project_data, tmp_path, 
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.video_candidate_metrics",
+        lambda path: {"status": "available", "path": str(path), "technical_score": 4.5},
+    )
 
     _, report = _generate_quality_video_candidates(
         fake_svd, scene, project.id, str(tmp_path / "scene.mp4"), db,
@@ -2812,6 +2872,10 @@ def test_video_candidate_report_records_character_sheet_reference(project_data, 
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.video_candidate_metrics",
+        lambda path: {"status": "available", "path": str(path), "technical_score": 4.5},
+    )
 
     _, report = _generate_quality_video_candidates(
         FakeSVD(), scene, project.id, str(tmp_path / "scene.mp4"), db,
