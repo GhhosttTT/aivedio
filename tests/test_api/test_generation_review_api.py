@@ -322,7 +322,14 @@ def test_delivery_package_endpoint_exports_approved_project(tmp_path, monkeypatc
                     },
                 },
             },
-            "summary": {"status": "ready"},
+            "summary": {
+                "status": "ready",
+                "reports": {
+                    "production_story": "passed",
+                    "generation": "passed",
+                    "seed_dance_baseline_comparison": "passed",
+                },
+            },
         }
 
     monkeypatch.setattr("src.api.routes.projects.get_generation_review", approved_review)

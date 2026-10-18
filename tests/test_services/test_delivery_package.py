@@ -5,7 +5,31 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.services.delivery_package import DeliveryPackageError, _sha256, build_delivery_package, verify_delivery_package
+from src.services.delivery_package import (
+    DeliveryPackageError,
+    _sha256,
+    build_delivery_package as _build_delivery_package,
+    verify_delivery_package,
+)
+
+
+def _ready_summary():
+    return {
+        "status": "ready",
+        "reports": {
+            "production_story": "passed",
+            "generation": "passed",
+            "seed_dance_baseline_comparison": "passed",
+        },
+    }
+
+
+def build_delivery_package(project, project_root, reports, review_summary):
+    # Keep legacy fixture calls concise while exercising the production
+    # function with the same core statuses returned by the API summary.
+    if review_summary == {"status": "ready"}:
+        review_summary = _ready_summary()
+    return _build_delivery_package(project, project_root, reports, review_summary)
 
 
 def _passed_final_composition(final):
@@ -91,6 +115,23 @@ def test_delivery_package_requires_ready_review(tmp_path):
 
     with pytest.raises(DeliveryPackageError, match="not ready"):
         build_delivery_package(project, tmp_path, {}, {"status": "blocked"})
+
+
+def test_delivery_package_requires_core_review_statuses(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+
+    with pytest.raises(DeliveryPackageError, match="core report statuses"):
+        _build_delivery_package(project, tmp_path, {}, {"status": "ready"})
+
+    with pytest.raises(DeliveryPackageError, match="Core delivery reviews"):
+        _build_delivery_package(
+            project,
+            tmp_path,
+            {},
+            {"status": "ready", "reports": {"generation": "passed"}},
+        )
 
 
 def test_delivery_package_requires_final_composition_evidence(tmp_path):

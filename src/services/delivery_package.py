@@ -376,6 +376,19 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
     """Create a signed manifest and ZIP for a quality-approved project."""
     if not isinstance(review_summary, dict) or review_summary.get("status") != "ready":
         raise DeliveryPackageError("Project quality review is not ready for delivery")
+    summary_reports = review_summary.get("reports")
+    required_reports = ("production_story", "generation", "seed_dance_baseline_comparison")
+    if not isinstance(summary_reports, dict):
+        raise DeliveryPackageError(
+            "Delivery review summary is missing its core report statuses"
+        )
+    missing_or_failed = [
+        name for name in required_reports if summary_reports.get(name) != "passed"
+    ]
+    if missing_or_failed:
+        raise DeliveryPackageError(
+            "Core delivery reviews are missing or not passed: " + ", ".join(missing_or_failed)
+        )
 
     root = Path(project_root).resolve()
     final_path = Path(getattr(project, "final_video_path", None) or "").resolve()
