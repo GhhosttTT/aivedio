@@ -877,6 +877,22 @@ def test_composition_review_blocks_final_motion_cadence_instability():
     )
 
 
+def test_composition_review_blocks_final_temporal_visual_resets():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "temporal_jump_ratio": 0.5,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video has repeated temporal visual resets: temporal_jump_ratio=0.500, limit=0.350"
+    )
+
+
 def test_scene_audio_expected_reads_native_provider_intent(tmp_path):
     video_path = tmp_path / "scene.mp4"
     video_path.write_bytes(b"video")

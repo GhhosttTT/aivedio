@@ -1107,6 +1107,16 @@ def _composition_review_error(report: dict) -> str | None:
                 f"motion_jitter_ratio={motion_jitter_ratio:.3f}, "
                 f"limit={settings.GENERATION_VIDEO_MAX_MOTION_JITTER_RATIO:.3f}"
             )
+        temporal_jump_ratio = technical.get("temporal_jump_ratio")
+        if (
+            isinstance(temporal_jump_ratio, (int, float))
+            and temporal_jump_ratio > settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO
+        ):
+            return (
+                "final composed video has repeated temporal visual resets: "
+                f"temporal_jump_ratio={temporal_jump_ratio:.3f}, "
+                f"limit={settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO:.3f}"
+            )
         if report.get("final_audio_expected") is True:
             if not technical.get("audio_present"):
                 return "final composed video is missing the expected audio stream"

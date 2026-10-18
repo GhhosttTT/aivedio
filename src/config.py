@@ -131,6 +131,7 @@ class Settings(BaseSettings):
     # must not hide visible flicker or cadence breaks in a finished shot.
     GENERATION_VIDEO_MAX_BRIGHTNESS_STEP_P95: float = 36.0
     GENERATION_VIDEO_MAX_MOTION_JITTER_RATIO: float = 1.5
+    GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO: float = 0.35
     GENERATION_VIDEO_OUTPUT_FPS: int = 24
     GENERATION_VIDEO_POSTPROCESS: bool = True
     GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK: bool = False
