@@ -17,6 +17,7 @@ from src.services.project_manager import ProjectManager
 from src.utils.logger import logger
 from src.services.generation_review import GenerationReviewService, TextReviewer, require_passed
 from src.utils.storage import storage_manager
+from src.services.topic_brief import TopicBriefService
 import asyncio
 
 
@@ -142,6 +143,7 @@ class ScriptGenerator:
                 style=style,
                 num_chapters=num_chapters
             )
+            prompt += TopicBriefService().prompt_fragment(project_id)
             
             # 推送 Prompt 构建完成
             _send_websocket_message(project_id, {

@@ -28,6 +28,7 @@ from src.services.generation_quality_scorecard import (
 from src.services.production_workflow_profile import ProductionWorkflowProfileService, REQUIRED_IMAGE_PIPELINE_STAGES
 from src.services.quality_loop import build_quality_loop_plan
 from src.services.story_room_quality import StoryRoomQualityService
+from src.services.topic_brief import TopicBriefService
 from src.services.video_director_service import get_video_director_service
 from src.services.video_engine_preflight import preflight_production_video_engine
 from src.utils.storage import storage_manager
@@ -86,6 +87,7 @@ class ProductionReadinessService:
             "script": self._script_check(project, scenes, blockers),
             "story_rhythm": self._story_rhythm_check(project, scenes, warnings),
             "story_room": self._story_room_check(project, scenes, warnings),
+            "topic_brief": self._topic_brief_check(project, warnings),
             "visual_format": self._visual_format_check(blockers),
             "draft_media_fallback": self._draft_media_fallback_check(blockers),
             "image_postprocess": self._image_postprocess_check(blockers),
@@ -121,6 +123,16 @@ class ProductionReadinessService:
             "checks": checks,
             "action_items": action_items,
         }
+
+    def _topic_brief_check(self, project: Project, warnings: list[ReadinessIssue]) -> dict:
+        report = TopicBriefService().check(project.id)
+        if report["status"] != "ready":
+            warnings.append(ReadinessIssue(
+                "topic_brief_incomplete",
+                "Lock target audience, platform, genre, opening hook, and region before commercial production.",
+                severity="warning",
+            ))
+        return report
 
     def _regional_identity_check(self, project, scenes, blockers) -> dict:
         script_scenes = self._script_scene_map(project)

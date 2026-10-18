@@ -72,6 +72,8 @@ export const projectApi = {
     latestTask: (id: number) => apiClient.get<any, ProductionTask | null>(`/projects/${id}/production-task`),
     reviews: (id: number) => apiClient.get<any, GenerationReviewResponse>(`/projects/${id}/generation-review`),
     deliveryPackage: (id: number) => apiClient.post<any, {package_path: string; manifest_path: string}>(`/projects/${id}/delivery-package`),
+    topicBrief: (id: number) => apiClient.get<any, {status: string; missing: string[]; brief: Record<string, string>}>(`/projects/${id}/topic-brief`),
+    updateTopicBrief: (id: number, data: Record<string, string>) => apiClient.put<any, Record<string, string>>(`/projects/${id}/topic-brief`, data),
     qualityLoopPlan: (id: number, maxActions = 5) => apiClient.get<any, QualityLoopPlanResponse>(`/projects/${id}/quality-loop/plan`, {params: {max_actions: maxActions}}),
     runAutoRepairQueue: (id: number, data: {max_actions?: number; dry_run?: boolean}) => apiClient.post<any, RepairQueueAutoRunResponse>(`/projects/${id}/repair-queue/auto`, data),
     productionReadiness: (id: number, includeEnginePreflight = true, providerOverride?: string, modelOverride?: string, requestModeOverride?: string, resolutionOverride?: string, outputFormatOverride?: string, durationOverride?: number | null) => apiClient.get<any, ProductionReadinessReport>(`/projects/${id}/production-readiness`, {params: {include_engine_preflight: includeEnginePreflight, ...(providerOverride ? {provider_override: providerOverride} : {}), ...(modelOverride ? {model_override: modelOverride} : {}), ...(requestModeOverride ? {request_mode_override: requestModeOverride} : {}), ...(resolutionOverride ? {resolution_override: resolutionOverride} : {}), ...(outputFormatOverride ? {output_format_override: outputFormatOverride} : {}), ...(durationOverride !== null && durationOverride !== undefined ? {duration_override: durationOverride} : {})}}),
@@ -486,6 +488,11 @@ export interface ProductionReadinessReport {
             rewrite_actions?: string[];
             signals?: Record<string, any>;
             scene_notes?: Array<{scene_number: number; reason: string; signals?: string[]}>;
+        };
+        topic_brief?: {
+            status: string;
+            missing: string[];
+            brief?: Record<string, string>;
         };
         visual_format?: {
             status: string;

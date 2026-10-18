@@ -22,19 +22,21 @@ export function ProjectDetail() {
     const [readiness, setReadiness] = useState<ProductionReadinessReport | null>(null);
     const [readinessLoading, setReadinessLoading] = useState(false);
     const [deliveryUrl, setDeliveryUrl] = useState('');
+    const [topicBrief, setTopicBrief] = useState({audience: '', platform: '', genre: '', hook_type: '', region: '', policy_notes: ''});
     const [options, setOptions] = useState({num_scenes: 16, num_characters: 2, style: '现代都市'});
     const [productionOptions, setProductionOptions] = useState({provider: '', request_mode: 'reference', multi_shot: true, sequence_level_multi_shot: false, native_audio: true, draft: false, model: '', resolution: '1080p', output_format: 'mp4', return_last_frame: true, camera_fixed: false, watermark: false, duration_seconds: null as number | null});
     const reload = useCallback(async () => {
         try {
             const projectId = Number(id);
-            const [data, latest, ready] = await Promise.all([
+            const [data, latest, ready, brief] = await Promise.all([
                 projectApi.getProject(projectId),
                 projectApi.latestTask(projectId),
                 // The production button and model restrictions must use the same
                 // engine preflight that the backend enforces on task creation.
                 projectApi.productionReadiness(projectId, true, productionOptions.provider || undefined, productionOptions.model || undefined, productionOptions.request_mode || undefined, productionOptions.resolution || undefined, productionOptions.output_format || undefined, productionOptions.duration_seconds),
+                projectApi.topicBrief(projectId),
             ]);
-            setProject(data); setTask(latest); setReadiness(ready); setError('');
+            setProject(data); setTask(latest); setReadiness(ready); setTopicBrief(current => ({...current, ...(brief.brief || {})})); setError('');
         } catch(e) { setError(errorText(e)); }
         finally { setLoading(false); }
     }, [id, productionOptions.provider, productionOptions.model, productionOptions.request_mode, productionOptions.resolution, productionOptions.output_format, productionOptions.duration_seconds]);
@@ -62,6 +64,8 @@ export function ProjectDetail() {
             } else if (operation === '导出交付包') {
                 const exported = await projectApi.deliveryPackage(Number(id));
                 setDeliveryUrl(await projectApi.mediaUrl(Number(id), exported.package_path, true));
+            } else if (operation === '保存选题定位') {
+                await projectApi.updateTopicBrief(Number(id), topicBrief);
             } else {
                 await projectApi.startProduction(Number(id), productionOptions);
                 setTab('production');
@@ -258,6 +262,18 @@ export function ProjectDetail() {
         {busy && <p role="status" className="wb-alert"><RefreshCw size={15} className="inline animate-spin"/> {busy}进行中</p>}
         <VideoEngineStatus/>
         <ProductionReadinessPanel report={readiness} loading={readinessLoading} onRefresh={refreshReadiness}/>
+        <section className="wb-item" aria-label="选题定位">
+            <div className="wb-row wb-between"><strong>选题定位锁</strong><span className="wb-muted">让剧本、镜头和审核共享同一商业目标</span></div>
+            <div className="wb-fields">
+                <label>目标受众<input disabled={locked} value={topicBrief.audience} onChange={e => setTopicBrief({...topicBrief, audience: e.target.value})} placeholder="如：18–35 岁女性"/></label>
+                <label>发布平台<input disabled={locked} value={topicBrief.platform} onChange={e => setTopicBrief({...topicBrief, platform: e.target.value})} placeholder="如：抖音竖屏"/></label>
+                <label>类型<input disabled={locked} value={topicBrief.genre} onChange={e => setTopicBrief({...topicBrief, genre: e.target.value})} placeholder="如：都市悬疑"/></label>
+                <label>开场钩子<input disabled={locked} value={topicBrief.hook_type} onChange={e => setTopicBrief({...topicBrief, hook_type: e.target.value})} placeholder="如：秘密曝光"/></label>
+                <label>地区/语言<input disabled={locked} value={topicBrief.region} onChange={e => setTopicBrief({...topicBrief, region: e.target.value})} placeholder="如：中国大陆 / 中文"/></label>
+                <label>合规/品牌约束<input disabled={locked} value={topicBrief.policy_notes} onChange={e => setTopicBrief({...topicBrief, policy_notes: e.target.value})} placeholder="可选"/></label>
+            </div>
+            <button className="wb-button" disabled={locked || Object.entries(topicBrief).some(([key, value]) => key !== 'policy_notes' && !value.trim())} onClick={() => run('保存选题定位')}>保存选题定位</button>
+        </section>
         {readiness?.checks.story_room?.missing?.length && (
             <section className="wb-item" aria-label="故事房修复">
                 <div className="wb-row wb-between">

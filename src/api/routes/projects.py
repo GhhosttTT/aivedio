@@ -7,7 +7,7 @@
 from fastapi import APIRouter, HTTPException, status, Query, Depends, UploadFile, File
 from typing import Optional
 from pathlib import Path
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 import shutil
 import json
@@ -47,6 +47,7 @@ from src.services.generation_quality_scorecard import build_generation_quality_s
 from src.services.generation_review import require_passed
 from src.services.story_room_quality import StoryRoomQualityService
 from src.services.delivery_package import DeliveryPackageError, build_delivery_package
+from src.services.topic_brief import TopicBriefService
 from src.database.session import get_db_session
 from src.database.models import Character, Project, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
@@ -95,6 +96,15 @@ class ProductionOptions(BaseModel):
     camera_fixed: Optional[bool] = None
     watermark: Optional[bool] = None
     duration_seconds: Optional[float] = None
+
+
+class TopicBriefRequest(BaseModel):
+    audience: str = Field(..., min_length=2, max_length=240)
+    platform: str = Field(..., min_length=2, max_length=240)
+    genre: str = Field(..., min_length=2, max_length=240)
+    hook_type: str = Field(..., min_length=2, max_length=240)
+    region: str = Field(..., min_length=2, max_length=240)
+    policy_notes: str = Field("", max_length=240)
 
 
 def _normalized_production_options(options: ProductionOptions) -> dict:
@@ -474,6 +484,32 @@ async def create_delivery_package(
         )
     except DeliveryPackageError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/{project_id}/topic-brief")
+def get_topic_brief(project_id: int, current_user=Depends(get_current_user), db_session: Session = Depends(get_db_session)):
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return TopicBriefService().check(project_id)
+
+
+@router.put("/{project_id}/topic-brief")
+def update_topic_brief(
+    project_id: int,
+    request: TopicBriefRequest,
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if project.status == ProjectStatus.IN_PRODUCTION:
+        raise HTTPException(status_code=409, detail="项目正在制作，不能修改选题定位")
+    try:
+        return TopicBriefService().save(project_id, request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/{project_id}/production-readiness")
