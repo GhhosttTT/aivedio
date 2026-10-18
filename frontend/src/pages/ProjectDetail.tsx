@@ -25,6 +25,8 @@ export function ProjectDetail() {
     const [deliveryUrl, setDeliveryUrl] = useState('');
     const [deliveryFiles, setDeliveryFiles] = useState<string[]>([]);
     const [topicBrief, setTopicBrief] = useState({audience: '', platform: '', genre: '', hook_type: '', region: '', policy_notes: ''});
+    const [marketEvidence, setMarketEvidence] = useState({comparables: '', differentiation: '', success_metric: '', notes: ''});
+    const [marketScore, setMarketScore] = useState<{status: string; score: number; score_max: number; recommendations?: string[]}>({status: 'missing', score: 0, score_max: 5});
     const [assetNotes, setAssetNotes] = useState('');
     const [platformExports, setPlatformExports] = useState<Record<string, {url: string; width: number; height: number; fps: number; technicalStatus?: string}>>({});
     const [options, setOptions] = useState({num_scenes: 16, num_characters: 2, style: '现代都市'});
@@ -33,16 +35,18 @@ export function ProjectDetail() {
     const reload = useCallback(async () => {
         try {
             const projectId = Number(id);
-            const [data, latest, ready, brief, review] = await Promise.all([
+            const [data, latest, ready, brief, signals, review] = await Promise.all([
                 projectApi.getProject(projectId),
                 projectApi.latestTask(projectId),
                 // The production button and model restrictions must use the same
                 // engine preflight that the backend enforces on task creation.
                 projectApi.productionReadiness(projectId, true, productionOptions.provider || undefined, productionOptions.model || undefined, productionOptions.request_mode || undefined, productionOptions.resolution || undefined, productionOptions.output_format || undefined, productionOptions.duration_seconds),
                 projectApi.topicBrief(projectId),
+                projectApi.marketSignals(projectId),
                 projectApi.reviews(projectId),
             ]);
-            setProject(data); setTask(latest); setReadiness(ready); setReviewSummary(review); setTopicBrief(current => ({...current, ...(brief.brief || {})})); setError('');
+            setProject(data); setTask(latest); setReadiness(ready); setReviewSummary(review); setTopicBrief(current => ({...current, ...(brief.brief || {})}));
+            setMarketScore(signals); setMarketEvidence(current => ({...current, comparables: (signals.evidence?.comparables || []).map((item: any) => item.title || '').join('\n'), differentiation: signals.evidence?.differentiation || '', success_metric: signals.evidence?.success_metric || '', notes: signals.evidence?.notes || ''})); setError('');
         } catch(e) { setError(errorText(e)); }
         finally { setLoading(false); }
     }, [id, productionOptions.provider, productionOptions.model, productionOptions.request_mode, productionOptions.resolution, productionOptions.output_format, productionOptions.duration_seconds]);
@@ -75,6 +79,9 @@ export function ProjectDetail() {
                 setDeliveryFiles((exported.files || []).map(file => file.path));
             } else if (operation === '保存选题定位') {
                 await projectApi.updateTopicBrief(Number(id), topicBrief);
+            } else if (operation === '保存市场证据') {
+                const comparables = marketEvidence.comparables.split('\n').map(title => title.trim()).filter(Boolean);
+                await projectApi.updateMarketSignals(Number(id), {comparables, differentiation: marketEvidence.differentiation, success_metric: marketEvidence.success_metric, notes: marketEvidence.notes});
             } else if (operation === '冻结空间计划') {
                 await projectApi.freezeSpatialPlan(Number(id), assetNotes);
             } else if (operation === '冻结视觉风格') {
@@ -375,6 +382,18 @@ export function ProjectDetail() {
                 <label>合规/品牌约束<input disabled={locked} value={topicBrief.policy_notes} onChange={e => setTopicBrief({...topicBrief, policy_notes: e.target.value})} placeholder="可选"/></label>
             </div>
             <button className="wb-button" disabled={locked || Object.entries(topicBrief).some(([key, value]) => key !== 'policy_notes' && !value.trim())} onClick={() => run('保存选题定位')}>保存选题定位</button>
+        </section>
+        <section className="wb-item" aria-label="市场证据包">
+            <div className="wb-row wb-between"><strong>市场证据包</strong><span className={`wb-badge ${marketScore.status === 'passed' ? 'success' : ''}`}>评分 {marketScore.score}/{marketScore.score_max} · {marketScore.status}</span></div>
+            <p className="wb-muted">记录可比作品和差异化依据，帮助脚本与视觉生成保持商业定位；这不是爆款预测。</p>
+            <div className="wb-fields">
+                <label>可比作品（每行一个）<textarea disabled={locked} value={marketEvidence.comparables} onChange={e => setMarketEvidence({...marketEvidence, comparables: e.target.value})} placeholder="如：对照剧 A\n对照剧 B" rows={3}/></label>
+                <label>差异化定位<textarea disabled={locked} value={marketEvidence.differentiation} onChange={e => setMarketEvidence({...marketEvidence, differentiation: e.target.value})} placeholder="首分钟证据钩子、角色视角或情绪差异" rows={3}/></label>
+                <label>成功指标<input disabled={locked} value={marketEvidence.success_metric} onChange={e => setMarketEvidence({...marketEvidence, success_metric: e.target.value})} placeholder="如：前五集完播率达到 35%"/></label>
+                <label>复盘备注<input disabled={locked} value={marketEvidence.notes} onChange={e => setMarketEvidence({...marketEvidence, notes: e.target.value})} placeholder="可选：来源、时间窗口、样本量"/></label>
+            </div>
+            {marketScore.recommendations?.length ? <div className="wb-muted">下一步：{marketScore.recommendations.slice(0, 2).join('；')}</div> : null}
+            <button className="wb-button" disabled={locked || !marketEvidence.comparables.trim()} onClick={() => run('保存市场证据')}>保存市场证据</button>
         </section>
         {project.final_video_path && <section className="wb-item" aria-label="平台版本导出">
             <div className="wb-row wb-between"><strong>平台版本导出</strong><span className="wb-muted">固定尺寸、帧率、H.264/AAC 与响度规范</span></div>
