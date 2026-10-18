@@ -977,6 +977,30 @@ def test_episode_style_gate_blocks_non_passed_image_quality_report(tmp_path):
     assert report["low"]["scene_1_missing_style_report"]["score"] == 0.0
 
 
+def test_episode_style_gate_requires_all_style_features(tmp_path):
+    image = tmp_path / "scene_001.png"
+    image.write_bytes(b"current image")
+    image.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "passed",
+        "image_sha256": composition_tasks.file_hash(image),
+        "best_candidate": {
+            "status": "passed",
+            "platform_aesthetic_gate": {
+                "status": "passed",
+                "scores": {
+                    "style_consistency": {"score": 4.5, "evidence": "style stable"},
+                },
+            },
+        },
+    }), encoding="utf-8")
+    scene = Mock(scene_number=1, image_path=str(image))
+
+    report = composition_tasks._episode_style_consistency_gate([scene])
+
+    assert report["status"] == "needs_review"
+    assert report["low"]["scene_1_missing_color_grade"]["dimension"] == "color_grade"
+
+
 def test_final_composed_video_review_blocks_platform_reference_gap(tmp_path, monkeypatch):
     final_video = tmp_path / "final.mp4"
     final_video.write_bytes(b"final video")

@@ -1172,11 +1172,16 @@ def _episode_style_consistency_gate(scenes: list[Scene]) -> dict | None:
                     "score": float(item["score"]),
                     "evidence": str(item.get("evidence") or "feature reviewed"),
                 }
-        if feature_scores:
+        missing_features = [feature for feature in style_features if feature not in feature_scores]
+        if feature_scores or missing_features:
             scene_scores.append({
                 "scene_number": getattr(scene, "scene_number", None),
                 "features": feature_scores,
-                "average": round(sum(item["score"] for item in feature_scores.values()) / len(feature_scores), 2),
+                "missing_features": missing_features,
+                "average": round(
+                    sum(item["score"] for item in feature_scores.values()) / max(len(feature_scores), 1),
+                    2,
+                ),
             })
 
     if not scene_scores and not missing_reports:
@@ -1196,6 +1201,13 @@ def _episode_style_consistency_gate(scenes: list[Scene]) -> dict | None:
                     "scene_number": scene_number,
                     "dimension": feature,
                 }
+        for feature in item.get("missing_features", []):
+            low[f"scene_{scene_number}_missing_{feature}"] = {
+                "score": 0.0,
+                "evidence": f"scene {scene_number} image style evidence is missing: {feature}",
+                "scene_number": scene_number,
+                "dimension": feature,
+            }
     for scene_number in missing_reports:
         report_status = None
         if scene_number is not None:
