@@ -181,6 +181,34 @@ def _validate_temporal_quality(metrics: dict) -> None:
         )
 
 
+def _write_live_evidence(output_path: str, request: VideoGenerationRequest, payload: dict, result, validation: dict) -> str:
+    """Persist a non-secret record that can travel with a live smoke artifact."""
+    evidence_path = Path(output_path).with_suffix(".generation.json")
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence = {
+        "schema_version": 1,
+        "kind": "seedance_live_validation",
+        "status": "passed",
+        "output_path": str(result.output_path),
+        "request": {
+            "mode": request.request_mode,
+            "model": request.model,
+            "resolution": request.resolution,
+            "output_format": request.output_format,
+            "duration_seconds": request.duration_seconds,
+            "aspect_ratio": request.aspect_ratio,
+            "generate_audio": request.generate_audio,
+            "draft": request.draft,
+            "reference_image_count": len(request.reference_images or []),
+            "reference_video_count": len(request.reference_videos or []),
+            "reference_audio_count": len(request.reference_audios or []),
+        },
+        "payload_summary": _payload_summary(payload),
+        "provider_metadata": getattr(result, "metadata", {}) or {},
+        "artifact_validation": validation,
+    }
+    evidence_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
+    return str(evidence_path)
 def _run(args: argparse.Namespace) -> int:
     try:
         _validate_files(args.reference_image, "image")
@@ -245,6 +273,9 @@ def _run(args: argparse.Namespace) -> int:
             )
         else:
             output["artifact_validation"] = {"status": "skipped"}
+        output["evidence_path"] = _write_live_evidence(
+            result.output_path, request, payload, result, output["artifact_validation"]
+        )
         print(json.dumps(output, ensure_ascii=False))
         return 0
     except (GenerationProviderError, OSError, ValueError) as exc:

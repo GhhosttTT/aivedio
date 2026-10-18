@@ -88,6 +88,9 @@ def _collect_files(project, project_root: Path, reports: dict) -> list[tuple[Pat
         (".srt", "subtitles/final.srt"),
         (".ass", "subtitles/final.ass"),
         (".composition_review.json", "reviews/final_composition.json"),
+        (".generation.json", "reviews/final_generation.json"),
+        (".provider.json", "reviews/final_provider.json"),
+        (".quality.json", "reviews/final_quality.json"),
     ):
         sidecar = final_path.with_suffix(suffix)
         if sidecar.is_file():

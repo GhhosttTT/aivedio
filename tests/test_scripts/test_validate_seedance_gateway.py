@@ -102,6 +102,11 @@ def test_seedance_gateway_live_validates_downloaded_artifact(capsys, tmp_path, m
     assert main(["--live", "--output", str(output_path)]) == 0
     report = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert report["artifact_validation"]["width"] == 1080
+    evidence_path = output_path.with_suffix(".generation.json")
+    assert report["evidence_path"] == str(evidence_path)
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    assert evidence["kind"] == "seedance_live_validation"
+    assert evidence["artifact_validation"]["width"] == 1080
 
 
 def test_seedance_gateway_live_rejects_unreadable_download(capsys, monkeypatch):
