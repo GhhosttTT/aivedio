@@ -134,6 +134,8 @@ def _visible_character_payload(scene: Scene, project_id: int, db) -> list[dict]:
             "name": character.name,
             "appearance": character.appearance or "",
         }
+        if (character.personality or "").strip():
+            item["personality"] = character.personality.strip()
         if identity_spec:
             item["identity_spec"] = identity_spec
         turnaround = _turnaround_control_for_character(character, project_id, view)

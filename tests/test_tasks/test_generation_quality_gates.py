@@ -1110,13 +1110,14 @@ def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_dat
     plan = get_video_director_service().plan_scene(
         scene,
         project.id,
-        [{"name": "Alice", "appearance": "woman, short black hair, green jacket"}],
+        [{"name": "Alice", "appearance": "woman, short black hair, green jacket", "personality": "restrained but decisive"}],
     )
 
     assert plan.shot_role in {"action", "prop_interaction"}
     assert plan.target_duration_seconds >= 3.6
     assert plan.num_frames >= 25
     assert "Visible character identity anchors" in plan.director_prompt
+    assert "performance personality: restrained but decisive" in plan.director_prompt
     assert "Spatial continuity contract" in plan.director_prompt
     assert "Shot aesthetic profile prop_interaction" in plan.director_prompt
     assert "Subject and setting:" in plan.director_prompt

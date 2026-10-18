@@ -566,6 +566,10 @@ class VideoDirectorService:
             return ""
         anchors = "; ".join(
             f"{item.get('name', 'character')}: {item.get('appearance', '')}"
+            + (
+                f"; performance personality: {item.get('personality')}"
+                if str(item.get('personality') or '').strip() else ''
+            )
             for item in visible_characters
         )
         turnaround_items = []
