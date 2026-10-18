@@ -88,6 +88,9 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path, monkeypat
                 "spatial_scene_contract_hashes": ["scene-hash"],
                 "spatial_project_signatures": ["project-hash"],
                 "providers": ["seedance_api"],
+                "video_sha256s": ["a" * 64],
+                "selected_video_sha256": "a" * 64,
+                "accepted_video_sha256": "b" * 64,
             },
         },
         "final_composition": _passed_final_composition(final),
@@ -113,6 +116,7 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path, monkeypat
     assert metadata["market_signals"]["comparables"][0]["title"] == "对照剧 A"
     assert metadata["generation_evidence"][0]["spatial_scene_contract_hashes"] == ["scene-hash"]
     assert manifest["generation_evidence"][0]["request_contract_hashes"] == ["request-hash"]
+    assert manifest["generation_evidence"][0]["accepted_video_sha256"] == "b" * 64
     assert "metadata/platform_covers.json" in names
 
 
