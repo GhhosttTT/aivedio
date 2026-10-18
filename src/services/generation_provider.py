@@ -971,7 +971,7 @@ class ApiVideoProvider:
             if key in metrics
         }
         self.last_result_metadata["temporal_quality_status"] = "available"
-        if require_audio:
+        if require_audio or metrics.get("audio_present") is True:
             audio_signal_status = str(metrics.get("audio_signal_status") or "").strip().lower()
             if audio_signal_status != "usable":
                 raise ValueError(
