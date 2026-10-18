@@ -2046,6 +2046,44 @@ DEFAULT_SEEDANCE_PRODUCTION_CONTRACT = (
 )
 
 
+def _spatial_prompt_directive(shot_plan: dict | None) -> str:
+    """Render spatial controls into a provider-neutral prompt fallback.
+
+    Custom workflows can consume the JSON placeholders directly. Prompting is
+    still useful for SVD and gateways that ignore structured metadata, so the
+    approved camera/blocking contract is never silently dropped.
+    """
+    plan = shot_plan.get("spatial_plan") if isinstance(shot_plan, dict) else None
+    if not isinstance(plan, dict):
+        return ""
+    fields = (
+        ("shot scale", "shot_scale"),
+        ("camera angle", "camera_angle"),
+        ("camera axis", "camera_axis"),
+        ("camera movement", "camera_movement"),
+        ("character positions", "character_positions"),
+        ("prop focus", "prop_focus"),
+        ("continuity", "continuity_prompt"),
+    )
+    parts = []
+    for label, key in fields:
+        value = plan.get(key)
+        if isinstance(value, dict):
+            value = ", ".join(f"{name}: {detail}" for name, detail in value.items())
+        value = str(value or "").strip()
+        if value:
+            parts.append(f"{label}={value}")
+    controls = plan.get("control_references") if isinstance(plan.get("control_references"), dict) else {}
+    control_parts = [
+        str(value).strip()
+        for key, value in controls.items()
+        if key.endswith("_prompt") and str(value).strip()
+    ]
+    if control_parts:
+        parts.append("control references=" + "; ".join(control_parts))
+    return "Spatial blocking contract: " + "; ".join(parts) if parts else ""
+
+
 def _seedance_prompt(request: VideoGenerationRequest, native_ark: bool | None = None) -> str:
     """Bind internal director metadata to the provider's documented prompt field."""
     prompt = str(request.prompt or "").strip()
@@ -2076,6 +2114,9 @@ def _seedance_prompt(request: VideoGenerationRequest, native_ark: bool | None = 
             structured_camera.append(f"{label}={value}")
     if structured_camera:
         prompt = f"{prompt}. Structured shot language: {'; '.join(structured_camera)}."
+    spatial_directive = _spatial_prompt_directive(plan)
+    if spatial_directive:
+        prompt = f"{prompt}. {spatial_directive}."
     if DEFAULT_SEEDANCE_PRODUCTION_CONTRACT not in prompt:
         prompt = f"{prompt}. Production motion contract: {DEFAULT_SEEDANCE_PRODUCTION_CONTRACT}."
     if str(request.aspect_ratio or "").strip() == "9:16":

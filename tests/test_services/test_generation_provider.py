@@ -2775,6 +2775,30 @@ def test_seedance_prompt_binds_named_character_references_to_image_indexes():
     assert "Never swap these references" in prompt
 
 
+def test_seedance_prompt_includes_frozen_spatial_blocking_contract():
+    prompt = _seedance_prompt(VideoGenerationRequest(
+        prompt="Alice hands over a letter",
+        output_path="scene.mp4",
+        shot_plan={
+            "spatial_plan": {
+                "shot_scale": "medium two-shot",
+                "camera_angle": "over shoulder",
+                "camera_axis": "screen left to right",
+                "character_positions": {"Alice": "frame left", "Bob": "frame right"},
+                "control_references": {
+                    "pose_reference_prompt": "hands remain visible",
+                    "depth_reference_prompt": "keep the table in the foreground",
+                },
+            },
+        },
+    ))
+
+    assert "Spatial blocking contract" in prompt
+    assert "camera angle=over shoulder" in prompt
+    assert "Alice: frame left" in prompt
+    assert "hands remain visible" in prompt
+
+
 def test_seedance_native_ark_makes_edit_intent_explicit(monkeypatch):
     monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
     monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-5-260628")

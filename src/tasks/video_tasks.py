@@ -20,6 +20,7 @@ from src.services.generation_provider import (
     GenerationCancelledError, get_generation_provider, release_generation_resources,
     _seedance_api_format, _seedance_model_is_10, _seedance_model_is_25,
     _seedance_model_supports_multimodal_references,
+    _spatial_prompt_directive,
 )
 from src.services.image_workflow_graph import stage_seed
 from src.services.comfyui_service import ComfyUIError, ComfyUIWaitTimeout
@@ -700,6 +701,9 @@ class _ComfyVideoGenerator:
         )
         if self.shot_plan:
             prompt = _append_end_frame_target(prompt, self.shot_plan.end_frame_prompt)
+            spatial_directive = _spatial_prompt_directive(self.shot_plan.as_dict())
+            if spatial_directive:
+                prompt = _append_prompt_directive(prompt, spatial_directive)
         negative_prompt = (
             self.shot_plan.negative_prompt
             if self.shot_plan
