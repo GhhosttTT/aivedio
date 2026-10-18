@@ -2260,6 +2260,7 @@ def generate_video_task(
                         "step": f"provider_{state}",
                         "provider_task_id": metadata.get("provider_task_id"),
                         "provider_status": metadata.get("provider_status") or metadata.get("provider_task_status"),
+                        "provider_error": metadata.get("provider_error"),
                     },
                 )
             provider_options["PROGRESS_CALLBACK"] = report_provider_progress
@@ -2448,6 +2449,7 @@ def generate_sequence_video_task(
                     "step": f"provider_{state}",
                     "provider_task_id": metadata.get("provider_task_id"),
                     "provider_status": metadata.get("provider_status") or metadata.get("provider_task_status"),
+                    "provider_error": metadata.get("provider_error"),
                 },
             )
         provider_kwargs["PROVIDER_PROGRESS_CALLBACK"] = report_sequence_provider_progress

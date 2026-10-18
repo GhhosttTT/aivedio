@@ -34,6 +34,7 @@ def test_get_task_status_success(client):
             "provider_state": "PROGRESS",
             "provider_task_id": "ark-task-42",
             "provider_status": "running",
+            "provider_error": "",
             "production_options": {
                 "provider": "seedance_api",
                 "model": "doubao-seedance-2-5-260628",

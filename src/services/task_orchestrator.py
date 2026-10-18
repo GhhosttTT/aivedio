@@ -651,6 +651,8 @@ class TaskOrchestrator:
                     result["provider_task_id"] = str(info["provider_task_id"])
                 if info.get("provider_status"):
                     result["provider_status"] = str(info["provider_status"])
+                if info.get("provider_error"):
+                    result["provider_error"] = str(info["provider_error"])
         except Exception as exc:
             logger.debug("Could not read live provider progress for {}: {}", celery_task_id, exc)
         return result

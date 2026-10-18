@@ -421,6 +421,7 @@ class TestGetTaskStatus:
             "step": "provider_failed",
             "provider_task_id": "ark-failed-42",
             "provider_status": "expired",
+            "provider_error": "task retention window exceeded",
         }
         mock_async_result.return_value = mock_result
 
@@ -429,6 +430,7 @@ class TestGetTaskStatus:
         assert status["provider_state"] == "FAILURE"
         assert status["provider_task_id"] == "ark-failed-42"
         assert status["provider_status"] == "expired"
+        assert status["provider_error"] == "task retention window exceeded"
         assert "provider_progress" not in status
 
 

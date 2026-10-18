@@ -420,6 +420,7 @@ class TaskStatusResponse(BaseModel):
     provider_state: Optional[str] = None
     provider_task_id: Optional[str] = None
     provider_status: Optional[str] = None
+    provider_error: Optional[str] = None
     production_options: Optional[dict] = None
 
 
