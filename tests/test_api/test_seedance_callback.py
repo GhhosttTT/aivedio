@@ -92,3 +92,25 @@ def test_seedance_callback_does_not_replace_terminal_state_with_another(tmp_path
     assert first.status_code == second.status_code == 200
     callback = pending.with_name("scene.provider.callback.json")
     assert json.loads(callback.read_text(encoding="utf-8"))["status"] == "succeeded"
+
+
+def test_seedance_callback_accepts_provider_completed_alias(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    monkeypatch.setenv("SEEDANCE_CALLBACK_SECRET", "callback-secret")
+    pending = tmp_path / "projects" / "7" / "videos" / "scene.provider.pending.json"
+    pending.parent.mkdir(parents=True)
+    pending.write_text(json.dumps({
+        "provider": "seedance_api",
+        "provider_task_id": "completed-task",
+    }), encoding="utf-8")
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/webhooks/seedance",
+        headers={"X-Seedance-Callback-Secret": "callback-secret"},
+        json={"id": "completed-task", "status": "completed"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert pending.with_name("scene.provider.callback.json").is_file()

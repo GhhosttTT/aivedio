@@ -17,7 +17,10 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
-_TERMINAL_STATES = {"succeeded", "failed", "expired"}
+_TERMINAL_STATES = {
+    "succeeded", "success", "completed", "complete", "done",
+    "failed", "error", "expired", "cancelled", "canceled",
+}
 _KNOWN_STATES = {"queued", "running", *_TERMINAL_STATES}
 
 
