@@ -216,3 +216,17 @@ def test_seedance_gateway_rejects_black_frame_run():
         assert "black-frame" in str(exc)
     else:
         raise AssertionError("black-frame run should be rejected")
+
+
+def test_seedance_gateway_rejects_insufficient_temporal_evidence():
+    try:
+        _validate_temporal_quality({
+            "status": "available",
+            "sampled_frames": 3,
+            "temporal_sample_evidence": "insufficient",
+            "temporal_sample_minimum": 4,
+        })
+    except GenerationProviderError as exc:
+        assert "insufficient temporal evidence" in str(exc)
+    else:
+        raise AssertionError("insufficient temporal evidence should be rejected")

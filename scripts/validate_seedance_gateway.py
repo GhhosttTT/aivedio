@@ -22,7 +22,7 @@ from src.services.generation_provider import (
     VideoGenerationRequest,
 )
 from src.config import settings
-from src.services.video_quality_metrics import video_candidate_metrics
+from src.services.video_quality_metrics import temporal_sample_evidence_error, video_candidate_metrics
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -149,6 +149,9 @@ def _validate_live_output(
 
 def _validate_temporal_quality(metrics: dict) -> None:
     """Reject provider artifacts that are technically playable but unsafe to publish."""
+    temporal_error = temporal_sample_evidence_error(metrics, context="Seedance result")
+    if temporal_error:
+        raise GenerationProviderError(temporal_error)
     static_seconds = float(metrics.get("max_static_run_seconds") or 0.0)
     motion_energy = float(metrics.get("motion_energy") or 0.0)
     if (
