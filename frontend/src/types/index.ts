@@ -86,18 +86,42 @@ export interface TaskStatus {
     status: string;
     progress: number;
     current_step: string;
-    result?: any;
+    result?: {output_path?: string};
     error?: string;
+    provider_progress?: number;
+    provider_stage?: string;
+    provider_state?: string;
+    provider_task_id?: string;
+    provider_status?: string;
+    provider_error?: string;
+    production_options?: Record<string, unknown>;
 }
 
 export interface ProductionTask {
-    task_id: string;
+    task_id: number;
+    celery_task_id: string;
     project_id: number;
     status: string;
     progress: number;
-    current_step: string;
+    current_step: number;
     total_steps: number;
-    created_at: string;
-    updated_at: string;
     error_message?: string;
+    result?: {output_path?: string};
+    live_step?: {stage: string; scene_id?: number};
+    provider_progress?: number;
+    provider_stage?: string;
+    provider_state?: string;
+    provider_task_id?: string;
+    provider_status?: string;
+    provider_error?: string;
+    production_options?: {
+        provider?: string;
+        request_mode?: string;
+        model?: string;
+        resolution?: string;
+        output_format?: string;
+        duration_seconds?: number;
+        native_audio?: boolean;
+        multi_shot?: boolean;
+    };
 }
