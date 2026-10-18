@@ -49,6 +49,32 @@ def test_composition_requires_passed_video_quality_report(tmp_path):
         composition_tasks._require_passed_scene_videos([scene])
 
 
+def test_composition_candidate_publishes_video_and_review_together(tmp_path):
+    candidate = tmp_path / ".final.candidate-7.mp4"
+    final = tmp_path / "final.mp4"
+    candidate.write_bytes(b"new-final")
+    final.write_bytes(b"old-final")
+    candidate.with_suffix(".composition_review.json").write_text(json.dumps({
+        "path": str(candidate.with_suffix(".composition_review.json")),
+        "status": "passed",
+    }), encoding="utf-8")
+    final.with_suffix(".composition_review.json").write_text(json.dumps({
+        "status": "old",
+    }), encoding="utf-8")
+
+    review = composition_tasks._publish_composition_candidate(
+        candidate,
+        final,
+        {"path": str(candidate.with_suffix(".composition_review.json")), "status": "passed"},
+    )
+
+    assert final.read_bytes() == b"new-final"
+    assert not candidate.exists()
+    report = json.loads(final.with_suffix(".composition_review.json").read_text(encoding="utf-8"))
+    assert report["path"] == str(final.with_suffix(".composition_review.json"))
+    assert review["path"] == str(final.with_suffix(".composition_review.json"))
+
+
 def test_composition_accepts_passed_video_quality_report(tmp_path):
     video = tmp_path / "scene_001.mp4"
     video.write_bytes(b"fake video")

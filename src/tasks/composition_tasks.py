@@ -8,6 +8,7 @@ import math
 import re
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 from src.tasks.celery_app import celery_app
 from src.database.database import get_db
 from src.database.models import Project, ProjectStatus, Scene, Task as TaskModel, TaskStatus
@@ -71,6 +72,55 @@ def _scene_audio_expected(scene: Scene) -> bool:
     return isinstance(metadata, dict) and metadata.get("native_audio_requested") is True
 
 
+def _publish_composition_candidate(
+    candidate_path: str | Path,
+    final_path: str | Path,
+    review: dict | None = None,
+) -> dict | None:
+    """Publish a reviewed composition and its report as one filesystem transaction."""
+    candidate = Path(candidate_path)
+    final = Path(final_path)
+    if not candidate.is_file() or candidate.stat().st_size <= 0:
+        raise ValueError(f"Composition candidate is missing or empty: {candidate}")
+
+    pairs: list[tuple[Path, Path]] = [(candidate, final)]
+    published_review = dict(review) if isinstance(review, dict) else None
+    if published_review is not None:
+        source_report = candidate.with_suffix(".composition_review.json")
+        destination_report = final.with_suffix(".composition_review.json")
+        if source_report.is_file():
+            report_payload = json.loads(source_report.read_text(encoding="utf-8"))
+            if isinstance(report_payload, dict):
+                report_payload["path"] = str(destination_report)
+                write_report(source_report, report_payload)
+            pairs.append((source_report, destination_report))
+            published_review["path"] = str(destination_report)
+
+    backups: list[tuple[Path, Path]] = []
+    promoted: list[Path] = []
+    try:
+        for source, destination in pairs:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if destination.exists():
+                backup = destination.with_name(f".{destination.name}.{uuid4().hex}.bak")
+                destination.replace(backup)
+                backups.append((backup, destination))
+            source.replace(destination)
+            promoted.append(destination)
+    except Exception as exc:
+        for destination in reversed(promoted):
+            destination.unlink(missing_ok=True)
+        for backup, destination in reversed(backups):
+            if backup.exists():
+                backup.replace(destination)
+        raise RuntimeError(f"Could not publish the composed video: {exc}") from exc
+    finally:
+        for backup, destination in backups:
+            if backup.exists() and destination.exists():
+                backup.unlink(missing_ok=True)
+    return published_review
+
+
 @celery_app.task(bind=True, name="compose_final_video")
 def compose_final_video_task(
     self,
@@ -99,6 +149,7 @@ def compose_final_video_task(
     # 更新任务状态
     self.update_state(state="PROGRESS", meta={"current": 0, "total": 100, "step": "视频合成"})
     db = None
+    composition_candidate_path: Path | None = None
     try:
         # 获取数据库会话
         db = next(get_db())
@@ -154,6 +205,9 @@ def compose_final_video_task(
         
         # 生成最终视频路径
         final_video_path = get_project_final_video_path(project_id)
+        composition_candidate_path = Path(final_video_path).with_name(
+            f".{Path(final_video_path).stem}.candidate-{task_id}.mp4"
+        )
         
         # 步骤 1: 拼接视频（20%）
         self.update_state(state="PROGRESS", meta={"current": 20, "total": 100, "step": "拼接视频"})
@@ -205,7 +259,7 @@ def compose_final_video_task(
             subtitle_generator.burn_subtitle(
                 video_path=temp_video_path,
                 subtitle_path=merged_subtitle_path,
-                output_path=final_video_path,
+                output_path=str(composition_candidate_path),
                 preserve_provider_quality=preserve_provider_quality,
             )
         else:
@@ -217,11 +271,20 @@ def compose_final_video_task(
             # Keep scene assets intact; only move files that are composition temp outputs.
             if os.path.abspath(temp_video_path) != os.path.abspath(final_video_path):
                 if temp_video_path in video_paths:
-                    shutil.copy2(temp_video_path, final_video_path)
+                    shutil.copy2(temp_video_path, composition_candidate_path)
                 else:
-                    shutil.move(temp_video_path, final_video_path)
+                    shutil.move(temp_video_path, composition_candidate_path)
+            elif os.path.abspath(temp_video_path) != os.path.abspath(composition_candidate_path):
+                shutil.copy2(temp_video_path, composition_candidate_path)
 
-        composition_review = _review_final_composed_video(project, scenes, final_video_path)
+        composition_review = _review_final_composed_video(
+            project, scenes, str(composition_candidate_path)
+        )
+        composition_review = _publish_composition_candidate(
+            composition_candidate_path,
+            final_video_path,
+            composition_review,
+        )
         
         # 更新项目状态
         project.final_video_path = final_video_path
@@ -270,6 +333,12 @@ def compose_final_video_task(
         
         raise
     finally:
+        if composition_candidate_path is not None:
+            for candidate_artifact in composition_candidate_path.parent.glob(
+                f"{composition_candidate_path.stem}*"
+            ):
+                if candidate_artifact.is_file():
+                    candidate_artifact.unlink(missing_ok=True)
         if db is not None:
             db.close()
 
