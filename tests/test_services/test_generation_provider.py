@@ -780,6 +780,36 @@ def test_native_ark_output_validation_rejects_temporal_freeze(tmp_path, monkeypa
     assert not output.exists()
 
 
+def test_native_ark_output_validation_rejects_temporal_visual_resets(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")
+    output = tmp_path / "reset-heavy.mp4"
+    output.write_bytes(b"video")
+    monkeypatch.setattr(
+        generation_provider.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout="codec_type=video\nduration=4.0\n"),
+    )
+    monkeypatch.setattr(
+        generation_provider,
+        "video_candidate_metrics",
+        lambda _path: {
+            "status": "available",
+            "motion_energy": 8.0,
+            "max_static_run_seconds": 0.0,
+            "max_black_run_seconds": 0.0,
+            "brightness_step_p95": 0.0,
+            "motion_jitter_ratio": 0.0,
+            "temporal_jump_ratio": 0.5,
+        },
+    )
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    with pytest.raises(GenerationProviderError, match="temporal visual resets"):
+        provider._validate_provider_video(str(output))
+    assert not output.exists()
+
+
 def test_seedance_auto_duration_modes_skip_fixed_duration_gate(monkeypatch):
     monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
     provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")

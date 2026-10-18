@@ -964,7 +964,8 @@ class ApiVideoProvider:
             key: metrics.get(key)
             for key in (
                 "motion_energy", "max_static_run_seconds", "max_black_run_seconds",
-                "brightness_step_p95", "motion_jitter_ratio", "technical_score",
+                "brightness_step_p95", "motion_jitter_ratio", "temporal_jump_ratio",
+                "technical_score",
                 "audio_video_start_delta_seconds",
             )
             if key in metrics
@@ -1018,6 +1019,13 @@ class ApiVideoProvider:
                 "temporal quality gate: unstable motion cadence "
                 f"motion_jitter_ratio={motion_jitter:.3f}, "
                 f"limit={settings.GENERATION_VIDEO_MAX_MOTION_JITTER_RATIO:.3f}"
+            )
+        temporal_jump_ratio = float(metrics.get("temporal_jump_ratio") or 0.0)
+        if temporal_jump_ratio > float(settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO):
+            raise ValueError(
+                "temporal quality gate: repeated temporal visual resets "
+                f"temporal_jump_ratio={temporal_jump_ratio:.3f}, "
+                f"limit={settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO:.3f}"
             )
 
     def _headers(self) -> dict[str, str]:
