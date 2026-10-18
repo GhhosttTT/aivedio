@@ -74,7 +74,8 @@ def video_candidate_metrics(path: str | Path, max_samples: int | None = None) ->
             if histogram_jump_values else 0.0
         )
         black_frame_flags = [
-            float(np.mean(gray < 12.0)) >= 0.98
+            float(np.mean(gray < settings.GENERATION_VIDEO_BLACK_PIXEL_LUMA_THRESHOLD))
+            >= settings.GENERATION_VIDEO_BLACK_PIXEL_RATIO_THRESHOLD
             for gray in gray_frames
         ]
         max_black_run = _max_consecutive_true(black_frame_flags)
@@ -370,10 +371,16 @@ def _audio_signal_metrics(path: Path, duration_seconds: float) -> dict[str, Any]
         peak_db = max(peak_values) if peak_values else None
         rms_db = max(rms_values) if rms_values else None
         near_silent = bool(
-            (peak_db is not None and peak_db <= -55.0)
-            or silence_ratio >= 0.95
+            (
+                peak_db is not None
+                and peak_db <= settings.GENERATION_VIDEO_AUDIO_NEAR_SILENT_PEAK_DB
+            )
+            or silence_ratio >= settings.GENERATION_VIDEO_AUDIO_SILENCE_RATIO
         )
-        clipping = bool(peak_db is not None and peak_db >= -0.1)
+        clipping = bool(
+            peak_db is not None
+            and peak_db >= settings.GENERATION_VIDEO_AUDIO_CLIPPING_PEAK_DB
+        )
         return {
             "audio_silence_ratio": round(silence_ratio, 3),
             "audio_peak_db": round(peak_db, 2) if peak_db is not None else None,

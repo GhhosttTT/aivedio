@@ -262,7 +262,7 @@ def _validate_export_metrics(
             source_metrics.get("audio_present")
             and isinstance(source_peak, (int, float))
             and isinstance(output_peak, (int, float))
-            and abs(float(output_peak) - float(source_peak)) > 12.0
+            and abs(float(output_peak) - float(source_peak)) > settings.GENERATION_VIDEO_BASELINE_MAX_AUDIO_PEAK_DELTA_DB
         ):
             raise PlatformExportError(
                 "Platform export audio level drifted by "

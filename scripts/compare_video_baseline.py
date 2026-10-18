@@ -141,7 +141,11 @@ def video_stats(path: Path, max_samples: int = 16) -> VideoStats:
     sharpness_values = [float(cv2.Laplacian(gray, cv2.CV_64F).var()) for gray in gray_frames]
     brightness_values = [float(np.mean(gray)) for gray in gray_frames]
     static_flags = [value < 0.5 for value in diffs]
-    black_flags = [float(np.mean(gray < 12.0)) >= 0.98 for gray in gray_frames]
+    black_flags = [
+        float(np.mean(gray < settings.GENERATION_VIDEO_BLACK_PIXEL_LUMA_THRESHOLD))
+        >= settings.GENERATION_VIDEO_BLACK_PIXEL_RATIO_THRESHOLD
+        for gray in gray_frames
+    ]
     brightness_steps = [
         abs(brightness_values[index] - brightness_values[index - 1])
         for index in range(1, len(brightness_values))
@@ -419,8 +423,16 @@ def _audio_signal_stats(path: Path) -> dict[str, object]:
             return {"audio_signal_status": "unavailable", "audio_clipping_status": "unavailable"}
         peak_db = float(matches[-1])
         return {
-            "audio_signal_status": "near_silent" if peak_db <= -55.0 else "usable",
-            "audio_clipping_status": "clipped" if peak_db >= -0.1 else "ok",
+            "audio_signal_status": (
+                "near_silent"
+                if peak_db <= settings.GENERATION_VIDEO_AUDIO_NEAR_SILENT_PEAK_DB
+                else "usable"
+            ),
+            "audio_clipping_status": (
+                "clipped"
+                if peak_db >= settings.GENERATION_VIDEO_AUDIO_CLIPPING_PEAK_DB
+                else "ok"
+            ),
             "audio_peak_db": round(peak_db, 3),
         }
     except (OSError, subprocess.SubprocessError, ValueError):
