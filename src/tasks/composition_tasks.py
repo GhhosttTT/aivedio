@@ -913,6 +913,7 @@ def _review_final_composed_video(project: Project, scenes: list[Scene], final_vi
         report_path,
     )
     report["path"] = str(report_path)
+    report["video_path"] = str(final_video_path)
     report["stage"] = "final_composition"
     report["technical_boundary_report"] = technical_boundary_report
     report["final_technical_metrics"] = final_technical_metrics

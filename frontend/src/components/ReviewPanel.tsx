@@ -185,6 +185,21 @@ function ProviderTrace({report}: {report: any}) {
     </div>;
 }
 
+function FinalCompositionEvidence({projectId, report}: {projectId: number; report: any}) {
+    if (report?.stage !== 'final_composition') return null;
+    const metrics = report.final_technical_metrics || {};
+    return <div className="wb-summary-actions" aria-label="最终合成技术证据">
+        <h4>最终合成技术证据</h4>
+        <div className="wb-grid compact">
+            <div className="wb-kv"><span>成片</span><MediaLink projectId={projectId} path={report.video_path} label="打开最终成片"/></div>
+            <div className="wb-kv"><span>规格</span><strong>{metrics.width || '-'}×{metrics.height || '-'} · {metrics.fps || '-'} fps</strong></div>
+            <div className="wb-kv"><span>时长</span><strong>{metrics.duration_seconds ?? '-'} 秒</strong></div>
+            <div className="wb-kv"><span>音频</span><strong>{metrics.audio_quality_status || (metrics.audio_present ? '存在' : '未检测')}</strong></div>
+            <div className="wb-kv"><span>技术分</span><strong>{report.technical_score ?? metrics.technical_score ?? '-'}</strong></div>
+        </div>
+    </div>;
+}
+
 function ReviewSummary({
     summary,
     qualityPlan,
@@ -387,6 +402,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             </div>
             {report.error && <p className="wb-alert">{String(report.error)}</p>}
             <ProviderTrace report={report}/>
+            <FinalCompositionEvidence projectId={projectId} report={report}/>
             <SeedDanceComparison projectId={projectId} report={report}/>
             <Scores review={report.review}/>
             {report.batches?.map((batch: any, index: number) => <div key={index}>
