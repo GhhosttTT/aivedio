@@ -1811,6 +1811,7 @@ def _review_final_video_after_postprocess(
         performance_ok,
         platform_score,
         final_review.get("technical_score"),
+        enforce_technical_evidence=True,
     )
     if (
         settings.GENERATION_REQUIRE_VIDEO_REVIEW
@@ -1838,12 +1839,23 @@ def _final_video_acceptance_error(
     performance_ok: bool,
     platform_score,
     technical_score=None,
+    *,
+    enforce_technical_evidence: bool = False,
 ) -> str | None:
     technical_metrics = (
         final_review.get("technical_metrics")
         if isinstance(final_review.get("technical_metrics"), dict)
         else {}
     )
+    if (
+        enforce_technical_evidence
+        and settings.GENERATION_REQUIRE_VIDEO_REVIEW
+        and technical_metrics.get("status") == "unavailable"
+    ):
+        return (
+            "Final normalized video technical metrics are unavailable: "
+            f"{technical_metrics.get('error') or 'ffprobe/OpenCV could not inspect the video'}"
+        )
     request_contract_audit = final_review.get("request_contract_audit")
     if isinstance(request_contract_audit, dict) and request_contract_audit.get("status") == "needs_review":
         issue = (request_contract_audit.get("issues") or [{}])[0]

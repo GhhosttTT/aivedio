@@ -2817,6 +2817,9 @@ def test_final_normalized_video_is_reviewed_before_acceptance(project_data, tmp_
             }
 
     monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.video_candidate_metrics", lambda _path: {
+        "status": "available", "technical_score": 4.5,
+    })
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
 
     report = _review_final_video_after_postprocess(
@@ -2830,6 +2833,47 @@ def test_final_normalized_video_is_reviewed_before_acceptance(project_data, tmp_
     assert report["final_video_review"]["status"] == "passed"
     assert report["final_video_review"]["video_aesthetic_gate"]["status"] == "passed"
     assert json.loads(video.with_suffix(".quality.json").read_text(encoding="utf-8"))["final_video_review"]["status"] == "passed"
+
+
+def test_final_normalized_video_blocks_unavailable_technical_metrics(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    video = tmp_path / "scene.mp4"
+    Path(scene.image_path).write_bytes(b"image")
+    video.write_bytes(b"video")
+    db.commit()
+
+    class FakeReviewService:
+        def review_video(self, _video, _payload, _report_path, _reference=None):
+            return {
+                "status": "passed",
+                "average": 4.8,
+                "batches": [{"review": {
+                    "facial_identity": {"score": 5, "evidence": "face matches"},
+                    "identity_consistency": {"score": 5, "evidence": "identity stable"},
+                    "temporal_consistency": {"score": 5, "evidence": "motion stable"},
+                    "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                    "platform_reference_scores": passed_platform_reference_scores(),
+                }}],
+            }
+
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.video_candidate_metrics", lambda _path: {
+        "status": "unavailable", "technical_score": None, "error": "invalid media",
+    })
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    with pytest.raises(ReviewError, match="technical metrics are unavailable"):
+        _review_final_video_after_postprocess(
+            str(video), scene, project.id, db,
+            quality_report={"kind": "video_candidate_selection", "status": "passed"},
+        )
+
+    report = json.loads(video.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert report["status"] == "needs_review"
+    assert report["final_video_review"]["error"] == (
+        "Final normalized video technical metrics are unavailable: invalid media"
+    )
 
 
 def test_final_normalized_video_blocks_low_technical_score(project_data, tmp_path, monkeypatch):
@@ -2896,6 +2940,9 @@ def test_final_normalized_video_blocks_missing_platform_reference_review(project
             }
 
     monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.video_candidate_metrics", lambda _path: {
+        "status": "available", "technical_score": 4.5,
+    })
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
 
     with pytest.raises(ReviewError, match="missing platform reference"):
@@ -2959,6 +3006,9 @@ def test_final_normalized_video_review_blocks_flat_performance(project_data, tmp
         notes=[],
     )
     monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.video_candidate_metrics", lambda _path: {
+        "status": "available", "technical_score": 4.5,
+    })
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PERFORMANCE_MIN_SCORE", 4.0)
 
@@ -3010,6 +3060,9 @@ def test_final_normalized_video_review_blocks_temporal_regression(project_data, 
             }
 
     monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.video_candidate_metrics", lambda _path: {
+        "status": "available", "technical_score": 4.5,
+    })
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE", 4.0)
