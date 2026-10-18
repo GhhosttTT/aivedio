@@ -3,6 +3,7 @@
 import shutil
 import os
 import json
+import hashlib
 import subprocess
 from math import gcd
 from pathlib import Path
@@ -59,6 +60,33 @@ def _setting_enabled(value) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _video_request_contract(request: VideoGenerationRequest, *, request_mode: str, sequence_level: bool) -> dict:
+    """Capture the exact controls handed to a video provider."""
+    contract = {
+        "provider_request_version": 1,
+        "request_mode": request_mode,
+        "model": request.model,
+        "resolution": request.resolution,
+        "output_format": request.output_format,
+        "duration_seconds": request.duration_seconds,
+        "aspect_ratio": request.aspect_ratio,
+        "fps": request.fps,
+        "multi_shot": bool(request.multi_shot),
+        "sequence_level_multi_shot": bool(sequence_level),
+        "generate_audio": bool(request.generate_audio),
+        "return_last_frame": bool(request.return_last_frame),
+        "camera_fixed": bool(request.camera_fixed),
+        "watermark": bool(request.watermark),
+        "draft": bool(request.draft),
+        "has_reference_image": bool(request.reference_image or request.reference_images),
+        "reference_video_count": len(request.reference_videos or []),
+        "reference_audio_count": len(request.reference_audios or []),
+    }
+    encoded = json.dumps(contract, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    contract["contract_hash"] = hashlib.sha256(encoded).hexdigest()
+    return contract
 
 
 def _native_audio_enabled(provider_name: str, override=None) -> bool:
@@ -587,7 +615,7 @@ class _ComfyVideoGenerator:
                 "sequence_level": False,
                 "continuity_mode": "bounded_previous_current_next",
             }
-        result = self.provider.generate_video(VideoGenerationRequest(
+        request = VideoGenerationRequest(
             prompt=prompt,
             negative_prompt=negative_prompt,
             reference_image=image_path,
@@ -625,8 +653,16 @@ class _ComfyVideoGenerator:
             local_task_id=self.provider_options.get("LOCAL_TASK_ID"),
             progress_callback=self.provider_options.get("PROGRESS_CALLBACK"),
             cancellation_check=self.provider_options.get("CANCELLATION_CHECK"),
-        ))
+        )
+        result = self.provider.generate_video(request)
         self.last_result_metadata = dict(result.metadata or {})
+        request_contract = _video_request_contract(
+            request,
+            request_mode=request_mode,
+            sequence_level=sequence_level_multi_shot,
+        )
+        self.last_result_metadata["request_contract"] = request_contract
+        self.last_result_metadata["request_contract_hash"] = request_contract["contract_hash"]
         return result.output_path
 
     def with_end_image(self, end_image: str | None):
