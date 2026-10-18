@@ -334,6 +334,12 @@ export const localizationApi = {
     getJob: async (jobId: number): Promise<LocalizationJob> => {
         return apiClient.get(`/localization/jobs/${jobId}`);
     },
+    quality: async (jobId: number): Promise<{report: any; human_review: {decision: string; note?: string}}> => {
+        return apiClient.get(`/localization/jobs/${jobId}/quality`);
+    },
+    qualityReview: async (jobId: number, data: {decision: 'approved' | 'rejected'; note?: string}) => {
+        return apiClient.post(`/localization/jobs/${jobId}/quality-review`, data);
+    },
 };
 
 export default apiClient;

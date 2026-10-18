@@ -2,6 +2,18 @@ import json
 from pathlib import Path
 
 from src.services.localization_quality_service import LocalizationQualityService
+from src.services.localization_review import LocalizationReviewStore
+
+
+def test_localization_review_is_invalidated_when_report_changes(tmp_path):
+    report_path = tmp_path / "moderation_report.json"
+    report = {"status": "passed", "score": 0.91}
+    store = LocalizationReviewStore(report_path)
+    decision = store.record("approved", "人工复核通过", report, user_id=3)
+
+    assert store.apply(report)["decision"] == "approved"
+    assert store.apply({**report, "score": 0.72})["decision"] == "stale"
+    assert decision["report_signature"] != store.report_signature({**report, "score": 0.72})
 
 
 def test_quality_service_flags_timestamp_and_reading_speed_issues(tmp_path, monkeypatch):

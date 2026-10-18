@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session
 from src.database.models import LocalizationJob, SourceVideo
 from src.database.session import get_db_session
 from src.services.localization_pipeline import LocalizationPipeline
+from src.services.localization_review import LocalizationReviewStore
 from src.tasks.localization_tasks import run_localization_job_task
 from src.utils.logger import get_logger
 
@@ -39,6 +41,11 @@ class CreateLocalizationJobRequest(BaseModel):
     source_video_id: int = Field(..., ge=1)
     target_languages: Optional[List[str]] = None
     auto_start: bool = True
+
+
+class LocalizationReviewRequest(BaseModel):
+    decision: str = Field(..., pattern="^(approved|rejected)$")
+    note: str = Field("", max_length=1000)
 
 
 class LocalizationJobResponse(BaseModel):
@@ -129,6 +136,45 @@ async def get_localization_job(job_id: int, db_session: Session = Depends(get_db
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="译制任务不存在")
     return _job_response(job)
+
+
+def _load_quality_report(job: LocalizationJob) -> tuple[dict, LocalizationReviewStore]:
+    if not job.moderation_report_path:
+        raise HTTPException(status_code=404, detail="译制质量报告不存在")
+    path = Path(job.moderation_report_path)
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="译制质量报告无效") from exc
+    if not isinstance(report, dict):
+        raise HTTPException(status_code=422, detail="译制质量报告格式无效")
+    return report, LocalizationReviewStore(path)
+
+
+@router.get("/jobs/{job_id}/quality")
+async def get_localization_quality(job_id: int, db_session: Session = Depends(get_db_session)):
+    job = db_session.query(LocalizationJob).filter(LocalizationJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="译制任务不存在")
+    report, store = _load_quality_report(job)
+    return {"job_id": job_id, "report": report, "human_review": store.apply(report)}
+
+
+@router.post("/jobs/{job_id}/quality-review")
+async def record_localization_quality_review(
+    job_id: int,
+    request: LocalizationReviewRequest,
+    db_session: Session = Depends(get_db_session),
+):
+    job = db_session.query(LocalizationJob).filter(LocalizationJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="译制任务不存在")
+    report, store = _load_quality_report(job)
+    try:
+        decision = store.record(request.decision, request.note, report)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"job_id": job_id, "human_review": decision}
 
 
 @router.get("/projects/{project_id}/source-videos", response_model=List[SourceVideoResponse])

@@ -21,6 +21,7 @@ export function LocalizationDashboard() {
     const [sourceId, setSourceId] = useState(0);
     const [jobs, setJobs] = useState<LocalizationJob[]>([]);
     const [job, setJob] = useState<LocalizationJob | null>(null);
+    const [quality, setQuality] = useState<{report: any; human_review: {decision: string; note?: string}} | null>(null);
     const [selected, setSelected] = useState(['en']);
     const [file, setFile] = useState<File | null>(null);
     const [busy, setBusy] = useState('');
@@ -38,6 +39,10 @@ export function LocalizationDashboard() {
         }).catch(e => {if (active) setError(errorText(e));});
         return () => {active = false;};
     }, [projectId]);
+    useEffect(() => {
+        setQuality(null);
+        if (job?.moderation_report_path) localizationApi.quality(job.id).then(setQuality).catch(() => setQuality(null));
+    }, [job?.id, job?.moderation_report_path]);
     useEffect(() => {
         if (!jobId || !['queued','running'].includes(jobStatus || '')) return;
         let active = true;
@@ -57,6 +62,15 @@ export function LocalizationDashboard() {
         } catch(e) {setError(errorText(e));} finally {setBusy('');}
     };
     const running = job && ['queued','running'].includes(job.status);
+    const reviewQuality = async (decision: 'approved' | 'rejected') => {
+        if (!job) return;
+        setBusy(decision === 'approved' ? '提交通过' : '提交退回');
+        try {
+            await localizationApi.qualityReview(job.id, {decision});
+            setQuality(await localizationApi.quality(job.id));
+        } catch(e) { setError(errorText(e)); }
+        finally { setBusy(''); }
+    };
     return <main className="workbench"><h1>源片出海译制</h1>
         {error && <p role="alert" className="wb-alert">{error}</p>}
         <div className="wb-fields">
@@ -74,6 +88,11 @@ export function LocalizationDashboard() {
                 <div className="wb-row" style={{marginTop: 12}}>{Object.entries(stages).map(([key,label]) => <span className={`wb-score ${key === job.current_stage ? 'passed' : ''}`} key={key}>{label}</span>)}</div>
                 {job.error_message && <p role="alert" className="wb-alert">{job.error_message}</p>}
                 {report.url && <a className="wb-button" style={{marginTop: 16}} href={report.url} target="_blank" rel="noreferrer">查看审核报告</a>}
+                {quality && <section className="wb-item" aria-label="译制质量复核">
+                    <div className="wb-row wb-between"><strong>译制质量复核</strong><span className={`wb-score ${quality.report.status}`}>{quality.report.status} · 人审 {quality.human_review.decision}</span></div>
+                    <p className="wb-muted">自动评分：{quality.report.score ?? '-'}；报告变化后旧的人审决定会自动失效。</p>
+                    <div className="wb-row"><button className="wb-button" disabled={Boolean(busy)} onClick={() => reviewQuality('approved')}>人工通过</button><button className="wb-button" disabled={Boolean(busy)} onClick={() => reviewQuality('rejected')}>退回复核</button></div>
+                </section>}
                 {['completed','needs_review'].includes(job.status) && job.target_languages.map(language => <Output key={`${job.id}-${language}`} projectId={projectId} job={job} language={language}/>)}
             </>}
             {!job && <p className="wb-muted">暂无译制任务</p>}
