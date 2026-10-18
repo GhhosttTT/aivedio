@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from src.database.models import LocalizationJob, SourceVideo
+from src.database.models import LocalizationJob, LocalizationJobStatus, SourceVideo
 from src.api.dependencies import get_current_user, require_localization_job_access, require_project_access
 from src.database.session import get_db_session
 from src.services.localization_pipeline import LocalizationPipeline
@@ -188,6 +188,16 @@ async def record_localization_quality_review(
             report,
             user_id=getattr(current_user, "id", None),
         )
+        if request.decision == "rejected":
+            job.status = LocalizationJobStatus.NEEDS_REVIEW
+            job.error_message = "人工复核退回；请修复译制质量问题后重新审核。"
+        elif report.get("status") == "passed":
+            job.status = LocalizationJobStatus.COMPLETED
+            job.error_message = None
+        else:
+            job.status = LocalizationJobStatus.NEEDS_REVIEW
+            job.error_message = "自动 QA 尚未通过，人工决定不能覆盖质量门禁。"
+        db_session.commit()
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"job_id": job_id, "human_review": decision}
