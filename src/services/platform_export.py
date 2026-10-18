@@ -172,6 +172,36 @@ def _validate_export_metrics(
         raise PlatformExportError(
             f"Platform export contains a black-frame run of {max_black_run:.3f}s"
         )
+    temporal_jump_ratio = metrics.get("temporal_jump_ratio")
+    if (
+        isinstance(temporal_jump_ratio, (int, float))
+        and temporal_jump_ratio > settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO
+    ):
+        raise PlatformExportError(
+            "Platform export contains repeated temporal visual resets: "
+            f"temporal_jump_ratio={temporal_jump_ratio:.3f}, "
+            f"limit={settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO:.3f}"
+        )
+    motion_jitter_ratio = metrics.get("motion_jitter_ratio")
+    if (
+        isinstance(motion_jitter_ratio, (int, float))
+        and motion_jitter_ratio > settings.GENERATION_VIDEO_MAX_MOTION_JITTER_RATIO
+    ):
+        raise PlatformExportError(
+            "Platform export has unstable motion cadence: "
+            f"motion_jitter_ratio={motion_jitter_ratio:.3f}, "
+            f"limit={settings.GENERATION_VIDEO_MAX_MOTION_JITTER_RATIO:.3f}"
+        )
+    brightness_step_p95 = metrics.get("brightness_step_p95")
+    if (
+        isinstance(brightness_step_p95, (int, float))
+        and brightness_step_p95 > settings.GENERATION_VIDEO_MAX_BRIGHTNESS_STEP_P95
+    ):
+        raise PlatformExportError(
+            "Platform export has temporal exposure jumps: "
+            f"brightness_step_p95={brightness_step_p95:.3f}, "
+            f"limit={settings.GENERATION_VIDEO_MAX_BRIGHTNESS_STEP_P95:.3f}"
+        )
     if metrics.get("audio_present") and metrics.get("audio_signal_status") not in {None, "usable"}:
         raise PlatformExportError(
             f"Platform export audio signal is not usable: {metrics.get('audio_signal_status')}"

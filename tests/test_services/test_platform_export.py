@@ -125,6 +125,41 @@ def test_platform_export_rejects_audio_loss_and_duration_drift(tmp_path, monkeyp
         export_platform_video(source, tmp_path, "douyin")
 
 
+@pytest.mark.parametrize(
+    ("metric", "value", "message"),
+    [
+        ("temporal_jump_ratio", 0.8, "temporal visual resets"),
+        ("motion_jitter_ratio", 2.0, "unstable motion cadence"),
+        ("brightness_step_p95", 60.0, "temporal exposure jumps"),
+    ],
+)
+def test_platform_export_rejects_temporal_quality_regression(tmp_path, monkeypatch, metric, value, message):
+    source = tmp_path / "final.mp4"
+    source.write_bytes(b"source")
+
+    def fake_run(command, **_kwargs):
+        output = tmp_path / "exports" / ".douyin.tmp.mp4"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"exported")
+
+    monkeypatch.setattr("src.services.platform_export.subprocess.run", fake_run)
+    metrics = {
+        "status": "available",
+        "width": 1080,
+        "height": 1920,
+        "fps": 30.0,
+        "duration_seconds": 2.0,
+        metric: value,
+    }
+    monkeypatch.setattr(
+        "src.services.platform_export.video_candidate_metrics",
+        lambda *_args, **_kwargs: dict(metrics),
+    )
+
+    with pytest.raises(PlatformExportError, match=message):
+        export_platform_video(source, tmp_path, "douyin")
+
+
 def test_platform_export_rejects_unknown_preset(tmp_path):
     source = tmp_path / "final.mp4"
     source.write_bytes(b"source")
