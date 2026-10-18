@@ -289,6 +289,39 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
     _write_json_atomic(platform_cover_metadata, platform_cover_reports)
     files.append((platform_cover_metadata, "metadata/platform_covers.json"))
 
+    # Keep a compact, signed index of the exact review artifacts shipped in
+    # this package. The ZIP may contain historical reports for auditability;
+    # this index makes the evidence used for the current delivery explicit.
+    review_files = []
+    for source, archive_name in files:
+        if archive_name.startswith("reviews/") and archive_name.endswith(".json"):
+            review_files.append({
+                "path": archive_name,
+                "size": source.stat().st_size,
+                "sha256": _sha256(source),
+            })
+    critical_reports = {
+        name: {
+            "kind": report.get("kind"),
+            "status": report.get("status"),
+        }
+        for name, report in (reports or {}).items()
+        if isinstance(report, dict)
+        and (
+            name in {"generation", "final_composition", "continuity_audit", "rhythm_audit"}
+            or report.get("kind") == "sequence_boundary_continuity"
+        )
+    }
+    review_index = delivery_root / "review_index.json"
+    _write_json_atomic(review_index, {
+        "schema_version": 1,
+        "final_video_sha256": _sha256(final_path),
+        "critical_reports": critical_reports,
+        "review_files": review_files,
+        "quality_summary_status": review_summary.get("status"),
+    })
+    files.append((review_index, "metadata/review_index.json"))
+
     manifest_files = []
     for source, archive_name in files:
         manifest_files.append({

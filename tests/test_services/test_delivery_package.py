@@ -46,7 +46,11 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
     assert any(item["path"] == "media/final_video.mp4" and len(item["sha256"]) == 64 for item in manifest["files"])
     with zipfile.ZipFile(package) as archive:
         names = set(archive.namelist())
-    assert {"media/final_video.mp4", "reviews/generation.json", "metadata/project.json", "metadata/delivery_manifest.json"}.issubset(names)
+        assert {"media/final_video.mp4", "reviews/generation.json", "metadata/project.json", "metadata/delivery_manifest.json"}.issubset(names)
+        assert "metadata/review_index.json" in names
+        review_index = json.loads(archive.read("metadata/review_index.json").decode())
+        assert review_index["final_video_sha256"] == manifest["files"][0]["sha256"]
+        assert review_index["critical_reports"]["final_composition"]["status"] == "passed"
     assert "metadata/cover.json" in names
     assert {"exports/douyin.mp4", "exports/douyin.json"}.issubset(names)
     with zipfile.ZipFile(package) as archive:
