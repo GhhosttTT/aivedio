@@ -481,6 +481,18 @@ def test_repair_queue_auto_submits_batch_repair_tasks(setup, monkeypatch):
     ]
 
 
+def test_repair_queue_auto_rejects_manual_action_filter(setup):
+    client, _db, _ = setup
+
+    response = client.post(
+        "/api/projects/1/repair-queue/auto",
+        json={"action": "manual_review", "dry_run": True},
+    )
+
+    assert response.status_code == 400
+    assert "不可自动执行" in response.json()["detail"]
+
+
 def test_repair_queue_auto_submits_static_video_motion_floor_repair(setup, monkeypatch):
     client, db, _ = setup
     project_root = storage_manager.get_project_path(1)

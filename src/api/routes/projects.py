@@ -43,6 +43,7 @@ from src.services.spatial_control_assets import SpatialControlAssetService
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
 from src.services.quality_loop import build_quality_loop_plan
+from src.services.repair_queue import repair_execution_mode
 from src.services.repair_plan import build_repair_execution_plan
 from src.services.generation_quality_scorecard import build_generation_quality_scorecard
 from src.services.generation_review import file_hash, require_passed
@@ -2044,6 +2045,11 @@ async def run_auto_repair_queue(
     current_user=Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
 ):
+    if request.action and repair_execution_mode(request.action) != "auto":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"指定返修动作不可自动执行: {request.action}",
+        )
     review = await get_generation_review(project_id, current_user, db_session)
     budget = RepairBudget(project_id)
     if review.get("summary", {}).get("status") in {"ready", "ready_for_seed_dance_candidate"}:
