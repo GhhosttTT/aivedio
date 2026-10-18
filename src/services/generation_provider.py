@@ -1473,6 +1473,10 @@ class SeedanceApiProvider(ApiVideoProvider):
                 or "mp4"
             ),
         }
+        self.last_result_metadata["requested_resolution"] = str(payload["resolution"])
+        self.last_result_metadata["requested_output_format"] = payload["output_format"]
+        self.last_result_metadata["requested_watermark"] = payload["watermark"]
+        self.last_result_metadata["requested_return_last_frame"] = payload["return_last_frame"]
         callback_url = _provider_setting("SEEDANCE_CALLBACK_URL", "").strip()
         if callback_url:
             payload["callback_url"] = callback_url

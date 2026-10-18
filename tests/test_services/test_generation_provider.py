@@ -822,6 +822,26 @@ def test_api_provider_does_not_forward_bearer_to_external_signed_media():
     ) == headers
 
 
+def test_seedance_legacy_persists_requested_output_controls(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "legacy")
+    provider = SeedanceApiProvider(endpoint="https://gateway.example/video", api_key="secret")
+
+    payload = provider._video_payload(VideoGenerationRequest(
+        prompt="a premium short-drama shot",
+        output_path=str(tmp_path / "out.mp4"),
+        output_format="mov",
+        resolution="1080p",
+        watermark=False,
+        return_last_frame=True,
+    ))
+
+    assert payload["output_format"] == "mov"
+    assert provider.last_result_metadata["requested_resolution"] == "1080p"
+    assert provider.last_result_metadata["requested_output_format"] == "mov"
+    assert provider.last_result_metadata["requested_watermark"] is False
+    assert provider.last_result_metadata["requested_return_last_frame"] is True
+
+
 def test_api_provider_persists_last_frame_for_cross_shot_continuity(tmp_path, monkeypatch):
     class FakeResponse:
         def __init__(self, payload=None, *, content=b"", content_type="application/json"):
