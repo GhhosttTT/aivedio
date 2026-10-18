@@ -984,6 +984,7 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
     boundary_failed = any(
         report.get("status") != "available"
         or int(report.get("severe_transition_count") or 0) > 0
+        or int(report.get("severe_style_transition_count") or 0) > 0
         or int(report.get("geometry_mismatch_count") or 0) > 0
         for report in boundary_reports
     )

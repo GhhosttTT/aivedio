@@ -512,6 +512,26 @@ def test_generation_review_summary_blocks_failed_sequence_boundary_evidence():
     assert any("sequence boundary" in item for item in summary["action_items"])
 
 
+def test_generation_review_summary_blocks_severe_style_boundary_evidence():
+    summary = _generation_review_summary({
+        "production_story": {"status": "passed"},
+        "generation": {"status": "passed"},
+        "seed_dance_baseline_comparison": {"status": "passed"},
+        "final_composition": {"status": "passed"},
+        "sequence_boundary_42": {
+            "kind": "sequence_boundary_continuity",
+            "status": "available",
+            "severe_transition_count": 0,
+            "severe_style_transition_count": 1,
+            "geometry_mismatch_count": 0,
+        },
+    })
+
+    assert summary["status"] == "blocked"
+    assert summary["sequence_boundary"] == {"status": "blocked", "reports": 1}
+    assert any("sequence boundary" in item for item in summary["action_items"])
+
+
 def test_seed_dance_baseline_endpoint_writes_project_review(tmp_path, monkeypatch):
     from src.utils.storage import storage_manager
     from scripts import compare_video_baseline
