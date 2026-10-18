@@ -2027,6 +2027,26 @@ def _final_video_acceptance_error(
             "video motion cadence is unstable: motion_jitter_ratio="
             f"{motion_jitter_ratio:.3f}, limit={settings.GENERATION_VIDEO_MAX_MOTION_JITTER_RATIO:.3f}"
         )
+    temporal_jump_ratio = technical_metrics.get("temporal_jump_ratio")
+    if (
+        isinstance(temporal_jump_ratio, (int, float))
+        and temporal_jump_ratio > settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO
+    ):
+        return (
+            "Final normalized video has repeated temporal visual resets: "
+            f"temporal_jump_ratio={temporal_jump_ratio:.3f}, "
+            f"limit={settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO:.3f}"
+        )
+    temporal_jump_p95 = technical_metrics.get("temporal_jump_p95")
+    if (
+        isinstance(temporal_jump_p95, (int, float))
+        and temporal_jump_p95 > settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95
+    ):
+        return (
+            "Final normalized video has an extreme temporal visual reset: "
+            f"temporal_jump_p95={temporal_jump_p95:.3f}, "
+            f"limit={settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95:.3f}"
+        )
     start_frame_reference = technical_metrics.get("start_frame_reference")
     if isinstance(start_frame_reference, dict) and start_frame_reference.get("status") == "available":
         start_frame_score = start_frame_reference.get("score")

@@ -998,6 +998,23 @@ def test_composition_review_blocks_final_temporal_visual_resets():
     )
 
 
+def test_composition_review_blocks_extreme_temporal_visual_reset():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "temporal_jump_p95": 0.9,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video has an extreme temporal visual reset: "
+        "temporal_jump_p95=0.900, limit=0.750"
+    )
+
+
 def test_scene_audio_expected_reads_native_provider_intent(tmp_path):
     video_path = tmp_path / "scene.mp4"
     video_path.write_bytes(b"video")

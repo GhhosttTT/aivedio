@@ -312,6 +312,56 @@ def test_motion_cadence_instability_is_hard_publish_gate(monkeypatch):
     assert error.startswith("video motion cadence is unstable")
 
 
+def test_final_normalized_video_rejects_repeated_temporal_resets(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO",
+        0.35,
+    )
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {"temporal_jump_ratio": 0.5},
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+    assert error == (
+        "Final normalized video has repeated temporal visual resets: "
+        "temporal_jump_ratio=0.500, limit=0.350"
+    )
+
+
+def test_final_normalized_video_rejects_extreme_temporal_reset(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95",
+        0.75,
+    )
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {"temporal_jump_p95": 0.9},
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+    assert error == (
+        "Final normalized video has an extreme temporal visual reset: "
+        "temporal_jump_p95=0.900, limit=0.750"
+    )
+
+
 def test_seedance_high_resolution_rejects_lost_high_bit_depth(monkeypatch):
     error = _final_video_acceptance_error(
         {

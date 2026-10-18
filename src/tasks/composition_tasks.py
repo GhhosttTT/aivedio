@@ -1135,6 +1135,16 @@ def _composition_review_error(report: dict) -> str | None:
                 f"temporal_jump_ratio={temporal_jump_ratio:.3f}, "
                 f"limit={settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO:.3f}"
             )
+        temporal_jump_p95 = technical.get("temporal_jump_p95")
+        if (
+            isinstance(temporal_jump_p95, (int, float))
+            and temporal_jump_p95 > settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95
+        ):
+            return (
+                "final composed video has an extreme temporal visual reset: "
+                f"temporal_jump_p95={temporal_jump_p95:.3f}, "
+                f"limit={settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95:.3f}"
+            )
         audio_present = technical.get("audio_present") is True
         if audio_present and report.get("final_audio_expected") is not True:
             audio_signal_status = technical.get("audio_signal_status")
