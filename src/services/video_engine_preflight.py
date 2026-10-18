@@ -209,6 +209,14 @@ def preflight_end_frame_workflow(provider: str | None = None) -> dict:
         missing.append(f"COMFYUI_WORKFLOW_PATH is missing or does not exist: {image_path}")
     if not checks["reference_workflow_file"]:
         missing.append(f"COMFYUI_REFERENCE_WORKFLOW_PATH is missing or does not exist: {reference_path}")
+    image_contract = _inspect_image_workflow(image_path, require_reference=False)
+    reference_contract = _inspect_image_workflow(reference_path, require_reference=True)
+    report["image_workflow"] = image_contract
+    report["reference_workflow"] = reference_contract
+    if not image_contract["valid"]:
+        missing.extend(f"Image workflow: {item}" for item in image_contract["errors"])
+    if not reference_contract["valid"]:
+        missing.extend(f"Reference workflow: {item}" for item in reference_contract["errors"])
     if missing:
         report["status"] = "blocked"
         report["action_items"] = [
@@ -217,6 +225,43 @@ def preflight_end_frame_workflow(provider: str | None = None) -> dict:
         return report
     report["status"] = "ready"
     return report
+
+
+def _inspect_image_workflow(path: Path, *, require_reference: bool) -> dict:
+    """Validate the offline contract required by ComfyUI image generation."""
+    result = {"valid": False, "classes": [], "errors": []}
+    if not path.is_file():
+        result["errors"].append(f"workflow file does not exist: {path}")
+        return result
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        result["errors"].append(f"workflow JSON is invalid: {exc}")
+        return result
+    nodes = data.get("nodes") if isinstance(data, dict) and isinstance(data.get("nodes"), dict) else data
+    if not isinstance(nodes, dict) or not nodes:
+        result["errors"].append("workflow must contain a non-empty nodes object")
+        return result
+    classes = []
+    for node_id, node in nodes.items():
+        if not isinstance(node, dict) or not node.get("class_type"):
+            result["errors"].append(f"node {node_id} is missing class_type")
+            continue
+        if not isinstance(node.get("inputs", {}), dict):
+            result["errors"].append(f"node {node_id} inputs must be an object")
+        classes.append(str(node["class_type"]))
+    result["classes"] = sorted(set(classes))
+    required = {"CheckpointLoaderSimple", "KSampler", "VAEDecode", "SaveImage"}
+    missing_classes = sorted(required - set(classes))
+    if missing_classes:
+        result["errors"].append("missing required nodes: " + ", ".join(missing_classes))
+    if require_reference:
+        if "LoadImage" not in classes:
+            result["errors"].append("reference workflow must contain LoadImage")
+        if not any("ipadapter" in class_name.lower() for class_name in classes):
+            result["errors"].append("reference workflow must contain an IP-Adapter node")
+    result["valid"] = not result["errors"]
+    return result
 
 
 def _video_workflow_action_items(checks: dict) -> list[str]:

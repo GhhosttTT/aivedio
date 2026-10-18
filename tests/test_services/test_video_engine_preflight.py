@@ -32,6 +32,40 @@ def test_local_end_frame_preflight_is_skipped_for_local_video(monkeypatch):
     assert report["status"] == "skipped"
 
 
+def test_remote_end_frame_preflight_validates_workflow_contract(monkeypatch, tmp_path):
+    import json
+    from src.services.video_engine_preflight import settings
+
+    base = {
+        "nodes": {
+            "checkpoint": {"class_type": "CheckpointLoaderSimple", "inputs": {}},
+            "sampler": {"class_type": "KSampler", "inputs": {}},
+            "decode": {"class_type": "VAEDecode", "inputs": {}},
+            "save": {"class_type": "SaveImage", "inputs": {}},
+        }
+    }
+    reference = {
+        "nodes": {
+            **base["nodes"],
+            "load": {"class_type": "LoadImage", "inputs": {}},
+            "adapter": {"class_type": "IPAdapterFaceID", "inputs": {}},
+        }
+    }
+    image_path = tmp_path / "image.json"
+    reference_path = tmp_path / "reference.json"
+    image_path.write_text(json.dumps(base), encoding="utf-8")
+    reference_path.write_text(json.dumps(reference), encoding="utf-8")
+    monkeypatch.setattr(settings, "GENERATION_VIDEO_END_FRAME_ENABLED", True)
+    monkeypatch.setattr(settings, "COMFYUI_WORKFLOW_PATH", str(image_path))
+    monkeypatch.setattr(settings, "COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference_path))
+
+    report = preflight_end_frame_workflow("seedance_api")
+
+    assert report["status"] == "ready"
+    assert report["image_workflow"]["valid"] is True
+    assert report["reference_workflow"]["valid"] is True
+
+
 def test_seedance_preflight_reports_result_endpoint(monkeypatch):
     from src.services.video_engine_preflight import settings
 
