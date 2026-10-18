@@ -1992,6 +1992,18 @@ def _seedance_prompt(request: VideoGenerationRequest, native_ark: bool | None = 
     director_prompt = str(plan.get("director_prompt") or "").strip()
     if director_prompt and director_prompt not in prompt:
         prompt = f"{prompt}. Director direction: {director_prompt}."
+    structured_camera = []
+    for key, label in (
+        ("framing", "framing"),
+        ("camera_movement", "camera movement"),
+        ("performance_direction", "performance direction"),
+        ("edit_intent", "editorial intent"),
+    ):
+        value = str(plan.get(key) or "").strip()
+        if value:
+            structured_camera.append(f"{label}={value}")
+    if structured_camera:
+        prompt = f"{prompt}. Structured shot language: {'; '.join(structured_camera)}."
     if DEFAULT_SEEDANCE_PRODUCTION_CONTRACT not in prompt:
         prompt = f"{prompt}. Production motion contract: {DEFAULT_SEEDANCE_PRODUCTION_CONTRACT}."
     if str(request.aspect_ratio or "").strip() == "9:16":

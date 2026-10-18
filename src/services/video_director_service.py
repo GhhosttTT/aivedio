@@ -39,6 +39,11 @@ class VideoShotPlan:
     negative_prompt: str
     notes: list[str]
     spatial_plan: dict | None = None
+    camera_movement: str = ""
+    framing: str = ""
+    performance_direction: str = ""
+    edit_intent: str = ""
+    continuity_priorities: list[str] | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -54,6 +59,11 @@ class VideoShotPlan:
             "negative_prompt": self.negative_prompt,
             "notes": list(self.notes),
             "spatial_plan": self.spatial_plan or {},
+            "camera_movement": self.camera_movement,
+            "framing": self.framing,
+            "performance_direction": self.performance_direction,
+            "edit_intent": self.edit_intent,
+            "continuity_priorities": list(self.continuity_priorities or []),
         }
 
 
@@ -102,6 +112,11 @@ class VideoDirectorService:
         num_frames = max(8, min(int(settings.GENERATION_VIDEO_MAX_FRAMES), math.ceil(duration * fps)))
         motion, noise = self._motion_params(shot_role, action_intensity)
         spatial_plan = self._spatial_plan(prompt or visual, shot_role, visible)
+        camera_movement = self._camera_movement(shot_role, action_intensity)
+        framing = str(spatial_plan.get("shot_scale") or "medium shot")
+        performance_direction = self._performance_direction(shot_role)
+        edit_intent = self._edit_intent(shot_role, action_intensity)
+        continuity_priorities = self._continuity_priorities(shot_role, visible, spatial_plan)
         director_prompt = self._director_prompt(
             prompt or visual,
             shot_role,
@@ -110,8 +125,16 @@ class VideoDirectorService:
             spatial_plan,
             visual_style,
             dialogue=dialogue,
+            camera_movement=camera_movement,
+            framing=framing,
+            performance_direction=performance_direction,
+            edit_intent=edit_intent,
         )
-        end_frame_prompt = self._end_frame_prompt(prompt or visual, shot_role, action_intensity, visible, spatial_plan, visual_style)
+        end_frame_prompt = self._end_frame_prompt(
+            prompt or visual, shot_role, action_intensity, visible, spatial_plan, visual_style,
+            camera_movement=camera_movement,
+            edit_intent=edit_intent,
+        )
         negative_prompt = self._negative_prompt(project_id, shot_aesthetic)
         notes = [
             "single continuous shot",
@@ -135,6 +158,11 @@ class VideoDirectorService:
             negative_prompt=negative_prompt,
             notes=notes,
             spatial_plan=spatial_plan,
+            camera_movement=camera_movement,
+            framing=framing,
+            performance_direction=performance_direction,
+            edit_intent=edit_intent,
+            continuity_priorities=continuity_priorities,
         )
 
     def normalize_clip(
@@ -299,6 +327,47 @@ class VideoDirectorService:
             return 105, 0.015
         return 127, 0.02
 
+    def _camera_movement(self, shot_role: str, action_intensity: str) -> str:
+        """Choose one unambiguous camera move instead of a generic cinematic tag."""
+        if action_intensity == "high":
+            return "controlled tracking movement that follows the action"
+        return {
+            "prop_interaction": "restrained push-in toward the prop with stable hands",
+            "emotion_reaction": "locked-off camera with a barely perceptible push-in",
+            "dialogue_reaction": "gentle conversational push-in with stable face framing",
+            "establishing": "slow lateral drift with a level horizon",
+        }.get(shot_role, "subtle stabilized camera movement")
+
+    def _performance_direction(self, shot_role: str) -> str:
+        return {
+            "action": "clear physical cause and effect; finish in a readable settled pose",
+            "prop_interaction": "hands move deliberately and keep the prop visible through the handoff",
+            "emotion_reaction": "micro-expression changes gradually; eyes lead the reaction before the head",
+            "dialogue_reaction": "natural breathing, exact lip timing, restrained eye movement and listening posture",
+            "establishing": "environment carries the beat with subtle background life and no invented people",
+        }.get(shot_role, "natural restrained short-drama performance")
+
+    def _edit_intent(self, shot_role: str, action_intensity: str) -> str:
+        if shot_role == "emotion_reaction":
+            return "hold the final reaction for a clean reaction cut"
+        if shot_role == "prop_interaction":
+            return "end on the prop result for a motivated match cut"
+        if shot_role == "action" or action_intensity == "high":
+            return "end at the action result with enough screen direction for a hard cut"
+        if shot_role == "establishing":
+            return "open the location cleanly and leave a stable cut-in point"
+        return "end on a settled eyeline for a clean dialogue cut"
+
+    def _continuity_priorities(self, shot_role: str, visible_characters: list[dict], spatial_plan: dict) -> list[str]:
+        priorities = ["identity and wardrobe", "180-degree screen direction", "background geometry"]
+        if visible_characters:
+            priorities.append("character eyeline and relative positions")
+        if spatial_plan.get("prop_focus"):
+            priorities.append("prop position and hand visibility")
+        if shot_role in {"dialogue_reaction", "emotion_reaction"}:
+            priorities.append("facial performance and lip timing")
+        return priorities
+
     def _spatial_plan(self, prompt: str, shot_role: str, visible_characters: list[dict]) -> dict:
         text = prompt.lower()
         names = [str(item.get("name") or f"character {index + 1}") for index, item in enumerate(visible_characters)]
@@ -371,6 +440,10 @@ class VideoDirectorService:
         spatial_plan: dict,
         visual_style: str = "",
         dialogue: str = "",
+        camera_movement: str = "",
+        framing: str = "",
+        performance_direction: str = "",
+        edit_intent: str = "",
     ) -> str:
         identity = self._identity_prompt(visible_characters)
         role_guidance = {
@@ -397,10 +470,15 @@ class VideoDirectorService:
         else:
             dialogue_guidance = "Dialogue and lip sync: no spoken dialogue; keep mouths relaxed and do not invent speech."
         spatial = f" Spatial continuity contract: {spatial_plan.get('continuity_prompt', '')}"
+        camera_contract = (
+            f" Structured camera contract: framing={framing or spatial_plan.get('shot_scale', 'medium shot')}; "
+            f"movement={camera_movement or camera_guidance}; performance={performance_direction or role_guidance}; "
+            f"editorial intent={edit_intent or 'clean cut point'}."
+        )
         return (
             f"Subject and setting: {prompt}. Action and performance: {role_guidance} "
             f"Shot role: {shot_role}. Motion intensity: {action_intensity}. "
-            f"Camera direction: {camera_guidance}. "
+            f"Camera direction: {camera_guidance}. {camera_contract} "
             f"{dialogue_guidance} "
             f"Timing: one readable atomic beat with a clear beginning, development, and settled ending; "
             f"continuous real-time motion, no jump cut, no time-lapse."
@@ -409,7 +487,17 @@ class VideoDirectorService:
             f"stable wardrobe and props, no new people."
         )
 
-    def _end_frame_prompt(self, prompt: str, shot_role: str, action_intensity: str, visible_characters: list[dict], spatial_plan: dict, visual_style: str = "") -> str:
+    def _end_frame_prompt(
+        self,
+        prompt: str,
+        shot_role: str,
+        action_intensity: str,
+        visible_characters: list[dict],
+        spatial_plan: dict,
+        visual_style: str = "",
+        camera_movement: str = "",
+        edit_intent: str = "",
+    ) -> str:
         identity = self._identity_prompt(visible_characters, prefix=" Keep identity anchors unchanged")
         ending = {
             "action": "the action has just completed, body pose naturally settled, readable result of the movement",
@@ -420,7 +508,9 @@ class VideoDirectorService:
         }.get(shot_role, "the same shot at the end of one short-drama beat")
         return (
             f"{prompt}. End frame: {ending}. Motion intensity was {action_intensity}."
-            f"{identity} Preserve spatial contract: {spatial_plan.get('continuity_prompt', '')} "
+            f"{identity} Camera movement settles after {camera_movement or 'subtle motion'}; "
+            f"editorial intent: {edit_intent or 'clean cut point'}. "
+            f"Preserve spatial contract: {spatial_plan.get('continuity_prompt', '')} "
             f"{visual_style} Same scene, same wardrobe, same props, no new people, cinematic short-drama keyframe."
         )
 

@@ -18,6 +18,25 @@ def test_measured_dialogue_controls_motion_duration(monkeypatch):
     assert any("measured dialogue" in note for note in plan.notes)
 
 
+def test_director_plan_exposes_structured_camera_and_editing_contract():
+    scene = SimpleNamespace(
+        visual_description="woman cries in close-up",
+        image_prompt="a close-up reaction",
+        dialogue="Who is there?",
+        audio_duration=2.0,
+    )
+    plan = VideoDirectorService().plan_scene(scene)
+
+    assert plan.framing == "close-up"
+    assert "push-in" in plan.camera_movement or "locked" in plan.camera_movement
+    assert plan.performance_direction
+    assert "cut" in plan.edit_intent
+    assert "facial performance and lip timing" in plan.continuity_priorities
+    payload = plan.as_dict()
+    assert payload["camera_movement"] == plan.camera_movement
+    assert payload["edit_intent"] == plan.edit_intent
+
+
 def test_overlong_dialogue_requires_a_split_instead_of_frozen_tail(monkeypatch):
     monkeypatch.setattr(settings, "GENERATION_VIDEO_MAX_SECONDS", 6.0)
     monkeypatch.setattr(settings, "GENERATION_VIDEO_MAX_FRAMES", 40)
