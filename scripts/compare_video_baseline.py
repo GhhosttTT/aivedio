@@ -8,6 +8,7 @@ subjective quality claim.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -94,6 +95,17 @@ def _parse_fps(value: str) -> float:
     numerator, denominator = value.split("/", 1)
     denominator_value = float(denominator or 1)
     return float(numerator or 0) / denominator_value if denominator_value else 0.0
+
+
+def _sha256(path: Path) -> str | None:
+    """Return the media content hash when the comparison input is available."""
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _stream_start_delta(video_stream: dict, audio_stream: dict | None) -> float | None:
@@ -357,6 +369,8 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
         "status": status,
         "score": score,
         "min_score": 4.0,
+        "candidate_sha256": _sha256(candidate),
+        "baseline_sha256": _sha256(baseline),
         "candidate": asdict(candidate_stats),
         "baseline": asdict(baseline_stats),
         "differences": differences,

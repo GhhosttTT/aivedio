@@ -93,6 +93,8 @@ def test_compare_video_baseline_reports_measurable_gates(tmp_path):
     assert report["kind"] == "seed_dance_baseline_comparison"
     assert report["status"] == "passed"
     assert report["score"] >= report["min_score"]
+    assert report["candidate_sha256"]
+    assert report["baseline_sha256"]
     assert report["candidate"]["sampled_frames"] >= 4
     assert report["gates"]["duration_close"] is True
     assert report["gates"]["motion_not_static"] is True
