@@ -20,6 +20,7 @@ from src.api.routes.projects import (
 from src.services.generation_review import write_report
 from src.api.routes.projects import _video_version_signature
 from src.tasks.composition_tasks import composition_input_signature
+from src.services.delivery_package import _sha256
 
 
 def test_review_requires_owned_project():
@@ -226,7 +227,14 @@ def test_delivery_package_endpoint_exports_approved_project(tmp_path, monkeypatc
     )
     async def approved_review(*_args, **_kwargs):
         return {
-            "reports": {"generation": {"status": "passed"}},
+            "reports": {
+                "generation": {"status": "passed"},
+                "final_composition": {
+                    "status": "passed",
+                    "video_path": str(final_video),
+                    "video_sha256": _sha256(final_video),
+                },
+            },
             "summary": {"status": "ready"},
         }
 

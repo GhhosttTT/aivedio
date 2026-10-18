@@ -157,6 +157,14 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         raise DeliveryPackageError("Project quality review is not ready for delivery")
 
     root = Path(project_root).resolve()
+    final_path = Path(getattr(project, "final_video_path", None) or "").resolve()
+    final_composition = reports.get("final_composition") if isinstance(reports, dict) else None
+    if not isinstance(final_composition, dict) or final_composition.get("status") != "passed":
+        raise DeliveryPackageError("Final composition review is not passed; delivery is blocked")
+    if Path(str(final_composition.get("video_path") or "")).resolve() != final_path:
+        raise DeliveryPackageError("Final composition review points to a different video")
+    if final_composition.get("video_sha256") != _sha256(final_path):
+        raise DeliveryPackageError("Final composition review is stale for the current video")
     delivery_root = root / "delivery"
     package_path = delivery_root / "delivery_package.zip"
     manifest_path = delivery_root / "delivery_manifest.json"

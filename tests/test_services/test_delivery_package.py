@@ -4,7 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.services.delivery_package import DeliveryPackageError, build_delivery_package, verify_delivery_package
+from src.services.delivery_package import DeliveryPackageError, _sha256, build_delivery_package, verify_delivery_package
+
+
+def _passed_final_composition(final):
+    return {"status": "passed", "video_path": str(final), "video_sha256": _sha256(final)}
 
 
 def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
@@ -16,7 +20,7 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
     (reviews / "generation.json").write_text(json.dumps({"status": "passed"}), encoding="utf-8")
     project = SimpleNamespace(id=7, name="Pilot", theme="都市悬疑", outline="outline", script='{"scenes": []}', final_video_path=str(final), scenes=[])
 
-    manifest = build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}}, {"status": "ready"})
+    manifest = build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)}, {"status": "ready"})
 
     package = tmp_path / "delivery" / "delivery_package.zip"
     assert package.is_file()
@@ -34,6 +38,15 @@ def test_delivery_package_requires_ready_review(tmp_path):
         build_delivery_package(project, tmp_path, {}, {"status": "blocked"})
 
 
+def test_delivery_package_requires_final_composition_evidence(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+
+    with pytest.raises(DeliveryPackageError, match="Final composition review"):
+        build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}}, {"status": "ready"})
+
+
 def test_delivery_package_persists_dynamic_audit_evidence(tmp_path):
     final = tmp_path / "final.mp4"
     final.write_bytes(b"final-video")
@@ -44,6 +57,7 @@ def test_delivery_package_persists_dynamic_audit_evidence(tmp_path):
         tmp_path,
         {
             "generation": {"status": "passed"},
+            "final_composition": _passed_final_composition(final),
             "continuity_audit": {"kind": "continuity_audit", "status": "passed", "pair_count": 1},
             "rhythm_audit": {"kind": "rhythm_audit", "status": "passed", "scene_count": 2},
         },
@@ -61,7 +75,7 @@ def test_delivery_package_verification_detects_tampering(tmp_path):
     final = tmp_path / "final.mp4"
     final.write_bytes(b"final-video")
     project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
-    manifest = build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}}, {"status": "ready"})
+    manifest = build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)}, {"status": "ready"})
     package = tmp_path / "delivery" / "delivery_package.zip"
     assert manifest["verification"]["status"] == "passed"
 
@@ -103,7 +117,7 @@ def test_delivery_package_includes_scene_assets_and_quality_sidecars(tmp_path):
         final_video_path=str(final), scenes=[scene],
     )
 
-    build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}}, {"status": "ready"})
+    build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)}, {"status": "ready"})
 
     with zipfile.ZipFile(tmp_path / "delivery" / "delivery_package.zip") as archive:
         names = set(archive.namelist())
