@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, FileText, Users, Activity, ShieldCheck, Play, RefreshCw, Film } from 'lucide-react';
+import { ArrowLeft, FileText, Users, Activity, ShieldCheck, Play, RefreshCw, Film, Download } from 'lucide-react';
 import { projectApi, errorText, ProductionTask } from '../api/client';
 import type { Project } from '../types';
 import { ScriptPreview } from '../components/ScriptPreview';
@@ -21,6 +21,7 @@ export function ProjectDetail() {
     const [loading, setLoading] = useState(true);
     const [readiness, setReadiness] = useState<ProductionReadinessReport | null>(null);
     const [readinessLoading, setReadinessLoading] = useState(false);
+    const [deliveryUrl, setDeliveryUrl] = useState('');
     const [options, setOptions] = useState({num_scenes: 16, num_characters: 2, style: '现代都市'});
     const [productionOptions, setProductionOptions] = useState({provider: '', request_mode: 'reference', multi_shot: true, sequence_level_multi_shot: false, native_audio: true, draft: false, model: '', resolution: '1080p', output_format: 'mp4', return_last_frame: true, camera_fixed: false, watermark: false, duration_seconds: null as number | null});
     const reload = useCallback(async () => {
@@ -58,6 +59,9 @@ export function ProjectDetail() {
             } else if (operation === '提升 Draft 正式片') {
                 await projectApi.promoteDrafts(Number(id));
                 setTab('production');
+            } else if (operation === '导出交付包') {
+                const exported = await projectApi.deliveryPackage(Number(id));
+                setDeliveryUrl(await projectApi.mediaUrl(Number(id), exported.package_path, true));
             } else {
                 await projectApi.startProduction(Number(id), productionOptions);
                 setTab('production');
@@ -245,6 +249,8 @@ export function ProjectDetail() {
             <div className="wb-row">
                 <button className="wb-icon" title="刷新项目" aria-label="刷新项目" onClick={reload}><RefreshCw size={17}/></button>
                 {project.final_video_path && <Link className="wb-button" to={`/projects/${id}/video`}><Film size={17}/>查看成片</Link>}
+                {project.final_video_path && <button className="wb-button" disabled={locked} onClick={() => run('导出交付包')}><Download size={17}/>导出交付包</button>}
+                {deliveryUrl && <a className="wb-button" href={deliveryUrl}><Download size={17}/>下载 ZIP</a>}
                 <button className="wb-button primary" disabled={locked || !project.scenes?.length || productionBlocked || Boolean(productionOptionIssue)} title={productionOptionIssue || (productionBlocked ? productionBlockedTitle : '开始制作')} onClick={() => run('提交制作')}><Play size={17}/>开始制作</button>
             </div>
         </header>

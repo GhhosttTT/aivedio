@@ -13,7 +13,7 @@ from src.database.session import get_db_session
 from src.utils.storage import storage_manager
 
 router = APIRouter(prefix="/api", tags=["媒体"])
-ALLOWED = {".mp4", ".webm", ".png", ".jpg", ".jpeg", ".webp", ".srt", ".ass", ".json", ".wav", ".mp3"}
+ALLOWED = {".mp4", ".webm", ".png", ".jpg", ".jpeg", ".webp", ".srt", ".ass", ".json", ".wav", ".mp3", ".zip"}
 
 
 def project_file(project_id: int, path: str) -> Path:

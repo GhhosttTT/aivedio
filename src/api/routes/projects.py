@@ -46,6 +46,7 @@ from src.services.repair_plan import build_repair_execution_plan
 from src.services.generation_quality_scorecard import build_generation_quality_scorecard
 from src.services.generation_review import require_passed
 from src.services.story_room_quality import StoryRoomQualityService
+from src.services.delivery_package import DeliveryPackageError, build_delivery_package
 from src.database.session import get_db_session
 from src.database.models import Character, Project, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
@@ -449,6 +450,30 @@ async def get_generation_review(
             final_composition["status"] = "stale"
     summary = _generation_review_summary(reports, repair_output=root)
     return {"project_id": project_id, "reports": reports, "summary": summary}
+
+
+@router.post("/{project_id}/delivery-package")
+async def create_delivery_package(
+    project_id: int,
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    """Export the approved final video together with reproducible QA evidence."""
+    from src.utils.storage import storage_manager
+
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    review = await get_generation_review(project_id, current_user, db_session)
+    try:
+        return build_delivery_package(
+            project,
+            storage_manager.get_project_path(project_id),
+            review["reports"],
+            review["summary"],
+        )
+    except DeliveryPackageError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/{project_id}/production-readiness")
