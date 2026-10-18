@@ -398,6 +398,14 @@ async def get_generation_review(
             reports[key] = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, TypeError, ValueError):
             logger.warning("Cannot read quality report: {}", path)
+    final_video_path = getattr(project, "final_video_path", None)
+    if final_video_path:
+        composition_report_path = Path(final_video_path).with_suffix(".composition_review.json")
+        try:
+            if composition_report_path.is_file():
+                reports["final_composition"] = json.loads(composition_report_path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError):
+            logger.warning("Cannot read composition quality report: {}", composition_report_path)
     from src.tasks.review_tasks import current_story, generation_signature
     from src.services.generation_review import fingerprint
     for name in ("production_story", "generation"):
@@ -553,12 +561,15 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
     production_story = statuses.get("production_story")
     generation = statuses.get("generation")
     baseline = statuses.get("seed_dance_baseline_comparison")
+    composition = statuses.get("final_composition")
     if production_story != "passed":
         action_items.append("Run production story review before generating final assets.")
     if generation != "passed":
         action_items.append("Run sampled-frame generation review before final composition.")
     if baseline != "passed":
         action_items.append("Run Seed Dance baseline comparison before claiming replacement quality.")
+    if composition is not None and composition != "passed":
+        action_items.append("Review the final composition quality gate before delivering the video.")
 
     repair_queue = _repair_queue_summary(reports)
     repair_plan = build_repair_execution_plan(repair_output or Path("storage/validation"), repair_queue["items"])
@@ -566,7 +577,10 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
     if repair_queue["total"]:
         action_items.append(f"Repair queue has {repair_queue['total']} targeted actions from failed generation reports.")
 
-    blocking = bool(stale or needs_split or production_story != "passed" or generation != "passed" or baseline != "passed")
+    blocking = bool(
+        stale or needs_split or production_story != "passed" or generation != "passed"
+        or baseline != "passed" or (composition is not None and composition != "passed")
+    )
     return {
         "status": "blocked" if blocking else "ready",
         "reports": statuses,

@@ -8,6 +8,7 @@ const names: Record<string, string> = {
     story: '生成情节复审',
     production_story: '制作前情节复审',
     generation: '成片质量审核',
+    final_composition: '最终合成质量',
     seed_dance_baseline_comparison: 'Seed Dance 对比验收',
     causal_logic: '因果逻辑',
     character_motivation: '角色动机',

@@ -41,6 +41,28 @@ def test_review_api_returns_score_evidence(tmp_path, monkeypatch):
     assert result["summary"]["status"] == "blocked"
 
 
+def test_review_api_includes_final_composition_report(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    project_root = storage_manager.get_project_path(1)
+    final_video = project_root / "final.mp4"
+    final_video.write_bytes(b"video")
+    final_video.with_suffix(".composition_review.json").write_text(
+        json.dumps({"status": "needs_review", "average": 3.1, "error": "audio drift"}),
+        encoding="utf-8",
+    )
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        id=1, final_video_path=str(final_video), scenes=[],
+    )
+
+    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+
+    assert result["reports"]["final_composition"]["average"] == 3.1
+    assert result["summary"]["status"] == "blocked"
+    assert any("final composition quality gate" in item for item in result["summary"]["action_items"])
+
+
 def test_review_api_marks_old_seedance_baseline_stale_after_candidate_changes(tmp_path, monkeypatch):
     from src.utils.storage import storage_manager
     monkeypatch.setattr(storage_manager, "base_path", tmp_path)
@@ -183,6 +205,17 @@ def test_generation_review_summary_ready_when_reviews_pass():
 
     assert summary["status"] == "ready"
     assert summary["action_items"] == []
+
+
+def test_generation_review_summary_blocks_failed_composition():
+    summary = _generation_review_summary({
+        "production_story": {"status": "passed"},
+        "generation": {"status": "passed"},
+        "seed_dance_baseline_comparison": {"status": "passed"},
+        "final_composition": {"status": "needs_review"},
+    })
+
+    assert summary["status"] == "blocked"
 
 
 def test_generation_review_summary_requires_seed_dance_baseline():
