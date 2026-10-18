@@ -87,6 +87,12 @@ export function ProjectDetail() {
     const productionBlocked = !readiness || readiness.status !== 'ready';
     const productionBlockedTitle = !readiness ? '生产就绪检查未完成' : readiness.status === 'needs_review' ? '先处理生产复查项' : '先处理生产就绪阻断项';
     const locked = Boolean(busy) || project.status === 'in_production';
+    const draftPromotionBlocked = locked || (project.status === 'completed' && Boolean(project.final_video_path));
+    const draftPromotionTitle = project.status === 'in_production'
+        ? '项目正在制作，请等待当前任务结束'
+        : project.status === 'completed' && project.final_video_path
+            ? '项目已完成，不能重复提升 Draft'
+            : '将已生成 Draft 提升为正式片';
     const providerPreflight = readiness?.checks?.video_engine?.provider;
     const selectedSeedance = productionOptions.provider === 'seedance_api'
         || (!productionOptions.provider && providerPreflight?.provider === 'seedance_api');
@@ -281,7 +287,7 @@ export function ProjectDetail() {
                 <label className="wb-check"><input type="checkbox" disabled={locked} checked={productionOptions.watermark} onChange={e => setProductionOptions({...productionOptions, watermark: e.target.checked})}/>添加水印</label>
             </div>
             {productionOptionIssue && <p role="alert" className="wb-alert">{productionOptionIssue}</p>}
-            <button className="wb-button" disabled={locked} onClick={() => run('提升 Draft 正式片')}>将已生成 Draft 提升为正式片</button>
+            <button className="wb-button" disabled={draftPromotionBlocked} title={draftPromotionTitle} onClick={() => run('提升 Draft 正式片')}>将已生成 Draft 提升为正式片</button>
         </section>
         <nav className="wb-tabs" role="tablist" aria-label="项目工作区">
             {[['script', '剧本分镜', FileText], ['characters', '角色参考', Users], ['production', '制作进度', Activity], ['review', '质量审核', ShieldCheck]].map(([key, label, Icon]) => <button key={String(key)} role="tab" aria-selected={tab === key} onClick={() => setTab(String(key))}><Icon size={17}/>{String(label)}</button>)}
