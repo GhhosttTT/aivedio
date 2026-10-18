@@ -534,6 +534,16 @@ def test_human_approval_cannot_override_story_room_failure():
     assert _effective_review_status(report) == "warn"
 
 
+def test_human_approval_cannot_override_baseline_failure():
+    report = {
+        "kind": "seed_dance_baseline_comparison",
+        "status": "needs_review",
+        "human_decision": {"decision": "approved"},
+    }
+
+    assert _effective_review_status(report) == "needs_review"
+
+
 def test_generation_review_summary_requires_final_human_approval():
     summary = _generation_review_summary({
         "production_story": {"status": "passed"},

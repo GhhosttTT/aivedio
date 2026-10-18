@@ -1117,7 +1117,10 @@ def _effective_review_status(report: dict) -> str | None:
     # Story-room failures describe missing structural beats, not subjective
     # presentation preferences. A human may acknowledge them, but cannot
     # turn an incomplete story contract into a production-ready one.
-    if report.get("kind") == "story_room_quality" and status_value != "passed":
+    if report.get("kind") in {
+        "story_room_quality",
+        "seed_dance_baseline_comparison",
+    } and status_value != "passed":
         return status_value
     decision = report.get("human_decision")
     if (
