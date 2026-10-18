@@ -545,6 +545,7 @@ def image_candidate_rank(candidate: dict[str, Any], **thresholds) -> tuple:
         _identity_gate(candidate, thresholds.get("min_identity_score", settings.GENERATION_IMAGE_IDENTITY_MIN_SCORE))[0],
         _character_distinctiveness_gate_passes(candidate),
         _platform_reference_gate_passes(candidate),
+        _image_critical_floor_score(candidate) or 0.0,
         image_selection_score(candidate),
         candidate.get("average", 0),
     )

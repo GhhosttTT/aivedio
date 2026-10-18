@@ -183,6 +183,45 @@ def test_select_best_prefers_identity_safe_candidate_over_higher_average(tmp_pat
     assert final.read_bytes() == second.read_bytes()
 
 
+def test_select_best_prefers_higher_critical_floor_when_candidates_both_pass(tmp_path):
+    first = tmp_path / "high_average_low_floor.png"
+    second = tmp_path / "balanced.png"
+    final = tmp_path / "final.png"
+    make_image(first, (80, 80, 80))
+    make_image(second, (120, 120, 120))
+
+    selector = ImageQualitySelector(reviewer=object())
+    report = selector.select_best([
+        {
+            "index": 1,
+            "path": str(first),
+            "average": 4.9,
+            "platform_score": 5.0,
+            "status": "passed",
+            "metrics": {"technical_score": 2.5},
+            "review": {
+                "facial_identity": {"score": 4, "evidence": "identity remains recognizable"},
+                "identity_consistency": {"score": 4, "evidence": "wardrobe remains stable"},
+            },
+        },
+        {
+            "index": 2,
+            "path": str(second),
+            "average": 4.6,
+            "platform_score": 4.6,
+            "status": "passed",
+            "metrics": {"technical_score": 4.6},
+            "review": {
+                "facial_identity": {"score": 4.6, "evidence": "identity remains recognizable"},
+                "identity_consistency": {"score": 4.6, "evidence": "wardrobe remains stable"},
+            },
+        },
+    ], final, tmp_path / "quality.json", min_average=4.0, require_vlm=False, min_identity_score=4.0)
+
+    assert report["best_index"] == 2
+    assert report["best_critical_floor_score"] == 4.6
+
+
 def test_select_best_prefers_character_distinctiveness_over_higher_average(tmp_path, monkeypatch):
     first = tmp_path / "same_face.png"
     second = tmp_path / "distinct.png"
