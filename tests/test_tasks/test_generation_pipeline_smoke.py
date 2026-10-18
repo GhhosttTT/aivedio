@@ -74,8 +74,10 @@ def test_composition_candidate_publishes_video_and_review_together(tmp_path):
     report = json.loads(final.with_suffix(".composition_review.json").read_text(encoding="utf-8"))
     assert report["path"] == str(final.with_suffix(".composition_review.json"))
     assert report["video_path"] == str(final)
+    assert report["video_signature"] == composition_tasks._video_version_signature(final)
     assert review["path"] == str(final.with_suffix(".composition_review.json"))
     assert review["video_path"] == str(final)
+    assert review["video_signature"] == composition_tasks._video_version_signature(final)
 
 
 def test_composition_accepts_passed_video_quality_report(tmp_path):

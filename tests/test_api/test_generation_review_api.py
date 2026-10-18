@@ -63,6 +63,31 @@ def test_review_api_includes_final_composition_report(tmp_path, monkeypatch):
     assert any("final composition quality gate" in item for item in result["summary"]["action_items"])
 
 
+def test_review_api_marks_final_composition_stale_after_video_changes(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    project_root = storage_manager.get_project_path(1)
+    final_video = project_root / "final.mp4"
+    final_video.write_bytes(b"new-final-video")
+    final_video.with_suffix(".composition_review.json").write_text(
+        json.dumps({
+            "status": "passed",
+            "video_path": str(final_video),
+            "video_signature": "old-final-version",
+        }),
+        encoding="utf-8",
+    )
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        id=1, final_video_path=str(final_video), scenes=[],
+    )
+
+    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+
+    assert result["reports"]["final_composition"]["status"] == "stale"
+    assert any("final composition quality gate" in item for item in result["summary"]["action_items"])
+
+
 def test_review_api_marks_old_seedance_baseline_stale_after_candidate_changes(tmp_path, monkeypatch):
     from src.utils.storage import storage_manager
     monkeypatch.setattr(storage_manager, "base_path", tmp_path)

@@ -31,6 +31,16 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _video_version_signature(path: str | Path) -> str | None:
+    """Return a cheap version marker for invalidating media-based reviews."""
+    media_path = Path(path)
+    try:
+        stat = media_path.stat()
+    except OSError:
+        return None
+    return f"{media_path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
+
+
 def _native_audio_is_ready_for_video_paths(video_paths: list[str], video_composer) -> bool:
     """Honor per-run native-audio intent without enabling it for old assets."""
     if not video_paths:
@@ -120,6 +130,15 @@ def _publish_composition_candidate(
         for backup, destination in backups:
             if backup.exists() and destination.exists():
                 backup.unlink(missing_ok=True)
+    if published_review is not None:
+        final_signature = _video_version_signature(final)
+        published_review["video_signature"] = final_signature
+        destination_report = final.with_suffix(".composition_review.json")
+        if destination_report.is_file():
+            report_payload = json.loads(destination_report.read_text(encoding="utf-8"))
+            if isinstance(report_payload, dict):
+                report_payload["video_signature"] = final_signature
+                write_report(destination_report, report_payload)
     return published_review
 
 
@@ -916,6 +935,7 @@ def _review_final_composed_video(project: Project, scenes: list[Scene], final_vi
     )
     report["path"] = str(report_path)
     report["video_path"] = str(final_video_path)
+    report["video_signature"] = _video_version_signature(final_video_path)
     report["stage"] = "final_composition"
     report["technical_boundary_report"] = technical_boundary_report
     report["final_technical_metrics"] = final_technical_metrics
