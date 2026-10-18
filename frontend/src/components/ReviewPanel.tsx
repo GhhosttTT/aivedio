@@ -256,6 +256,12 @@ function GenerationRunEvidence({report}: {report: any}) {
         </div>
         {evidence.providers?.length ? <p className="wb-muted">Provider：{evidence.providers.join('、')}</p> : null}
         {evidence.provider_task_ids?.length ? <p className="wb-muted">任务：{evidence.provider_task_ids.join('、')}</p> : null}
+        {evidence.spatial_scene_contract_hashes?.length ? (
+            <p className="wb-muted">空间 scene contract：{evidence.spatial_scene_contract_hashes.slice(0, 3).map((hash: string) => hash.slice(0, 12)).join('、')}</p>
+        ) : null}
+        {evidence.spatial_project_signatures?.length ? (
+            <p className="wb-muted">空间项目签名：{evidence.spatial_project_signatures.slice(0, 2).map((hash: string) => hash.slice(0, 12)).join('、')}</p>
+        ) : null}
     </div>;
 }
 
