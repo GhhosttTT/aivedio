@@ -94,6 +94,12 @@ class DialogueDeliveryAuditService:
             }
             checked += 1
             voice_report = self._read_voice_report(audio_path)
+            if audio_path.is_file() and voice_report is None:
+                issues.append(self._issue(
+                    number,
+                    "missing_voice_identity_evidence",
+                    "Dialogue audio is present but its voice identity quality report is missing or invalid.",
+                ))
             if voice_report:
                 voice_identity = voice_report.get("voice_identity")
                 if isinstance(voice_identity, dict):

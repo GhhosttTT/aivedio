@@ -19,6 +19,9 @@ def test_dialogue_delivery_audit_accepts_complete_non_overlapping_assets(tmp_pat
     subtitle = tmp_path / "scene.srt"
     audio.write_bytes(b"audio")
     subtitle.write_text("1\n00:00:00,000 --> 00:00:01,000\n你到底是谁？\n", encoding="utf-8")
+    audio.with_suffix(".quality.json").write_text(json.dumps({
+        "voice_identity": {"requested_speaker": "default", "voice_id": "voice-a"},
+    }), encoding="utf-8")
 
     report = DialogueDeliveryAuditService().audit([_scene(1, audio_path=audio, subtitle_path=subtitle)])
 
@@ -39,6 +42,20 @@ def test_dialogue_delivery_audit_flags_missing_audio_and_subtitle_overrun(tmp_pa
         "subtitle_past_audio",
     }
     assert report.to_dict()["repair_queue"][0]["action"] == "refine_dialogue_audio_delivery"
+
+
+def test_dialogue_delivery_audit_requires_voice_identity_evidence(tmp_path):
+    audio = tmp_path / "scene.wav"
+    subtitle = tmp_path / "scene.srt"
+    audio.write_bytes(b"audio")
+    subtitle.write_text("1\n00:00:00,000 --> 00:00:01,000\n台词\n", encoding="utf-8")
+
+    report = DialogueDeliveryAuditService().audit([
+        _scene(1, audio_path=audio, subtitle_path=subtitle),
+    ])
+
+    assert report.status == "needs_review"
+    assert any(issue["code"] == "missing_voice_identity_evidence" for issue in report.issues)
 
 
 def test_dialogue_delivery_audit_ignores_unrendered_dialogue_scenes(tmp_path):
