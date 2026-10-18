@@ -424,6 +424,7 @@ class LocalComfyUIProvider:
             quality_mode=request.quality_mode,
             repair_action=request.repair_action,
             quality_pipeline=request.quality_pipeline,
+            shot_plan=request.shot_plan,
         )
         return GenerationResult(
             provider=self.name.value,

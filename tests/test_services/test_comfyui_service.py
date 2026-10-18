@@ -169,6 +169,9 @@ class TestComfyUIService:
                         "repair_action": "{repair_action}",
                         "quality_pipeline_json": "{quality_pipeline_json}",
                         "quality_pipeline_stages": "{quality_pipeline_stages}",
+                        "spatial_plan_json": "{spatial_plan_json}",
+                        "spatial_control_references_json": "{spatial_control_references_json}",
+                        "spatial_scene_contract_hash": "{spatial_scene_contract_hash}",
                     },
                 }
             }
@@ -180,6 +183,9 @@ class TestComfyUIService:
                 "repair_action": "refine_video_commercial_aesthetic",
                 "quality_pipeline_json": "{\"stages\": [\"platform_reference_gap_repair\"]}",
                 "quality_pipeline_stages": "platform_reference_gap_repair",
+                "spatial_plan_json": "{\"camera_angle\": \"over_shoulder\"}",
+                "spatial_control_references_json": "{\"pose_reference_prompt\": \"locked\"}",
+                "spatial_scene_contract_hash": "scene-hash",
             })
 
             assert replaced["1"]["inputs"]["motion_bucket_id"] == 96
@@ -189,6 +195,9 @@ class TestComfyUIService:
             assert replaced["1"]["inputs"]["repair_action"] == "refine_video_commercial_aesthetic"
             assert "platform_reference_gap_repair" in replaced["1"]["inputs"]["quality_pipeline_json"]
             assert replaced["1"]["inputs"]["quality_pipeline_stages"] == "platform_reference_gap_repair"
+            assert "over_shoulder" in replaced["1"]["inputs"]["spatial_plan_json"]
+            assert "pose_reference_prompt" in replaced["1"]["inputs"]["spatial_control_references_json"]
+            assert replaced["1"]["inputs"]["spatial_scene_contract_hash"] == "scene-hash"
 
 
 if __name__ == "__main__":

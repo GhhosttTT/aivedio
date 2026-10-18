@@ -697,6 +697,7 @@ class ComfyUIService:
         quality_mode: Optional[str] = None,
         repair_action: Optional[str] = None,
         quality_pipeline: Optional[dict] = None,
+        shot_plan: Optional[dict] = None,
     ) -> str:
         """Run a user-supplied ComfyUI image-to-video API workflow."""
         path = workflow_path or settings.COMFYUI_VIDEO_WORKFLOW_PATH
@@ -713,6 +714,9 @@ class ComfyUIService:
         uploaded_reference = self._upload_reference_image(reference_image)
         uploaded_end = self._upload_reference_image(end_image) if end_image else uploaded_reference
         pipeline = quality_pipeline if isinstance(quality_pipeline, dict) else {}
+        plan = shot_plan if isinstance(shot_plan, dict) else {}
+        spatial_plan = plan.get("spatial_plan") if isinstance(plan.get("spatial_plan"), dict) else {}
+        spatial_asset_pack = plan.get("spatial_asset_pack") if isinstance(plan.get("spatial_asset_pack"), dict) else {}
         replacements = {
             "prompt": prompt,
             "positive_prompt": prompt,
@@ -739,6 +743,16 @@ class ComfyUIService:
             "quality_pipeline_stages": ", ".join(str(item) for item in pipeline.get("stages", []) or []),
             "quality_pipeline_prompt": str(pipeline.get("prompt_directive") or ""),
             "quality_pipeline_negative": str(pipeline.get("negative_directive") or ""),
+            # These JSON placeholders let a ComfyUI workflow consume the same
+            # spatial contract as the remote provider. Workflows that do not
+            # use the placeholders remain backwards-compatible.
+            "shot_plan_json": json.dumps(plan, ensure_ascii=False, sort_keys=True),
+            "spatial_plan_json": json.dumps(spatial_plan, ensure_ascii=False, sort_keys=True),
+            "spatial_control_references_json": json.dumps(
+                spatial_plan.get("control_references") or {}, ensure_ascii=False, sort_keys=True,
+            ),
+            "spatial_asset_pack_json": json.dumps(spatial_asset_pack, ensure_ascii=False, sort_keys=True),
+            "spatial_scene_contract_hash": str(spatial_asset_pack.get("scene_contract_hash") or ""),
         }
         workflow = self._replace_workflow_placeholders(workflow, replacements)
         output_node = settings.COMFYUI_VIDEO_OUTPUT_NODE.strip() or None
