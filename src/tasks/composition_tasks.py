@@ -1135,6 +1135,28 @@ def _composition_review_error(report: dict) -> str | None:
                 f"temporal_jump_ratio={temporal_jump_ratio:.3f}, "
                 f"limit={settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO:.3f}"
             )
+        audio_present = technical.get("audio_present") is True
+        if audio_present and report.get("final_audio_expected") is not True:
+            audio_signal_status = technical.get("audio_signal_status")
+            if audio_signal_status in {"near_silent", "unavailable"}:
+                return (
+                    "final composed video audio signal is not usable: "
+                    f"{audio_signal_status}"
+                )
+            if technical.get("audio_clipping_status") == "clipped":
+                return "final composed video audio signal is clipped at digital full scale"
+            audio_start_delta = technical.get("audio_video_start_delta_seconds")
+            if isinstance(audio_start_delta, (int, float)) and abs(float(audio_start_delta)) > 0.35:
+                return (
+                    "final composed video audio/video start offset is out of sync by "
+                    f"{abs(float(audio_start_delta)):.3f}s"
+                )
+            audio_delta = technical.get("audio_duration_delta_seconds")
+            if isinstance(audio_delta, (int, float)) and abs(float(audio_delta)) > 0.35:
+                return (
+                    "final composed video audio duration is out of sync by "
+                    f"{abs(float(audio_delta)):.3f}s"
+                )
         if report.get("final_audio_expected") is True:
             if not technical.get("audio_present"):
                 return "final composed video is missing the expected audio stream"

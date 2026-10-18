@@ -771,6 +771,60 @@ def test_composition_review_blocks_audio_duration_drift():
     )
 
 
+@pytest.mark.parametrize("audio_signal_status", ["near_silent", "unavailable"])
+def test_composition_review_blocks_unusable_optional_audio(audio_signal_status):
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "audio_present": True,
+            "audio_signal_status": audio_signal_status,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        f"final composed video audio signal is not usable: {audio_signal_status}"
+    )
+
+
+def test_composition_review_blocks_clipped_optional_audio():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "audio_present": True,
+            "audio_signal_status": "usable",
+            "audio_clipping_status": "clipped",
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video audio signal is clipped at digital full scale"
+    )
+
+
+def test_composition_review_blocks_optional_audio_start_drift():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "audio_present": True,
+            "audio_signal_status": "usable",
+            "audio_video_start_delta_seconds": -0.6,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video audio/video start offset is out of sync by 0.600s"
+    )
+
+
 def test_composition_review_blocks_mismatched_shot_geometry():
     report = {
         "status": "passed",
