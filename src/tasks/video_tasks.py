@@ -1862,6 +1862,11 @@ def _video_critical_floor_score(candidate: dict) -> float | None:
 
 
 def _video_selection_score(candidate: dict) -> float:
+    return round(max(0.0, min(5.0, sum(_video_selection_components(candidate).values()))), 2)
+
+
+def _video_selection_components(candidate: dict) -> dict[str, float]:
+    """Return the explainable weighted components used to rank candidates."""
     platform_score = candidate.get("platform_score")
     average = candidate.get("average")
     technical_score = candidate.get("technical_score")
@@ -1890,20 +1895,16 @@ def _video_selection_score(candidate: dict) -> float:
             for value in (platform_score, average, technical_score, distinctiveness_score, performance_score)
             if isinstance(value, (int, float))
         )
-    return round(
-        max(0.0, min(
-            5.0,
-            float(platform_score) * 0.16
-            + float(average) * 0.10
-            + float(technical_score) * 0.07
-            + float(distinctiveness_score) * 0.14
-            + float(performance_score) * 0.14
-            + float(aesthetic_score) * 0.04
-            + float(reference_score) * 0.15
-            + float(critical_floor_score) * 0.20,
-        )),
-        2,
-    )
+    return {
+        "platform": float(platform_score) * 0.16,
+        "review_average": float(average) * 0.10,
+        "technical": float(technical_score) * 0.07,
+        "character_distinctiveness": float(distinctiveness_score) * 0.14,
+        "performance": float(performance_score) * 0.14,
+        "aesthetic": float(aesthetic_score) * 0.04,
+        "platform_reference": float(reference_score) * 0.15,
+        "critical_floor": float(critical_floor_score) * 0.20,
+    }
 
 
 def _review_final_video_after_postprocess(
@@ -2310,6 +2311,7 @@ def _select_best_video_candidate(
     for candidate in candidates:
         _attach_video_technical_metrics(candidate)
         candidate["critical_floor_score"] = _video_critical_floor_score(candidate)
+        candidate["selection_components"] = _video_selection_components(candidate)
         candidate["selection_score"] = _video_selection_score(candidate)
     ranked = sorted(
         candidates,

@@ -2367,6 +2367,10 @@ def test_video_selection_uses_technical_score_when_review_scores_tie(tmp_path, m
     assert report["candidates"][0]["index"] == 2
     assert report["selected_technical_score"] == 4.8
     assert report["selected_selection_score"] > report["candidates"][1]["selection_score"]
+    assert set(report["candidates"][0]["selection_components"]) == {
+        "platform", "review_average", "technical", "character_distinctiveness",
+        "performance", "aesthetic", "platform_reference", "critical_floor",
+    }
 
 
 def test_video_selection_rejects_candidate_below_technical_floor(tmp_path, monkeypatch):
