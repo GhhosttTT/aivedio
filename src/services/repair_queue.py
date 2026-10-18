@@ -431,15 +431,19 @@ def _gate_evidence(gate: dict[str, Any], gate_name: str) -> list[str]:
 def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]) -> dict[str, Any] | None:
     text = evidence.lower()
     if "visual structure diverged from the seed dance baseline" in text:
+        scene_number = _scene_number(candidate)
         return {
             "priority": _priority(text),
             "stage": "video",
             "action": "refine_video_commercial_aesthetic",
-            "execution": _execution_mode("refine_video_commercial_aesthetic"),
+            "execution": (
+                _execution_mode("refine_video_commercial_aesthetic")
+                if scene_number is not None else "manual"
+            ),
             "reason": evidence[:240],
             "recommendation": "Regenerate the clip with stronger baseline-matched composition, subject placement, lighting, and commercial visual direction.",
             "candidate_index": candidate.get("index"),
-            "scene_number": _scene_number(candidate),
+            "scene_number": scene_number,
         }
     if any(
         term in text

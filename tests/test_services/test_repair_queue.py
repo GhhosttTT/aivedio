@@ -807,3 +807,16 @@ def test_repair_queue_maps_baseline_structure_divergence_to_video_aesthetic_repa
     assert queue[0]["action"] == "refine_video_commercial_aesthetic"
     assert queue[0]["scene_number"] == 9
     assert queue[0]["execution"] == "auto"
+
+
+def test_baseline_structure_divergence_without_scene_is_manual():
+    report = {
+        "status": "needs_review",
+        "differences": {"visual_structure_similarity": 0.12},
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "refine_video_commercial_aesthetic"
+    assert queue[0]["scene_number"] is None
+    assert queue[0]["execution"] == "manual"
