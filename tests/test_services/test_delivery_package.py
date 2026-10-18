@@ -18,6 +18,10 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
     reviews = tmp_path / "reviews"
     reviews.mkdir()
     (reviews / "generation.json").write_text(json.dumps({"status": "passed"}), encoding="utf-8")
+    exports = tmp_path / "exports"
+    exports.mkdir()
+    (exports / "douyin.mp4").write_bytes(b"platform-video")
+    (exports / "douyin.json").write_text(json.dumps({"status": "ready", "preset": "douyin"}), encoding="utf-8")
     project = SimpleNamespace(id=7, name="Pilot", theme="都市悬疑", outline="outline", script='{"scenes": []}', final_video_path=str(final), scenes=[])
 
     manifest = build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)}, {"status": "ready"})
@@ -30,6 +34,7 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
         names = set(archive.namelist())
     assert {"media/final_video.mp4", "reviews/generation.json", "metadata/project.json", "metadata/delivery_manifest.json"}.issubset(names)
     assert "metadata/cover.json" in names
+    assert {"exports/douyin.mp4", "exports/douyin.json"}.issubset(names)
 
 
 def test_delivery_package_requires_ready_review(tmp_path):

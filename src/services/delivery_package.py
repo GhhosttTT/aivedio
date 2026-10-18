@@ -122,6 +122,14 @@ def _collect_files(project, project_root: Path, reports: dict) -> list[tuple[Pat
         if report_path.is_file():
             candidates.append((report_path, f"reviews/{report_path.name}"))
 
+    # Platform exports are independently decoded and hash-validated before
+    # delivery. Include both the encoded asset and its preset manifest so the
+    # recipient can reproduce and verify every published variant.
+    export_root = project_root / "exports"
+    for export_path in sorted(export_root.iterdir()) if export_root.is_dir() else []:
+        if export_path.is_file() and export_path.suffix.lower() in {".mp4", ".mov", ".json"}:
+            candidates.append((export_path, f"exports/{export_path.name}"))
+
     scene_subtitles = [
         Path(getattr(scene, "subtitle_path", ""))
         for scene in getattr(project, "scenes", [])
