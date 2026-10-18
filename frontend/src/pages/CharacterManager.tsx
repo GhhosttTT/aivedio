@@ -13,7 +13,7 @@ export default function CharacterManager({projectId, locked = false}: {projectId
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
     const [creating, setCreating] = useState(false);
-    const [form, setForm] = useState({name: '', description: '', appearance: ''});
+    const [form, setForm] = useState({name: '', description: '', personality: '', appearance: ''});
     const load = useCallback(async () => {
         try {
             const data = await characterApi.listCharacters(projectId);
@@ -112,6 +112,7 @@ export default function CharacterManager({projectId, locked = false}: {projectId
             <div className="wb-row wb-between"><h2>创建角色</h2><button type="button" className="wb-icon" title="关闭" aria-label="关闭" onClick={() => setCreating(false)}><X size={17}/></button></div>
             <label>角色名称<input required maxLength={100} value={form.name} onChange={e => setForm({...form, name: e.target.value})}/></label>
             <label>角色描述<textarea value={form.description} maxLength={500} onChange={e => setForm({...form, description: e.target.value})}/></label>
+            <label>性格与表演方向<textarea value={form.personality} maxLength={200} onChange={e => setForm({...form, personality: e.target.value})} placeholder="如：外冷内热、克制但在真相曝光时爆发" /></label>
             <label>外貌设定<textarea value={form.appearance} maxLength={500} onChange={e => setForm({...form, appearance: e.target.value})}/></label>
             <button className="wb-button primary" disabled={busy || !form.name.trim()} type="submit">创建</button>
         </form></div>}
