@@ -52,6 +52,7 @@ from src.services.topic_brief import TopicBriefService
 from src.services.platform_export import PLATFORM_EXPORT_PRESETS, PlatformExportError, export_platform_video
 from src.services.repair_budget import RepairBudget
 from src.services.human_review import HumanReviewStore
+from src.services.continuity_audit import ContinuityAuditService
 from src.database.session import get_db_session
 from src.database.models import Character, Project, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
@@ -424,6 +425,9 @@ async def get_generation_review(
             logger.warning("Cannot read composition quality report: {}", composition_report_path)
     from src.tasks.review_tasks import current_story, generation_signature
     from src.services.generation_review import fingerprint
+    continuity_report = ContinuityAuditService().audit(project, getattr(project, "scenes", []) or []).to_dict()
+    if continuity_report.get("status") != "not_applicable":
+        reports["continuity_audit"] = continuity_report
     human_decisions = HumanReviewStore(project_id).apply(reports)
     for name in ("production_story", "generation"):
         report = reports.get(name)
@@ -708,6 +712,11 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         action_items.append("Run Seed Dance baseline comparison before claiming replacement quality.")
     if composition is not None and composition != "passed":
         action_items.append("Review the final composition quality gate before delivering the video.")
+    continuity = statuses.get("continuity_audit")
+    if continuity == "needs_review":
+        action_items.append("Resolve hard adjacent-shot continuity conflicts before final composition.")
+    elif continuity == "warn":
+        action_items.append("Review adjacent-shot continuity warnings before delivery.")
 
     repair_queue = _repair_queue_summary(reports)
     repair_plan = build_repair_execution_plan(repair_output or Path("storage/validation"), repair_queue["items"])
@@ -718,6 +727,7 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
     blocking = bool(
         stale or needs_split or production_story != "passed" or generation != "passed"
         or baseline != "passed" or (composition is not None and composition != "passed")
+        or continuity == "needs_review"
     )
     return {
         "status": "blocked" if blocking else "ready",
