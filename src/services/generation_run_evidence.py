@@ -112,6 +112,13 @@ def build_video_generation_evidence(
         if isinstance(item.get("provider_metadata"), dict)
         and (item.get("provider_metadata") or {}).get("request_contract_hash")
     })
+    video_sha256s = sorted({
+        str((item.get("provider_metadata") or {}).get("video_sha256"))
+        for item in candidates
+        if isinstance(item.get("provider_metadata"), dict)
+        and isinstance((item.get("provider_metadata") or {}).get("video_sha256"), str)
+        and len((item.get("provider_metadata") or {}).get("video_sha256")) == 64
+    })
     spatial_contract_hashes = sorted({
         str(
             ((item.get("provider_metadata") or {}).get("request_contract") or {})
@@ -138,6 +145,23 @@ def build_video_generation_evidence(
     })
     generated = [item for item in candidates if item.get("status") != "error" and item.get("path")]
     passed = [item for item in candidates if item.get("status") == "passed"]
+    selected_metadata = quality_report.get("selected_provider_metadata")
+    selected_video_sha256 = (
+        selected_metadata.get("video_sha256")
+        if isinstance(selected_metadata, dict)
+        else None
+    )
+    if not selected_video_sha256:
+        selected_path = quality_report.get("selected_path")
+        selected_video_sha256 = next(
+            (
+                (item.get("provider_metadata") or {}).get("video_sha256")
+                for item in candidates
+                if item.get("path") == selected_path
+                and isinstance(item.get("provider_metadata"), dict)
+            ),
+            None,
+        )
     return {
         "schema_version": 2,
         "kind": "video_generation_run",
@@ -157,6 +181,8 @@ def build_video_generation_evidence(
         "providers": providers,
         "provider_task_ids": task_ids,
         "request_contract_hashes": contract_hashes,
+        "video_sha256s": video_sha256s,
+        "selected_video_sha256": selected_video_sha256,
         "spatial_scene_contract_hashes": spatial_contract_hashes,
         "spatial_project_signatures": spatial_project_signatures,
         "quality_budget": quality_report.get("quality_budget", {}),

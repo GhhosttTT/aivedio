@@ -62,6 +62,7 @@ def test_build_video_generation_evidence_tracks_attempts_and_provider_contracts(
                     "provider_metadata": {
                         "provider_name": "seedance_api",
                         "provider_task_id": "task-1",
+                        "video_sha256": "a" * 64,
                         "request_contract_hash": "hash-a",
                         "request_contract": {"spatial_asset_pack": {
                             "scene_contract_hash": "scene-a", "project_signature": "project-a",
@@ -75,6 +76,7 @@ def test_build_video_generation_evidence_tracks_attempts_and_provider_contracts(
                     "provider_metadata": {
                         "provider_name": "seedance_api",
                         "provider_task_id": "task-2",
+                        "video_sha256": "b" * 64,
                         "request_contract_hash": "hash-b",
                         "request_contract": {"spatial_asset_pack": {
                             "scene_contract_hash": "scene-b", "project_signature": "project-a",
@@ -101,5 +103,7 @@ def test_build_video_generation_evidence_tracks_attempts_and_provider_contracts(
     assert evidence["providers"] == ["seedance_api"]
     assert evidence["provider_task_ids"] == ["task-1", "task-2"]
     assert evidence["request_contract_hashes"] == ["hash-a", "hash-b"]
+    assert evidence["video_sha256s"] == ["a" * 64, "b" * 64]
+    assert evidence["selected_video_sha256"] == "b" * 64
     assert evidence["spatial_scene_contract_hashes"] == ["scene-a", "scene-b"]
     assert evidence["spatial_project_signatures"] == ["project-a"]
