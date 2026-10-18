@@ -1,6 +1,7 @@
 import json
 from types import SimpleNamespace
 
+import src.services.generation_provider as generation_provider
 from scripts.validate_seedance_gateway import _validate_live_output, _validate_temporal_quality, main
 from src.services.generation_provider import GenerationProviderError, VideoGenerationRequest
 
@@ -59,6 +60,13 @@ def test_seedance_gateway_dry_run_supports_edit_controls(capsys, tmp_path, monke
     video.write_bytes(b"video")
     monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
     monkeypatch.setenv("SEEDANCE_MEDIA_URL_TEMPLATE", "https://cdn.example/{filename}")
+    monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")
+    monkeypatch.setattr(generation_provider.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(
+        stdout=json.dumps({
+            "streams": [{"width": 1080, "height": 1920, "r_frame_rate": "24/1"}],
+            "format": {"duration": "5.0"},
+        })
+    ))
 
     assert main([
         "--api-format", "ark_v3",

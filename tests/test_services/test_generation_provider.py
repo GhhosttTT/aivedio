@@ -2,6 +2,7 @@
 
 import json
 import os
+import subprocess
 from io import BytesIO
 from types import SimpleNamespace
 
@@ -50,6 +51,33 @@ def disable_generic_output_validation_for_legacy_doubles(monkeypatch):
     """Legacy gateway doubles return bytes, not actual playable videos."""
     for prefix in ("JIMENG", "KLING", "HAILUO", "HTTP_VIDEO"):
         monkeypatch.setenv(f"{prefix}_VALIDATE_OUTPUT", "false")
+
+
+@pytest.fixture(autouse=True)
+def probe_placeholder_media_as_valid_test_inputs(monkeypatch):
+    """Make tiny test doubles behave like measured media until a test overrides ffprobe."""
+    monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")
+
+    def fake_run(command, **_kwargs):
+        command_text = " ".join(str(item) for item in command)
+        if "codec_type" in command_text:
+            return SimpleNamespace(stdout=json.dumps({
+                "streams": [
+                    {"codec_type": "video", "codec_name": "h264", "pix_fmt": "yuv420p", "width": 1080, "height": 1920},
+                    {"codec_type": "audio", "codec_name": "aac"},
+                ],
+                "format": {"duration": "5.0"},
+            }))
+        if "stream=width,height,r_frame_rate:format=duration" in command_text:
+            return SimpleNamespace(stdout=json.dumps({
+                "streams": [{"width": 1080, "height": 1920, "r_frame_rate": "24/1"}],
+                "format": {"duration": "5.0"},
+            }))
+        if "stream=width,height" in command_text:
+            return SimpleNamespace(stdout="1080x1920\n")
+        return SimpleNamespace(stdout="5.0\n")
+
+    monkeypatch.setattr(generation_provider.subprocess, "run", fake_run)
 
 
 @pytest.mark.parametrize(
@@ -2634,6 +2662,44 @@ def test_seedance_provider_native_ark_rejects_audio_over_30_seconds(tmp_path, mo
         ))
 
 
+def test_seedance_native_ark_rejects_local_audio_without_ffprobe(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    audio = tmp_path / "dialogue.wav"
+    audio.write_bytes(b"RIFF" + b"audio")
+    monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: None)
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    with pytest.raises(GenerationProviderError, match="require ffprobe"):
+        provider._video_payload(VideoGenerationRequest(
+            prompt="a character speaks",
+            output_path=str(tmp_path / "out.mp4"),
+            reference_images=["https://cdn.example/character.png"],
+            reference_audios=[str(audio)],
+        ))
+
+
+def test_seedance_native_ark_rejects_unmeasurable_local_video(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_MEDIA_URL_TEMPLATE", "https://cdn.example/{filename}")
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"not a video")
+    monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")
+    monkeypatch.setattr(
+        generation_provider.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(subprocess.SubprocessError("invalid media")),
+    )
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    with pytest.raises(GenerationProviderError, match="Could not inspect Native Ark video reference"):
+        provider._video_payload(VideoGenerationRequest(
+            prompt="continue the motion",
+            output_path=str(tmp_path / "out.mp4"),
+            reference_images=["https://cdn.example/character.png"],
+            reference_videos=[str(video)],
+        ))
+
+
 def test_seedance_20_native_ark_rejects_audio_over_15_seconds(tmp_path, monkeypatch):
     monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
     monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-0-260128")
@@ -2916,7 +2982,6 @@ def test_seedance_native_ark_binds_extend_video_after_other_references(tmp_path,
     monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
     monkeypatch.setenv("SEEDANCE_REQUEST_MODE", "extend")
     monkeypatch.setenv("SEEDANCE_MEDIA_URL_TEMPLATE", "https://cdn.example/{filename}")
-    monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: None)
     reference = tmp_path / "reference.mp4"
     source = tmp_path / "source.mp4"
     reference.write_bytes(b"reference")

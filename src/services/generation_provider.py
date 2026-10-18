@@ -2731,7 +2731,9 @@ def _validate_native_ark_audio_references(
     if total_bytes > 48 * 1024 * 1024 and not media_template:
         raise GenerationProviderError("Native Ark local audio references exceed the safe 48MB aggregate payload budget")
     if not shutil.which("ffprobe"):
-        return bool(media_template and needs_public)
+        raise GenerationProviderError(
+            "Native Ark local audio references require ffprobe for duration and signal validation"
+        )
     durations: list[float] = []
     for path in local_paths:
         try:
@@ -2746,8 +2748,10 @@ def _validate_native_ark_audio_references(
                 timeout=60,
             )
             duration = float(result.stdout.strip())
-        except (OSError, ValueError, subprocess.SubprocessError):
-            continue
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            raise GenerationProviderError(
+                f"Could not measure Native Ark audio reference duration: {path}"
+            ) from exc
         if duration < 2.0 or duration > maximum_duration:
             raise GenerationProviderError(
                 f"Native Ark audio reference must be 2-{maximum_duration:g} seconds: "
@@ -2791,7 +2795,9 @@ def _validate_native_ark_video_references(
             "set SEEDANCE_MEDIA_URL_TEMPLATE for large videos"
         )
     if not shutil.which("ffprobe"):
-        return
+        raise GenerationProviderError(
+            "Native Ark local video references require ffprobe for geometry and duration validation"
+        )
 
     durations: list[float] = []
     for path in local_paths:
@@ -2816,13 +2822,14 @@ def _validate_native_ark_video_references(
             width = int(stream.get("width") or 0)
             height = int(stream.get("height") or 0)
             fps = _parse_provider_frame_rate(str(stream.get("r_frame_rate") or "0/1"))
-        except (OSError, TypeError, ValueError, KeyError, IndexError, json.JSONDecodeError, subprocess.SubprocessError):
-            # Invalid/unusual local media is still sent through Ark's own
-            # decoder when it is otherwise transportable; do not reject test
-            # fixtures or codecs that ffprobe cannot parse here.
-            continue
+        except (OSError, TypeError, ValueError, KeyError, IndexError, json.JSONDecodeError, subprocess.SubprocessError) as exc:
+            raise GenerationProviderError(
+                f"Could not inspect Native Ark video reference: {path}"
+            ) from exc
         if duration <= 0:
-            continue
+            raise GenerationProviderError(
+                f"Native Ark video reference has no measurable duration: {path}"
+            )
         minimum_duration = 4.0 if is_25 and edit_or_extend else 2.0
         maximum_duration = 30.0 if is_25 else 15.0
         if duration < minimum_duration or duration > maximum_duration:
