@@ -68,6 +68,8 @@ export function ProjectDetail() {
             } else if (operation === '按故事房建议重写剧本') {
                 await projectApi.repairScript(Number(id));
                 setTab('script');
+            } else if (operation === '审批当前故事房版本') {
+                await projectApi.approveStoryRoom(Number(id), '工作台确认当前故事房版本');
             } else if (operation === '提升 Draft 正式片') {
                 await projectApi.promoteDrafts(Number(id));
                 setTab('production');
@@ -378,7 +380,7 @@ export function ProjectDetail() {
         {error && <p role="alert" className="wb-alert">{error}</p>}
         {busy && <p role="status" className="wb-alert"><RefreshCw size={15} className="inline animate-spin"/> {busy}进行中</p>}
         <VideoEngineStatus/>
-        <ProductionReadinessPanel report={readiness} loading={readinessLoading} onRefresh={refreshReadiness} onRepairAction={executeReadinessAction}/>
+        <ProductionReadinessPanel report={readiness} loading={readinessLoading} onRefresh={refreshReadiness} onRepairAction={executeReadinessAction} onApproveStoryRoom={() => run('审批当前故事房版本')}/>
         <section className="wb-item" aria-label="连续性资产锁">
             <div className="wb-row wb-between">
                 <div>

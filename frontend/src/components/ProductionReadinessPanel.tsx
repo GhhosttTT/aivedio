@@ -6,11 +6,13 @@ export function ProductionReadinessPanel({
     loading,
     onRefresh,
     onRepairAction,
+    onApproveStoryRoom,
 }: {
     report: ProductionReadinessReport | null;
     loading: boolean;
     onRefresh: () => void;
     onRepairAction?: (action: string) => void;
+    onApproveStoryRoom?: () => void;
 }) {
     const status = report?.status || 'loading';
     const blocked = status === 'blocked';
@@ -21,6 +23,7 @@ export function ProductionReadinessPanel({
     const script = report?.checks.script;
     const storyRhythm = report?.checks.story_rhythm;
     const storyRoom = report?.checks.story_room;
+    const storyApproval = storyRoom?.approval;
     const episodeRhythm = report?.checks.episode_rhythm;
     const topicBrief = report?.checks.topic_brief;
     const visualFormat = report?.checks.visual_format;
@@ -74,6 +77,30 @@ export function ProductionReadinessPanel({
                 <Metric label="样片质量分" value={qualityScorecard ? formatScore(qualityScorecard.production_score) : '未检查'}/>
                 <Metric label="视频引擎" value={report?.checks.video_engine?.status || '未预检'}/>
             </div>
+            {storyRoom?.status === 'passed' && storyApproval && (
+                <div className="wb-summary-actions" aria-label="故事房审批">
+                    <div className="wb-row wb-between">
+                        <div>
+                            <h3>故事房审批</h3>
+                            <p className="wb-muted">
+                                {storyApproval.status === 'approved'
+                                    ? '当前剧本与分镜已锁定，可进入生产门禁。'
+                                    : storyApproval.status === 'stale'
+                                        ? '剧本或分镜已变化，需要重新审批。'
+                                        : '质量检查通过，但尚未完成制作前审批。'}
+                            </p>
+                        </div>
+                        <span className={`wb-badge ${storyApproval.status === 'approved' ? 'success' : ''}`}>
+                            {storyApproval.status === 'approved' ? '已审批' : storyApproval.status === 'stale' ? '审批已失效' : '待审批'}
+                        </span>
+                    </div>
+                    {storyApproval.status !== 'approved' && (
+                        <button className="wb-button primary" disabled={loading} onClick={onApproveStoryRoom}>
+                            审批当前故事房版本
+                        </button>
+                    )}
+                </div>
+            )}
             {storyRoom && storyRoom.missing?.length > 0 && (
                 <div className="wb-summary-actions">
                     <div className="wb-row wb-between">

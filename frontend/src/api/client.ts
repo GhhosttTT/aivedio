@@ -119,6 +119,7 @@ export const projectApi = {
     qualityLoopPlan: (id: number, maxActions = 5, action?: string) => apiClient.get<any, QualityLoopPlanResponse>(`/projects/${id}/quality-loop/plan`, {params: {max_actions: maxActions, ...(action ? {action} : {})}}),
     runAutoRepairQueue: (id: number, data: {max_actions?: number; dry_run?: boolean; action?: string}) => apiClient.post<any, RepairQueueAutoRunResponse>(`/projects/${id}/repair-queue/auto`, data),
     productionReadiness: (id: number, includeEnginePreflight = true, providerOverride?: string, modelOverride?: string, requestModeOverride?: string, resolutionOverride?: string, outputFormatOverride?: string, durationOverride?: number | null) => apiClient.get<any, ProductionReadinessReport>(`/projects/${id}/production-readiness`, {params: {include_engine_preflight: includeEnginePreflight, ...(providerOverride ? {provider_override: providerOverride} : {}), ...(modelOverride ? {model_override: modelOverride} : {}), ...(requestModeOverride ? {request_mode_override: requestModeOverride} : {}), ...(resolutionOverride ? {resolution_override: resolutionOverride} : {}), ...(outputFormatOverride ? {output_format_override: outputFormatOverride} : {}), ...(durationOverride !== null && durationOverride !== undefined ? {duration_override: durationOverride} : {})}}),
+    approveStoryRoom: (id: number, notes = '') => apiClient.post<any, {project_id: number; status: string; approval: Record<string, any>}>(`/projects/${id}/approve-story-room`, {notes}),
     freezeSpatialPlan: (id: number, notes = '') => apiClient.post<any, {project_id: number; status: string; asset_pack: Record<string, any>}>(`/projects/${id}/freeze-spatial-plan`, {notes}),
     freezeVisualStyle: (id: number, data?: {style_prompt?: string; negative_prompt?: string; notes?: string}) => apiClient.post<any, {project_id: number; status: string; asset_pack: Record<string, any>}>(`/projects/${id}/freeze-visual-style`, data || {}),
     freezeWorkflowProfile: (data?: {capabilities?: Record<string, any>; notes?: string}) => apiClient.post<any, {status: string; profile: Record<string, any>}>('/projects/workflow-profile/freeze', data || {}),
@@ -575,6 +576,11 @@ export interface ProductionReadinessReport {
             rewrite_actions?: string[];
             signals?: Record<string, any>;
             scene_notes?: Array<{scene_number: number; reason: string; signals?: string[]}>;
+            approval?: {
+                status: 'approved' | 'missing' | 'stale' | string;
+                input_hash?: string;
+                approved_hash?: string | null;
+            };
         };
         episode_rhythm?: {
             status: string;
