@@ -752,11 +752,14 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
         setError('');
         try {
             if (baselineFile) {
-                await projectApi.uploadSeedDanceBaseline(projectId, baselineFile);
+                const report = await projectApi.uploadSeedDanceBaseline(projectId, baselineFile);
+                await load();
+                setError(`Seed Dance 基线对比完成：${String(report.status) === 'passed' ? '技术门禁通过' : '需要复核'}。`);
             } else {
-                await projectApi.compareSeedDanceBaseline(projectId, {baseline_path: baseline});
+                const report = await projectApi.compareSeedDanceBaseline(projectId, {baseline_path: baseline});
+                await load();
+                setError(`Seed Dance 基线对比完成：${String(report.status) === 'passed' ? '技术门禁通过' : '需要复核'}。`);
             }
-            await load();
         } catch (e) {
             setError(errorText(e));
         } finally {
@@ -769,8 +772,8 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
         setError('');
         try {
             await projectApi.repairScene(projectId, {scene_number: sceneNumber, action});
-            setError(`已提交分镜 ${sceneNumber} 的返工任务`);
             await load();
+            setError(`已提交分镜 ${sceneNumber} 的返工任务`);
         } catch (e) {
             setError(errorText(e));
         } finally {
