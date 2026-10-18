@@ -136,6 +136,7 @@ def _reference_asset_evidence(role: str, value: str | None, index: int | None = 
 def _video_request_contract(request: VideoGenerationRequest, *, request_mode: str, sequence_level: bool) -> dict:
     """Capture the exact controls handed to a video provider."""
     shot_plan = request.shot_plan if isinstance(request.shot_plan, dict) else {}
+
     def fingerprint(value) -> str | None:
         if value is None:
             return None
@@ -199,7 +200,7 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         else "silent"
     )
     contract = {
-        "provider_request_version": 1,
+        "provider_request_version": 2,
         "request_mode": request_mode,
         "model": request.model,
         "resolution": request.resolution,

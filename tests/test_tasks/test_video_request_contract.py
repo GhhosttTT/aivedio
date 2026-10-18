@@ -24,6 +24,7 @@ def test_video_request_contract_captures_effective_generation_controls():
         fps=24,
     )
     contract = _video_request_contract(request, request_mode="multi_shot", sequence_level=True)
+    assert contract["provider_request_version"] == 2
     assert contract["model"] == "doubao-seedance-2-5-260628"
     assert contract["sequence_level_multi_shot"] is True
     assert contract["reference_video_count"] == 1
