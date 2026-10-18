@@ -94,7 +94,6 @@ export function ProjectDetail() {
     const seedance10 = ['1.0', '1-0'].some(token => selectedModel.includes(token));
     const seedance20 = ['2.0', '2-0'].some(token => selectedModel.includes(token));
     const seedance20Limited = seedance20 && (selectedModel.includes('fast') || selectedModel.includes('mini'));
-    const nativeSeedance25 = nativeArk && seedance25;
     const nativeSeedanceNon25 = nativeArk && !seedance25;
     const providerCapabilities = providerPreflight?.capabilities || {};
     const fallbackModelOptions = [
@@ -142,6 +141,19 @@ export function ProjectDetail() {
     const supportsMov = nativeArk && typeof providerCapabilities.supports_mov === 'boolean'
         ? providerCapabilities.supports_mov
         : seedance25;
+    const supportsEdit = nativeArk && typeof providerCapabilities.supports_edit === 'boolean'
+        ? providerCapabilities.supports_edit
+        : !seedance10;
+    const supportsExtend = nativeArk && typeof providerCapabilities.supports_extend === 'boolean'
+        ? providerCapabilities.supports_extend
+        : !seedance10;
+    const durationIsAutomatic = ['edit', 'extend'].includes(productionOptions.request_mode);
+    const durationChoices = [2, 5, 10, 12, 15, 30];
+    const durationIsSupported = (seconds: number) => (
+        !nativeArk
+        || durationIsAutomatic
+        || (seconds >= minimumDuration && seconds <= maximumDuration)
+    );
     const productionOptionIssue = nativeArk && selectedSeedance
         ? selectedModel && !selectedSupportedResolutions.includes(productionOptions.resolution)
             ? `${selectedModel} 不支持 ${productionOptions.resolution}，可用：${selectedSupportedResolutions.join('、')}`
@@ -169,14 +181,35 @@ export function ProjectDetail() {
                     ? ['480p', '720p', '1080p']
                     : ['480p', '720p', '1080p', '4k'];
         const nextIsNon25 = nativeArk && !nextIs25;
+        const nextSupportsAuto = nextIs25;
+        const nextSupportsEdit = !nextIs10;
+        const nextSupportsExtend = !nextIs10;
+        const nextMode = nativeArk && (
+            (productionOptions.request_mode === 'auto' && !nextSupportsAuto)
+            || (productionOptions.request_mode === 'edit' && !nextSupportsEdit)
+            || (productionOptions.request_mode === 'extend' && !nextSupportsExtend)
+        ) ? 'reference' : productionOptions.request_mode;
+        const nextMinimumDuration = nextIs25 && ['edit', 'extend'].includes(nextMode)
+            ? 4
+            : nextIs20
+                ? 4
+                : (nextIs25 || nextIs10)
+                    ? 2
+                    : 4;
+        const nextMaximumDuration = nextIs25 ? 30 : nextIs10 ? 12 : 15;
         setProductionOptions(current => ({
             ...current,
             model,
+            request_mode: nextMode,
             resolution: nativeArk && !nextSupportedResolutions.includes(current.resolution)
                 ? nextSupportedResolutions[nextSupportedResolutions.length - 1]
                 : current.resolution,
             output_format: nextIsNon25 && current.output_format === 'mov' ? 'mp4' : current.output_format,
             draft: nextIsNon25 ? false : current.draft,
+            duration_seconds: current.duration_seconds !== null
+                && (current.duration_seconds < nextMinimumDuration || current.duration_seconds > nextMaximumDuration)
+                ? null
+                : current.duration_seconds,
         }));
     };
     const setRequestMode = (request_mode: string) => setProductionOptions(current => ({
@@ -217,7 +250,7 @@ export function ProjectDetail() {
                     <option value="">环境默认</option><option value="seedance_api">Seedance / Ark</option><option value="http_video_api">兼容视频网关</option><option value="local_comfyui">本地 ComfyUI</option>
                 </select></label>
                 <label>任务模式<select disabled={locked} value={productionOptions.request_mode} onChange={e => setRequestMode(e.target.value)}>
-                    <option value="reference">参考生视频 / Ark</option><option value="auto">自动识别任务类型 / Ark 2.5</option><option value="reference_to_video">参考生视频 / 兼容网关</option><option value="multi_shot">多镜头 2.5</option><option value="edit">视频编辑</option><option value="extend">视频延长</option>
+                    <option value="reference">参考生视频 / Ark</option><option value="auto" disabled={nativeArk && !supportsAutoMode}>自动识别任务类型 / Ark 2.5</option><option value="reference_to_video">参考生视频 / 兼容网关</option><option value="multi_shot">多镜头 2.5</option><option value="edit" disabled={nativeArk && !supportsEdit}>视频编辑{nativeArk && !supportsEdit ? '（当前模型不支持）' : ''}</option><option value="extend" disabled={nativeArk && !supportsExtend}>视频延长{nativeArk && !supportsExtend ? '（当前模型不支持）' : ''}</option>
                 </select></label>
                 <label>Seedance 模型<select disabled={locked || productionOptions.provider !== 'seedance_api'} value={productionOptions.model} onChange={e => setModel(e.target.value)}>
                     <option value="">环境默认</option>{modelOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
@@ -227,7 +260,7 @@ export function ProjectDetail() {
                 <label className="wb-check"><input type="checkbox" disabled={locked || productionOptions.request_mode !== 'multi_shot'} checked={productionOptions.sequence_level_multi_shot} onChange={e => setProductionOptions({...productionOptions, sequence_level_multi_shot: e.target.checked})}/>生成完整 30 秒序列并按时间轴切回分镜</label>
                 <label className="wb-check"><input type="checkbox" disabled={locked || (nativeArk && !supportsDraft)} checked={productionOptions.draft} onChange={e => setProductionOptions({...productionOptions, draft: e.target.checked})}/>先生成 Draft 样片{nativeArk && !supportsDraft ? '（当前模型不支持）' : ''}</label>
                 <label>输出分辨率<select disabled={locked} value={productionOptions.resolution} onChange={e => setProductionOptions({...productionOptions, resolution: e.target.value})}><option value="480p" disabled={nativeArk && !selectedSupportedResolutions.includes('480p')}>480p</option><option value="720p" disabled={nativeArk && !selectedSupportedResolutions.includes('720p')}>720p</option><option value="1080p" disabled={nativeArk && !selectedSupportedResolutions.includes('1080p')}>1080p{nativeArk && !selectedSupportedResolutions.includes('1080p') ? '（当前模型不支持）' : ''}</option><option value="4k" disabled={nativeArk && !selectedSupportedResolutions.includes('4k')}>4K{nativeArk && !selectedSupportedResolutions.includes('4k') ? '（当前模型不支持）' : ''}</option></select></label>
-                <label>单镜头时长<select disabled={locked || (nativeSeedance25 && ['edit', 'extend'].includes(productionOptions.request_mode))} value={productionOptions.duration_seconds ?? ''} onChange={e => setProductionOptions({...productionOptions, duration_seconds: e.target.value ? Number(e.target.value) : null})}><option value="">{nativeSeedance25 && ['edit', 'extend'].includes(productionOptions.request_mode) ? '按输入视频自动保持（-1）' : '自动按分镜/对白'}</option><option value={2} disabled={nativeSeedance25 && ['edit', 'extend'].includes(productionOptions.request_mode)}>2 秒{nativeSeedance25 && ['edit', 'extend'].includes(productionOptions.request_mode) ? '（编辑/延长最低 4 秒）' : ''}</option><option value={5}>5 秒</option><option value={10}>10 秒</option><option value={15}>15 秒</option><option value={30}>30 秒</option></select></label>
+                <label>单镜头时长<select disabled={locked || durationIsAutomatic} value={productionOptions.duration_seconds ?? ''} onChange={e => setProductionOptions({...productionOptions, duration_seconds: e.target.value ? Number(e.target.value) : null})}><option value="">{durationIsAutomatic ? '按输入视频自动保持（-1）' : '自动按分镜/对白'}</option>{durationChoices.map(seconds => <option key={seconds} value={seconds} disabled={!durationIsSupported(seconds)}>{seconds} 秒{!durationIsSupported(seconds) ? '（当前模型范围 ' + minimumDuration + '–' + maximumDuration + ' 秒）' : ''}</option>)}</select></label>
                 <label>输出格式<select disabled={locked} value={productionOptions.output_format} onChange={e => setProductionOptions({...productionOptions, output_format: e.target.value})}><option value="mp4">MP4</option><option value="mov" disabled={nativeArk && !supportsMov}>MOV{nativeArk && !supportsMov ? '（当前模型不支持）' : ''}</option></select></label>
                 <label className="wb-check"><input type="checkbox" disabled={locked} checked={productionOptions.return_last_frame} onChange={e => setProductionOptions({...productionOptions, return_last_frame: e.target.checked})}/>返回末帧</label>
                 <label className="wb-check"><input type="checkbox" disabled={locked} checked={productionOptions.camera_fixed} onChange={e => setProductionOptions({...productionOptions, camera_fixed: e.target.checked})}/>固定镜头</label>
