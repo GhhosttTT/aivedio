@@ -130,6 +130,7 @@ class VideoComposer:
                 text=True,
                 check=True
             )
+            self._require_output_file(output_path, "视频拼接")
             
             logger.info(f"视频拼接成功: {output_path}")
             
@@ -216,6 +217,7 @@ class VideoComposer:
                 text=True,
                 check=True
             )
+            self._require_output_file(output_path, "音视频同步")
             
             logger.info(f"音视频同步成功: {output_path}")
             
@@ -319,6 +321,7 @@ class VideoComposer:
                 text=True,
                 check=True
             )
+            self._require_output_file(output_path, "背景音乐添加")
             
             logger.info(f"背景音乐添加成功: {output_path}")
             

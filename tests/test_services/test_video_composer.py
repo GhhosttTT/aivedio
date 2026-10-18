@@ -18,6 +18,13 @@ from src.services.video_composer import (
 )
 
 
+def _fake_ffmpeg_run(command, *args, **kwargs):
+    """Simulate FFmpeg while preserving the output-file postcondition."""
+    if command and command[0] == "ffmpeg":
+        Path(command[-1]).write_bytes(b"generated media")
+    return MagicMock(returncode=0, stdout="")
+
+
 class TestVideoComposer:
     """视频合成服务测试类"""
     
@@ -65,7 +72,7 @@ class TestVideoComposer:
         
         # Mock duration, stream inspection, and ffmpeg.
         with patch.object(service, "_get_duration", return_value=10.0), patch('subprocess.run') as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
             
             result = service.concat_videos(
                 [str(video1), str(video2)],
@@ -94,7 +101,7 @@ class TestVideoComposer:
         output_path = tmp_path / "output.mp4"
 
         with patch('subprocess.run') as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
 
             result = service.concat_videos([str(video_file)], str(output_path))
 
@@ -114,7 +121,7 @@ class TestVideoComposer:
         video_file.write_text("fake video")
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
             service.concat_videos([str(video_file)], str(output_path), preserve_audio=True)
 
         cmd = mock_run.call_args.args[0]
@@ -129,9 +136,10 @@ class TestVideoComposer:
         video2.write_text("fake video 2")
         output_path = tmp_path / "output.mp4"
         output_path.write_text("fake output")
+        service.has_audio_stream = Mock(return_value=True)
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
             service.concat_videos([str(video1), str(video2)], str(output_path), preserve_audio=True)
         cmd = mock_run.call_args.args[0]
         filter_complex = cmd[cmd.index("-filter_complex") + 1]
@@ -153,7 +161,7 @@ class TestVideoComposer:
         service.has_audio_stream = Mock(side_effect=[True, False])
         service._get_duration = Mock(return_value=2.75)
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
             service.concat_videos([str(video1), str(video2)], str(output_path), preserve_audio=True)
         cmd = mock_run.call_args.args[0]
         filter_complex = cmd[cmd.index("-filter_complex") + 1]
@@ -173,6 +181,7 @@ class TestVideoComposer:
         with patch.object(service, "has_audio_stream", return_value=False), patch(
             "src.services.video_composer.subprocess.run"
         ) as run:
+            run.side_effect = _fake_ffmpeg_run
             service.concat_videos(
                 [str(video1), str(video2)],
                 str(output_path),
@@ -196,7 +205,7 @@ class TestVideoComposer:
         service._get_duration = Mock(side_effect=[2.0, 2.0])
         service.has_audio_stream = Mock(return_value=True)
         with patch("src.services.video_composer.subprocess.run") as run:
-            run.return_value = MagicMock(returncode=0)
+            run.side_effect = _fake_ffmpeg_run
             service.concat_videos(
                 [str(video1), str(video2)],
                 str(output_path),
@@ -220,7 +229,7 @@ class TestVideoComposer:
         output_path = tmp_path / "output.mp4"
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
             service.concat_videos(
                 [str(video1), str(video2)], str(output_path), preserve_provider_quality=True,
             )
@@ -286,12 +295,14 @@ class TestVideoComposer:
         video2.write_text("fake video 2")
 
         with patch("subprocess.run") as mock_run:
-            mock_run.side_effect = [
-                SimpleNamespace(
-                    stdout='{"streams":[{"width":1920,"height":1080,"avg_frame_rate":"24/1","pix_fmt":"yuv420p"}]}'
-                ),
-                MagicMock(returncode=0),
-            ]
+            def probe_then_ffmpeg(command, *args, **kwargs):
+                if command and command[0] == "ffprobe":
+                    return SimpleNamespace(
+                        stdout='{"streams":[{"width":1920,"height":1080,"avg_frame_rate":"24/1","pix_fmt":"yuv420p"}]}'
+                    )
+                return _fake_ffmpeg_run(command, *args, **kwargs)
+
+            mock_run.side_effect = probe_then_ffmpeg
             service.concat_videos(
                 [str(video1), str(video2)], str(output_path),
                 preserve_provider_quality=True,
@@ -331,7 +342,7 @@ class TestVideoComposer:
         # Mock _get_duration 和 subprocess.run
         with patch.object(service, '_get_duration', side_effect=[10.0, 10.0]):
             with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
+                mock_run.side_effect = _fake_ffmpeg_run
                 
                 result = service.sync_audio_video(
                     str(video_file),
@@ -375,8 +386,9 @@ class TestVideoComposer:
         output_path = tmp_path / "output.mp4"
         
         # Mock duration, stream inspection, and ffmpeg.
+        service.has_audio_stream = Mock(return_value=True)
         with patch.object(service, "_get_duration", return_value=10.0), patch('subprocess.run') as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
             
             result = service.add_bgm(
                 str(video_file),
@@ -386,7 +398,7 @@ class TestVideoComposer:
             )
         
         assert result == str(output_path)
-        assert mock_run.call_count == 2  # ffprobe + ffmpeg
+        assert mock_run.call_count == 1  # ffmpeg; audio stream inspection is mocked
         command = mock_run.call_args_list[-1].args[0]
         filter_complex = command[command.index("-filter_complex") + 1]
         assert "sidechaincompress" in filter_complex
@@ -589,7 +601,7 @@ class TestVideoComposer:
         
         # Mock subprocess.run
         with patch('subprocess.run') as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
             
             result = service._concat_audio(
                 [str(audio1), str(audio2)],

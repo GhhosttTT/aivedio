@@ -14,6 +14,13 @@ from unittest.mock import Mock, patch, MagicMock
 from src.services.video_composer import VideoComposer
 
 
+def _fake_ffmpeg_run(command, *args, **kwargs):
+    if command and command[0] == "ffmpeg":
+        with open(command[-1], "wb") as output:
+            output.write(b"generated media")
+    return Mock(returncode=0, stdout="")
+
+
 class TestVideoComposerProperties:
     """VideoComposer 属性测试"""
     
@@ -71,7 +78,7 @@ class TestVideoComposerProperties:
         with patch.object(self.composer, '_get_duration', return_value=video_duration):
             # Mock FFmpeg 执行
             with patch('subprocess.run') as mock_run:
-                mock_run.return_value = Mock(returncode=0)
+                mock_run.side_effect = _fake_ffmpeg_run
                 
                 # 拼接视频
                 try:
@@ -126,7 +133,7 @@ class TestVideoComposerProperties:
         with patch.object(self.composer, '_get_duration', side_effect=mock_get_duration):
             # Mock FFmpeg 执行
             with patch('subprocess.run') as mock_run:
-                mock_run.return_value = Mock(returncode=0)
+                mock_run.side_effect = _fake_ffmpeg_run
                 
                 # 同步音视频
                 try:
@@ -177,7 +184,7 @@ class TestVideoComposerProperties:
         
         # Mock FFmpeg 执行
         with patch('subprocess.run') as mock_run:
-            mock_run.return_value = Mock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
             
             # 拼接视频
             try:
@@ -221,7 +228,7 @@ class TestVideoComposerProperties:
         
         # Mock FFmpeg 执行
         with patch('subprocess.run') as mock_run:
-            mock_run.return_value = Mock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
             
             # 拼接视频
             try:
@@ -276,7 +283,7 @@ class TestVideoComposerProperties:
         with patch.object(self.composer, '_get_duration', side_effect=mock_get_duration):
             # Mock FFmpeg 执行
             with patch('subprocess.run') as mock_run:
-                mock_run.return_value = Mock(returncode=0)
+                mock_run.side_effect = _fake_ffmpeg_run
                 
                 # 添加背景音乐
                 try:
@@ -316,7 +323,7 @@ class TestVideoComposerProperties:
         with patch.object(self.composer, '_get_duration', return_value=audio_duration):
             # Mock FFmpeg 执行
             with patch('subprocess.run') as mock_run:
-                mock_run.return_value = Mock(returncode=0)
+                mock_run.side_effect = _fake_ffmpeg_run
                 
                 # 拼接音频
                 try:

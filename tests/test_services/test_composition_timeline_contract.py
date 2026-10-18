@@ -191,6 +191,10 @@ def test_short_dialogue_does_not_shorten_the_final_video(monkeypatch, tmp_path):
     composer = VideoComposer()
     monkeypatch.setattr(composer, "_get_duration", Mock(side_effect=[5.0, 4.5]))
     run = Mock()
+    def run_ffmpeg(command, *args, **kwargs):
+        Path(command[-1]).write_bytes(b"generated media")
+        return Mock(returncode=0)
+    run.side_effect = run_ffmpeg
     monkeypatch.setattr("src.services.video_composer.subprocess.run", run)
     composer.sync_audio_video(str(video), str(audio))
     cmd = run.call_args.args[0]
