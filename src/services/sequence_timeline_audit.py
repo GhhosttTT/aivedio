@@ -68,8 +68,25 @@ class SequenceTimelineAuditService:
                 "planned_end_seconds": expected.get("end_seconds"),
                 "planned_duration_seconds": expected_duration,
                 "actual_duration_seconds": actual_duration,
+                "technical_evidence_status": observed.get("technical_evidence_status"),
+                "temporal_sample_evidence": observed.get("temporal_sample_evidence"),
+                "sampled_frames": observed.get("sampled_frames"),
             }
             segments.append(item)
+            if observed.get("technical_evidence_status") == "unavailable" or observed.get("status") == "unavailable":
+                issues.append({
+                    "severity": "high",
+                    "code": "segment_technical_evidence_unavailable",
+                    "scene_number": scene_number,
+                    "message": "published segment technical evidence is unavailable",
+                })
+            elif observed.get("temporal_sample_evidence") == "insufficient":
+                issues.append({
+                    "severity": "high",
+                    "code": "segment_temporal_evidence_insufficient",
+                    "scene_number": scene_number,
+                    "message": "published segment has insufficient temporal evidence",
+                })
             if expected_duration is None or actual_duration is None:
                 issues.append({
                     "severity": "high",

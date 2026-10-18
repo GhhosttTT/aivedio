@@ -33,6 +33,32 @@ def test_sequence_timeline_audit_flags_duration_drift_and_count_mismatch():
     assert report.to_dict()["repair_queue"][0]["action"] == "fix_video_output_contract"
 
 
+def test_sequence_timeline_audit_rejects_insufficient_segment_evidence():
+    report = SequenceTimelineAuditService().audit(
+        [_planned(1, 2.0)],
+        [{
+            "scene_number": 1,
+            "duration_seconds": 2.0,
+            "status": "available",
+            "temporal_sample_evidence": "insufficient",
+            "sampled_frames": 3,
+        }],
+    )
+
+    assert report.status == "needs_review"
+    assert report.issues[0]["code"] == "segment_temporal_evidence_insufficient"
+
+
+def test_sequence_timeline_audit_rejects_unavailable_segment_evidence():
+    report = SequenceTimelineAuditService().audit(
+        [_planned(1, 2.0)],
+        [{"scene_number": 1, "duration_seconds": 2.0, "status": "unavailable"}],
+    )
+
+    assert report.status == "needs_review"
+    assert report.issues[0]["code"] == "segment_technical_evidence_unavailable"
+
+
 def test_sequence_timeline_audit_is_not_applicable_without_segments():
     report = SequenceTimelineAuditService().audit([], [])
 

@@ -2900,6 +2900,11 @@ def generate_sequence_video_task(
             timeline_actual.append({
                 "scene_number": scene.scene_number,
                 "duration_seconds": metrics.get("duration_seconds") if isinstance(metrics, dict) else None,
+                "status": metrics.get("status") if isinstance(metrics, dict) else "unavailable",
+                "temporal_sample_evidence": (
+                    metrics.get("temporal_sample_evidence") if isinstance(metrics, dict) else None
+                ),
+                "sampled_frames": metrics.get("sampled_frames") if isinstance(metrics, dict) else None,
             })
         timeline_report = SequenceTimelineAuditService().audit(
             [segment.as_dict() for segment in segments], timeline_actual
