@@ -11,6 +11,7 @@ from src.services.image_quality_service import (
     PLATFORM_REFERENCE_FEATURES,
     ImageQualitySelector,
     candidate_output_path,
+    image_selection_components,
     image_selection_score,
     platform_aesthetic_gate,
     platform_reference_gate,
@@ -39,6 +40,27 @@ def passed_platform_reference_scores(score: int = 5) -> dict:
 
 def test_candidate_output_path_keeps_final_extension():
     assert candidate_output_path("scene.png", 3) == "scene.candidate_03.png"
+
+
+def test_image_selection_components_explain_the_weighted_selection_score():
+    candidate = {
+        "platform_score": 4.0,
+        "average": 3.5,
+        "metrics": {"technical_score": 4.5},
+        "character_distinctiveness_score": 4.2,
+        "platform_reference_score": 4.8,
+    }
+
+    components = image_selection_components(candidate)
+
+    assert components == {
+        "platform": 1.4,
+        "review_average": 0.63,
+        "technical": 0.54,
+        "character_distinctiveness": 0.63,
+        "platform_reference": 0.96,
+    }
+    assert round(sum(components.values()), 2) == image_selection_score(candidate)
 
 
 def test_image_review_rubric_checks_mobile_short_drama_aesthetics():

@@ -400,6 +400,23 @@ def _candidate_platform_reference_score(candidate: dict[str, Any]) -> float | No
     return float(score) if isinstance(score, (int, float)) else None
 
 
+def _image_critical_floor_score(candidate: dict[str, Any]) -> float | None:
+    """Return the weakest quality dimension that can invalidate a keyframe."""
+    scores: list[float] = []
+    for key in ("facial_identity", "identity_consistency"):
+        score = _review_score(candidate, key)
+        if score is not None:
+            scores.append(score)
+    for key in ("platform_aesthetic_gate", "platform_reference_gate", "character_distinctiveness_gate", "turnaround_gate"):
+        gate = candidate.get(key)
+        if isinstance(gate, dict) and isinstance(gate.get("average"), (int, float)):
+            scores.append(float(gate["average"]))
+    for value in (_candidate_technical_score(candidate), candidate.get("platform_score")):
+        if isinstance(value, (int, float)):
+            scores.append(float(value))
+    return min(scores) if scores else None
+
+
 def _platform_reference_gate_passes(candidate: dict[str, Any]) -> bool:
     gate = candidate.get("platform_reference_gate")
     return not isinstance(gate, dict) or gate.get("status") == "passed"
@@ -447,6 +464,32 @@ def image_selection_score(candidate: dict[str, Any]) -> float:
         + distinctiveness_value * 0.15
         + reference_value * 0.20
     )
+
+
+def image_selection_components(candidate: dict[str, Any]) -> dict[str, float]:
+    """Return the explainable weighted components used to rank image candidates."""
+    platform_score = candidate.get("platform_score")
+    average = candidate.get("average")
+    technical_score = _candidate_technical_score(candidate)
+    distinctiveness_score = _candidate_distinctiveness_score(candidate)
+    reference_score = _candidate_platform_reference_score(candidate)
+    if not isinstance(platform_score, (int, float)):
+        platform_score = average if isinstance(average, (int, float)) else 0.0
+    if not isinstance(average, (int, float)):
+        average = platform_score
+    if not isinstance(technical_score, (int, float)):
+        technical_score = platform_score
+    if not isinstance(distinctiveness_score, (int, float)):
+        distinctiveness_score = platform_score
+    if not isinstance(reference_score, (int, float)):
+        reference_score = platform_score
+    return {
+        "platform": float(platform_score) * 0.35,
+        "review_average": float(average) * 0.18,
+        "technical": float(technical_score) * 0.12,
+        "character_distinctiveness": float(distinctiveness_score) * 0.15,
+        "platform_reference": float(reference_score) * 0.20,
+    }
 
 
 def image_candidate_error(
@@ -629,6 +672,8 @@ class ImageQualitySelector:
         min_platform_score = settings.GENERATION_IMAGE_PLATFORM_MIN_SCORE
         for candidate in candidates:
             prepare_image_candidate(candidate)
+            candidate["critical_floor_score"] = _image_critical_floor_score(candidate)
+            candidate["selection_components"] = image_selection_components(candidate)
         ranked = sorted(
             candidates,
             key=lambda item: image_candidate_rank(
@@ -651,6 +696,7 @@ class ImageQualitySelector:
             "best_platform_score": platform_score,
             "best_technical_score": _candidate_technical_score(best),
             "best_selection_score": best.get("selection_score"),
+            "best_critical_floor_score": best.get("critical_floor_score"),
             "min_average": min_average,
             "min_identity_score": min_identity_score,
             "min_platform_score": min_platform_score,

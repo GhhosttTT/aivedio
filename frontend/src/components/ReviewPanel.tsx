@@ -559,6 +559,39 @@ function VideoCandidateSelectionEvidence({report}: {report: any}) {
     </div>;
 }
 
+function ImageCandidateSelectionEvidence({report}: {report: any}) {
+    if (report?.kind !== 'image_candidate_selection') return null;
+    const candidates = Array.isArray(report.candidates) ? report.candidates : [];
+    const componentLabels: Record<string, string> = {
+        platform: '平台审美',
+        review_average: '审核均分',
+        technical: '技术质量',
+        character_distinctiveness: '角色区分',
+        platform_reference: '基线参考',
+    };
+    const score = (value: unknown) => typeof value === 'number' ? value.toFixed(2) : '-';
+    return <div className="wb-summary-actions" aria-label="图像候选选择证据">
+        <h4>关键帧候选选择</h4>
+        <p className="wb-muted">已按通过门禁、关键短板和多维质量分选择关键帧；分项分数用于复盘，不代表人工审美结论。</p>
+        <div className="wb-grid compact">
+            <div className="wb-kv"><span>候选数</span><strong>{candidates.length}</strong></div>
+            <div className="wb-kv"><span>选中分数</span><strong>{score(report.best_selection_score)}</strong></div>
+            <div className="wb-kv"><span>选中关键短板</span><strong>{score(report.best_critical_floor_score)}</strong></div>
+        </div>
+        {candidates.slice(0, 5).map((candidate: any, index: number) => {
+            const selected = candidate.index === report.best_index;
+            const components = candidate.selection_components || {};
+            return <div className={`wb-issue ${selected ? 'warning' : ''}`} key={`${candidate.index || index}-${candidate.path || index}`}>
+                <span>{selected ? '已选' : `候选 ${candidate.index || index + 1}`}</span>
+                <div>
+                    <p>总分 {score(candidate.selection_score)} · 关键短板 {score(candidate.critical_floor_score)}</p>
+                    <p className="wb-muted">{Object.entries(componentLabels).map(([key, label]) => `${label} ${score(components[key])}`).join(' · ')}</p>
+                </div>
+            </div>;
+        })}
+    </div>;
+}
+
 function ReviewSummary({
     summary,
     qualityPlan,
@@ -880,6 +913,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <GenerationRunEvidence report={report}/>
             <FinalCompositionEvidence projectId={projectId} report={report}/>
             <VideoCandidateSelectionEvidence report={report}/>
+            <ImageCandidateSelectionEvidence report={report}/>
             <SeedDanceComparison projectId={projectId} report={report}/>
             <SequenceBoundaryEvidence report={report}/>
             <StoryRoomEvidence report={report}/>
