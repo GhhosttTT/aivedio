@@ -49,6 +49,7 @@ from src.services.story_room_quality import StoryRoomQualityService
 from src.services.delivery_package import DeliveryPackageError, build_delivery_package
 from src.services.topic_brief import TopicBriefService
 from src.services.platform_export import PLATFORM_EXPORT_PRESETS, PlatformExportError, export_platform_video
+from src.services.repair_budget import RepairBudget
 from src.database.session import get_db_session
 from src.database.models import Character, Project, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
@@ -1566,13 +1567,16 @@ async def run_auto_repair_queue(
     db_session: Session = Depends(get_db_session),
 ):
     review = await get_generation_review(project_id, current_user, db_session)
+    budget = RepairBudget(project_id)
+    if review.get("summary", {}).get("status") in {"ready", "ready_for_seed_dance_candidate"}:
+        budget.reset()
     loop_plan = build_quality_loop_plan(review.get("summary", {}), request.max_actions)
-    selected = loop_plan["selected"]
-    skipped = loop_plan["skipped"]
+    selected, exhausted = budget.filter(loop_plan["selected"])
+    skipped = loop_plan["skipped"] + exhausted
     if request.dry_run:
         return RepairQueueAutoRunResponse(
             project_id=project_id,
-            status="planned" if selected else "no_auto_actions",
+            status="planned" if selected else ("manual_review_required" if exhausted else "no_auto_actions"),
             dry_run=True,
             submitted=[],
             skipped=skipped,
@@ -1603,6 +1607,8 @@ async def run_auto_repair_queue(
         except Exception as exc:
             logger.error(f"自动返工任务创建失败: {exc}", exc_info=True)
             skipped.extend({**item, "reason": "task_submission_failed"} for item in selected)
+        else:
+            budget.record(selected)
 
     if submitted and skipped:
         result_status = "partial"
@@ -1610,6 +1616,8 @@ async def run_auto_repair_queue(
         result_status = "submitted"
     elif selected:
         result_status = "blocked"
+    elif exhausted:
+        result_status = "manual_review_required"
     else:
         result_status = "no_auto_actions"
     return RepairQueueAutoRunResponse(
