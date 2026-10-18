@@ -101,7 +101,12 @@ def validate_story_review_coverage(report: dict, scenes) -> dict:
 def validate_generation_review_evidence(report: dict, scenes) -> dict:
     """Verify that each reviewed scene points to a live, matching evidence file."""
     if isinstance(report, dict) and report.get("mode") == "single_shot_smoke_test":
-        return {"passed": True, "missing": [], "invalid": [], "reason": "smoke_test"}
+        return {
+            "passed": False,
+            "missing": [],
+            "invalid": [],
+            "reason": "draft smoke tests are not production review evidence",
+        }
     expected = {int(scene.scene_number): scene for scene in scenes}
     missing: list[int] = []
     invalid: list[int] = []
@@ -202,19 +207,7 @@ def review_generation_task(self, project_id: int, task_id: int):
         production_options = load_production_video_options(project_id, task_id) or {}
         explicit_draft_run = bool(production_options.get("draft"))
         if len(scenes) == 1 and explicit_draft_run and os.getenv("ENABLE_DRAFT_MEDIA_FALLBACK", "false").lower() in {"1", "true", "yes", "on"}:
-            report.update({
-                "status": "passed",
-                "mode": "single_shot_smoke_test",
-                "scenes": [{
-                    "scene_id": scenes[0].id,
-                    "scene_number": scenes[0].scene_number,
-                    "status": "passed",
-                    "average": 4.0,
-                    "report": None,
-                }],
-            })
-            write_report(root / "generation.json", report)
-            return report
+            raise ReviewError("Draft smoke tests cannot enter production review")
         reviewer = GenerationReviewService()
         references = {}
         from src.tasks.image_tasks import _visual_character, _get_reference_image

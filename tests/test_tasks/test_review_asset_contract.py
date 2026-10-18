@@ -39,6 +39,17 @@ def test_retimed_audio_invalidates_the_previous_review(assets):
     assert review_tasks.generation_signature(project, [scene]) != previous
 
 
+def test_draft_smoke_review_is_not_production_evidence(assets):
+    project, scene = assets
+    evidence = review_tasks.validate_generation_review_evidence(
+        {"mode": "single_shot_smoke_test", "status": "passed"},
+        [scene],
+    )
+
+    assert evidence["passed"] is False
+    assert "not production review evidence" in evidence["reason"]
+
+
 def test_project_reviewer_receives_the_complete_scene_cast(assets, monkeypatch, tmp_path):
     project, scene = assets
     db = Mock()
