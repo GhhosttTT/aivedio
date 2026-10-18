@@ -461,6 +461,20 @@ class TestVideoComposer:
         assert "temp_concat.mp4" not in second_intermediate
         assert not list(tmp_path.glob(".*.concat.mp4"))
 
+    def test_compose_video_default_outputs_are_isolated(self, service, tmp_path, monkeypatch):
+        video = tmp_path / "video.mp4"
+        video.write_text("fake video")
+        monkeypatch.chdir(tmp_path)
+
+        first = service.compose_video([str(video)])
+        second = service.compose_video([str(video)])
+
+        assert first != second
+        assert Path(first).is_file()
+        assert Path(second).is_file()
+        assert Path(first).read_text() == "fake video"
+        assert Path(second).read_text() == "fake video"
+
     def test_compose_video_preserves_native_audio_without_external_dialogue(self, service, tmp_path):
         video1 = tmp_path / "video1.mp4"
         video2 = tmp_path / "video2.mp4"

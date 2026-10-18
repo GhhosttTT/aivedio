@@ -364,15 +364,14 @@ class VideoComposer:
         temporary_paths: list[Path] = []
         
         try:
+            compose_token = uuid4().hex
             # 确定输出路径
             if not output_path:
                 output_dir = Path("./storage/temp")
                 output_dir.mkdir(parents=True, exist_ok=True)
-                output_path = str(output_dir / "composed.mp4")
+                output_path = str(output_dir / f"composed-{compose_token}.mp4")
             else:
                 Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-            compose_token = uuid4().hex
 
             def temporary_output(suffix: str) -> str:
                 path = Path(output_path).parent / f".{Path(output_path).stem}.{compose_token}.{suffix}"
