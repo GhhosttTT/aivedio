@@ -92,6 +92,7 @@ export function LocalizationDashboard() {
                 {quality && <section className="wb-item" aria-label="译制质量复核">
                     <div className="wb-row wb-between"><strong>译制质量复核</strong><span className={`wb-score ${quality.report.status}`}>{quality.report.status} · 人审 {quality.human_review.decision}</span></div>
                     <p className="wb-muted">自动评分：{quality.report.score ?? '-'}；报告变化后旧的人审决定会自动失效。</p>
+                    {quality.human_review.note && <p className="wb-muted">上次复核备注：{quality.human_review.note}</p>}
                     <label>复核备注<textarea value={reviewNote} maxLength={1000} disabled={Boolean(busy)} onChange={e => setReviewNote(e.target.value)} placeholder="记录翻译、时序、字幕可读性或人工判断依据" rows={3}/></label>
                     <div className="wb-row"><button className="wb-button" disabled={Boolean(busy)} onClick={() => reviewQuality('approved')}>人工通过</button><button className="wb-button" disabled={Boolean(busy)} onClick={() => reviewQuality('rejected')}>退回复核</button></div>
                 </section>}
