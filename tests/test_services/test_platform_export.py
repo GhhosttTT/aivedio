@@ -23,6 +23,7 @@ def test_platform_export_is_cached_and_has_contract(tmp_path, monkeypatch):
         "height": 1920,
         "fps": 30.0,
         "duration_seconds": 2.0,
+        "temporal_sample_evidence": "sufficient",
     })
     first = export_platform_video(source, tmp_path, "douyin")
     second = export_platform_video(source, tmp_path, "douyin")
@@ -35,6 +36,37 @@ def test_platform_export_is_cached_and_has_contract(tmp_path, monkeypatch):
     assert first["technical_metrics"]["status"] == "available"
     assert len(first["source_sha256"]) == 64
     assert len(first["output_sha256"]) == 64
+
+
+def test_platform_export_invalidates_cache_without_temporal_evidence(tmp_path, monkeypatch):
+    source = tmp_path / "final.mp4"
+    source.write_bytes(b"source")
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        output = tmp_path / "exports" / ".douyin.tmp.mp4"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"exported")
+
+    monkeypatch.setattr("src.services.platform_export.subprocess.run", fake_run)
+    monkeypatch.setattr("src.services.platform_export.video_candidate_metrics", lambda *_args, **_kwargs: {
+        "status": "available",
+        "width": 1080,
+        "height": 1920,
+        "fps": 30.0,
+        "duration_seconds": 2.0,
+        "temporal_sample_evidence": "sufficient",
+    })
+    export_platform_video(source, tmp_path, "douyin")
+    manifest = tmp_path / "exports" / "douyin.json"
+    cached = json.loads(manifest.read_text())
+    cached["technical_metrics"].pop("temporal_sample_evidence")
+    manifest.write_text(json.dumps(cached), encoding="utf-8")
+
+    export_platform_video(source, tmp_path, "douyin")
+
+    assert len(calls) == 2
 
 
 def test_platform_export_rebuilds_when_content_changes_without_signature_change(tmp_path, monkeypatch):

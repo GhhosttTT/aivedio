@@ -87,6 +87,7 @@ def export_platform_video(final_video_path: str | Path, project_root: str | Path
             and cached.get("output_sha256") == _sha256(output)
             and isinstance(cached.get("technical_metrics"), dict)
             and cached["technical_metrics"].get("status") == "available"
+            and cached["technical_metrics"].get("temporal_sample_evidence") == "sufficient"
         ):
             return cached
 
