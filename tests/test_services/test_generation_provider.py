@@ -786,6 +786,42 @@ def test_native_ark_output_validation_rejects_unusable_returned_audio_without_re
     assert not output.exists()
 
 
+def test_native_ark_output_validation_rejects_clipped_returned_audio(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")
+    output = tmp_path / "clipped-audio.mp4"
+    output.write_bytes(b"video")
+    monkeypatch.setattr(
+        generation_provider.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            stdout="codec_type=video\ncodec_type=audio\nduration=4.0\n"
+        ),
+    )
+    monkeypatch.setattr(
+        generation_provider,
+        "video_candidate_metrics",
+        lambda _path: {
+            "status": "available",
+            "audio_present": True,
+            "audio_signal_status": "usable",
+            "audio_clipping_status": "clipped",
+            "audio_duration_delta_seconds": 0.0,
+            "audio_video_start_delta_seconds": 0.0,
+            "motion_energy": 8.0,
+            "max_static_run_seconds": 0.0,
+            "max_black_run_seconds": 0.0,
+            "brightness_step_p95": 0.0,
+            "motion_jitter_ratio": 0.0,
+        },
+    )
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    with pytest.raises(GenerationProviderError, match="audio signal is clipped"):
+        provider._validate_provider_video(str(output))
+    assert not output.exists()
+
+
 def test_native_ark_output_validation_rejects_duration_drift(tmp_path, monkeypatch):
     monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
     monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")

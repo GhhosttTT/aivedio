@@ -978,6 +978,8 @@ class ApiVideoProvider:
                     "audio signal is not usable: "
                     f"{metrics.get('audio_signal_status') or 'unavailable'}"
                 )
+            if str(metrics.get("audio_clipping_status") or "").strip().lower() == "clipped":
+                raise ValueError("audio signal is clipped at digital full scale")
             audio_delta = metrics.get("audio_duration_delta_seconds")
             if audio_delta is not None and float(audio_delta) > 0.35:
                 raise ValueError(
