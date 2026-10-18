@@ -10,6 +10,7 @@ from src.services.draft_media_service import draft_fallback_enabled, get_draft_m
 from src.services.repair_queue import attach_repair_queue
 from src.services.subtitle_generator import get_subtitle_generator
 from src.services.tts_service import get_tts_service, resolve_speaker_id
+from src.services.video_quality_metrics import _audio_signal_metrics
 from src.tasks.celery_app import celery_app
 from src.utils.logger import get_logger
 from src.utils.storage import get_scene_audio_path
@@ -85,6 +86,7 @@ def dialogue_audio_quality_report(
 ) -> dict[str, object]:
     low: dict[str, dict[str, object]] = {}
     missing: list[str] = []
+    audio_signal: dict[str, object] = {}
     if has_spoken_dialogue(text):
         if not audio_path:
             missing.append("dialogue_audio_present")
@@ -93,6 +95,17 @@ def dialogue_audio_quality_report(
         if not duration or duration <= 0:
             missing.append("audio_duration")
         else:
+            if audio_path and Path(str(audio_path)).is_file():
+                audio_signal = _audio_signal_metrics(Path(str(audio_path)), float(duration))
+                signal_status = audio_signal.get("audio_signal_status")
+                if signal_status == "near_silent":
+                    low["audio_signal"] = {
+                        "score": 0,
+                        "evidence": "dialogue audio signal is near-silent",
+                        "scene_number": scene.scene_number,
+                    }
+                elif signal_status != "usable":
+                    missing.append("audio_signal")
             char_count = max(1, len("".join((text or "").split())))
             chars_per_second = char_count / duration
             if chars_per_second < 1.2 or chars_per_second > 8.5:
@@ -132,6 +145,7 @@ def dialogue_audio_quality_report(
             " ".join((text or "").split()).encode("utf-8")
         ).hexdigest(),
         "duration": duration or 0.0,
+        "audio_signal": audio_signal,
         "speaker": str(speaker or "default").strip() or "default",
         "voice_identity": {
             "speaker": str(speaker or "default").strip() or "default",

@@ -290,6 +290,8 @@ def _audio_signal_metrics(path: Path, duration_seconds: float) -> dict[str, Any]
             check=False,
             timeout=90,
         )
+        if result.returncode != 0:
+            raise ValueError(f"ffmpeg audio analysis failed with exit code {result.returncode}")
         output = f"{result.stdout}\n{result.stderr}"
         starts = [float(value) for value in re.findall(r"silence_start:\s*([0-9.]+)", output)]
         ends = [float(value) for value in re.findall(r"silence_end:\s*([0-9.]+)", output)]
@@ -307,6 +309,8 @@ def _audio_signal_metrics(path: Path, duration_seconds: float) -> dict[str, Any]
                 r"RMS level dB:\s*(-?(?:\d+(?:\.\d+)?|inf))", output, re.I
             ) if value.lower() != "inf"
         ]
+        if not peak_values and not rms_values:
+            raise ValueError("ffmpeg audio analysis produced no measurable signal")
         silence_ratio = min(1.0, silent_seconds / max(float(duration_seconds), 1e-6))
         peak_db = max(peak_values) if peak_values else None
         rms_db = max(rms_values) if rms_values else None

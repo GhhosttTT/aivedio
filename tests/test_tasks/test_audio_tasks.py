@@ -75,6 +75,44 @@ def test_dialogue_audio_quality_report_blocks_draft_silent_fallback(tmp_path):
     assert report["repair_queue"][0]["action"] == "refine_dialogue_audio_delivery"
 
 
+def test_dialogue_audio_quality_report_blocks_near_silent_signal(tmp_path, monkeypatch):
+    audio = tmp_path / "scene_009.mp3"
+    audio.write_bytes(b"audio")
+    monkeypatch.setattr(audio_tasks, "_audio_signal_metrics", lambda *_args: {
+        "audio_signal_status": "near_silent",
+        "audio_silence_ratio": 1.0,
+    })
+    report = dialogue_audio_quality_report(
+        Mock(scene_number=9),
+        "你为什么骗我",
+        duration=1.0,
+        audio_path=str(audio),
+        profile={"emotion": "angry", "speed": 1.0, "source": "tts"},
+    )
+
+    assert report["status"] == "needs_review"
+    assert report["dialogue_audio_quality_gate"]["low"]["audio_signal"]["score"] == 0
+
+
+def test_dialogue_audio_quality_report_accepts_measurable_signal(tmp_path, monkeypatch):
+    audio = tmp_path / "scene_010.mp3"
+    audio.write_bytes(b"audio")
+    monkeypatch.setattr(audio_tasks, "_audio_signal_metrics", lambda *_args: {
+        "audio_signal_status": "usable",
+        "audio_silence_ratio": 0.1,
+    })
+    report = dialogue_audio_quality_report(
+        Mock(scene_number=10),
+        "你好",
+        duration=1.0,
+        audio_path=str(audio),
+        profile={"emotion": "neutral", "speed": 1.0, "source": "tts"},
+    )
+
+    assert report["status"] == "passed"
+    assert report["audio_signal"]["audio_signal_status"] == "usable"
+
+
 def test_generate_audio_task_marks_draft_fallback_audio_for_repair(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("ENABLE_DRAFT_MEDIA_FALLBACK", "true")
