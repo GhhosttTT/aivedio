@@ -9,11 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+from sqlalchemy import text
 import time
 import os
 
 from src.utils.logger import get_logger
 from src.api.auth import validate_auth_configuration
+from src.config import settings
+from src.database.database import engine
 
 logger = get_logger(__name__)
 
@@ -217,6 +220,44 @@ def register_routes(app: FastAPI):
             "service": "AI 短剧自动化生产平台",
             "version": "1.0.0"
         }
+
+    @app.get("/ready", tags=["健康检查"])
+    async def readiness_check():
+        """Report whether core dependencies can accept production work."""
+        checks: dict[str, str] = {}
+        try:
+            with engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+            checks["database"] = "ok"
+        except Exception as exc:
+            logger.warning("Readiness database check failed: {}", exc)
+            checks["database"] = "unavailable"
+
+        require_redis = bool(getattr(settings, "READINESS_REQUIRE_REDIS", False))
+        if require_redis:
+            try:
+                from src.api.rate_limiter import get_redis_client
+
+                redis_client = get_redis_client()
+                if redis_client is None or not redis_client.ping():
+                    raise RuntimeError("Redis ping failed")
+                checks["redis"] = "ok"
+            except Exception as exc:
+                logger.warning("Readiness Redis check failed: {}", exc)
+                checks["redis"] = "unavailable"
+        else:
+            checks["redis"] = "not_required"
+
+        ready = all(value in {"ok", "not_required"} for value in checks.values())
+        response = {
+            "status": "ready" if ready else "not_ready",
+            "service": "AI 短剧自动化生产平台",
+            "version": "1.0.0",
+            "checks": checks,
+        }
+        if not ready:
+            return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=response)
+        return response
     
     # 根路径
     @app.get("/", tags=["根路径"])

@@ -297,6 +297,7 @@ class Settings(BaseSettings):
     API_PORT: int = 8000
     API_RELOAD: bool = False
     CORS_ORIGINS: str = "*"
+    READINESS_REQUIRE_REDIS: bool = False
 
     # JWT 配置
     JWT_SECRET_KEY: str = "your-secret-key-change-this-in-production"

@@ -36,6 +36,16 @@ def test_health_check(client):
     assert data["version"] == "1.0.0"
 
 
+def test_readiness_check_reports_database_and_optional_redis(client):
+    response = client.get("/ready")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ready"
+    assert data["checks"]["database"] == "ok"
+    assert data["checks"]["redis"] == "not_required"
+
+
 def test_root_endpoint(client):
     """
     测试根路径端点
