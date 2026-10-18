@@ -1533,6 +1533,9 @@ class SeedanceApiProvider(ApiVideoProvider):
                 "return_last_frame": _provider_bool_value(request.return_last_frame, "SEEDANCE_RETURN_LAST_FRAME"),
             }
             self.last_result_metadata["requested_resolution"] = "1080p"
+            self.last_result_metadata["requested_output_format"] = output_format
+            self.last_result_metadata["requested_watermark"] = payload["watermark"]
+            self.last_result_metadata["requested_return_last_frame"] = payload["return_last_frame"]
             return payload
 
         self._validate_reference_limits(request, native_ark=True)
@@ -1753,6 +1756,9 @@ class SeedanceApiProvider(ApiVideoProvider):
         if callback_url:
             payload["callback_url"] = callback_url
         self.last_result_metadata["requested_resolution"] = str(payload["resolution"])
+        self.last_result_metadata["requested_output_format"] = output_format
+        self.last_result_metadata["requested_watermark"] = payload["watermark"]
+        self.last_result_metadata["requested_return_last_frame"] = payload["return_last_frame"]
         return payload
 
     def _validate_reference_limits(self, request: VideoGenerationRequest, native_ark: bool = False) -> None:

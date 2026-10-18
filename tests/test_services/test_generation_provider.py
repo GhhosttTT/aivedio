@@ -1603,6 +1603,28 @@ def test_seedance_native_ark_request_model_overrides_environment(tmp_path, monke
     assert provider.last_result_metadata["requested_model"] == "doubao-seedance-2-5-260628"
 
 
+def test_seedance_native_ark_persists_requested_output_controls(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    payload = provider._video_payload(VideoGenerationRequest(
+        prompt="a premium short-drama shot",
+        output_path=str(tmp_path / "out.mp4"),
+        model="doubao-seedance-2-5-260628",
+        output_format="mov",
+        watermark=False,
+        return_last_frame=True,
+        draft=True,
+    ))
+
+    assert payload["output_format"] == "mov"
+    assert payload["watermark"] is False
+    assert payload["return_last_frame"] is True
+    assert provider.last_result_metadata["requested_output_format"] == "mov"
+    assert provider.last_result_metadata["requested_watermark"] is False
+    assert provider.last_result_metadata["requested_return_last_frame"] is True
+
+
 def test_seedance_native_ark_explicit_false_controls_override_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
     monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-5-260628")

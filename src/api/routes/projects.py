@@ -1132,6 +1132,9 @@ async def promote_seedance_drafts(
         raise HTTPException(status_code=404, detail="项目不存在或没有分镜")
     draft_ids: dict[int, str] = {}
     draft_models: set[str] = set()
+    draft_output_formats: set[str] = set()
+    draft_watermarks: set[bool] = set()
+    draft_return_last_frames: set[bool] = set()
     missing = []
     for scene in sorted(project.scenes, key=lambda item: item.scene_number):
         provider_path = Path(scene.video_path).with_suffix(".provider.json") if scene.video_path else None
@@ -1148,6 +1151,15 @@ async def promote_seedance_drafts(
             requested_model = data.get("requested_model") if isinstance(data, dict) else None
             if isinstance(requested_model, str) and requested_model.strip():
                 draft_models.add(requested_model.strip())
+            requested_output_format = data.get("requested_output_format") if isinstance(data, dict) else None
+            if isinstance(requested_output_format, str) and requested_output_format.strip():
+                draft_output_formats.add(requested_output_format.strip().lower())
+            requested_watermark = data.get("requested_watermark") if isinstance(data, dict) else None
+            if isinstance(requested_watermark, bool):
+                draft_watermarks.add(requested_watermark)
+            requested_return_last_frame = data.get("requested_return_last_frame") if isinstance(data, dict) else None
+            if isinstance(requested_return_last_frame, bool):
+                draft_return_last_frames.add(requested_return_last_frame)
         else:
             missing.append(scene.scene_number)
     if missing:
@@ -1160,7 +1172,25 @@ async def promote_seedance_drafts(
             status_code=400,
             detail="Draft 分镜使用了多个 Seedance 模型，不能在同一个提升任务中混合提升",
         )
+    if len(draft_output_formats) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Draft 分镜使用了多个输出格式，不能在同一个提升任务中混合提升",
+        )
+    if len(draft_watermarks) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Draft 分镜使用了不同的水印设置，不能在同一个提升任务中混合提升",
+        )
+    if len(draft_return_last_frames) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Draft 分镜使用了不同的尾帧设置，不能在同一个提升任务中混合提升",
+        )
     draft_model = next(iter(draft_models), None)
+    draft_output_format = next(iter(draft_output_formats), None)
+    draft_watermark = next(iter(draft_watermarks), None)
+    draft_return_last_frame = next(iter(draft_return_last_frames), None)
     try:
         orchestrator = TaskOrchestrator(db_session)
         celery_task_id = orchestrator.create_production_task(
@@ -1174,6 +1204,9 @@ async def promote_seedance_drafts(
             draft=False,
             draft_task_ids=draft_ids,
             model=draft_model,
+            output_format=draft_output_format,
+            watermark=draft_watermark,
+            return_last_frame=draft_return_last_frame,
         )
         from src.database.models import Task as TaskModel
         task_record = db_session.query(TaskModel).filter(TaskModel.celery_task_id == celery_task_id).first()

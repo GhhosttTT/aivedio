@@ -505,6 +505,9 @@ def test_promote_drafts_reuses_requested_model(client, tmp_path):
         "provider_task_id": "draft-task-1",
         "requested_draft": True,
         "requested_model": "doubao-seedance-2-5-260628",
+        "requested_output_format": "mov",
+        "requested_watermark": False,
+        "requested_return_last_frame": True,
     }), encoding="utf-8")
 
     task_record = Mock()
@@ -528,6 +531,40 @@ def test_promote_drafts_reuses_requested_model(client, tmp_path):
     assert response.status_code == 200
     kwargs = mock_orchestrator.return_value.create_production_task.call_args.kwargs
     assert kwargs["model"] == "doubao-seedance-2-5-260628"
+    assert kwargs["output_format"] == "mov"
+    assert kwargs["watermark"] is False
+    assert kwargs["return_last_frame"] is True
+
+
+def test_promote_drafts_rejects_mixed_output_controls(client, tmp_path):
+    project = Mock(spec=Project)
+    project.id = 1
+    project.scenes = []
+    controls = (("mp4", False, True), ("mov", False, True))
+    for index, (output_format, watermark, return_last_frame) in enumerate(controls, start=1):
+        scene = Mock(spec=Scene)
+        scene.id = index
+        scene.scene_number = index
+        scene.video_path = str(tmp_path / f"scene-{index:02d}.mp4")
+        Path(scene.video_path).with_suffix(".provider.json").write_text(json.dumps({
+            "provider_task_id": f"draft-task-{index}",
+            "requested_draft": True,
+            "requested_model": "doubao-seedance-2-5-260628",
+            "requested_output_format": output_format,
+            "requested_watermark": watermark,
+            "requested_return_last_frame": return_last_frame,
+        }), encoding="utf-8")
+        project.scenes.append(scene)
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = project
+
+    with patch("src.api.routes.projects.TaskOrchestrator") as mock_orchestrator:
+        client.app.dependency_overrides[get_db_session] = lambda: db
+        response = client.post("/api/projects/1/promote-drafts")
+
+    assert response.status_code == 400
+    assert "多个输出格式" in response.json()["detail"]
+    mock_orchestrator.assert_not_called()
 
 
 def test_promote_drafts_rejects_mixed_models(client, tmp_path):
