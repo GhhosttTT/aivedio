@@ -136,6 +136,39 @@ def test_native_seedance_20_preflight_exposes_reduced_reference_contract(monkeyp
     assert not any("does not support audio references" in item for item in report["warnings"])
 
 
+def test_native_seedance_25_preflight_accepts_explicit_first_frame_mode(monkeypatch):
+    from src.services.video_engine_preflight import settings
+
+    monkeypatch.setattr(settings, "GENERATION_PROVIDER", "seedance_api")
+    monkeypatch.setenv("SEEDANCE_ENDPOINT", "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks")
+    monkeypatch.setenv("SEEDANCE_API_KEY", "secret")
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
+
+    report = preflight_video_provider(request_mode_override="first_frame")
+
+    assert report["status"] == "configured"
+    assert report["checks"]["request_mode_valid"] is True
+    assert report["checks"]["first_frame_mode_supported"] is True
+    assert report["capabilities"]["supports_first_frame_mode"] is True
+
+
+def test_native_seedance_20_preflight_blocks_explicit_first_frame_mode(monkeypatch):
+    from src.services.video_engine_preflight import settings
+
+    monkeypatch.setattr(settings, "GENERATION_PROVIDER", "seedance_api")
+    monkeypatch.setenv("SEEDANCE_ENDPOINT", "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks")
+    monkeypatch.setenv("SEEDANCE_API_KEY", "secret")
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-0-260128")
+
+    report = preflight_video_provider(request_mode_override="first_frame")
+
+    assert report["status"] == "blocked"
+    assert report["checks"]["first_frame_mode_supported"] is False
+    assert any("explicit first_frame" in item for item in report["action_items"])
+
+
 def test_native_seedance_10_preflight_marks_reference_audio_unsupported(monkeypatch):
     from src.services.video_engine_preflight import settings
 

@@ -342,6 +342,7 @@ def preflight_video_provider(
             "multi_shot": runtime_bool("SEEDANCE_MULTI_SHOT", True),
             "continuity_last_frame": runtime_bool("SEEDANCE_RETURN_LAST_FRAME", True),
             "first_last_frame": True,
+            "first_frame": True,
             "edit_and_extend": True,
         }
     ark_native = (
@@ -390,7 +391,8 @@ def preflight_video_provider(
         if ark_native and output_format == "mov" and not model_is_25:
             checks["output_format_valid"] = False
         checks["request_mode_valid"] = request_mode.strip().lower() in {
-            "reference", "reference_to_video", "auto", "multi_shot", "seedance_2_5", "2.5", "edit", "extend",
+            "reference", "reference_to_video", "auto", "multi_shot", "seedance_2_5", "2.5",
+            "first_frame", "first_last_frame", "edit", "extend",
         }
         configuration_ok = configuration_ok and all(
             checks[key] for key in (
@@ -399,8 +401,20 @@ def preflight_video_provider(
         )
         if not checks["request_mode_valid"]:
             report.setdefault("action_items", []).append(
-                "SEEDANCE_REQUEST_MODE must be reference, reference_to_video, auto, multi_shot, seedance_2_5, 2.5, edit, or extend."
+                "SEEDANCE_REQUEST_MODE must be reference, reference_to_video, auto, multi_shot, seedance_2_5, 2.5, first_frame, first_last_frame, edit, or extend."
             )
+        normalized_mode = request_mode.strip().lower()
+        if ark_native and normalized_mode == "first_frame":
+            first_frame_supported = model_is_10 or model_is_25
+            checks["first_frame_mode_supported"] = first_frame_supported
+            report["capabilities"]["first_frame"] = first_frame_supported
+            if not first_frame_supported:
+                configuration_ok = False
+                report.setdefault("action_items", []).append(
+                    f"Native Seedance explicit first_frame mode requires Seedance 1.0 or 2.5; current model is {model_name}."
+                )
+        elif ark_native:
+            checks["first_frame_mode_supported"] = True
         if duration_override is not None:
             try:
                 requested_duration = float(duration_override)
@@ -488,6 +502,7 @@ def preflight_video_provider(
                 "supports_edit": not model_is_10,
                 "supports_extend": not model_is_10,
                 "supports_mov": model_is_25,
+                "supports_first_frame_mode": model_is_10 or model_is_25,
             })
         report["capabilities"]["reference_item_limit"] = (
             50 if model_is_25 and ark_native else (15 if ark_native else None)
