@@ -44,9 +44,9 @@ class SpatialControlAssetService:
         current = self.build_current_manifest(project, scenes, characters)
         stored = self.get_project_pack(project.id)
         if not stored:
-            return {"status": "missing", "missing": ["spatial_asset_pack"], "current": current}
+            return {"status": "missing", "missing": ["spatial_asset_pack"], "control_gaps": [], "current": current}
         if stored.get("status") != "frozen":
-            return {"status": "invalid", "missing": ["frozen_status"], "manifest": stored, "current": current}
+            return {"status": "invalid", "missing": ["frozen_status"], "control_gaps": [], "manifest": stored, "current": current}
         stale = []
         if stored.get("planner_contract_version") != self.PLANNER_CONTRACT_VERSION:
             stale.append("planner_contract_version")
@@ -59,6 +59,7 @@ class SpatialControlAssetService:
         if sorted(stored_scenes) != sorted(current_scenes):
             stale.append("scene_set")
         scene_stale = []
+        control_gaps = []
         for number, current_item in current_scenes.items():
             stored_item = stored_scenes.get(number)
             if not stored_item:
@@ -83,6 +84,7 @@ class SpatialControlAssetService:
                 if not str(control_references.get(f"{control_type}_reference_prompt") or "").strip()
             ]
             if missing_controls:
+                control_gaps.append({"scene_number": number, "missing": missing_controls})
                 scene_stale.append({"scene_number": number, "changed": ["missing_control_references"]})
                 stale.append("scene_contracts")
         if scene_stale:
@@ -91,6 +93,7 @@ class SpatialControlAssetService:
             "status": "valid" if not stale else "stale",
             "stale": stale,
             "scene_stale": scene_stale,
+            "control_gaps": control_gaps,
             "manifest": stored,
             "current": current,
         }

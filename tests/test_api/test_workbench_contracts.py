@@ -2011,6 +2011,7 @@ def test_production_readiness_reports_spatial_continuity_plan(setup):
     spatial = payload["checks"]["spatial_continuity"]
     assert spatial["status"] == "planned"
     assert spatial["asset_pack"]["status"] == "missing"
+    assert spatial["asset_pack"]["control_gaps"] == []
     assert any(item["code"] == "missing_spatial_asset_pack" for item in payload["blockers"])
     assert spatial["scenes"][0]["shot_scale"] == "medium two-shot"
     assert spatial["scenes"][0]["character_positions"] == {"Alice": "frame left", "Bob": "frame right"}
@@ -2045,6 +2046,7 @@ def test_spatial_plan_freeze_clears_readiness_spatial_asset_blocker(setup):
 
     after = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
     assert after["checks"]["spatial_continuity"]["asset_pack"]["status"] == "valid"
+    assert after["checks"]["spatial_continuity"]["asset_pack"]["control_gaps"] == []
     assert not any(item["code"] == "missing_spatial_asset_pack" for item in after["blockers"])
 
 

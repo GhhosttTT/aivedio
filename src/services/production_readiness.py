@@ -680,6 +680,7 @@ class ProductionReadinessService:
                 "status": asset_pack.get("status"),
                 "stale": asset_pack.get("stale", []),
                 "scene_stale": asset_pack.get("scene_stale", []),
+                "control_gaps": asset_pack.get("control_gaps", []),
             },
         }
 

@@ -156,6 +156,23 @@ export function ProductionReadinessPanel({
                     </div>
                 </div>
             )}
+            {spatial?.asset_pack?.control_gaps?.length ? (
+                <div className="wb-summary-actions">
+                    <div className="wb-row wb-between">
+                        <div>
+                            <h3>空间控制缺口</h3>
+                            <p className="wb-muted">冻结包缺少分镜级控制参考，正式生成前需要重新冻结空间计划。</p>
+                        </div>
+                        <span className="wb-badge">{spatial.asset_pack.control_gaps.length} 个分镜</span>
+                    </div>
+                    {spatial.asset_pack.control_gaps.slice(0, 8).map((gap) => (
+                        <div className="wb-issue blocker" key={gap.scene_number}>
+                            <span>分镜 {gap.scene_number}</span>
+                            <p>{gap.missing.join(' / ')}</p>
+                        </div>
+                    ))}
+                </div>
+            ) : null}
             {issues.length > 0 && (
                 <div className="wb-summary-actions">
                     {issues.map(issue => (

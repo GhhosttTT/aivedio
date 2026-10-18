@@ -553,7 +553,12 @@ export interface ProductionReadinessReport {
         spatial_continuity?: {
             status: string;
             summary: {total: number; weak: number};
-            asset_pack?: {status?: string; stale?: string[]; scene_stale?: Array<Record<string, unknown>>};
+            asset_pack?: {
+                status?: string;
+                stale?: string[];
+                scene_stale?: Array<Record<string, unknown>>;
+                control_gaps?: Array<{scene_number: number; missing: string[]}>;
+            };
             scenes: Array<{
                 scene_number: number;
                 status: string;
