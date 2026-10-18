@@ -170,6 +170,7 @@ function ProviderTrace({report}: {report: any}) {
         ['provider_task_id', '远端任务 ID'],
         ['provider_status', '远端状态'],
         ['provider_created_at', '创建时间'],
+        ['provider_expires_at', '过期时间'],
         ['provider_duration_seconds', '实际时长'],
     ].filter(([key]) => trace[key] !== undefined && trace[key] !== null && trace[key] !== '');
     if (!fields.length) return null;
