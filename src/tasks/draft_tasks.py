@@ -8,6 +8,7 @@ from pathlib import Path
 
 from src.database.database import get_db
 from src.database.models import Project, ProjectStatus, Scene, Task, TaskStatus
+from src.services.generation_review import file_hash
 from src.tasks.celery_app import celery_app
 from src.utils.storage import storage_manager
 
@@ -34,6 +35,12 @@ def finalize_draft_generation_task(self, project_id: int, task_id: int):
             "scenes": [],
         }
         for scene in scenes:
+            video_path = Path(scene.video_path) if scene.video_path else None
+            current_video_hash = (
+                file_hash(video_path)
+                if video_path and video_path.is_file()
+                else None
+            )
             provider_metadata = Path(scene.video_path).with_suffix(".provider.json") if scene.video_path else None
             metadata = {}
             if provider_metadata and provider_metadata.is_file():
@@ -48,7 +55,13 @@ def finalize_draft_generation_task(self, project_id: int, task_id: int):
                 "scene_number": scene.scene_number,
                 "video_path": scene.video_path,
                 "provider_task_id": metadata.get("provider_task_id"),
+                "provider_name": metadata.get("provider_name"),
                 "requested_draft": bool(metadata.get("requested_draft")),
+                "video_sha256": current_video_hash,
+                "evidence_current": bool(
+                    current_video_hash
+                    and metadata.get("video_sha256") == current_video_hash
+                ),
             })
 
         report_path = storage_manager.get_project_path(project_id) / "reviews" / "draft_generation.json"

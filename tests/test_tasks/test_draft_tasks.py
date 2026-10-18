@@ -46,4 +46,7 @@ def test_finalize_draft_generation_keeps_project_unpublished(tmp_path, monkeypat
     report = json.loads(Path(saved_task.result_path).read_text(encoding="utf-8"))
     assert report["publishable"] is False
     assert report["scenes"][0]["provider_task_id"] == "draft-remote"
+    assert report["scenes"][0]["provider_name"] is None
+    assert report["scenes"][0]["evidence_current"] is False
+    assert report["scenes"][0]["video_sha256"]
     check.close()
