@@ -56,6 +56,24 @@ def test_video_request_contract_hash_changes_when_a_quality_control_changes():
     assert first["contract_hash"] != second["contract_hash"]
 
 
+def test_video_request_contract_fingerprints_prompt_and_shot_plan():
+    request = VideoGenerationRequest(
+        prompt="hero turns toward the window",
+        negative_prompt="frozen pose",
+        output_path="/tmp/shot.mp4",
+        shot_plan={"shot_role": "reaction", "director_prompt": "turn slowly"},
+    )
+    first = _video_request_contract(request, request_mode="reference", sequence_level=False)
+    changed = replace(request, prompt="hero runs toward the window")
+    second = _video_request_contract(changed, request_mode="reference", sequence_level=False)
+
+    assert first["prompt_fingerprint"]
+    assert first["negative_prompt_fingerprint"]
+    assert first["shot_plan_fingerprint"]
+    assert first["prompt_fingerprint"] != second["prompt_fingerprint"]
+    assert first["contract_hash"] != second["contract_hash"]
+
+
 def test_video_request_contract_binds_dialogue_and_audio_mode(tmp_path):
     audio = tmp_path / "dialogue.wav"
     audio.write_bytes(b"audio")

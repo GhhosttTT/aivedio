@@ -136,6 +136,15 @@ def _reference_asset_evidence(role: str, value: str | None, index: int | None = 
 def _video_request_contract(request: VideoGenerationRequest, *, request_mode: str, sequence_level: bool) -> dict:
     """Capture the exact controls handed to a video provider."""
     shot_plan = request.shot_plan if isinstance(request.shot_plan, dict) else {}
+    def fingerprint(value) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(str(value).split())
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest() if normalized else None
+
+    shot_plan_fingerprint = hashlib.sha256(
+        json.dumps(shot_plan, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest() if shot_plan else None
     spatial_contract = shot_plan.get("spatial_asset_pack") if isinstance(shot_plan.get("spatial_asset_pack"), dict) else {}
     raw_bindings = shot_plan.get("character_reference_bindings")
     character_bindings = [
@@ -198,6 +207,9 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         "duration_seconds": request.duration_seconds,
         "aspect_ratio": request.aspect_ratio,
         "fps": request.fps,
+        "prompt_fingerprint": fingerprint(request.prompt),
+        "negative_prompt_fingerprint": fingerprint(request.negative_prompt),
+        "shot_plan_fingerprint": shot_plan_fingerprint,
         "multi_shot": bool(request.multi_shot),
         "sequence_level_multi_shot": bool(sequence_level),
         "generate_audio": bool(request.generate_audio),
