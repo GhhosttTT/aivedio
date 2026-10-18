@@ -140,7 +140,11 @@ class BaseTask(celery_app.Task):
                 })
             if record and record.status in {TaskStatus.CANCELLED, TaskStatus.FAILED}:
                 if record.project.status == ProjectStatus.IN_PRODUCTION:
-                    record.project.status = ProjectStatus.FAILED
+                    record.project.status = (
+                        ProjectStatus.SCRIPT_GENERATED
+                        if record.status == TaskStatus.CANCELLED
+                        else ProjectStatus.FAILED
+                    )
                     db.commit()
                 raise Ignore()
         finally:
@@ -175,7 +179,7 @@ class BaseTask(celery_app.Task):
         try:
             record = self._production_record(args, kwargs, db)
             if record and record.status == TaskStatus.CANCELLED:
-                record.project.status = ProjectStatus.FAILED
+                record.project.status = ProjectStatus.SCRIPT_GENERATED
                 db.commit()
             elif record and record.status == TaskStatus.RUNNING:
                 # Audio/subtitle groups finish concurrently; increment in the database.

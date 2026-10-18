@@ -422,6 +422,25 @@ class TestCancelTask:
         assert result is True
         orchestrator.db.refresh(task)
         assert task.status == TaskStatus.CANCELLED
+
+    @patch('src.services.task_orchestrator.celery_app')
+    def test_cancel_pending_task_keeps_project_reproducible(
+        self, mock_celery_app, orchestrator, sample_project
+    ):
+        task = TaskModel(
+            project_id=sample_project.id,
+            status=TaskStatus.PENDING,
+            celery_task_id="pending-task-id",
+            total_steps=10,
+        )
+        orchestrator.db.add(task)
+        orchestrator.db.commit()
+
+        assert orchestrator.cancel_task("pending-task-id") is True
+        orchestrator.db.refresh(task)
+        orchestrator.db.refresh(sample_project)
+        assert task.status == TaskStatus.CANCELLED
+        assert sample_project.status == ProjectStatus.SCRIPT_GENERATED
     
     def test_cancel_task_not_found(self, orchestrator):
         """测试取消不存在的任务"""

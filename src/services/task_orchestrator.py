@@ -674,7 +674,7 @@ class TaskOrchestrator:
         was_pending = task_model.status == TaskStatus.PENDING
         task_model.status = TaskStatus.CANCELLED
         if was_pending:
-            task_model.project.status = ProjectStatus.FAILED
+            task_model.project.status = ProjectStatus.SCRIPT_GENERATED
         task_model.error_message = "已请求取消，当前步骤结束后停止后续生成"
         self.db.commit()
         
