@@ -39,7 +39,8 @@ def test_probe_reads_video_and_audio_streams(monkeypatch, tmp_path):
             stdout=(
                 '{"streams":['
                 '{"codec_type":"video","width":1920,"height":1080,'
-                '"r_frame_rate":"24/1","duration":"5.0","codec_name":"h264"},'
+                '"r_frame_rate":"24/1","duration":"5.0","codec_name":"h264",'
+                '"pix_fmt":"yuv420p10le"},'
                 '{"codec_type":"audio","duration":"4.9","codec_name":"aac"}'
                 '],"format":{"duration":"5.0"}}'
             )
@@ -54,6 +55,7 @@ def test_probe_reads_video_and_audio_streams(monkeypatch, tmp_path):
     assert result["audio_present"] is True
     assert result["audio_duration_seconds"] == pytest.approx(4.9)
     assert result["audio_codec"] == "aac"
+    assert result["pixel_format"] == "yuv420p10le"
     assert "-select_streams" not in captured["command"]
 
 
@@ -239,3 +241,21 @@ def test_compare_video_baseline_blocks_large_fps_mismatch(monkeypatch, tmp_path)
     assert report["status"] == "needs_review"
     assert report["gates"]["fps_close"] is False
     assert report["differences"]["fps_delta"] == -12
+
+
+def test_compare_video_baseline_blocks_lower_pixel_format_fidelity(monkeypatch, tmp_path):
+    def fake_stats(path, max_samples):
+        return VideoStats(
+            path=str(path), duration_seconds=2.0, width=160, height=90, fps=24,
+            pixel_format="yuv420p" if "candidate" in path.name else "yuv420p10le",
+            sampled_frames=6, motion_energy=8, sharpness=30, brightness=90,
+            brightness_variance=40,
+        )
+
+    monkeypatch.setattr("scripts.compare_video_baseline.video_stats", fake_stats)
+
+    report = compare(tmp_path / "candidate.mp4", tmp_path / "baseline.mp4", max_samples=6)
+
+    assert report["status"] == "needs_review"
+    assert report["gates"]["pixel_format_not_lower"] is False
+    assert report["differences"]["pixel_format_match"] is False

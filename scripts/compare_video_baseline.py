@@ -27,6 +27,7 @@ class VideoStats:
     sharpness: float
     brightness: float
     brightness_variance: float
+    pixel_format: str | None = None
     audio_present: bool = False
     audio_duration_seconds: float | None = None
     audio_codec: str | None = None
@@ -44,7 +45,7 @@ def _probe(path: Path) -> dict:
             "-v",
             "error",
             "-show_entries",
-            "stream=codec_type,width,height,r_frame_rate,duration,codec_name:format=duration",
+            "stream=codec_type,width,height,r_frame_rate,duration,codec_name,pix_fmt:format=duration",
             "-of",
             "json",
             str(path),
@@ -65,6 +66,7 @@ def _probe(path: Path) -> dict:
         "width": int(stream.get("width") or 0),
         "height": int(stream.get("height") or 0),
         "fps": fps,
+        "pixel_format": stream.get("pix_fmt"),
         "audio_present": audio_stream is not None,
         "audio_duration_seconds": (
             float(audio_stream.get("duration"))
@@ -142,6 +144,7 @@ def video_stats(path: Path, max_samples: int = 16) -> VideoStats:
         width=probe["width"],
         height=probe["height"],
         fps=round(probe["fps"], 3),
+        pixel_format=probe.get("pixel_format"),
         sampled_frames=len(frames),
         motion_energy=round(float(np.mean(diffs)), 3),
         sharpness=round(float(np.mean(sharpness_values)), 3),
@@ -186,6 +189,8 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
     differences = {
         "duration_delta_seconds": round(candidate_stats.duration_seconds - baseline_stats.duration_seconds, 3),
         "fps_delta": round(candidate_stats.fps - baseline_stats.fps, 3),
+        "pixel_format_match": _pixel_format_fidelity_rank(candidate_stats.pixel_format)
+        >= _pixel_format_fidelity_rank(baseline_stats.pixel_format),
         "aspect_ratio_delta": round(
             _aspect_ratio(candidate_stats.width, candidate_stats.height)
             - _aspect_ratio(baseline_stats.width, baseline_stats.height),
@@ -220,6 +225,7 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
     gates = {
         "duration_close": abs(differences["duration_delta_seconds"]) <= 0.5,
         "fps_close": abs(differences["fps_delta"]) <= 2.0,
+        "pixel_format_not_lower": differences["pixel_format_match"],
         "resolution_not_lower": (
             candidate_stats.width * candidate_stats.height >= baseline_stats.width * baseline_stats.height
         ),
@@ -337,6 +343,16 @@ def _max_consecutive_true(values: list[bool]) -> int:
 
 def _aspect_ratio(width: int, height: int) -> float:
     return width / height if height else 0.0
+
+
+def _pixel_format_fidelity_rank(pixel_format: str | None) -> tuple[int, int]:
+    """Rank common pixel formats by bit depth and chroma fidelity."""
+    normalized = str(pixel_format or "").strip().lower()
+    if not normalized:
+        return (0, 0)
+    bit_depth = 12 if "p12" in normalized else 10 if "p10" in normalized else 8
+    chroma = 3 if "444" in normalized else 2 if "422" in normalized else 1 if "420" in normalized else 0
+    return (bit_depth, chroma)
 
 
 def _ratio_score(value: float | None, ideal: float = 1.0, tolerance: float = 0.55) -> float:
