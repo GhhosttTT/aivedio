@@ -91,6 +91,39 @@ def _video_version_signature(path: Path) -> str | None:
         return None
     return f"{path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
 
+
+def _accepted_video_evidence_error(report: dict) -> str | None:
+    """Check that final-video evidence fields describe the same media bytes."""
+    evidence = report.get("generation_run_evidence")
+    if not isinstance(evidence, dict):
+        return None
+    accepted_hash = evidence.get("accepted_video_sha256")
+    if accepted_hash is None:
+        return None
+    if not isinstance(accepted_hash, str) or len(accepted_hash) != 64:
+        return "accepted video evidence has an invalid SHA-256"
+    report_hashes = {
+        value
+        for value in (
+            report.get("video_sha256"),
+            (report.get("final_video_review") or {}).get("video_sha256")
+            if isinstance(report.get("final_video_review"), dict) else None,
+        )
+        if isinstance(value, str)
+    }
+    if report_hashes and accepted_hash not in report_hashes:
+        return "accepted video evidence does not match the report video hash"
+    final_review = report.get("final_video_review")
+    path_value = (
+        final_review.get("path")
+        if isinstance(final_review, dict) else None
+    ) or report.get("path")
+    if path_value:
+        path = Path(str(path_value))
+        if path.is_file() and file_hash(path) != accepted_hash:
+            return "accepted video evidence does not match the current media file"
+    return None
+
 class SeedDanceBaselineRequest(BaseModel):
     baseline_path: str
     candidate_path: Optional[str] = None
@@ -455,6 +488,13 @@ async def get_generation_review(
         for path in sorted(root.glob("*.json"))
         if path.name != "human_decisions.json"
     }
+    for report in reports.values():
+        if not isinstance(report, dict):
+            continue
+        evidence_error = _accepted_video_evidence_error(report)
+        if evidence_error:
+            report["status"] = "needs_review"
+            report["error"] = evidence_error
     project_root = storage_manager.get_project_path(project_id)
     for path in sorted(project_root.rglob("*.quality.json")):
         try:

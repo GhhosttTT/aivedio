@@ -20,6 +20,7 @@ from src.api.routes.projects import (
 )
 from src.services.generation_review import file_hash, write_report
 from src.api.routes.projects import _video_version_signature
+from src.api.routes.projects import _accepted_video_evidence_error
 from src.tasks.composition_tasks import composition_input_signature
 from src.services.delivery_package import _sha256
 
@@ -395,6 +396,29 @@ def test_review_api_marks_old_seedance_baseline_stale_after_candidate_changes(tm
 
     assert result["reports"]["seed_dance_baseline_comparison"]["status"] == "stale"
     assert any("Seed Dance baseline comparison" in item for item in result["summary"]["action_items"])
+
+
+def test_review_api_rejects_mismatched_accepted_video_evidence(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    project_root = storage_manager.get_project_path(1)
+    write_report(project_root / "reviews" / "quality_scene_1.json", {
+        "kind": "video_candidate_selection",
+        "status": "passed",
+        "video_sha256": "a" * 64,
+        "generation_run_evidence": {"accepted_video_sha256": "b" * 64},
+    })
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        id=1, final_video_path=None, scenes=[],
+    )
+
+    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+
+    report = result["reports"]["quality_scene_1"]
+    assert report["status"] == "needs_review"
+    assert "does not match" in report["error"]
+    assert _accepted_video_evidence_error(report) == "accepted video evidence does not match the report video hash"
 
 
 def test_review_api_marks_baseline_stale_when_project_has_no_current_candidate(tmp_path, monkeypatch):
