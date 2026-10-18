@@ -172,6 +172,53 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
     return report
 
 
+def preflight_end_frame_workflow(provider: str | None = None) -> dict:
+    """Validate the local image workflows used to create provider-neutral end frames.
+
+    Remote video providers still need a locally generated final-frame image for the
+    first/last-frame contract. Keep this check separate from the video workflow so
+    a configured Ark endpoint cannot make an otherwise incomplete run look ready.
+    """
+    enabled = bool(settings.GENERATION_VIDEO_END_FRAME_ENABLED)
+    provider_name = str(provider or getattr(settings, "GENERATION_PROVIDER", "") or "").strip().lower()
+    report = {
+        "status": "skipped",
+        "provider": provider_name,
+        "enabled": enabled,
+        "checks": {},
+        "action_items": [],
+    }
+    if not enabled or provider_name == "local_comfyui":
+        report["message"] = "End-frame generation is disabled or the run uses the local video path."
+        return report
+
+    def resolve(path_value: str) -> Path:
+        path = Path(path_value)
+        return path if path.is_absolute() else Path.cwd() / path
+
+    image_path = resolve(str(getattr(settings, "COMFYUI_WORKFLOW_PATH", "") or ""))
+    reference_path = resolve(str(getattr(settings, "COMFYUI_REFERENCE_WORKFLOW_PATH", "") or ""))
+    checks = report["checks"]
+    checks["image_workflow_configured"] = bool(str(getattr(settings, "COMFYUI_WORKFLOW_PATH", "") or "").strip())
+    checks["image_workflow_file"] = image_path.is_file() if checks["image_workflow_configured"] else False
+    checks["reference_workflow_configured"] = bool(str(getattr(settings, "COMFYUI_REFERENCE_WORKFLOW_PATH", "") or "").strip())
+    checks["reference_workflow_file"] = reference_path.is_file() if checks["reference_workflow_configured"] else False
+    report["resolved_paths"] = {"image": str(image_path), "reference": str(reference_path)}
+    missing = []
+    if not checks["image_workflow_file"]:
+        missing.append(f"COMFYUI_WORKFLOW_PATH is missing or does not exist: {image_path}")
+    if not checks["reference_workflow_file"]:
+        missing.append(f"COMFYUI_REFERENCE_WORKFLOW_PATH is missing or does not exist: {reference_path}")
+    if missing:
+        report["status"] = "blocked"
+        report["action_items"] = [
+            "Configure both local ComfyUI image workflows before using a remote video provider with end-frame generation."
+        ] + missing
+        return report
+    report["status"] = "ready"
+    return report
+
+
 def _video_workflow_action_items(checks: dict) -> list[str]:
     items = []
     if not checks.get("has_reference_placeholder"):
@@ -244,16 +291,24 @@ def preflight_production_video_engine(
         ],
         "action_items": [],
     }
+    end_frame_report = preflight_end_frame_workflow(provider_report.get("provider"))
+    report["end_frame"] = end_frame_report
     provider_warnings = provider_report.get("warnings") or []
     if provider_warnings:
         report["warnings"] = list(provider_warnings)
     provider_blocked = provider_report.get("status") == "blocked"
+    end_frame_blocked = end_frame_report.get("status") == "blocked"
     workflow_ready = workflow_report.get("status") == "ready_for_live_test"
     provider_ready = provider_report.get("status") == "configured"
     if workflow_ready or provider_ready:
         report["status"] = "ready_for_production_video_test"
         report["action_items"].append("Run one full project with video review enabled and compare against the Seed Dance baseline.")
         report["action_items"].extend(provider_warnings)
+        if end_frame_blocked:
+            report["status"] = "production_not_ready"
+            report["action_items"] = end_frame_report.get("action_items") or [
+                "Fix the end-frame image workflow before using a remote video provider."
+            ]
     elif provider_blocked and workflow_report.get("status") == "skipped":
         report["action_items"].extend(
             provider_report.get("action_items")

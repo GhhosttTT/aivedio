@@ -1,6 +1,35 @@
 import pytest
 
-from src.services.video_engine_preflight import preflight_video_provider, preflight_production_video_engine
+from src.services.video_engine_preflight import (
+    preflight_end_frame_workflow,
+    preflight_video_provider,
+    preflight_production_video_engine,
+)
+
+
+def test_remote_end_frame_preflight_requires_both_image_workflows(monkeypatch, tmp_path):
+    from src.services.video_engine_preflight import settings
+
+    monkeypatch.setattr(settings, "GENERATION_VIDEO_END_FRAME_ENABLED", True)
+    monkeypatch.setattr(settings, "COMFYUI_WORKFLOW_PATH", str(tmp_path / "image.json"))
+    monkeypatch.setattr(settings, "COMFYUI_REFERENCE_WORKFLOW_PATH", str(tmp_path / "reference.json"))
+
+    report = preflight_end_frame_workflow("seedance_api")
+
+    assert report["status"] == "blocked"
+    assert report["checks"]["image_workflow_file"] is False
+    assert report["checks"]["reference_workflow_file"] is False
+    assert "both local ComfyUI image workflows" in report["action_items"][0]
+
+
+def test_local_end_frame_preflight_is_skipped_for_local_video(monkeypatch):
+    from src.services.video_engine_preflight import settings
+
+    monkeypatch.setattr(settings, "GENERATION_VIDEO_END_FRAME_ENABLED", True)
+
+    report = preflight_end_frame_workflow("local_comfyui")
+
+    assert report["status"] == "skipped"
 
 
 def test_seedance_preflight_reports_result_endpoint(monkeypatch):
