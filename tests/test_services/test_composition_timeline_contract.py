@@ -61,6 +61,43 @@ def test_editing_plan_rejects_unsafe_transition_contract(monkeypatch):
         _require_editing_plan(SimpleNamespace(id=1), [scene(1)])
 
 
+def test_editing_plan_rejects_unknown_audio_strategy(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.composition_tasks.RhythmAuditService.audit",
+        lambda _self, project, scenes: SimpleNamespace(
+            to_dict=lambda: {"editing_plan": [{
+                "scene_number": 1,
+                "audio_strategy": "invented_mix_mode",
+                "transition": {"video": "none", "duration_seconds": 0.0, "dialogue_protected": True},
+            }]}
+        ),
+    )
+    with pytest.raises(ValueError, match="Unsupported audio editing strategy"):
+        _require_editing_plan(SimpleNamespace(id=1), [scene(1)])
+
+
+def test_editing_plan_requires_dialogue_prelap_to_use_hard_cut(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.composition_tasks.RhythmAuditService.audit",
+        lambda _self, project, scenes: SimpleNamespace(
+            to_dict=lambda: {"editing_plan": [
+                {
+                    "scene_number": 1,
+                    "audio_strategy": "start_at_zero",
+                    "transition": {"video": "none", "duration_seconds": 0.0, "dialogue_protected": True},
+                },
+                {
+                    "scene_number": 2,
+                    "audio_strategy": "dialogue_pre_lap",
+                    "transition": {"video": "crossfade", "duration_seconds": 0.08, "dialogue_protected": True},
+                },
+            ]}
+        ),
+    )
+    with pytest.raises(ValueError, match="Dialogue pre-lap requires a hard-cut"):
+        _require_editing_plan(SimpleNamespace(id=1), [scene(1), scene(2)])
+
+
 def test_silent_shot_preserves_its_own_timeline_slot():
     composer = Mock()
     composer._get_duration.side_effect = [4.0, 3.5, 2.0, 3.0, 2.8]

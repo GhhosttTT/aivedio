@@ -34,6 +34,17 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+SUPPORTED_AUDIO_EDITING_STRATEGIES = {
+    "start_at_zero",
+    "hold_room_tone_then_dialogue",
+    "action_cut_with_short_crossfade",
+    "cut_on_action",
+    "dialogue_pre_lap",
+    "room_tone_bridge",
+    "short_crossfade",
+}
+
+
 def _video_version_signature(path: str | Path) -> str | None:
     """Return a cheap version marker for invalidating media-based reviews."""
     try:
@@ -1038,6 +1049,15 @@ def _require_editing_plan(project: Project, scenes: list[Scene]) -> list[dict]:
             raise ValueError(f"Editing transition duration exceeds safe limit at scene {scene.scene_number}")
         if transition.get("dialogue_protected") is not True:
             raise ValueError(f"Editing transition does not protect dialogue at scene {scene.scene_number}")
+        audio_strategy = item.get("audio_strategy")
+        if audio_strategy not in SUPPORTED_AUDIO_EDITING_STRATEGIES:
+            raise ValueError(f"Unsupported audio editing strategy at scene {scene.scene_number}")
+        if scene == ordered[0] and audio_strategy != "start_at_zero":
+            raise ValueError("Opening scene audio strategy must start_at_zero")
+        if scene != ordered[0] and audio_strategy == "start_at_zero":
+            raise ValueError(f"Non-opening scene audio cannot use start_at_zero at scene {scene.scene_number}")
+        if audio_strategy == "dialogue_pre_lap" and video_transition != "hard_cut":
+            raise ValueError(f"Dialogue pre-lap requires a hard-cut video transition at scene {scene.scene_number}")
     return plan
 
 
