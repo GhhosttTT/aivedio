@@ -3,10 +3,14 @@
 使用 Celery 异步执行字幕生成任务
 """
 
+import json
+from pathlib import Path
+
 from src.tasks.celery_app import celery_app
 from src.database.database import get_db
 from src.database.models import Scene
 from src.services.subtitle_generator import get_subtitle_generator
+from src.services.subtitle_quality_service import assess_subtitle_timeline
 from src.utils.storage import get_scene_subtitle_path
 from src.utils.logger import get_logger
 from src.tasks.audio_tasks import has_spoken_dialogue
@@ -78,6 +82,18 @@ def generate_subtitle_task(
             ],
             output_path=subtitle_path,
         )
+        subtitle_content = Path(result_path).read_text(encoding="utf-8")
+        quality_report = assess_subtitle_timeline(subtitle_content, scene.dialogue)
+        quality_report.update({
+            "stage": "subtitle",
+            "scene": {"scene_number": scene.scene_number},
+            "subtitle_path": result_path,
+            "expected_text": scene.dialogue,
+        })
+        Path(result_path).with_suffix(".quality.json").write_text(
+            json.dumps(quality_report, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
         
         # 更新数据库
         scene.subtitle_path = result_path
@@ -88,7 +104,8 @@ def generate_subtitle_task(
         return {
             "scene_id": scene_id,
             "subtitle_path": result_path,
-            "status": "completed"
+            "status": "completed",
+            "quality_status": quality_report["status"],
         }
     
     except Exception as e:

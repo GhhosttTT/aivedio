@@ -570,6 +570,19 @@ def _require_scene_subtitles(scenes: list[Scene]) -> None:
             continue
         if not _subtitle_matches_dialogue(content, scene.dialogue or ""):
             failed.append(f"{scene.scene_number}: subtitle text does not cover spoken dialogue")
+            continue
+        quality_path = subtitle_path.with_suffix(".quality.json")
+        if quality_path.is_file():
+            try:
+                quality_report = json.loads(quality_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                failed.append(f"{scene.scene_number}: invalid subtitle quality report: {exc}")
+                continue
+            if quality_report.get("status") != "passed":
+                failed.append(
+                    f"{scene.scene_number}: subtitle quality report status="
+                    f"{quality_report.get('status') or 'unknown'}"
+                )
     if missing:
         raise ValueError("Missing subtitle for spoken-dialogue scenes: " + ", ".join(missing))
     if failed:

@@ -172,6 +172,22 @@ def test_composition_accepts_matching_dialogue_subtitle(tmp_path):
     composition_tasks._require_scene_subtitles([scene])
 
 
+def test_composition_blocks_failed_subtitle_quality_report(tmp_path):
+    subtitle = tmp_path / "scene_001.srt"
+    subtitle.write_text(
+        "1\n00:00:00,000 --> 00:00:01,500\n你为什么\n骗我\n",
+        encoding="utf-8",
+    )
+    subtitle.with_suffix(".quality.json").write_text(
+        '{"status": "needs_review", "issues": [{"code": "reading_speed"}]}',
+        encoding="utf-8",
+    )
+    scene = Mock(scene_number=1, dialogue="你为什么骗我？！", subtitle_path=str(subtitle))
+
+    with pytest.raises(ValueError, match="subtitle quality report status=needs_review"):
+        composition_tasks._require_scene_subtitles([scene])
+
+
 def test_composition_skips_subtitle_quality_for_no_dialogue_scene():
     scene = Mock(scene_number=1, dialogue="无对白", subtitle_path=None)
 
