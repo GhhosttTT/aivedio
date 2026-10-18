@@ -180,6 +180,31 @@ class TestVideoComposer:
         assert "duration=0.120000" in filter_graph
         assert "offset=1.880000" in filter_graph
 
+    def test_concat_videos_applies_dialogue_prelap_to_audio_only(self, service, tmp_path):
+        video1 = tmp_path / "video1.mp4"
+        video2 = tmp_path / "video2.mp4"
+        output_path = tmp_path / "output.mp4"
+        video1.write_text("fake video 1")
+        video2.write_text("fake video 2")
+        service._get_duration = Mock(side_effect=[2.0, 2.0])
+        service.has_audio_stream = Mock(return_value=True)
+        with patch("src.services.video_composer.subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0)
+            service.concat_videos(
+                [str(video1), str(video2)],
+                str(output_path),
+                preserve_audio=True,
+                editing_plan=[
+                    {"scene_number": 1, "audio_strategy": "start_at_zero", "transition": {"video": "none", "duration_seconds": 0.0}},
+                    {"scene_number": 2, "audio_strategy": "dialogue_pre_lap", "transition": {"video": "hard_cut", "duration_seconds": 0.0}},
+                ],
+            )
+        command = run.call_args.args[0]
+        filter_graph = command[command.index("-filter_complex") + 1]
+        assert "xfade=transition=fade:duration=0.001000" in filter_graph
+        assert "acrossfade=d=0.080000" in filter_graph
+        assert "apad,atrim=duration=3.999000" in filter_graph
+
     def test_concat_videos_preserves_high_bit_depth_when_requested(self, service, tmp_path):
         video1 = tmp_path / "video1.mp4"
         video2 = tmp_path / "video2.mp4"

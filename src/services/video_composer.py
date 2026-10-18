@@ -627,9 +627,14 @@ class VideoComposer:
             current_video = next_video
             if preserve_audio:
                 next_audio = f"txa{index}"
+                audio_fade_duration = self._transition_audio_overlap(editing_plan[index])
+                audio_fade_duration = max(
+                    0.001,
+                    min(audio_fade_duration, durations[index - 1], durations[index]),
+                )
                 filters.append(
                     f"[{current_audio}][{audio_labels[index]}]acrossfade="
-                    f"d={fade_duration:.6f}:c1=tri:c2=tri[{next_audio}]"
+                    f"d={audio_fade_duration:.6f}:c1=tri:c2=tri[{next_audio}]"
                 )
                 current_audio = next_audio
             elapsed += durations[index] - fade_duration
@@ -637,7 +642,8 @@ class VideoComposer:
         if preserve_audio and current_audio:
             normalized_audio = "ta_normalized"
             filters.append(
-                f"[{current_audio}]loudnorm=I=-16:TP=-1.5:LRA=11:linear=true[{normalized_audio}]"
+                f"[{current_audio}]apad,atrim=duration={elapsed:.6f},"
+                f"asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11:linear=true[{normalized_audio}]"
             )
             current_audio = normalized_audio
 
@@ -845,6 +851,14 @@ class VideoComposer:
     @staticmethod
     def _transition_audio_overlap(plan: dict) -> float:
         transition = plan.get("transition", {}) if isinstance(plan, dict) else {}
+        if plan.get("audio_strategy") == "dialogue_pre_lap":
+            try:
+                return max(
+                    0.001,
+                    min(0.12, float(settings.GENERATION_VIDEO_DIALOGUE_PRELAP_SECONDS)),
+                )
+            except (TypeError, ValueError):
+                return 0.08
         mode = transition.get("video")
         if mode == "crossfade":
             try:

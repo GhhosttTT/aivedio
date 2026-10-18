@@ -152,6 +152,7 @@ class Settings(BaseSettings):
     # program material into an overly hot, fatiguing level.
     GENERATION_VIDEO_AUDIO_RMS_MIN_DB: float = -35.0
     GENERATION_VIDEO_AUDIO_RMS_MAX_DB: float = -8.0
+    GENERATION_VIDEO_DIALOGUE_PRELAP_SECONDS: float = 0.08
     GENERATION_VIDEO_OUTPUT_FPS: int = 24
     GENERATION_VIDEO_POSTPROCESS: bool = True
     GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK: bool = False
