@@ -955,11 +955,11 @@ class ApiVideoProvider:
         """Reject technically playable Ark output with obvious temporal failures."""
         metrics = video_candidate_metrics(output_path)
         if metrics.get("status") != "available":
-            # ffprobe already established that the container is usable. Some
-            # uncommon provider codecs cannot be sampled by OpenCV, so retain
-            # the hard container gate and let the later VLM review decide.
             self.last_result_metadata["temporal_quality_status"] = "unavailable"
-            return
+            raise ValueError(
+                "temporal quality evidence is unavailable: "
+                f"{metrics.get('error') or 'video frames could not be sampled'}"
+            )
         self.last_result_metadata["temporal_quality"] = {
             key: metrics.get(key)
             for key in (

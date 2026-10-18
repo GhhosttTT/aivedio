@@ -446,6 +446,11 @@ def test_native_ark_output_validation_accepts_video_stream(tmp_path, monkeypatch
             stdout="codec_type=video\ncodec_name=hevc\npix_fmt=yuv420p10le\nduration=4.0\n"
         ),
     )
+    monkeypatch.setattr(
+        generation_provider,
+        "video_candidate_metrics",
+        lambda _path: {"status": "available", "motion_energy": 8.0},
+    )
     provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
 
     provider._validate_provider_video(str(output))
@@ -470,6 +475,11 @@ def test_native_ark_output_validation_uses_video_stream_when_audio_is_first(tmp_
             ],
             "format": {"duration": "4.0"},
         })),
+    )
+    monkeypatch.setattr(
+        generation_provider,
+        "video_candidate_metrics",
+        lambda _path: {"status": "available", "motion_energy": 8.0},
     )
     provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
 
@@ -572,6 +582,11 @@ def test_native_ark_25_1080p_mov_accepts_h264_444_output(tmp_path, monkeypatch):
             stdout="codec_type=video\ncodec_name=h264\npix_fmt=yuv444p\n"
             "width=1920\nheight=1080\nduration=5.0\n"
         ),
+    )
+    monkeypatch.setattr(
+        generation_provider,
+        "video_candidate_metrics",
+        lambda _path: {"status": "available", "motion_energy": 8.0},
     )
     provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
 
@@ -806,6 +821,28 @@ def test_native_ark_output_validation_rejects_temporal_visual_resets(tmp_path, m
     provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
 
     with pytest.raises(GenerationProviderError, match="temporal visual resets"):
+        provider._validate_provider_video(str(output))
+    assert not output.exists()
+
+
+def test_native_ark_output_validation_fails_closed_without_temporal_evidence(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")
+    output = tmp_path / "uninspectable.mp4"
+    output.write_bytes(b"video")
+    monkeypatch.setattr(
+        generation_provider.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout="codec_type=video\nduration=4.0\n"),
+    )
+    monkeypatch.setattr(
+        generation_provider,
+        "video_candidate_metrics",
+        lambda _path: {"status": "unavailable", "error": "unsupported codec"},
+    )
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    with pytest.raises(GenerationProviderError, match="temporal quality evidence is unavailable"):
         provider._validate_provider_video(str(output))
     assert not output.exists()
 
