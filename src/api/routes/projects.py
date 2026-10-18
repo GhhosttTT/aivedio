@@ -65,6 +65,7 @@ from src.services.generation_provider import (
     _seedance_model,
     _seedance_model_is_10,
     _seedance_model_is_25,
+    _seedance_model_supports_first_last_frame,
     _seedance_supported_resolutions,
 )
 from src.utils.logger import get_logger
@@ -185,14 +186,19 @@ def _normalized_production_options(options: ProductionOptions) -> dict:
                 status_code=422,
                 detail="Native Seedance explicit first_frame mode requires Seedance 1.0 or 2.5.",
             )
+        if request_mode == "first_last_frame" and not _seedance_model_supports_first_last_frame(configured_model):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Native Seedance first_last_frame mode is not supported by {configured_model}.",
+            )
         if (
-            request_mode == "first_frame"
+            request_mode in {"first_frame", "first_last_frame"}
             and _seedance_model_is_25(configured_model)
             and not options.draft
         ):
             raise HTTPException(
                 status_code=422,
-                detail="Seedance 2.5 first_frame mode requires draft=true; promote the Draft task for final output.",
+                detail="Seedance 2.5 first_frame/first_last_frame mode requires draft=true; promote the Draft task for final output.",
             )
         if options.duration_seconds is not None:
             minimum_duration, maximum_duration = _seedance_duration_bounds(configured_model, request_mode)

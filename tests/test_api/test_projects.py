@@ -770,6 +770,38 @@ def test_normalized_production_options_rejects_draft_for_native_non_25_per_run_m
     assert "Draft" in str(error.value.detail)
 
 
+def test_normalized_production_options_requires_draft_for_native_25_first_last_frame(monkeypatch):
+    monkeypatch.setattr("src.api.routes.projects.settings.GENERATION_PROVIDER", "seedance_api")
+    monkeypatch.setattr("src.api.routes.projects.settings.SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
+    monkeypatch.setattr("src.api.routes.projects.settings.SEEDANCE_ENDPOINT", "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks")
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.delenv("SEEDANCE_MODEL", raising=False)
+
+    with pytest.raises(Exception) as error:
+        _normalized_production_options(ProductionOptions(
+            provider="seedance_api", request_mode="first_last_frame", draft=False,
+        ))
+
+    assert error.value.status_code == 422
+    assert "first_frame/first_last_frame" in str(error.value.detail)
+
+
+def test_normalized_production_options_rejects_first_last_frame_on_seedance_10_fast(monkeypatch):
+    monkeypatch.setattr("src.api.routes.projects.settings.GENERATION_PROVIDER", "seedance_api")
+    monkeypatch.setattr("src.api.routes.projects.settings.SEEDANCE_MODEL", "doubao-seedance-1-0-pro-fast-251015")
+    monkeypatch.setattr("src.api.routes.projects.settings.SEEDANCE_ENDPOINT", "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks")
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.delenv("SEEDANCE_MODEL", raising=False)
+
+    with pytest.raises(Exception) as error:
+        _normalized_production_options(ProductionOptions(
+            provider="seedance_api", request_mode="first_last_frame",
+        ))
+
+    assert error.value.status_code == 422
+    assert "first_last_frame" in str(error.value.detail)
+
+
 @pytest.mark.parametrize("payload", [
     {"resolution": "1440p"},
     {"output_format": "avi"},

@@ -205,8 +205,8 @@ export function ProjectDetail() {
                     ? `原生显式首帧模式仅支持 Seedance 1.0 或 2.5，当前模型为 ${selectedModel}`
                     : productionOptions.request_mode === 'first_last_frame' && !supportsFirstLastFrame
                         ? `当前模型不支持原生首尾帧模式：${selectedModel}`
-                    : productionOptions.request_mode === 'first_frame' && seedance25 && !productionOptions.draft
-                        ? 'Seedance 2.5 显式首帧模式必须先生成 Draft，再提升正式片'
+                    : ['first_frame', 'first_last_frame'].includes(productionOptions.request_mode) && seedance25 && !productionOptions.draft
+                        ? 'Seedance 2.5 首帧/首尾帧模式必须先生成 Draft，再提升正式片'
             : seedance10 && ['edit', 'extend'].includes(productionOptions.request_mode)
                 ? `原生 ${selectedModel} 不支持${productionOptions.request_mode === 'edit' ? '编辑' : '延长'}任务，请使用 Seedance 2.0 或 2.5`
                 : productionOptions.duration_seconds !== null
