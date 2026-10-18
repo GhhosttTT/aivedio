@@ -579,6 +579,21 @@ def test_video_request_fingerprint_changes_with_motion_and_repair_controls():
     assert generation_provider._video_request_fingerprint(base) != generation_provider._video_request_fingerprint(changed)
 
 
+def test_video_request_fingerprint_binds_multimodal_reference_file_state(tmp_path):
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(b"reference-v1")
+    request = VideoGenerationRequest(
+        prompt="a shot",
+        output_path="scene.mp4",
+        reference_images=[str(reference)],
+    )
+    first = generation_provider._video_request_fingerprint(request)
+    reference.write_bytes(b"reference-v2")
+    second = generation_provider._video_request_fingerprint(request)
+
+    assert first != second
+
+
 def test_native_ark_25_1080p_rejects_8_bit_h264_output(tmp_path, monkeypatch):
     monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
     monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")

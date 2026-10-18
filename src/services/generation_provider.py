@@ -2052,6 +2052,18 @@ def _video_request_fingerprint(request: VideoGenerationRequest) -> str:
     effective_output_format = request.output_format or _provider_setting(
         "SEEDANCE_OUTPUT_FORMAT", "mp4"
     )
+    def media_identity(value: str | None) -> dict[str, object] | str | None:
+        if not value:
+            return value
+        path = Path(str(value))
+        identity: dict[str, object] = {"path": str(value)}
+        try:
+            stat = path.stat()
+            identity.update({"size": stat.st_size, "mtime_ns": stat.st_mtime_ns})
+        except OSError:
+            pass
+        return identity
+
     media_fields = (
         "reference_image", "end_image", "continuity_reference_image",
         "audio_path", "extend_video",
@@ -2059,9 +2071,9 @@ def _video_request_fingerprint(request: VideoGenerationRequest) -> str:
     payload: dict[str, object] = {
         "prompt": request.prompt,
         "negative_prompt": request.negative_prompt,
-        "reference_images": request.reference_images or [],
-        "reference_videos": request.reference_videos or [],
-        "reference_audios": request.reference_audios or [],
+        "reference_images": [media_identity(path) for path in request.reference_images or []],
+        "reference_videos": [media_identity(path) for path in request.reference_videos or []],
+        "reference_audios": [media_identity(path) for path in request.reference_audios or []],
         "generate_audio": request.generate_audio,
         "return_last_frame": request.return_last_frame,
         "camera_fixed": request.camera_fixed,
@@ -2089,14 +2101,7 @@ def _video_request_fingerprint(request: VideoGenerationRequest) -> str:
     for field in media_fields:
         value = getattr(request, field)
         if value:
-            path = Path(str(value))
-            media_identity: dict[str, object] = {"path": str(value)}
-            try:
-                stat = path.stat()
-                media_identity.update({"size": stat.st_size, "mtime_ns": stat.st_mtime_ns})
-            except OSError:
-                pass
-            payload[field] = media_identity
+            payload[field] = media_identity(value)
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
