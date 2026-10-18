@@ -270,22 +270,22 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
             candidate_stats.sampled_frames >= settings.GENERATION_VIDEO_MIN_COMPARISON_SAMPLES
             and baseline_stats.sampled_frames >= settings.GENERATION_VIDEO_MIN_COMPARISON_SAMPLES
         ),
-        "duration_close": abs(differences["duration_delta_seconds"]) <= 0.5,
-        "fps_close": abs(differences["fps_delta"]) <= 2.0,
+        "duration_close": abs(differences["duration_delta_seconds"]) <= settings.GENERATION_VIDEO_BASELINE_MAX_DURATION_DELTA_SECONDS,
+        "fps_close": abs(differences["fps_delta"]) <= settings.GENERATION_VIDEO_BASELINE_MAX_FPS_DELTA,
         "pixel_format_not_lower": differences["pixel_format_match"],
         "resolution_not_lower": (
             candidate_stats.width * candidate_stats.height >= baseline_stats.width * baseline_stats.height
         ),
-        "aspect_ratio_close": abs(differences["aspect_ratio_delta"]) <= 0.08,
+        "aspect_ratio_close": abs(differences["aspect_ratio_delta"]) <= settings.GENERATION_VIDEO_BASELINE_MAX_ASPECT_RATIO_DELTA,
         "motion_not_static": candidate_stats.motion_energy >= max(2.0, baseline_stats.motion_energy * 0.45),
         "sharpness_not_collapsed": candidate_stats.sharpness >= max(8.0, baseline_stats.sharpness * 0.45),
-        "exposure_close": abs(differences["brightness_delta"]) <= 45.0,
+        "exposure_close": abs(differences["brightness_delta"]) <= settings.GENERATION_VIDEO_BASELINE_MAX_EXPOSURE_DELTA,
         "brightness_stable": candidate_stats.brightness_variance <= max(900.0, baseline_stats.brightness_variance * 3.0),
-        "no_prolonged_static_run": candidate_stats.max_static_run_seconds <= 1.8,
-        "no_prolonged_black_run": candidate_stats.max_black_run_seconds <= 0.2,
+        "no_prolonged_static_run": candidate_stats.max_static_run_seconds <= settings.GENERATION_VIDEO_MAX_STATIC_RUN_SECONDS,
+        "no_prolonged_black_run": candidate_stats.max_black_run_seconds <= settings.GENERATION_VIDEO_MAX_BLACK_SECONDS,
         "black_frame_ratio_acceptable": candidate_stats.black_frame_ratio <= settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO,
-        "no_temporal_exposure_jumps": candidate_stats.brightness_step_p95 <= 36.0,
-        "stable_motion_cadence": candidate_stats.motion_jitter_ratio <= 1.5,
+        "no_temporal_exposure_jumps": candidate_stats.brightness_step_p95 <= settings.GENERATION_VIDEO_MAX_BRIGHTNESS_STEP_P95,
+        "stable_motion_cadence": candidate_stats.motion_jitter_ratio <= settings.GENERATION_VIDEO_MAX_MOTION_JITTER_RATIO,
         "no_temporal_visual_resets": candidate_stats.temporal_jump_ratio <= settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO,
         "no_extreme_temporal_visual_reset": candidate_stats.temporal_jump_p95 <= settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95,
         "audio_presence_matches": candidate_stats.audio_present == baseline_stats.audio_present,
@@ -294,7 +294,7 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
             or (
                 candidate_stats.audio_present
                 and audio_duration_delta is not None
-                and abs(audio_duration_delta) <= 0.5
+                and abs(audio_duration_delta) <= settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS
             )
         ),
         "audio_signal_usable": (
@@ -317,7 +317,7 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
             or (
                 candidate_stats.audio_peak_db is not None
                 and baseline_stats.audio_peak_db is not None
-                and abs(candidate_stats.audio_peak_db - baseline_stats.audio_peak_db) <= 12.0
+                and abs(candidate_stats.audio_peak_db - baseline_stats.audio_peak_db) <= settings.GENERATION_VIDEO_BASELINE_MAX_AUDIO_PEAK_DELTA_DB
             )
         ),
     }

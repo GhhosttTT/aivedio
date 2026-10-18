@@ -388,3 +388,23 @@ def test_compare_video_baseline_blocks_lower_pixel_format_fidelity(monkeypatch, 
     assert report["status"] == "needs_review"
     assert report["gates"]["pixel_format_not_lower"] is False
     assert report["differences"]["pixel_format_match"] is False
+
+
+def test_compare_video_baseline_uses_configured_temporal_limits(monkeypatch, tmp_path):
+    def fake_stats(path, max_samples):
+        return VideoStats(
+            path=str(path), duration_seconds=2.0, width=160, height=90, fps=24,
+            sampled_frames=6, motion_energy=8, sharpness=30, brightness=90,
+            brightness_variance=40,
+            max_static_run_seconds=1.9,
+        )
+
+    monkeypatch.setattr("scripts.compare_video_baseline.video_stats", fake_stats)
+    monkeypatch.setattr(
+        "scripts.compare_video_baseline.settings.GENERATION_VIDEO_MAX_STATIC_RUN_SECONDS",
+        2.0,
+    )
+
+    report = compare(tmp_path / "candidate.mp4", tmp_path / "baseline.mp4", max_samples=6)
+
+    assert report["gates"]["no_prolonged_static_run"] is True
