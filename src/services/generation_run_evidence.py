@@ -112,6 +112,30 @@ def build_video_generation_evidence(
         if isinstance(item.get("provider_metadata"), dict)
         and (item.get("provider_metadata") or {}).get("request_contract_hash")
     })
+    spatial_contract_hashes = sorted({
+        str(
+            ((item.get("provider_metadata") or {}).get("request_contract") or {})
+            .get("spatial_asset_pack", {})
+            .get("scene_contract_hash")
+        )
+        for item in candidates
+        if isinstance(item.get("provider_metadata"), dict)
+        and isinstance((item.get("provider_metadata") or {}).get("request_contract"), dict)
+        and ((item.get("provider_metadata") or {}).get("request_contract") or {})
+        .get("spatial_asset_pack", {}).get("scene_contract_hash")
+    })
+    spatial_project_signatures = sorted({
+        str(
+            ((item.get("provider_metadata") or {}).get("request_contract") or {})
+            .get("spatial_asset_pack", {})
+            .get("project_signature")
+        )
+        for item in candidates
+        if isinstance(item.get("provider_metadata"), dict)
+        and isinstance((item.get("provider_metadata") or {}).get("request_contract"), dict)
+        and ((item.get("provider_metadata") or {}).get("request_contract") or {})
+        .get("spatial_asset_pack", {}).get("project_signature")
+    })
     generated = [item for item in candidates if item.get("status") != "error" and item.get("path")]
     passed = [item for item in candidates if item.get("status") == "passed"]
     return {
@@ -133,6 +157,8 @@ def build_video_generation_evidence(
         "providers": providers,
         "provider_task_ids": task_ids,
         "request_contract_hashes": contract_hashes,
+        "spatial_scene_contract_hashes": spatial_contract_hashes,
+        "spatial_project_signatures": spatial_project_signatures,
         "quality_budget": quality_report.get("quality_budget", {}),
     }
 
