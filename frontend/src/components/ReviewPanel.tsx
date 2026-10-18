@@ -157,6 +157,32 @@ function SeedDanceComparison({projectId, report}: {projectId: number; report: an
     </div>;
 }
 
+function ProviderTrace({report}: {report: any}) {
+    const metadata = report?.selected_provider_metadata || report?.provider_metadata || report?.final_video_review?.provider_metadata;
+    if (!metadata || typeof metadata !== 'object') return null;
+    const trace = {
+        ...metadata,
+        provider_model: metadata.provider_model || metadata.requested_model,
+    };
+    const fields = [
+        ['provider_name', 'Provider'],
+        ['provider_model', '实际模型'],
+        ['provider_task_id', '远端任务 ID'],
+        ['provider_status', '远端状态'],
+        ['provider_created_at', '创建时间'],
+        ['provider_duration_seconds', '实际时长'],
+    ].filter(([key]) => trace[key] !== undefined && trace[key] !== null && trace[key] !== '');
+    if (!fields.length) return null;
+    return <div className="wb-summary-actions" aria-label="远端生成追踪">
+        <h4>远端生成追踪</h4>
+        <div className="wb-grid compact">
+            {fields.map(([key, label]) => <div className="wb-kv" key={key}>
+                <span>{label}</span><strong>{String(trace[key])}</strong>
+            </div>)}
+        </div>
+    </div>;
+}
+
 function ReviewSummary({
     summary,
     qualityPlan,
@@ -358,6 +384,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
                 {report.average != null && <strong>{report.average} / 5</strong>}
             </div>
             {report.error && <p className="wb-alert">{String(report.error)}</p>}
+            <ProviderTrace report={report}/>
             <SeedDanceComparison projectId={projectId} report={report}/>
             <Scores review={report.review}/>
             {report.batches?.map((batch: any, index: number) => <div key={index}>
