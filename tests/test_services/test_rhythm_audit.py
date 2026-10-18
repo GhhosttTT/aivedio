@@ -83,3 +83,40 @@ def test_rhythm_audit_protects_dialogue_and_action_boundaries():
     assert RhythmAuditService._transition_contract("location_cut", "room_tone_bridge", False)[
         "duration_seconds"
     ] <= 0.12
+
+
+def test_rhythm_audit_enforces_locked_commercial_hook_timing(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "src.services.rhythm_audit.TopicBriefService.load",
+        lambda _self, _project_id: {"hook_type": "秘密证据曝光"},
+    )
+    monkeypatch.setattr(
+        "src.services.rhythm_audit.VideoDirectorService.plan_scene",
+        lambda _self, scene, project_id=None: SimpleNamespace(
+            shot_role="story_shot", target_duration_seconds=3.0
+        ),
+    )
+    scenes = [_scene(index) for index in range(1, 5)]
+    scenes[-1].visual_description = "A secret evidence file is revealed."
+    report = RhythmAuditService().audit(SimpleNamespace(id=1), scenes)
+
+    assert report.hook_status == "needs_review"
+    assert report.hook_latency_seconds == 9.0
+    assert any(item["code"] == "late_opening_hook" for item in report.issues)
+
+
+def test_rhythm_audit_does_not_require_hook_without_locked_brief(monkeypatch):
+    monkeypatch.setattr(
+        "src.services.rhythm_audit.TopicBriefService.load",
+        lambda _self, _project_id: None,
+    )
+    monkeypatch.setattr(
+        "src.services.rhythm_audit.VideoDirectorService.plan_scene",
+        lambda _self, scene, project_id=None: SimpleNamespace(
+            shot_role="story_shot", target_duration_seconds=2.0
+        ),
+    )
+    report = RhythmAuditService().audit(SimpleNamespace(id=1), [_scene(1), _scene(2)])
+
+    assert report.hook_status == "not_checked"
+    assert not any(item["code"] == "late_opening_hook" for item in report.issues)

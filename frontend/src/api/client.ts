@@ -534,6 +534,8 @@ export interface ProductionReadinessReport {
             status: string;
             scene_count: number;
             total_duration_seconds: number;
+            hook_status?: string;
+            hook_latency_seconds?: number | null;
             issues?: Array<{code: string; severity: string; scene_number: number; message: string}>;
         };
         topic_brief?: {

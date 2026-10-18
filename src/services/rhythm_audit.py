@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass
 
 from src.services.video_director_service import VideoDirectorService
+from src.services.topic_brief import TopicBriefService
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,8 @@ class RhythmAuditReport:
     timeline: list[dict]
     repair_queue: list[dict]
     editing_plan: list[dict] | None = None
+    hook_latency_seconds: float | None = None
+    hook_status: str = "not_checked"
 
     def to_dict(self) -> dict:
         return {
@@ -28,6 +31,8 @@ class RhythmAuditReport:
             "timeline": self.timeline,
             "repair_queue": self.repair_queue,
             "editing_plan": list(self.editing_plan or []),
+            "hook_latency_seconds": self.hook_latency_seconds,
+            "hook_status": self.hook_status,
         }
 
 
@@ -42,6 +47,11 @@ class RhythmAuditService:
     MAX_SILENT_SHOT_SECONDS = 6.0
     MAX_DIALOGUE_MARGIN_SECONDS = 0.30
     SAME_ROLE_WARNING_RUN = 3
+    MAX_HOOK_LATENCY_SECONDS = 8.0
+    HOOK_TERMS = (
+        "秘密", "证据", "背叛", "危机", "威胁", "身份", "反转", "失踪", "离婚", "曝光",
+        "复仇", "重生", "secret", "evidence", "betrayal", "threat", "identity", "twist",
+    )
 
     def audit(self, project, scenes) -> RhythmAuditReport:
         ordered = sorted(list(scenes or []), key=lambda scene: scene.scene_number)
@@ -89,6 +99,7 @@ class RhythmAuditService:
             cursor += duration
 
         self._add_role_run_issues(timeline, issues)
+        hook_latency, hook_status = self._opening_hook_check(project, ordered, timeline, issues)
         status = "needs_review" if any(item["severity"] == "high" for item in issues) else ("warn" if issues else "passed")
         repair_queue = [
             {
@@ -109,7 +120,33 @@ class RhythmAuditService:
             timeline=timeline,
             repair_queue=repair_queue,
             editing_plan=editing_plan,
+            hook_latency_seconds=hook_latency,
+            hook_status=hook_status,
         )
+
+    def _opening_hook_check(self, project, scenes, timeline, issues) -> tuple[float | None, str]:
+        """Enforce commercial hook timing only after a market brief is locked."""
+        brief = TopicBriefService().load(getattr(project, "id", None)) if getattr(project, "id", None) else None
+        if not isinstance(brief, dict) or not str(brief.get("hook_type") or "").strip():
+            return None, "not_checked"
+        hook_index = None
+        for index, scene in enumerate(scenes):
+            text = " ".join(
+                str(getattr(scene, field, "") or "")
+                for field in ("visual_description", "dialogue")
+            ).lower()
+            if any(term.lower() in text for term in self.HOOK_TERMS):
+                hook_index = index
+                break
+        latency = round(float(timeline[hook_index]["start_seconds"]), 3) if hook_index is not None else None
+        if hook_index is None or hook_index > 1 or (latency is not None and latency > self.MAX_HOOK_LATENCY_SECONDS):
+            issues.append(self._issue(
+                "late_opening_hook", "high", scenes[0].scene_number,
+                "Locked commercial hook is not readable within the first two shots or first 8 seconds.",
+                "rewrite_short_drama_story_rhythm",
+            ))
+            return latency, "needs_review"
+        return latency, "passed"
 
     @staticmethod
     def _editing_plan(timeline: list[dict]) -> list[dict]:
