@@ -531,6 +531,7 @@ class TestRetryFailedTask:
             "model": "doubao-seedance-2-0-260128",
             "resolution": "1080p",
             "output_format": "mp4",
+            "draft_task_ids": {1: "draft-1", 2: "draft-2"},
             "sequence_level_multi_shot": False,
         }
         mock_create.return_value = "retry-with-options-task-id"
@@ -540,6 +541,7 @@ class TestRetryFailedTask:
         assert kwargs["provider"] == "seedance_api"
         assert kwargs["model"] == "doubao-seedance-2-0-260128"
         assert kwargs["resolution"] == "1080p"
+        assert kwargs["draft_task_ids"] == {1: "draft-1", 2: "draft-2"}
         assert kwargs.get("generate_images", True) is True
         assert kwargs.get("generate_videos", True) is True
 

@@ -200,6 +200,8 @@ class TaskOrchestrator:
                 "multi_shot": multi_shot,
                 "sequence_level_multi_shot": sequence_level_multi_shot,
                 "native_audio": native_audio,
+                "draft_task_id": draft_task_id,
+                "draft_task_ids": draft_task_ids,
                 "model": model,
                 "resolution": resolution,
                 "output_format": output_format,
@@ -731,7 +733,7 @@ class TaskOrchestrator:
                     key: value for key, value in pending_options.items()
                     if value is not None and key in {
                         "provider", "request_mode", "multi_shot", "native_audio",
-                        "draft", "draft_task_id", "model", "resolution",
+                        "draft", "draft_task_id", "draft_task_ids", "model", "resolution",
                         "output_format", "return_last_frame", "camera_fixed",
                         "watermark", "duration_seconds", "sequence_level_multi_shot",
                         "sequence_output_path",

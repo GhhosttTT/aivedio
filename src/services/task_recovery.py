@@ -16,6 +16,8 @@ _PRODUCTION_OPTION_KEYS = (
     "multi_shot",
     "sequence_level_multi_shot",
     "native_audio",
+    "draft_task_id",
+    "draft_task_ids",
     "model",
     "resolution",
     "output_format",
@@ -56,11 +58,18 @@ def load_production_video_options(project_id: int) -> dict | None:
     options = payload.get("options") if isinstance(payload, dict) else None
     if not isinstance(options, dict):
         return None
-    return {
+    result = {
         key: options[key]
         for key in _PRODUCTION_OPTION_KEYS
         if key in options and options[key] is not None
-    } or None
+    }
+    draft_task_ids = result.get("draft_task_ids")
+    if isinstance(draft_task_ids, dict):
+        result["draft_task_ids"] = {
+            int(key) if str(key).isdigit() else key: value
+            for key, value in draft_task_ids.items()
+        }
+    return result or None
 
 
 def load_pending_video_options(
