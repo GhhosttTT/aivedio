@@ -1,0 +1,49 @@
+import json
+from types import SimpleNamespace
+
+from src.services.atomic_video_motion_audit import AtomicVideoMotionAuditService
+
+
+def _scene(number, video_path):
+    return SimpleNamespace(scene_number=number, video_path=str(video_path))
+
+
+def _write_sidecar(video, **metrics):
+    video.write_bytes(b"video")
+    video.with_suffix(".quality.json").write_text(json.dumps({"metrics": metrics}), encoding="utf-8")
+
+
+def test_atomic_video_motion_audit_accepts_stable_clips(tmp_path):
+    first = tmp_path / "scene_1.mp4"
+    second = tmp_path / "scene_2.mp4"
+    _write_sidecar(first, technical_score=4.5, motion_energy=12, static_transition_ratio=0.2, max_black_run_seconds=0.0, motion_jitter_ratio=0.3)
+    _write_sidecar(second, technical_score=4.4, motion_energy=11, static_transition_ratio=0.25, max_black_run_seconds=0.0, motion_jitter_ratio=0.4)
+
+    report = AtomicVideoMotionAuditService().audit([_scene(1, first), _scene(2, second)])
+
+    assert report.status == "passed"
+    assert report.checked_scene_count == 2
+
+
+def test_atomic_video_motion_audit_flags_freeze_and_jitter(tmp_path):
+    video = tmp_path / "scene_1.mp4"
+    _write_sidecar(video, technical_score=2.5, motion_energy=0.2, static_transition_ratio=0.9, max_black_run_seconds=0.0, motion_jitter_ratio=2.0)
+
+    report = AtomicVideoMotionAuditService().audit([_scene(1, video)])
+
+    assert report.status == "needs_review"
+    assert {issue["code"] for issue in report.issues} >= {
+        "technical_score_low", "frozen_motion", "motion_cadence_unstable",
+    }
+    assert {item["action"] for item in report.to_dict()["repair_queue"]} >= {
+        "increase_motion_and_regenerate_video", "lower_motion_and_regenerate_video",
+    }
+
+
+def test_atomic_video_motion_audit_is_not_applicable_without_quality_sidecar(tmp_path):
+    video = tmp_path / "scene_1.mp4"
+    video.write_bytes(b"video")
+
+    report = AtomicVideoMotionAuditService().audit([_scene(1, video)])
+
+    assert report.status == "not_applicable"

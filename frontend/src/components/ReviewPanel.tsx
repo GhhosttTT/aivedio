@@ -16,6 +16,7 @@ const names: Record<string, string> = {
     character_identity_consistency: '角色跨镜头身份一致性',
     dialogue_delivery_audit: '对白音频与字幕交付',
     generation_context_audit: '生成上下文一致性',
+    atomic_video_motion_audit: '原子镜头运动质量',
     seed_dance_baseline_comparison: 'Seed Dance 对比验收',
     causal_logic: '因果逻辑',
     character_motivation: '角色动机',
@@ -326,6 +327,28 @@ function GenerationContextEvidence({report}: {report: any}) {
         </div>)}
         {issues.slice(0, 5).map((issue: any, index: number) => <p className="wb-alert" key={`${issue.code}-${index}`}>
             {issue.code} · {issue.evidence || issue.recommendation}
+        </p>)}
+    </div>;
+}
+
+function AtomicVideoMotionEvidence({report}: {report: any}) {
+    if (report?.kind !== 'atomic_video_motion_audit') return null;
+    const scenes = Array.isArray(report.scenes) ? report.scenes : [];
+    const issues = Array.isArray(report.issues) ? report.issues : [];
+    return <div className="wb-summary-actions" aria-label="原子镜头运动质量证据">
+        <div className="wb-row wb-between">
+            <h4>原子镜头运动质量</h4>
+            <span className="wb-badge">已检查 {report.checked_scene_count || 0} 镜头</span>
+        </div>
+        <p className={issues.length ? 'wb-alert' : 'wb-muted'}>
+            {issues.length ? `发现 ${issues.length} 项冻结、黑帧、抖动或技术分异常。` : '原子镜头运动与技术质量均在门禁范围内。'}
+        </p>
+        {scenes.slice(0, 8).map((scene: any) => <div className="wb-kv" key={scene.scene_number}>
+            <span>分镜 {scene.scene_number}</span>
+            <strong>技术分 {scene.technical_score ?? '-'} · 运动 {scene.motion_energy ?? '-'}</strong>
+        </div>)}
+        {issues.slice(0, 6).map((issue: any, index: number) => <p className="wb-alert" key={`${issue.code}-${issue.scene_number}-${index}`}>
+            分镜 {issue.scene_number || '-'} · {issue.code} · {issue.message}
         </p>)}
     </div>;
 }
@@ -734,6 +757,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <CharacterIdentityConsistencyEvidence report={report}/>
             <DialogueDeliveryEvidence report={report}/>
             <GenerationContextEvidence report={report}/>
+            <AtomicVideoMotionEvidence report={report}/>
             <Scores review={report.review}/>
             {report.batches?.map((batch: any, index: number) => <div key={index}>
                 <p>帧组 {index + 1} · {statuses[batch.status] || batch.status} · {batch.average}/5</p>

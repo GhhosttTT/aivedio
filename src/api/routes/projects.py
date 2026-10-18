@@ -59,6 +59,7 @@ from src.services.episode_style_consistency import EpisodeStyleConsistencyServic
 from src.services.character_identity_consistency import CharacterIdentityConsistencyService
 from src.services.dialogue_delivery_audit import DialogueDeliveryAuditService
 from src.services.generation_context_audit import GenerationContextAuditService
+from src.services.atomic_video_motion_audit import AtomicVideoMotionAuditService
 from src.database.session import get_db_session
 from src.database.models import Character, Project, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
@@ -537,6 +538,12 @@ async def get_generation_review(
         context_report["evidence_schema_version"] = 1
         reports["generation_context_audit"] = context_report
         write_report(root / "generation_context_audit.json", context_report)
+    motion_report = AtomicVideoMotionAuditService().audit(audit_scenes).to_dict()
+    if motion_report.get("status") != "not_applicable":
+        motion_report["input_hash"] = audit_input_hash
+        motion_report["evidence_schema_version"] = 1
+        reports["atomic_video_motion_audit"] = motion_report
+        write_report(root / "atomic_video_motion_audit.json", motion_report)
     story_room_report = StoryRoomQualityService().evaluate(project, audit_scenes).to_dict()
     # The readiness gate owns story-room rewrite actions. Keep the report for
     # reproducibility, but do not enqueue the same actions a second time in the
@@ -553,6 +560,7 @@ async def get_generation_review(
         "character_identity_consistency",
         "dialogue_delivery_audit",
         "generation_context_audit",
+        "atomic_video_motion_audit",
     ):
         audit_report = reports.get(audit_key)
         if isinstance(audit_report, dict):
@@ -954,6 +962,9 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
     generation_context = statuses.get("generation_context_audit")
     if generation_context == "needs_review":
         action_items.append("Resolve Provider generation-context drift before final composition.")
+    atomic_motion = statuses.get("atomic_video_motion_audit")
+    if atomic_motion == "needs_review":
+        action_items.append("Resolve atomic clip motion, freeze, black-frame, or sharpness failures before composition.")
 
     boundary_reports = [
         report for report in reports.values()
@@ -993,6 +1004,7 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         or identity_consistency == "needs_review"
         or dialogue_delivery == "needs_review"
         or generation_context == "needs_review"
+        or atomic_motion == "needs_review"
         or boundary_failed
         or (final_human_review_required and final_human_review_decision != "approved")
     )
