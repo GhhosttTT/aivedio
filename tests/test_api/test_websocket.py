@@ -8,6 +8,7 @@ import pytest
 import asyncio
 from unittest.mock import Mock, patch, AsyncMock
 from datetime import datetime
+from fastapi import WebSocketDisconnect
 
 from src.api.websocket import (
     ConnectionManager,
@@ -17,6 +18,7 @@ from src.api.websocket import (
     send_completion_notification,
     send_error_notification
 )
+from src.api.routes import websocket as websocket_route
 
 
 @pytest.fixture
@@ -300,3 +302,94 @@ async def test_multiple_connections_same_project(connection_manager):
     # 清理
     connection_manager.disconnect(ws1, project_id)
     connection_manager.disconnect(ws2, project_id)
+
+
+class _FakeProjectQuery:
+    def __init__(self, project):
+        self.project = project
+
+    def join(self, *args, **kwargs):
+        return self
+
+    def filter(self, *args, **kwargs):
+        return self
+
+    def first(self):
+        return self.project
+
+
+class _FakeWebSocketDb:
+    def __init__(self, project):
+        self.project = project
+
+    def query(self, *args, **kwargs):
+        return _FakeProjectQuery(self.project)
+
+    def close(self):
+        pass
+
+
+def _route_websocket(token="token"):
+    websocket = AsyncMock()
+    websocket.query_params = {"token": token}
+    websocket.close = AsyncMock()
+    websocket.receive_text = AsyncMock(side_effect=WebSocketDisconnect())
+    return websocket
+
+
+@pytest.mark.asyncio
+async def test_websocket_rejects_missing_or_invalid_access_token(monkeypatch):
+    websocket = _route_websocket(token="bad")
+    monkeypatch.setattr(websocket_route, "decode_access_token", lambda token: None)
+    connect = AsyncMock()
+    monkeypatch.setattr(websocket_route.manager, "connect", connect)
+
+    await websocket_route.websocket_endpoint(websocket, 1)
+
+    websocket.close.assert_awaited_once_with(code=1008, reason="Authentication required")
+    connect.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_websocket_rejects_project_owned_by_another_user(monkeypatch):
+    websocket = _route_websocket()
+    monkeypatch.setattr(
+        websocket_route,
+        "decode_access_token",
+        lambda token: {"sub": "7", "token_type": "access"},
+    )
+    monkeypatch.setattr(
+        websocket_route,
+        "get_db_session",
+        lambda: iter([_FakeWebSocketDb(None)]),
+    )
+    connect = AsyncMock()
+    monkeypatch.setattr(websocket_route.manager, "connect", connect)
+
+    await websocket_route.websocket_endpoint(websocket, 1)
+
+    websocket.close.assert_awaited_once_with(code=1008, reason="Project access denied")
+    connect.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_websocket_accepts_active_project_owner(monkeypatch):
+    websocket = _route_websocket()
+    monkeypatch.setattr(
+        websocket_route,
+        "decode_access_token",
+        lambda token: {"sub": "7", "token_type": "access"},
+    )
+    monkeypatch.setattr(
+        websocket_route,
+        "get_db_session",
+        lambda: iter([_FakeWebSocketDb(object())]),
+    )
+    connect = AsyncMock()
+    monkeypatch.setattr(websocket_route.manager, "connect", connect)
+    monkeypatch.setattr(websocket_route.manager, "disconnect", lambda *args: None)
+
+    await websocket_route.websocket_endpoint(websocket, 1)
+
+    connect.assert_awaited_once_with(websocket, 1)
+    websocket.close.assert_not_awaited()

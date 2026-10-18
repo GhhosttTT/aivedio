@@ -30,8 +30,13 @@ export const useWebSocket = (projectId: string) => {
     useEffect(() => {
         // 使用环境变量或默认值
         const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000';
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+            setIsConnected(false);
+            return;
+        }
         // 后端路由是 /ws/{project_id}，不是 /ws/progress/{project_id}
-        const wsUrl = `${wsBaseUrl}/ws/${projectId}`;
+        const wsUrl = `${wsBaseUrl}/ws/${projectId}?token=${encodeURIComponent(token)}`;
         
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;

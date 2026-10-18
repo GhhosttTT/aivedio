@@ -7,6 +7,9 @@ WebSocket 路由
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from loguru import logger
 
+from src.api.auth import decode_access_token
+from src.database.models import Project, User
+from src.database.session import get_db_session
 from src.api.websocket import manager
 
 
@@ -22,6 +25,35 @@ async def websocket_endpoint(websocket: WebSocket, project_id: int):
         websocket: WebSocket 连接对象
         project_id: 项目 ID
     """
+    token = websocket.query_params.get("token") or websocket.query_params.get("access_token")
+    payload = decode_access_token(token) if token else None
+    user_id: int | None = None
+    if payload and payload.get("token_type") == "access":
+        try:
+            user_id = int(payload.get("sub"))
+        except (TypeError, ValueError):
+            user_id = None
+
+    if user_id is None:
+        await websocket.close(code=1008, reason="Authentication required")
+        return
+
+    db_generator = get_db_session()
+    db = next(db_generator)
+    try:
+        project = (
+            db.query(Project)
+            .join(User, Project.user_id == User.id)
+            .filter(Project.id == project_id, Project.user_id == user_id, User.is_active == 1)
+            .first()
+        )
+    finally:
+        db.close()
+
+    if project is None:
+        await websocket.close(code=1008, reason="Project access denied")
+        return
+
     # 建立连接
     await manager.connect(websocket, project_id)
     
