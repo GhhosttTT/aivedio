@@ -91,22 +91,23 @@ function labelRepairAction(action?: string) {
     return repairActionLabels[action || ''] || action || '未知动作';
 }
 
+const automaticRepairActions = new Set([
+    'regenerate_keyframe_with_identity_lock',
+    'regenerate_keyframe_with_role_separation',
+    'regenerate_keyframe_with_prop_constraints',
+    'refine_prompt_composition',
+    'refine_project_style_consistency',
+    'refine_face_aesthetic_detail',
+    'lower_motion_and_regenerate_video',
+    'increase_motion_and_regenerate_video',
+    'regenerate_video_with_performance_direction',
+    'refine_video_commercial_aesthetic',
+    'refine_final_composition_finish',
+    'refine_dialogue_audio_delivery',
+]);
+
 function executableRepair(action?: string, sceneNumber?: number) {
-    return Boolean(sceneNumber && action && [
-        'regenerate_keyframe_with_identity_lock',
-        'regenerate_keyframe_with_role_separation',
-        'regenerate_keyframe_with_prop_constraints',
-        'refine_prompt_composition',
-        'refine_project_style_consistency',
-        'refine_face_aesthetic_detail',
-        'lower_motion_and_regenerate_video',
-        'increase_motion_and_regenerate_video',
-        'regenerate_video_with_performance_direction',
-        'refine_video_commercial_aesthetic',
-        'refine_final_composition_finish',
-        'fix_video_output_contract',
-        'refine_dialogue_audio_delivery',
-    ].includes(action));
+    return Boolean(sceneNumber && action && (automaticRepairActions.has(action) || action === 'fix_video_output_contract'));
 }
 
 function executableSetupRepair(action?: string, sceneNumber?: number) {
@@ -537,7 +538,7 @@ function ReviewSummary({
     const isReady = summary.status === 'ready';
     const repairPlan = summary.repair_execution_plan;
     const plannedActions = repairPlanCount(summary);
-    const repairActionOptions = Object.keys(summary.repair_queue?.actions || {}).filter(action => action !== 'manual_review');
+    const repairActionOptions = Object.keys(summary.repair_queue?.actions || {}).filter(action => automaticRepairActions.has(action));
     return <section className={`wb-panel wb-review-summary ${isReady ? 'ready' : 'blocked'}`} aria-label="审核摘要">
         <div className="wb-row wb-between">
             <div className="wb-row">
