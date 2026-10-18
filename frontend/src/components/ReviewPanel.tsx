@@ -57,6 +57,8 @@ const repairActionLabels: Record<string, string> = {
     fix_video_output_contract: '按生产契约修复模型与输出规格',
     refine_dialogue_audio_delivery: '重做对白音频与字幕时序',
     split_scene: '拆分为更简单的原子镜头',
+    refreeze_spatial_plan: '重新冻结空间计划',
+    fix_workflow_profile: '修复 Workflow Profile',
     start_local_reviewer: '启动 llama.cpp 视觉审核后重跑',
     manual_review: '人工复核',
     regenerate_keyframe_with_identity_lock: '按立体画册锁定身份重做关键帧',
@@ -94,6 +96,12 @@ function executableRepair(action?: string, sceneNumber?: number) {
         'fix_video_output_contract',
         'refine_dialogue_audio_delivery',
     ].includes(action));
+}
+
+function executableSetupRepair(action?: string, sceneNumber?: number) {
+    return action === 'refreeze_spatial_plan'
+        || action === 'fix_workflow_profile'
+        || (action === 'fix_video_output_contract' && Boolean(sceneNumber));
 }
 
 function repairPlanCount(summary: GenerationReviewSummary) {
@@ -286,12 +294,14 @@ function ReviewSummary({
     busy,
     onRepair,
     onAutoRepair,
+    onSetupRepair,
 }: {
     summary?: GenerationReviewSummary;
     qualityPlan?: QualityLoopPlan;
     busy: boolean;
     onRepair: (sceneNumber: number, action: string) => void;
     onAutoRepair: () => void;
+    onSetupRepair: (item: {action?: string; scene_number?: number}) => void;
 }) {
     if (!summary) return null;
     const reportEntries = Object.entries(summary.reports || {}).filter(([key]) => !key.startsWith('story_attempt'));
@@ -337,7 +347,22 @@ function ReviewSummary({
                 <span>{item.scene_number ? `分镜 ${item.scene_number}` : item.stage || '全局'}</span>
                 <p>{labelRepairAction(item.action)}：{item.recommendation || item.reason}</p>
             </div>)}
-            {qualityPlan.setup_required?.length ? <p className="wb-alert">还有 {qualityPlan.setup_required.length} 项需要先补资产、workflow 或本地审核服务。</p> : null}
+            {qualityPlan.setup_required?.length ? <div className="wb-issue warning">
+                <span>配置动作</span>
+                <div>
+                    <p>还有 {qualityPlan.setup_required.length} 项需要先补资产、workflow 或本地审核服务。</p>
+                    {qualityPlan.setup_required.slice(0, 5).map((item, index) => (
+                        <div className="wb-row wb-between" key={`setup-repair-${item.action}-${item.scene_number || index}`}>
+                            <span className="wb-muted">{item.scene_number ? `分镜 ${item.scene_number} · ` : ''}{labelRepairAction(item.action)}</span>
+                            {executableSetupRepair(item.action, item.scene_number) && (
+                                <button className="wb-button" disabled={busy} onClick={() => onSetupRepair(item)}>
+                                    执行
+                                </button>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div> : null}
             {qualityPlan.manual_actions?.length ? <p className="wb-alert">还有 {qualityPlan.manual_actions.length} 项需要人工复核后再选择动作。</p> : null}
         </div>}
         {summary.repair_cycles?.length ? <div className="wb-summary-actions">
@@ -468,6 +493,26 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
         }
     };
 
+    const onSetupRepair = async (item: {action?: string; scene_number?: number}) => {
+        if (!item.action) return;
+        setBusy(true);
+        setError('');
+        try {
+            if (item.action === 'refreeze_spatial_plan') {
+                await projectApi.freezeSpatialPlan(projectId);
+            } else if (item.action === 'fix_workflow_profile') {
+                await projectApi.freezeWorkflowProfile();
+            } else if (item.action === 'fix_video_output_contract' && item.scene_number) {
+                await projectApi.repairScene(projectId, {scene_number: item.scene_number, action: item.action});
+            }
+            await load();
+        } catch (e) {
+            setError(errorText(e));
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const runAutoRepair = async () => {
         setBusy(true);
         setError('');
@@ -504,7 +549,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <button className="wb-icon" aria-label="刷新审核" title="刷新审核" onClick={load}><RefreshCw size={17}/></button>
         </div>
         {error && <p className="wb-alert" role="alert">{error}</p>}
-        <ReviewSummary summary={summary} qualityPlan={qualityPlan} busy={busy} onRepair={runRepair} onAutoRepair={runAutoRepair}/>
+        <ReviewSummary summary={summary} qualityPlan={qualityPlan} busy={busy} onRepair={runRepair} onAutoRepair={runAutoRepair} onSetupRepair={onSetupRepair}/>
         <HumanReviewActions reports={reports} onDecision={recordHumanReview} busy={busy}/>
         <section className="wb-panel" aria-label="Seed Dance 基线对比">
             <div className="wb-row wb-between">
