@@ -93,11 +93,11 @@ export const projectApi = {
     freezeSpatialPlan: (id: number, notes = '') => apiClient.post<any, {project_id: number; status: string; asset_pack: Record<string, any>}>(`/projects/${id}/freeze-spatial-plan`, {notes}),
     freezeVisualStyle: (id: number, data?: {style_prompt?: string; negative_prompt?: string; notes?: string}) => apiClient.post<any, {project_id: number; status: string; asset_pack: Record<string, any>}>(`/projects/${id}/freeze-visual-style`, data || {}),
     freezeWorkflowProfile: (data?: {capabilities?: Record<string, any>; notes?: string}) => apiClient.post<any, {status: string; profile: Record<string, any>}>('/projects/workflow-profile/freeze', data || {}),
-    compareSeedDanceBaseline: (id: number, data: {baseline_path: string; candidate_path?: string}) => apiClient.post(`/projects/${id}/seed-dance-baseline`, data, {timeout: 300000}),
+    compareSeedDanceBaseline: (id: number, data: {baseline_path: string; candidate_path?: string}) => apiClient.post<any, SeedDanceBaselineComparison>(`/projects/${id}/seed-dance-baseline`, data, {timeout: 300000}),
     uploadSeedDanceBaseline: (id: number, file: File) => {
         const formData = new FormData();
         formData.append('file', file);
-        return apiClient.post(`/projects/${id}/seed-dance-baseline/upload`, formData, {
+        return apiClient.post<any, SeedDanceBaselineComparison>(`/projects/${id}/seed-dance-baseline/upload`, formData, {
             headers: {'Content-Type': 'multipart/form-data'},
             timeout: 300000,
         });
@@ -382,6 +382,19 @@ export interface GenerationReviewSummary {
     human_final_review_status?: string | null;
     human_approved_reports?: string[];
     repair_cycles?: Array<{cycle_id: string; status: string; created_at: string; submitted_count: number; skipped_count: number}>;
+}
+
+export interface SeedDanceBaselineComparison {
+    kind?: 'seed_dance_baseline_comparison' | string;
+    status: 'passed' | 'needs_review' | string;
+    score?: number;
+    min_score?: number;
+    candidate_video_path?: string;
+    baseline_video_path?: string;
+    uploaded_baseline_path?: string;
+    contact_sheet_path?: string | null;
+    gates?: Record<string, boolean>;
+    differences?: Record<string, number | boolean | string | null>;
 }
 
 export interface RepairExecutionPlanItem {

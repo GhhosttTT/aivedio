@@ -754,11 +754,11 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             if (baselineFile) {
                 const report = await projectApi.uploadSeedDanceBaseline(projectId, baselineFile);
                 await load();
-                setError(`Seed Dance 基线对比完成：${String(report.status) === 'passed' ? '技术门禁通过' : '需要复核'}。`);
+                setError(`Seed Dance 基线对比完成：${report.status === 'passed' ? '技术门禁通过' : '需要复核'}。`);
             } else {
                 const report = await projectApi.compareSeedDanceBaseline(projectId, {baseline_path: baseline});
                 await load();
-                setError(`Seed Dance 基线对比完成：${String(report.status) === 'passed' ? '技术门禁通过' : '需要复核'}。`);
+                setError(`Seed Dance 基线对比完成：${report.status === 'passed' ? '技术门禁通过' : '需要复核'}。`);
             }
         } catch (e) {
             setError(errorText(e));
