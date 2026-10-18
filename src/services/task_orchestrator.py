@@ -623,6 +623,7 @@ class TaskOrchestrator:
             "total_steps": task_model.total_steps,
             "error_message": task_model.error_message,
             "error": task_model.error_message,
+            "result": {"output_path": task_model.result_path} if task_model.result_path else None,
             "created_at": task_model.created_at.isoformat() if task_model.created_at else None,
             "updated_at": task_model.updated_at.isoformat() if task_model.updated_at else None,
         }

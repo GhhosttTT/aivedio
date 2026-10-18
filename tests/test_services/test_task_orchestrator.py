@@ -590,6 +590,23 @@ def test_task_status_exposes_effective_production_options(orchestrator, sample_p
     assert status["production_options"]["model"] == "doubao-seedance-2-5-260628"
 
 
+def test_task_status_exposes_completed_output_path(orchestrator, sample_project):
+    task = TaskModel(
+        project_id=sample_project.id,
+        status=TaskStatus.COMPLETED,
+        celery_task_id="completed-output-task-id",
+        total_steps=10,
+        result_path="/data/projects/1/final.mp4",
+        progress=100,
+    )
+    orchestrator.db.add(task)
+    orchestrator.db.commit()
+
+    status = orchestrator.get_task_status(task.celery_task_id)
+
+    assert status["result"] == {"output_path": "/data/projects/1/final.mp4"}
+
+
 class TestUpdateTaskProgress:
     """测试更新任务进度"""
     
