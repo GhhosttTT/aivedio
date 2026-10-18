@@ -9,6 +9,7 @@ import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
+import re
 
 
 class DeliveryPackageError(ValueError):
@@ -47,31 +48,51 @@ def verify_delivery_package(package_path: str | Path) -> dict:
         return result
     try:
         with zipfile.ZipFile(path) as archive:
-            names = set(archive.namelist())
+            archive_names = archive.namelist()
+            names = set(archive_names)
             manifest_name = "metadata/delivery_manifest.json"
             if manifest_name not in names:
                 result["errors"].append("Embedded delivery manifest is missing")
                 return result
+            if len(archive_names) != len(names):
+                result["errors"].append("ZIP contains duplicate archive entries")
             manifest = json.loads(archive.read(manifest_name).decode("utf-8"))
             if not isinstance(manifest, dict) or not isinstance(manifest.get("files"), list):
                 result["errors"].append("Embedded delivery manifest is invalid")
                 return result
             result["manifest_schema_version"] = manifest.get("schema_version")
+            listed_names: set[str] = set()
             for item in manifest["files"]:
                 archive_name = item.get("path") if isinstance(item, dict) else None
                 archive_path = Path(archive_name) if isinstance(archive_name, str) else None
                 if not archive_path or archive_path.is_absolute() or ".." in archive_path.parts:
                     result["errors"].append(f"Unsafe manifest path: {archive_name!r}")
                     continue
+                if archive_name in listed_names:
+                    result["errors"].append(f"Duplicate manifest path: {archive_name}")
+                    continue
+                listed_names.add(archive_name)
                 if archive_name not in names:
                     result["errors"].append(f"Manifest file is missing from ZIP: {archive_name}")
                     continue
                 payload = archive.read(archive_name)
-                if item.get("size") != len(payload):
+                if not isinstance(item.get("size"), int) or item.get("size") < 0:
+                    result["errors"].append(f"Invalid manifest size: {archive_name}")
+                elif item.get("size") != len(payload):
                     result["errors"].append(f"Size mismatch: {archive_name}")
-                if item.get("sha256") != hashlib.sha256(payload).hexdigest():
+                expected_hash = item.get("sha256")
+                if (
+                    not isinstance(expected_hash, str)
+                    or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_hash)
+                    or expected_hash.lower() != hashlib.sha256(payload).hexdigest()
+                ):
                     result["errors"].append(f"SHA-256 mismatch: {archive_name}")
                 result["checked_files"] += 1
+            unexpected = sorted(names - listed_names - {manifest_name})
+            if unexpected:
+                result["errors"].append(
+                    "ZIP contains files missing from manifest: " + ", ".join(unexpected)
+                )
             result["status"] = "passed" if not result["errors"] else "failed"
     except (OSError, KeyError, ValueError, zipfile.BadZipFile) as exc:
         result["errors"].append(f"Cannot verify delivery package: {exc}")

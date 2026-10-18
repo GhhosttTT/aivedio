@@ -91,6 +91,55 @@ def test_delivery_package_verification_detects_tampering(tmp_path):
     assert any("SHA-256 mismatch" in error for error in verification["errors"])
 
 
+def test_delivery_package_verification_rejects_unmanifested_file(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+    build_delivery_package(
+        project,
+        tmp_path,
+        {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)},
+        {"status": "ready"},
+    )
+    package = tmp_path / "delivery" / "delivery_package.zip"
+    tampered = tmp_path / "extra-file.zip"
+    with zipfile.ZipFile(package) as source, zipfile.ZipFile(tampered, "w") as target:
+        for item in source.infolist():
+            target.writestr(item, source.read(item.filename))
+        target.writestr("metadata/unapproved.txt", b"not covered by manifest")
+
+    verification = verify_delivery_package(tampered)
+    assert verification["status"] == "failed"
+    assert any("missing from manifest" in error for error in verification["errors"])
+
+
+def test_delivery_package_verification_rejects_duplicate_manifest_path(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+    build_delivery_package(
+        project,
+        tmp_path,
+        {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)},
+        {"status": "ready"},
+    )
+    package = tmp_path / "delivery" / "delivery_package.zip"
+    with zipfile.ZipFile(package) as source:
+        manifest = json.loads(source.read("metadata/delivery_manifest.json"))
+        manifest["files"].append(dict(manifest["files"][0]))
+        tampered = tmp_path / "duplicate-manifest.zip"
+        with zipfile.ZipFile(tampered, "w") as target:
+            for item in source.infolist():
+                payload = source.read(item.filename)
+                if item.filename == "metadata/delivery_manifest.json":
+                    payload = (json.dumps(manifest) + "\n").encode("utf-8")
+                target.writestr(item, payload)
+
+    verification = verify_delivery_package(tampered)
+    assert verification["status"] == "failed"
+    assert any("Duplicate manifest path" in error for error in verification["errors"])
+
+
 def test_delivery_package_includes_scene_assets_and_quality_sidecars(tmp_path):
     final = tmp_path / "final.mp4"
     image = tmp_path / "scene.png"
