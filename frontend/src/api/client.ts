@@ -73,6 +73,7 @@ export const projectApi = {
     reviews: (id: number) => apiClient.get<any, GenerationReviewResponse>(`/projects/${id}/generation-review`),
     humanReview: (id: number, data: {report_key: string; decision: 'approved' | 'rejected'; note?: string}) => apiClient.post<any, {decision: Record<string, any>}>(`/projects/${id}/human-review`, data),
     deliveryPackage: (id: number) => apiClient.post<any, {package_path: string; manifest_path: string}>(`/projects/${id}/delivery-package`),
+    verifyDeliveryPackage: (id: number) => apiClient.get<any, {status: string; checked_files: number; errors: string[]}>(`/projects/${id}/delivery-package/verify`),
     topicBrief: (id: number) => apiClient.get<any, {status: string; missing: string[]; brief: Record<string, string>}>(`/projects/${id}/topic-brief`),
     updateTopicBrief: (id: number, data: Record<string, string>) => apiClient.put<any, Record<string, string>>(`/projects/${id}/topic-brief`, data),
     platformExport: (id: number, preset: string) => apiClient.post<any, {output_path: string; preset: string; label: string; width: number; height: number}>(`/projects/${id}/platform-export/${preset}`),

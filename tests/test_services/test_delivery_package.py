@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.services.delivery_package import DeliveryPackageError, build_delivery_package
+from src.services.delivery_package import DeliveryPackageError, build_delivery_package, verify_delivery_package
 
 
 def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
@@ -55,3 +55,23 @@ def test_delivery_package_persists_dynamic_audit_evidence(tmp_path):
     with zipfile.ZipFile(tmp_path / "delivery" / "delivery_package.zip") as archive:
         names = set(archive.namelist())
     assert {"reviews/continuity_audit.json", "reviews/rhythm_audit.json"}.issubset(names)
+
+
+def test_delivery_package_verification_detects_tampering(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+    manifest = build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}}, {"status": "ready"})
+    package = tmp_path / "delivery" / "delivery_package.zip"
+    assert manifest["verification"]["status"] == "passed"
+
+    tampered = tmp_path / "tampered.zip"
+    with zipfile.ZipFile(package) as source, zipfile.ZipFile(tampered, "w") as target:
+        for item in source.infolist():
+            payload = source.read(item.filename)
+            if item.filename == "media/final_video.mp4":
+                payload = b"tampered"
+            target.writestr(item, payload)
+    verification = verify_delivery_package(tampered)
+    assert verification["status"] == "failed"
+    assert any("SHA-256 mismatch" in error for error in verification["errors"])

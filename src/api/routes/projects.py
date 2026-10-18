@@ -47,7 +47,7 @@ from src.services.repair_plan import build_repair_execution_plan
 from src.services.generation_quality_scorecard import build_generation_quality_scorecard
 from src.services.generation_review import require_passed
 from src.services.story_room_quality import StoryRoomQualityService
-from src.services.delivery_package import DeliveryPackageError, build_delivery_package
+from src.services.delivery_package import DeliveryPackageError, build_delivery_package, verify_delivery_package
 from src.services.topic_brief import TopicBriefService
 from src.services.platform_export import PLATFORM_EXPORT_PRESETS, PlatformExportError, export_platform_video
 from src.services.repair_budget import RepairBudget
@@ -548,6 +548,25 @@ async def create_delivery_package(
         )
     except DeliveryPackageError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/{project_id}/delivery-package/verify")
+async def verify_project_delivery_package(
+    project_id: int,
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    """Verify the published delivery ZIP and its embedded evidence hashes."""
+    from src.utils.storage import storage_manager
+
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    package_path = storage_manager.get_project_path(project_id) / "delivery" / "delivery_package.zip"
+    result = verify_delivery_package(package_path)
+    if result.get("status") != "passed":
+        raise HTTPException(status_code=409, detail=result)
+    return result
 
 
 @router.get("/{project_id}/platform-export-presets")

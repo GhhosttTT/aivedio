@@ -64,6 +64,8 @@ export function ProjectDetail() {
                 setTab('production');
             } else if (operation === '导出交付包') {
                 const exported = await projectApi.deliveryPackage(Number(id));
+                const verification = await projectApi.verifyDeliveryPackage(Number(id));
+                if (verification.status !== 'passed') throw new Error('交付包校验未通过');
                 setDeliveryUrl(await projectApi.mediaUrl(Number(id), exported.package_path, true));
             } else if (operation === '保存选题定位') {
                 await projectApi.updateTopicBrief(Number(id), topicBrief);
