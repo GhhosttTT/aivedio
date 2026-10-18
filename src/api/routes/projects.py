@@ -425,13 +425,36 @@ async def get_generation_review(
         except (OSError, TypeError, ValueError):
             logger.warning("Cannot read composition quality report: {}", composition_report_path)
     from src.tasks.review_tasks import current_story, generation_signature
-    from src.services.generation_review import fingerprint
+    from src.services.generation_review import fingerprint, write_report
     continuity_report = ContinuityAuditService().audit(project, getattr(project, "scenes", []) or []).to_dict()
     if continuity_report.get("status") != "not_applicable":
         reports["continuity_audit"] = continuity_report
     rhythm_report = RhythmAuditService().audit(project, getattr(project, "scenes", []) or []).to_dict()
     if rhythm_report.get("status") != "not_applicable":
         reports["rhythm_audit"] = rhythm_report
+    audit_scenes = sorted(getattr(project, "scenes", []) or [], key=lambda scene: scene.scene_number)
+    audit_input_hash = fingerprint({
+        "project_id": project_id,
+        "scenes": [
+            {
+                "scene_number": scene.scene_number,
+                "visual_description": getattr(scene, "visual_description", None),
+                "dialogue": getattr(scene, "dialogue", None),
+                "character_name": getattr(scene, "character_name", None),
+                "location": getattr(scene, "location", None),
+                "audio_duration": getattr(scene, "audio_duration", None),
+                "image_signature": _video_version_signature(Path(scene.image_path)) if getattr(scene, "image_path", None) else None,
+                "video_signature": _video_version_signature(Path(scene.video_path)) if getattr(scene, "video_path", None) else None,
+            }
+            for scene in audit_scenes
+        ],
+    })
+    for audit_key in ("continuity_audit", "rhythm_audit"):
+        audit_report = reports.get(audit_key)
+        if isinstance(audit_report, dict):
+            audit_report["input_hash"] = audit_input_hash
+            audit_report["evidence_schema_version"] = 1
+            write_report(root / f"{audit_key}.json", audit_report)
     human_decisions = HumanReviewStore(project_id).apply(reports)
     for name in ("production_story", "generation"):
         report = reports.get(name)

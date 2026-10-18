@@ -84,6 +84,13 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
     delivery_root = root / "delivery"
     package_path = delivery_root / "delivery_package.zip"
     manifest_path = delivery_root / "delivery_manifest.json"
+    # Dynamic project audits are part of the signed delivery evidence. Persist
+    # them before collecting review files so a package cannot omit the exact
+    # continuity/rhythm evidence used by the approval decision.
+    for audit_key in ("continuity_audit", "rhythm_audit"):
+        audit_report = reports.get(audit_key)
+        if isinstance(audit_report, dict):
+            _write_json_atomic(root / "reviews" / f"{audit_key}.json", audit_report)
     files = _collect_files(project, root, reports)
 
     project_metadata = delivery_root / "project_metadata.json"

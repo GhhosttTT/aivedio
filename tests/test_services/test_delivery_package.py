@@ -32,3 +32,26 @@ def test_delivery_package_requires_ready_review(tmp_path):
 
     with pytest.raises(DeliveryPackageError, match="not ready"):
         build_delivery_package(project, tmp_path, {}, {"status": "blocked"})
+
+
+def test_delivery_package_persists_dynamic_audit_evidence(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+
+    build_delivery_package(
+        project,
+        tmp_path,
+        {
+            "generation": {"status": "passed"},
+            "continuity_audit": {"kind": "continuity_audit", "status": "passed", "pair_count": 1},
+            "rhythm_audit": {"kind": "rhythm_audit", "status": "passed", "scene_count": 2},
+        },
+        {"status": "ready"},
+    )
+
+    assert (tmp_path / "reviews" / "continuity_audit.json").is_file()
+    assert (tmp_path / "reviews" / "rhythm_audit.json").is_file()
+    with zipfile.ZipFile(tmp_path / "delivery" / "delivery_package.zip") as archive:
+        names = set(archive.namelist())
+    assert {"reviews/continuity_audit.json", "reviews/rhythm_audit.json"}.issubset(names)
