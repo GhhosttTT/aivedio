@@ -14,7 +14,7 @@ from src.config import settings
 from src.services.character_identity_service import CharacterIdentityService, load_identity_spec
 from src.services.character_turnaround_album import CharacterTurnaroundAlbumService
 from src.services.shot_prompt_service import ShotPromptService, CompiledShot
-from src.services.generation_review import ReviewError, write_report
+from src.services.generation_review import ReviewError, file_hash, write_report
 from src.services.image_quality_service import (
     ImageQualitySelector, candidate_output_path, image_candidate_error, image_candidate_rank,
     image_selection_score, prepare_image_candidate,
@@ -1014,10 +1014,12 @@ def _generate_quality_candidates(
         selection["status"] = "needs_review"
         selection["error"] = f"Image postprocess failed: {exc}"
         selection["restored_selected_candidate"] = True
+        selection["image_sha256"] = file_hash(Path(request.output_path))
         selection["repair_queue"] = build_repair_queue(selection, "image")
         write_report(Path(request.output_path).with_suffix(".quality.json"), selection)
         raise
     selection["postprocess"] = postprocess_report
+    selection["image_sha256"] = file_hash(Path(request.output_path))
     if postprocess_report.get("status") == "passed":
         postprocess_review = selector.review_candidate(
             0,

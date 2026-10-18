@@ -1186,7 +1186,16 @@ def _read_scene_image_quality_report(scene: Scene) -> dict | None:
         report = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    return report if isinstance(report, dict) else None
+    if not isinstance(report, dict):
+        return None
+    reported_hash = report.get("image_sha256")
+    try:
+        current_hash = file_hash(Path(image_path))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(reported_hash, str) or reported_hash.strip().lower() != current_hash:
+        return None
+    return report
 
 
 def _scene_image_path(scene: Scene) -> str | Path | None:

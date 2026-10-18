@@ -872,6 +872,18 @@ def test_final_composed_video_review_blocks_episode_style_drift(tmp_path, monkey
     assert written["repair_queue"][0]["execution"] == "auto"
 
 
+def test_scene_image_quality_report_must_match_current_image(tmp_path):
+    image = tmp_path / "scene_001.png"
+    image.write_bytes(b"current image")
+    image.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "passed",
+        "image_sha256": "0" * 64,
+    }), encoding="utf-8")
+    scene = Mock(scene_number=1, image_path=str(image))
+
+    assert composition_tasks._read_scene_image_quality_report(scene) is None
+
+
 def test_final_composed_video_review_blocks_platform_reference_gap(tmp_path, monkeypatch):
     final_video = tmp_path / "final.mp4"
     final_video.write_bytes(b"final video")
