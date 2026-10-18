@@ -97,7 +97,11 @@ class StoryRoomQualityService:
         early_text = " ".join(scene_texts[:2])
         middle_text = " ".join(scene_texts[max(0, len(scene_texts) // 3):])
         ending_text = " ".join(scene_texts[-2:])
-        brief_text = " ".join(filter(None, [project.theme or "", project.outline or "", project.description or ""]))
+        brief_text = " ".join(filter(None, [
+            getattr(project, "theme", "") or "",
+            getattr(project, "outline", "") or "",
+            getattr(project, "description", "") or "",
+        ]))
 
         dialogue_count = sum(1 for scene in ordered if (scene.dialogue or "").strip())
         dialogue_density = round(dialogue_count / max(len(ordered), 1), 3)

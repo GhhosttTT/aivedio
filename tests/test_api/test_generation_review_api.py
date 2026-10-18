@@ -121,8 +121,11 @@ def test_review_api_persists_version_bound_project_audits(tmp_path, monkeypatch)
 
     assert result["reports"]["continuity_audit"]["evidence_schema_version"] == 1
     assert result["reports"]["rhythm_audit"]["input_hash"]
+    assert result["reports"]["story_room_quality"]["evidence_schema_version"] == 1
+    assert result["reports"]["story_room_quality"]["input_hash"]
     assert (storage_manager.get_project_path(1) / "reviews" / "continuity_audit.json").is_file()
     assert (storage_manager.get_project_path(1) / "reviews" / "rhythm_audit.json").is_file()
+    assert (storage_manager.get_project_path(1) / "reviews" / "story_room_quality.json").is_file()
 
 
 def test_review_api_marks_final_composition_stale_after_video_changes(tmp_path, monkeypatch):

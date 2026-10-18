@@ -509,6 +509,15 @@ async def get_generation_review(
             for scene in audit_scenes
         ],
     })
+    story_room_report = StoryRoomQualityService().evaluate(project, audit_scenes).to_dict()
+    # The readiness gate owns story-room rewrite actions. Keep the report for
+    # reproducibility, but do not enqueue the same actions a second time in the
+    # media-generation repair queue.
+    story_room_report["repair_queue"] = []
+    story_room_report["input_hash"] = audit_input_hash
+    story_room_report["evidence_schema_version"] = 1
+    reports["story_room_quality"] = story_room_report
+    write_report(root / "story_room_quality.json", story_room_report)
     for audit_key in ("continuity_audit", "rhythm_audit"):
         audit_report = reports.get(audit_key)
         if isinstance(audit_report, dict):

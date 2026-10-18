@@ -369,7 +369,7 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         for name, report in (reports or {}).items()
         if isinstance(report, dict)
         and (
-            name in {"generation", "final_composition", "continuity_audit", "rhythm_audit"}
+            name in {"generation", "final_composition", "continuity_audit", "rhythm_audit", "story_room_quality"}
             or report.get("kind") == "sequence_boundary_continuity"
         )
     }
