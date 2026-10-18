@@ -1886,6 +1886,22 @@ class SeedanceApiProvider(ApiVideoProvider):
                 f"Native Seedance model {model} does not support resolution {resolution}; "
                 f"choose one of {', '.join(sorted(supported_resolutions))}"
             )
+        content_bindings = []
+        reference_indices = {"image_url": 0, "video_url": 0, "audio_url": 0}
+        reference_tags = {"image_url": "image", "video_url": "video", "audio_url": "audio"}
+        for content_index, item in enumerate(content):
+            item_type = item.get("type") if isinstance(item, dict) else None
+            if item_type not in reference_tags:
+                continue
+            reference_indices[item_type] += 1
+            content_bindings.append({
+                "content_index": content_index,
+                "type": item_type,
+                "role": item.get("role"),
+                "provider_reference_tag": (
+                    f"@{reference_tags[item_type]}{reference_indices[item_type]}"
+                ),
+            })
         payload = {
             "model": model,
             "content": content,
@@ -1921,6 +1937,8 @@ class SeedanceApiProvider(ApiVideoProvider):
         self.last_result_metadata["requested_output_format"] = output_format
         self.last_result_metadata["requested_watermark"] = payload["watermark"]
         self.last_result_metadata["requested_return_last_frame"] = payload["return_last_frame"]
+        self.last_result_metadata["ark_task_type"] = task_type
+        self.last_result_metadata["ark_content_bindings"] = content_bindings
         return payload
 
     def _validate_reference_limits(self, request: VideoGenerationRequest, native_ark: bool = False) -> None:

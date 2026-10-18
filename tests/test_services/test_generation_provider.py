@@ -2997,6 +2997,10 @@ def test_seedance_native_ark_binds_extend_video_after_other_references(tmp_path,
 
     assert [item["role"] for item in payload["content"][1:]] == ["reference_video", "reference_video"]
     assert "@video2 is the source video to extend" in payload["content"][0]["text"]
+    assert [item["provider_reference_tag"] for item in provider.last_result_metadata["ark_content_bindings"]] == [
+        "@video1", "@video2",
+    ]
+    assert provider.last_result_metadata["ark_task_type"] == "extend"
 
 
 def test_seedance_native_ark_extend_with_end_image_keeps_video_reference(monkeypatch):
