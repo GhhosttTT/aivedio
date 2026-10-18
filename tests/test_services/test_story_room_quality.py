@@ -63,3 +63,17 @@ def test_story_room_quality_accepts_platform_ready_story_shape():
     assert report["signals"]["has_payoff"] is True
     assert report["signals"]["ending_hook"] is True
     assert report["signals"]["beat_contract"]["payoff"]["detected"] is True
+
+
+def test_story_room_quality_reads_locked_topic_brief(monkeypatch, tmp_path):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "get_project_path", lambda _id: tmp_path)
+    (tmp_path / "topic_brief.json").write_text(
+        '{"audience":"18-35岁女性","platform":"抖音竖屏","genre":"都市悬疑","hook_type":"秘密证据","region":"中文","policy_notes":"无"}',
+        encoding="utf-8",
+    )
+    project = Project(id=1, name="Brief locked", theme="A story", outline="", description="")
+    report = StoryRoomQualityService().evaluate(project, [scene(1, "秘密证据出现。", "我看到了证据。")]).to_dict()
+
+    assert report["signals"]["has_market_brief"] is True
+    assert "market_brief" not in report["missing"]

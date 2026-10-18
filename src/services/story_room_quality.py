@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from src.database.models import Project, Scene
 from src.services.repair_queue import build_repair_queue
+from src.services.topic_brief import TopicBriefService
 
 
 @dataclass(frozen=True)
@@ -97,10 +98,17 @@ class StoryRoomQualityService:
         early_text = " ".join(scene_texts[:2])
         middle_text = " ".join(scene_texts[max(0, len(scene_texts) // 3):])
         ending_text = " ".join(scene_texts[-2:])
+        topic_brief = {}
+        project_id = getattr(project, "id", None)
+        if project_id is not None:
+            topic_brief = TopicBriefService().load(project_id) or {}
         brief_text = " ".join(filter(None, [
             getattr(project, "theme", "") or "",
             getattr(project, "outline", "") or "",
             getattr(project, "description", "") or "",
+            *(str(topic_brief.get(field) or "") for field in (
+                "audience", "platform", "genre", "hook_type", "region", "policy_notes",
+            )),
         ]))
 
         dialogue_count = sum(1 for scene in ordered if (scene.dialogue or "").strip())
