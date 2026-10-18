@@ -1704,7 +1704,8 @@ def _video_performance_gate_passes(candidate: dict) -> bool:
         shot_plan = candidate.get("shot_plan")
         if isinstance(shot_plan, dict):
             role = str(shot_plan.get("shot_role") or "").strip().lower()
-            if role and role != "establishing":
+            dialogue = str(shot_plan.get("dialogue") or candidate.get("dialogue") or "").strip()
+            if role and (role != "establishing" or dialogue):
                 return not settings.GENERATION_REQUIRE_VIDEO_REVIEW
         return True
     return gate.get("status") == "passed"

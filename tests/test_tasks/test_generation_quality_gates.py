@@ -645,6 +645,10 @@ def test_required_video_review_rejects_missing_performance_gate_for_action_shot(
     assert _video_performance_gate_passes({
         "shot_plan": {"shot_role": "establishing"},
     }) is True
+    assert _video_performance_gate_passes({
+        "dialogue": "你终于来了",
+        "shot_plan": {"shot_role": "establishing"},
+    }) is False
 
 
 def test_video_gate_evidence_requires_every_review_batch():
