@@ -1175,6 +1175,7 @@ def _sequence_segment_quality_report(
     project_id: int,
     db,
     provider_metadata: dict,
+    expected_duration_seconds: float | None = None,
 ) -> dict:
     """Review each atomic clip published from a sequence-level generation.
 
@@ -1183,10 +1184,14 @@ def _sequence_segment_quality_report(
     metrics and final VLM review; otherwise a bad cut can inherit the
     sequence-level pass for the first scene.
     """
+    segment_metadata = _derive_sequence_segment_provider_metadata(
+        provider_metadata,
+        expected_duration_seconds=expected_duration_seconds,
+    )
     base_report = {
         "kind": "video_candidate_selection",
         "status": "passed",
-        "selected_provider_metadata": dict(provider_metadata or {}),
+        "selected_provider_metadata": segment_metadata,
     }
     if settings.GENERATION_REQUIRE_VIDEO_REVIEW:
         return _review_final_video_after_postprocess(
@@ -1203,7 +1208,7 @@ def _sequence_segment_quality_report(
         segment_path,
         scene.image_path,
     )
-    _apply_audio_quality_contract(metrics, provider_metadata)
+    _apply_audio_quality_contract(metrics, segment_metadata)
     error = None
     if metrics.get("status") != "available":
         error = "sequence segment technical metrics are unavailable"
@@ -1233,6 +1238,32 @@ def _sequence_segment_quality_report(
     }
     write_report(Path(segment_path).with_suffix(".quality.json"), report)
     return report
+
+
+def _derive_sequence_segment_provider_metadata(
+    provider_metadata: dict | None,
+    *,
+    expected_duration_seconds: float | None,
+) -> dict:
+    """Adapt aggregate provider evidence to one atomically published segment."""
+    metadata = dict(provider_metadata or {})
+    contract = metadata.get("request_contract")
+    if not isinstance(contract, dict):
+        return metadata
+    derived_contract = dict(contract)
+    if expected_duration_seconds is not None:
+        derived_contract["duration_seconds"] = round(float(expected_duration_seconds), 3)
+    derived_contract["derived_from_sequence"] = True
+    encoded = json.dumps(
+        derived_contract,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    derived_contract["contract_hash"] = hashlib.sha256(encoded).hexdigest()
+    metadata["request_contract"] = derived_contract
+    metadata["derived_from_sequence"] = True
+    return metadata
 
 
 def _promote_sequence_sidecar(staging_path: Path, output_path: Path, suffix: str) -> None:
@@ -2670,13 +2701,14 @@ def generate_sequence_video_task(
                     f"severe_transitions={severe_count}, geometry_mismatches={geometry_count}; "
                     f"report={boundary_report_path}"
                 )
-        for scene, staging_path in zip(scenes, staging_paths):
+        for scene, staging_path, segment in zip(scenes, staging_paths, segments):
             segment_report = _sequence_segment_quality_report(
                 scene,
                 str(staging_path),
                 project_id,
                 db,
                 sequence_provider_metadata,
+                expected_duration_seconds=getattr(segment, "duration_seconds", None),
             )
             if segment_report.get("status") != "passed":
                 raise ReviewError(
