@@ -355,6 +355,8 @@ export interface GenerationReviewSummary {
         rerun_validation_commands?: string[];
     };
     action_items: string[];
+    human_final_review_required?: boolean;
+    human_final_review_status?: string | null;
     human_approved_reports?: string[];
 }
 

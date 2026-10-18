@@ -344,6 +344,36 @@ def test_generation_review_summary_blocks_failed_composition():
     assert summary["status"] == "blocked"
 
 
+def test_generation_review_summary_requires_final_human_approval():
+    summary = _generation_review_summary({
+        "production_story": {"status": "passed"},
+        "generation": {"status": "passed"},
+        "seed_dance_baseline_comparison": {"status": "passed"},
+        "final_composition": {"status": "passed"},
+    })
+
+    assert summary["status"] == "blocked"
+    assert summary["human_final_review_required"] is True
+    assert summary["human_final_review_status"] is None
+    assert any("final episode human review" in item for item in summary["action_items"])
+
+
+def test_generation_review_summary_accepts_approved_final_human_review():
+    summary = _generation_review_summary({
+        "production_story": {"status": "passed"},
+        "generation": {"status": "passed"},
+        "seed_dance_baseline_comparison": {"status": "passed"},
+        "final_composition": {
+            "status": "passed",
+            "human_decision": {"decision": "approved", "note": "人工通过"},
+        },
+    })
+
+    assert summary["status"] == "ready"
+    assert summary["human_final_review_status"] == "approved"
+    assert "final_composition" in summary["human_approved_reports"]
+
+
 def test_generation_review_summary_requires_seed_dance_baseline():
     summary = _generation_review_summary({
         "production_story": {"status": "passed"},

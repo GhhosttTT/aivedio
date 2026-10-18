@@ -293,6 +293,14 @@ function ReviewSummary({
             <h3>下一步动作</h3>
             {summary.action_items.map((item) => <p key={item} className="wb-alert">{labelAction(item)}</p>)}
         </div> : <p className="wb-muted">关键门禁已通过，可以继续进入最终合成或人工抽检。</p>}
+        {summary.human_final_review_required && <div className="wb-summary-actions">
+            <h3>最终整集人工审核</h3>
+            <p className={summary.human_final_review_status === 'approved' ? 'wb-muted' : 'wb-alert'}>
+                {summary.human_final_review_status === 'approved'
+                    ? '已人工通过，允许进入交付打包。'
+                    : '尚未人工通过；交付打包会被阻断。'}
+            </p>
+        </div>}
         {qualityPlan && <div className="wb-summary-actions">
             <div className="wb-row wb-between">
                 <div>

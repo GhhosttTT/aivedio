@@ -769,6 +769,16 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
     elif rhythm == "warn":
         action_items.append("Review episode rhythm warnings before delivery.")
 
+    final_human_review_required = composition is not None
+    final_human_review_decision = None
+    if final_human_review_required:
+        composition_report = reports.get("final_composition", {})
+        human_decision = composition_report.get("human_decision")
+        if isinstance(human_decision, dict):
+            final_human_review_decision = human_decision.get("decision")
+        if final_human_review_decision != "approved":
+            action_items.append("Complete the final episode human review and approve it before delivery.")
+
     repair_queue = _repair_queue_summary(reports)
     repair_plan = build_repair_execution_plan(repair_output or Path("storage/validation"), repair_queue["items"])
     scorecard = build_generation_quality_scorecard(reports)
@@ -780,6 +790,7 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         or baseline != "passed" or (composition is not None and composition != "passed")
         or continuity == "needs_review"
         or rhythm == "needs_review"
+        or (final_human_review_required and final_human_review_decision != "approved")
     )
     return {
         "status": "blocked" if blocking else "ready",
@@ -794,6 +805,10 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         "repair_execution_plan": repair_plan,
         "quality_scorecard": scorecard,
         "action_items": action_items,
+        "human_final_review_required": final_human_review_required,
+        "human_final_review_status": (
+            final_human_review_decision if final_human_review_required else "not_applicable"
+        ),
         "human_approved_reports": sorted(
             name for name, report in reports.items()
             if isinstance(report, dict)
