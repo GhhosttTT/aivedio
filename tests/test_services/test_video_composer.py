@@ -103,6 +103,20 @@ class TestVideoComposer:
         assert "format=yuv420p" in vf
         assert "-an" in cmd
 
+    def test_concat_videos_normalizes_single_native_audio(self, service, tmp_path):
+        video_file = tmp_path / "video.mp4"
+        output_path = tmp_path / "output.mp4"
+        video_file.write_text("fake video")
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            service.concat_videos([str(video_file)], str(output_path), preserve_audio=True)
+
+        cmd = mock_run.call_args.args[0]
+        assert "-map" in cmd
+        assert "0:a:0" in cmd
+        assert "loudnorm=I=-16:TP=-1.5:LRA=11:linear=true" in cmd
+
     def test_concat_videos_can_preserve_native_audio(self, service, tmp_path):
         video1 = tmp_path / "video1.mp4"
         video2 = tmp_path / "video2.mp4"
@@ -115,7 +129,8 @@ class TestVideoComposer:
             service.concat_videos([str(video1), str(video2)], str(output_path), preserve_audio=True)
         cmd = mock_run.call_args.args[0]
         filter_complex = cmd[cmd.index("-filter_complex") + 1]
-        assert "concat=n=2:v=1:a=1[vout][aout]" in filter_complex
+        assert "concat=n=2:v=1:a=1[vout][aout_raw]" in filter_complex
+        assert "[aout_raw]loudnorm=I=-16:TP=-1.5:LRA=11:linear=true[aout]" in filter_complex
         assert "-map" in cmd
         assert "[aout]" in cmd
         assert "-an" not in cmd
@@ -138,7 +153,8 @@ class TestVideoComposer:
         assert "[0:a]aresample=48000" in filter_complex
         assert "anullsrc=channel_layout=stereo:sample_rate=48000" in filter_complex
         assert "atrim=duration=2.750000" in filter_complex
-        assert "concat=n=2:v=1:a=1[vout][aout]" in filter_complex
+        assert "concat=n=2:v=1:a=1[vout][aout_raw]" in filter_complex
+        assert "[aout_raw]loudnorm=I=-16:TP=-1.5:LRA=11:linear=true[aout]" in filter_complex
 
     def test_concat_videos_uses_reviewed_transition_plan(self, service, tmp_path):
         video1 = tmp_path / "video1.mp4"

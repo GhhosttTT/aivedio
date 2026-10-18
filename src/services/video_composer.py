@@ -486,7 +486,10 @@ class VideoComposer:
             output_path,
         ]
         if preserve_audio:
-            command[command.index("-y"):command.index("-y")] = ["-map", "0:a:0"]
+            command[command.index("-y"):command.index("-y")] = [
+                "-map", "0:a:0",
+                "-af", "loudnorm=I=-16:TP=-1.5:LRA=11:linear=true",
+            ]
         return command
 
     def _build_video_concat_cmd(
@@ -539,7 +542,13 @@ class VideoComposer:
         if preserve_audio:
             video_labels = "".join(f"[{index}v]" for index in range(len(video_files)))
             audio_labels = "".join(f"[{index}a]" for index in range(len(video_files)))
-            filter_parts.append(video_labels + audio_labels + f"concat=n={len(video_files)}:v=1:a=1[vout][aout]")
+            filter_parts.append(
+                video_labels + audio_labels
+                + f"concat=n={len(video_files)}:v=1:a=1[vout][aout_raw]"
+            )
+            filter_parts.append(
+                "[aout_raw]loudnorm=I=-16:TP=-1.5:LRA=11:linear=true[aout]"
+            )
         else:
             filter_parts.append("".join(labels) + f"concat=n={len(video_files)}:v=1:a=0[vout]")
 
@@ -624,6 +633,13 @@ class VideoComposer:
                 )
                 current_audio = next_audio
             elapsed += durations[index] - fade_duration
+
+        if preserve_audio and current_audio:
+            normalized_audio = "ta_normalized"
+            filters.append(
+                f"[{current_audio}]loudnorm=I=-16:TP=-1.5:LRA=11:linear=true[{normalized_audio}]"
+            )
+            current_audio = normalized_audio
 
         command = [
             "ffmpeg", *inputs,
