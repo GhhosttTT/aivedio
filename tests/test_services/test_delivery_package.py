@@ -75,3 +75,40 @@ def test_delivery_package_verification_detects_tampering(tmp_path):
     verification = verify_delivery_package(tampered)
     assert verification["status"] == "failed"
     assert any("SHA-256 mismatch" in error for error in verification["errors"])
+
+
+def test_delivery_package_includes_scene_assets_and_quality_sidecars(tmp_path):
+    final = tmp_path / "final.mp4"
+    image = tmp_path / "scene.png"
+    video = tmp_path / "scene.mp4"
+    audio = tmp_path / "scene.wav"
+    subtitle = tmp_path / "scene.srt"
+    for path, payload in (
+        (final, b"final"), (image, b"image"), (video, b"video"),
+        (audio, b"audio"), (subtitle, b"subtitle"),
+    ):
+        path.write_bytes(payload)
+    video.with_suffix(".quality.json").write_text('{"status":"passed"}', encoding="utf-8")
+    audio.with_suffix(".quality.json").write_text('{"status":"passed"}', encoding="utf-8")
+    subtitle.with_suffix(".quality.json").write_text('{"status":"passed"}', encoding="utf-8")
+    scene = SimpleNamespace(
+        scene_number=1,
+        image_path=str(image),
+        video_path=str(video),
+        audio_path=str(audio),
+        subtitle_path=str(subtitle),
+    )
+    project = SimpleNamespace(
+        id=7, name="Pilot", theme="悬疑", outline="outline", script="{}",
+        final_video_path=str(final), scenes=[scene],
+    )
+
+    build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}}, {"status": "ready"})
+
+    with zipfile.ZipFile(tmp_path / "delivery" / "delivery_package.zip") as archive:
+        names = set(archive.namelist())
+    assert "media/scenes/scene_0001_image.png" in names
+    assert "media/scenes/scene_0001_video.mp4" in names
+    assert "media/scenes/scene_0001_audio.wav" in names
+    assert "reviews/scenes/scene_0001_video.quality.json" in names
+    assert "reviews/scenes/scene_0001_subtitle.quality.json" in names

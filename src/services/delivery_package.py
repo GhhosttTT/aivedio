@@ -107,6 +107,39 @@ def _collect_files(project, project_root: Path, reports: dict) -> list[tuple[Pat
         if subtitle_path.is_file():
             candidates.append((subtitle_path, f"subtitles/scenes/{subtitle_path.name}"))
 
+    # Include the exact scene assets and their generation/review sidecars used
+    # to approve the final episode, keeping the exported master auditable.
+    for scene in sorted(
+        getattr(project, "scenes", []) or [],
+        key=lambda item: int(getattr(item, "scene_number", 0) or 0),
+    ):
+        scene_number = int(getattr(scene, "scene_number", 0) or 0)
+        if scene_number <= 0:
+            continue
+        for kind, value in (
+            ("image", getattr(scene, "image_path", None)),
+            ("video", getattr(scene, "video_path", None)),
+            ("audio", getattr(scene, "audio_path", None)),
+            ("subtitle", getattr(scene, "subtitle_path", None)),
+        ):
+            source = Path(str(value or ""))
+            if not source.is_file():
+                continue
+            candidates.append((
+                source,
+                f"media/scenes/scene_{scene_number:04d}_{kind}{source.suffix.lower()}",
+            ))
+            for suffix in (
+                ".quality.json", ".final_review.json", ".provider.json",
+                ".continuity.json", ".generation.json",
+            ):
+                sidecar = source.with_suffix(suffix)
+                if sidecar.is_file():
+                    candidates.append((
+                        sidecar,
+                        f"reviews/scenes/scene_{scene_number:04d}_{kind}{suffix}",
+                    ))
+
     # Preserve deterministic order and avoid duplicate archive names when a
     # report is also discoverable through the final-video sidecar.
     unique: dict[str, tuple[Path, str]] = {}
