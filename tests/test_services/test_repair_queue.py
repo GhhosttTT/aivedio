@@ -149,6 +149,27 @@ def test_repair_queue_maps_extreme_temporal_resets_to_targeted_motion_repair():
     assert "extreme single-frame resets" in reset_items[0]["recommendation"]
 
 
+def test_repair_queue_uses_configured_temporal_reset_threshold(monkeypatch):
+    monkeypatch.setattr(
+        "src.services.repair_queue.settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95",
+        0.95,
+    )
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 1,
+            "technical_metrics": {
+                "technical_score": 4.1,
+                "temporal_jump_p95": 0.9,
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert not any("extreme temporal visual reset" in item["reason"] for item in queue)
+
+
 def test_repair_queue_maps_sequence_fps_mismatch_to_output_contract_repair():
     report = {
         "status": "needs_review",

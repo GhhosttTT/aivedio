@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.config import settings
+
 
 ACTION_RULES = [
     (
@@ -356,9 +358,9 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
     if isinstance(start_frame_reference, dict) and start_frame_reference.get("status") == "available":
         if float(start_frame_reference.get("score") or 0) < 2.5:
             evidence.append("video opening frame diverges from the locked scene keyframe")
-    if video_metrics.get("temporal_jump_ratio", 0) > 0.35:
+    if video_metrics.get("temporal_jump_ratio", 0) > settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO:
         evidence.append("video temporal visual resets between sampled frames")
-    if video_metrics.get("temporal_jump_p95", 0) > 0.75:
+    if video_metrics.get("temporal_jump_p95", 0) > settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95:
         evidence.append("video extreme temporal visual reset in the worst sampled transitions")
     if video_metrics and isinstance(video_score, (int, float)) and video_score < 3:
         if video_metrics.get("motion_energy", 99) < 2:
@@ -372,9 +374,9 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
             evidence.append("video exposure is outside usable range")
         if video_metrics.get("brightness_variance", 0) > 500:
             evidence.append("video brightness flicker and unstable exposure")
-        if video_metrics.get("brightness_step_p95", 0) > 36:
+        if video_metrics.get("brightness_step_p95", 0) > settings.GENERATION_VIDEO_MAX_BRIGHTNESS_STEP_P95:
             evidence.append("video temporal exposure jumps between sampled frames")
-        if video_metrics.get("motion_jitter_ratio", 0) > 1.5:
+        if video_metrics.get("motion_jitter_ratio", 0) > settings.GENERATION_VIDEO_MAX_MOTION_JITTER_RATIO:
             evidence.append("video motion cadence is unstable between sampled frames")
         evidence.append("low technical video score: motion sharpness exposure stability")
     return evidence
