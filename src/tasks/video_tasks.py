@@ -1694,23 +1694,25 @@ def _apply_audio_quality_contract(metrics: dict, provider_metadata: dict | None)
         metrics["audio_sync_score"] = 0.0
     else:
         delta = float(metrics["audio_duration_delta_seconds"])
-        metrics["audio_quality_status"] = "passed" if delta <= 0.35 else "needs_review"
-        metrics["audio_sync_score"] = round(max(0.0, 5.0 - min(delta / 0.35, 5.0)), 2)
+        tolerance = settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS
+        metrics["audio_quality_status"] = "passed" if delta <= tolerance else "needs_review"
+        metrics["audio_sync_score"] = round(max(0.0, 5.0 - min(delta / tolerance, 5.0)), 2)
     start_delta = metrics.get("audio_video_start_delta_seconds")
     if isinstance(start_delta, (int, float)):
         start_delta = abs(float(start_delta))
         metrics["audio_video_start_delta_seconds"] = round(start_delta, 3)
-        if start_delta > 0.35:
+        tolerance = settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS
+        if start_delta > tolerance:
             metrics["audio_quality_status"] = "needs_review"
             metrics["audio_sync_score"] = 0.0
             metrics["audio_sync_error"] = (
-                "audio/video stream start offset exceeds 0.350s: "
-                f"{start_delta:.3f}s"
+                "audio/video stream start offset exceeds "
+                f"{tolerance:.3f}s: {start_delta:.3f}s"
             )
         elif isinstance(metrics.get("audio_sync_score"), (int, float)):
             metrics["audio_sync_score"] = round(min(
                 float(metrics["audio_sync_score"]),
-                max(0.0, 5.0 - start_delta / 0.35 * 5.0),
+                max(0.0, 5.0 - start_delta / tolerance * 5.0),
             ), 2)
     signal_status = metrics.get("audio_signal_status")
     if signal_status == "near_silent":

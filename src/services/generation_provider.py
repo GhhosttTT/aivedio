@@ -982,16 +982,16 @@ class ApiVideoProvider:
             if str(metrics.get("audio_clipping_status") or "").strip().lower() == "clipped":
                 raise ValueError("audio signal is clipped at digital full scale")
             audio_delta = metrics.get("audio_duration_delta_seconds")
-            if audio_delta is not None and float(audio_delta) > 0.35:
+            if audio_delta is not None and float(audio_delta) > settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS:
                 raise ValueError(
                     "audio/video duration drift: "
-                    f"{float(audio_delta):.3f}s exceeds 0.350s"
+                    f"{float(audio_delta):.3f}s exceeds {settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS:.3f}s"
                 )
             start_delta = metrics.get("audio_video_start_delta_seconds")
-            if start_delta is not None and abs(float(start_delta)) > 0.35:
+            if start_delta is not None and abs(float(start_delta)) > settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS:
                 raise ValueError(
                     "audio/video stream start offset: "
-                    f"{abs(float(start_delta)):.3f}s exceeds 0.350s"
+                    f"{abs(float(start_delta)):.3f}s exceeds {settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS:.3f}s"
                 )
         static_seconds = float(metrics.get("max_static_run_seconds") or 0.0)
         motion_energy = float(metrics.get("motion_energy") or 0.0)

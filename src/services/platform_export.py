@@ -213,11 +213,12 @@ def _validate_export_metrics(
     if (
         metrics.get("audio_present")
         and isinstance(audio_start_delta, (int, float))
-        and abs(float(audio_start_delta)) > 0.35
+        and abs(float(audio_start_delta)) > settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS
     ):
         raise PlatformExportError(
             "Platform export audio/video start offset is out of sync: "
-            f"{float(audio_start_delta):.3f}s"
+            f"{float(audio_start_delta):.3f}s; "
+            f"limit={settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS:.3f}s"
         )
     if isinstance(source_metrics, dict) and source_metrics.get("status") == "available":
         source_duration = float(source_metrics.get("duration_seconds") or 0.0)

@@ -105,10 +105,10 @@ def _native_audio_is_ready_for_video_paths(video_paths: list[str], video_compose
             metrics.get("status") != "available"
             or not metrics.get("audio_present")
             or not isinstance(audio_delta, (int, float))
-            or abs(float(audio_delta)) > 0.35
+            or abs(float(audio_delta)) > settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS
             or (
                 not isinstance(audio_start_delta, (int, float))
-                or abs(float(audio_start_delta)) > 0.35
+                or abs(float(audio_start_delta)) > settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS
             )
             or metrics.get("audio_signal_status") != "usable"
             or metrics.get("audio_clipping_status") == "clipped"
@@ -1163,13 +1163,19 @@ def _composition_review_error(report: dict) -> str | None:
             if technical.get("audio_clipping_status") == "clipped":
                 return "final composed video audio signal is clipped at digital full scale"
             audio_start_delta = technical.get("audio_video_start_delta_seconds")
-            if isinstance(audio_start_delta, (int, float)) and abs(float(audio_start_delta)) > 0.35:
+            if (
+                isinstance(audio_start_delta, (int, float))
+                and abs(float(audio_start_delta)) > settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS
+            ):
                 return (
                     "final composed video audio/video start offset is out of sync by "
                     f"{abs(float(audio_start_delta)):.3f}s"
                 )
             audio_delta = technical.get("audio_duration_delta_seconds")
-            if isinstance(audio_delta, (int, float)) and abs(float(audio_delta)) > 0.35:
+            if (
+                isinstance(audio_delta, (int, float))
+                and abs(float(audio_delta)) > settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS
+            ):
                 return (
                     "final composed video audio duration is out of sync by "
                     f"{abs(float(audio_delta)):.3f}s"
@@ -1187,7 +1193,7 @@ def _composition_review_error(report: dict) -> str | None:
             audio_delta = technical.get("audio_duration_delta_seconds")
             if not isinstance(audio_delta, (int, float)):
                 return "final composed video audio duration is not measurable"
-            if audio_delta > 0.35:
+            if audio_delta > settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS:
                 return (
                     "final composed video audio duration is out of sync by "
                     f"{audio_delta:.3f}s"
