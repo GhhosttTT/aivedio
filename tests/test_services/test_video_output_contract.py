@@ -49,6 +49,26 @@ def _versioned_contract(**overrides):
     return value
 
 
+def _v3_contract(**overrides):
+    value = _versioned_contract(
+        provider_request_version=3,
+        width=768,
+        height=1344,
+        fps=8,
+        seed=11,
+        motion_bucket_id=92,
+        noise_aug_strength=0.012,
+        quality_mode="commercial",
+        repair_action=None,
+        quality_pipeline_fingerprint="pipeline-hash",
+    )
+    value.update(overrides)
+    value.pop("contract_hash", None)
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    value["contract_hash"] = hashlib.sha256(encoded).hexdigest()
+    return value
+
+
 def test_output_contract_passes_matching_media():
     report = audit_video_output_contract(
         _contract(), {"provider_model": "model-a"}, _metrics(), "/tmp/scene.mp4"
@@ -79,6 +99,14 @@ def test_output_contract_rejects_incomplete_versioned_request_contract():
     report = audit_video_output_contract(contract, {"provider_model": "model-a"}, _metrics(), "/tmp/scene.mp4")
     assert report["status"] == "needs_review"
     assert "request_contract_fingerprints_missing" in {item["code"] for item in report["issues"]}
+
+
+def test_output_contract_rejects_incomplete_v3_generation_controls():
+    contract = _v3_contract()
+    del contract["motion_bucket_id"]
+    report = audit_video_output_contract(contract, {"provider_model": "model-a"}, _metrics(), "/tmp/scene.mp4")
+    assert report["status"] == "needs_review"
+    assert "request_contract_controls_missing" in {item["code"] for item in report["issues"]}
 
 
 def test_output_contract_blocks_resolution_audio_and_model_drift():

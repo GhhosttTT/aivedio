@@ -101,6 +101,23 @@ def audit_video_output_contract(
                 "request_contract_fingerprints_missing",
                 "Version 2 request contract is missing one or more control fingerprints.",
             ))
+        if contract_version >= 3:
+            required_control_fields = (
+                "width",
+                "height",
+                "fps",
+                "seed",
+                "motion_bucket_id",
+                "noise_aug_strength",
+                "quality_mode",
+                "repair_action",
+                "quality_pipeline_fingerprint",
+            )
+            if any(field not in contract for field in required_control_fields):
+                issues.append(_issue(
+                    "request_contract_controls_missing",
+                    "Version 3 request contract is missing one or more generation controls.",
+                ))
         supplied_hash = str(contract.get("contract_hash") or "")
         canonical_contract = dict(contract)
         canonical_contract.pop("contract_hash", None)
