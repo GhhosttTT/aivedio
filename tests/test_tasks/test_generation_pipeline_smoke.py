@@ -571,6 +571,10 @@ def test_final_composed_video_review_payload_tracks_episode_context(tmp_path, mo
             return passed_composition_review()
 
     monkeypatch.setattr(composition_tasks, "GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr(composition_tasks, "video_candidate_metrics", lambda _path: {
+        "status": "available", "width": 1080, "height": 1920,
+        "audio_present": True, "audio_duration_delta_seconds": 0.0,
+    })
 
     report = composition_tasks._review_final_composed_video(project, scenes, str(final_video))
 
@@ -581,7 +585,7 @@ def test_final_composed_video_review_payload_tracks_episode_context(tmp_path, mo
     assert captured["payload"]["scene_number"] == "final_composition"
     assert captured["payload"]["shot_plan"]["shot_role"] == "final_composed_short_drama"
     assert captured["payload"]["technical_boundary_report"]["status"] == "not_applicable"
-    assert captured["payload"]["final_technical_metrics"]["status"] == "unavailable"
+    assert captured["payload"]["final_technical_metrics"]["status"] == "available"
     assert captured["payload"]["platform_aesthetic_contract"]["video_features"]
     assert "final_composition_finishing_scores" not in captured["payload"]
     assert captured["payload"]["composition_contract"]["finishing_features"]
@@ -604,6 +608,20 @@ def test_composition_review_blocks_missing_expected_audio_stream():
     }
     assert composition_tasks._composition_review_error(report) == (
         "final composed video is missing the expected audio stream"
+    )
+
+
+def test_composition_review_blocks_unavailable_technical_metrics():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_technical_metrics": {
+            "status": "unavailable",
+            "error": "invalid media",
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video technical metrics are unavailable: invalid media"
     )
 
 
@@ -820,6 +838,9 @@ def test_final_composed_video_review_blocks_failed_episode_gate(tmp_path, monkey
             return failed
 
     monkeypatch.setattr(composition_tasks, "GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr(composition_tasks, "video_candidate_metrics", lambda _path: {
+        "status": "available", "width": 1080, "height": 1920,
+    })
 
     with pytest.raises(ValueError, match="composition review batch 1 performance gate failed"):
         composition_tasks._review_final_composed_video(project, scenes, str(final_video))
@@ -871,6 +892,9 @@ def test_final_composed_video_review_blocks_episode_style_drift(tmp_path, monkey
             return passed_composition_review()
 
     monkeypatch.setattr(composition_tasks, "GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr(composition_tasks, "video_candidate_metrics", lambda _path: {
+        "status": "available", "width": 1080, "height": 1920,
+    })
 
     with pytest.raises(ValueError, match="style consistency gate failed"):
         composition_tasks._review_final_composed_video(project, scenes, str(final_video))
@@ -921,6 +945,9 @@ def test_final_composed_video_review_blocks_platform_reference_gap(tmp_path, mon
             return failed
 
     monkeypatch.setattr(composition_tasks, "GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr(composition_tasks, "video_candidate_metrics", lambda _path: {
+        "status": "available", "width": 1080, "height": 1920,
+    })
 
     with pytest.raises(ValueError, match="platform reference gate failed"):
         composition_tasks._review_final_composed_video(project, scenes, str(final_video))
@@ -958,6 +985,9 @@ def test_final_composed_video_review_blocks_episode_continuity_drift(tmp_path, m
             return failed
 
     monkeypatch.setattr(composition_tasks, "GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr(composition_tasks, "video_candidate_metrics", lambda _path: {
+        "status": "available", "width": 1080, "height": 1920,
+    })
 
     with pytest.raises(ValueError, match="episode continuity gate failed"):
         composition_tasks._review_final_composed_video(project, scenes, str(final_video))
@@ -996,6 +1026,9 @@ def test_final_composed_video_review_blocks_mixed_finishing_polish(tmp_path, mon
             return failed
 
     monkeypatch.setattr(composition_tasks, "GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr(composition_tasks, "video_candidate_metrics", lambda _path: {
+        "status": "available", "width": 1080, "height": 1920,
+    })
 
     with pytest.raises(ValueError, match="final composition finishing gate failed"):
         composition_tasks._review_final_composed_video(project, scenes, str(final_video))
@@ -1034,6 +1067,9 @@ def test_final_composed_video_review_blocks_inconsistent_passed_finishing_score(
             return failed
 
     monkeypatch.setattr(composition_tasks, "GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr(composition_tasks, "video_candidate_metrics", lambda _path: {
+        "status": "available", "width": 1080, "height": 1920,
+    })
 
     with pytest.raises(ValueError, match="final composition finishing gate failed"):
         composition_tasks._review_final_composed_video(project, scenes, str(final_video))

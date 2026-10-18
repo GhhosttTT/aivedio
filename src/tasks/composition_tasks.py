@@ -950,6 +950,11 @@ def _composition_review_error(report: dict) -> str | None:
                 f"{geometry_mismatch_count} shot boundary(s)"
             )
     technical = report.get("final_technical_metrics")
+    if isinstance(technical, dict) and technical.get("status") == "unavailable":
+        return (
+            "final composed video technical metrics are unavailable: "
+            f"{technical.get('error') or 'ffprobe/OpenCV could not inspect the video'}"
+        )
     if isinstance(technical, dict) and technical.get("status") == "available":
         if int(technical.get("width") or 0) <= 0 or int(technical.get("height") or 0) <= 0:
             return "final composed video has no readable video geometry"
