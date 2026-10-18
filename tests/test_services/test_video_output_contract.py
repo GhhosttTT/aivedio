@@ -77,6 +77,31 @@ def test_output_contract_passes_matching_media():
     assert {"resolution", "output_format", "duration", "audio", "model"}.issubset(report["checked"])
 
 
+def test_output_contract_allows_declared_mov_to_mp4_postprocess_conversion():
+    report = audit_video_output_contract(
+        _contract(output_format="mov"),
+        {"provider_model": "model-a"},
+        _metrics(),
+        "/tmp/scene.mp4",
+        allow_postprocess_container_conversion=True,
+    )
+
+    assert report["status"] == "passed"
+    assert "postprocess_container_conversion" in report["checked"]
+
+
+def test_output_contract_keeps_mov_drift_strict_by_default():
+    report = audit_video_output_contract(
+        _contract(output_format="mov"),
+        {"provider_model": "model-a"},
+        _metrics(),
+        "/tmp/scene.mp4",
+    )
+
+    assert report["status"] == "needs_review"
+    assert "output_format_drift" in {issue["code"] for issue in report["issues"]}
+
+
 def test_output_contract_validates_versioned_request_contract_integrity():
     report = audit_video_output_contract(
         _versioned_contract(), {"provider_model": "model-a"}, _metrics(), "/tmp/scene.mp4"

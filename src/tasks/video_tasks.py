@@ -1972,6 +1972,7 @@ def _review_final_video_after_postprocess(
         provider_metadata,
         technical_metrics,
         video_path,
+        allow_postprocess_container_conversion=True,
     )
     if _quality_report_has_long_form(quality_report) and technical_metrics.get("status") == "available":
         technical_metrics["technical_score"] = video_technical_score(
@@ -2026,6 +2027,10 @@ def _review_final_video_after_postprocess(
         final_review["video_performance_score"] = performance_gate.get("average", 0)
     final_review["technical_metrics"] = technical_metrics
     final_review["request_contract_audit"] = request_contract_audit
+    final_review["postprocess_container_conversion"] = (
+        "postprocess_container_conversion" in (request_contract_audit.get("checked") or [])
+        if isinstance(request_contract_audit, dict) else False
+    )
     if isinstance(technical_metrics.get("technical_score"), (int, float)):
         final_review["technical_score"] = technical_metrics["technical_score"]
     if review.get("error"):

@@ -86,6 +86,8 @@ def audit_video_output_contract(
     provider_metadata: dict | None,
     metrics: dict | None,
     output_path: str | Path,
+    *,
+    allow_postprocess_container_conversion: bool = False,
 ) -> dict:
     """Return an evidence report without guessing when contract data is absent."""
     contract = contract if isinstance(contract, dict) else {}
@@ -156,7 +158,14 @@ def audit_video_output_contract(
         if expected_format and actual_suffix:
             checked.append("output_format")
             if expected_format != actual_suffix:
-                issues.append(_issue("output_format_drift", f"Requested {expected_format} but output path is .{actual_suffix}."))
+                if (
+                    allow_postprocess_container_conversion
+                    and expected_format in {"mp4", "mov"}
+                    and actual_suffix in {"mp4", "mov"}
+                ):
+                    checked.append("postprocess_container_conversion")
+                else:
+                    issues.append(_issue("output_format_drift", f"Requested {expected_format} but output path is .{actual_suffix}."))
         requested_duration = _positive_number(contract.get("duration_seconds"))
         actual_duration = _positive_number(metrics.get("duration_seconds"))
         if requested_duration and actual_duration:
