@@ -149,6 +149,9 @@ export const projectApi = {
             timeout: 900000  // 15分钟超时，等待LLM生成完成
         });
     },
+    repairScript: async (id: number): Promise<Project> => apiClient.post(`/projects/${id}/repair-script`, {}, {
+        timeout: 900000,
+    }),
 
     /**
      * 重新生成单个分镜

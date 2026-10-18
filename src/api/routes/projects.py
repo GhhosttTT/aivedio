@@ -34,7 +34,7 @@ from src.api.schemas import (
 )
 from src.api.dependencies import get_current_user, require_project_access
 from src.services.project_manager import ProjectManager, get_project_manager
-from src.services.script_generator import ScriptGenerator, get_script_generator
+from src.services.script_generator import ScriptGenerator, ScriptParseError, get_script_generator
 from src.services.task_orchestrator import TaskOrchestrator, get_task_orchestrator
 from src.services.production_readiness import ProductionReadinessService
 from src.services.spatial_control_assets import SpatialControlAssetService
@@ -43,6 +43,8 @@ from src.services.production_workflow_profile import ProductionWorkflowProfileSe
 from src.services.quality_loop import build_quality_loop_plan
 from src.services.repair_plan import build_repair_execution_plan
 from src.services.generation_quality_scorecard import build_generation_quality_scorecard
+from src.services.generation_review import require_passed
+from src.services.story_room_quality import StoryRoomQualityService
 from src.database.session import get_db_session
 from src.database.models import Character, Project, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
@@ -881,6 +883,82 @@ def generate_script(project_id: int, request: GenerateScriptRequest, db_session:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"剧本生成失败: {error_msg}"
         )
+
+
+@router.post("/{project_id}/repair-script", response_model=ProjectResponse)
+def repair_script(project_id: int, db_session: Session = Depends(get_db_session)):
+    """Rewrite the current script from story-room evidence before visual generation."""
+    project = db_session.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail=f"项目不存在: {project_id}")
+    if project.status == ProjectStatus.IN_PRODUCTION:
+        raise HTTPException(status_code=409, detail="项目正在制作，请等待当前任务结束")
+    scenes = db_session.query(Scene).filter(Scene.project_id == project_id).order_by(Scene.scene_number).all()
+    if not scenes:
+        raise HTTPException(status_code=400, detail="没有可供重写的分镜")
+
+    try:
+        from src.utils.storage import storage_manager
+        parsed_script = json.loads(project.script) if project.script else {}
+        if not isinstance(parsed_script, dict):
+            parsed_script = {}
+        parsed_script.setdefault("characters", [
+            {"name": character.name, "description": character.description}
+            for character in project.characters
+        ])
+        parsed_script.setdefault("scenes", [
+            {
+                "scene_number": scene.scene_number,
+                "description": scene.visual_description,
+                "dialogue": scene.dialogue,
+                "speaker": scene.character_name,
+            }
+            for scene in scenes
+        ])
+        if not parsed_script.get("scenes"):
+            raise ScriptParseError("当前项目没有结构化剧本分镜")
+
+        review_path = storage_manager.get_project_path(project_id) / "reviews" / "production_story.json"
+        if review_path.is_file():
+            failed_review = json.loads(review_path.read_text(encoding="utf-8"))
+        else:
+            story_report = StoryRoomQualityService().evaluate(
+                project,
+                scenes,
+                {scene["scene_number"]: scene for scene in parsed_script["scenes"]},
+            ).to_dict()
+            failed_review = {
+                "status": "needs_review",
+                "review": {
+                    "issues": [{
+                        "reason": "story-room gate missing: " + ", ".join(story_report["missing"]),
+                        "scene_number": 1,
+                    }],
+                },
+            }
+        generator = ScriptGenerator(db_session)
+        repaired_script, reviewed = generator.repair_script_for_review(
+            project=project,
+            parsed_script=parsed_script,
+            failed_review=failed_review,
+            review_path=review_path,
+            max_attempts=3,
+        )
+        require_passed(reviewed)
+        generator._save_script_to_db(project, repaired_script)
+        project.script = json.dumps(repaired_script, ensure_ascii=False)
+        project.status = ProjectStatus.SCRIPT_GENERATED
+        db_session.commit()
+        return project
+    except HTTPException:
+        raise
+    except (ScriptParseError, ValueError) as exc:
+        db_session.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        db_session.rollback()
+        logger.error(f"重写剧本失败: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail="重写剧本失败，请检查 LLM 和故事审核服务配置") from exc
 
 
 @router.post("/{project_id}/regenerate-scene", response_model=ProjectResponse)

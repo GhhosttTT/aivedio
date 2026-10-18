@@ -76,6 +76,35 @@ def test_scene_save_invalidates_media_and_rejects_manual_completion(setup):
     assert client.put("/api/projects/1", json={"status": "completed"}).status_code == 400
 
 
+def test_repair_script_uses_story_review_before_visual_generation(setup, monkeypatch):
+    client, db, _ = setup
+    project = db.query(Project).filter(Project.id == 1).one()
+    project.script = json.dumps({
+        "script": "A weak story",
+        "characters": [{"name": "A", "description": "lead"}],
+        "scenes": [{"scene_number": 1, "description": "A sealed letter", "dialogue": "Hello", "speaker": "A"}],
+    }, ensure_ascii=False)
+    db.commit()
+    repaired = {
+        "script": "A stronger story",
+        "characters": [{"name": "A", "description": "lead"}],
+        "scenes": [{"scene_number": 1, "description": "A visible threat", "dialogue": "Run", "speaker": "A"}],
+    }
+    fake_generator = Mock()
+    fake_generator.repair_script_for_review.return_value = (repaired, {"status": "passed", "average": 4.5})
+    monkeypatch.setattr("src.api.routes.projects.ScriptGenerator", lambda _db: fake_generator)
+    monkeypatch.setattr("src.api.routes.projects.require_passed", lambda _report: None)
+
+    response = client.post("/api/projects/1/repair-script")
+
+    assert response.status_code == 200, response.text
+    fake_generator.repair_script_for_review.assert_called_once()
+    fake_generator._save_script_to_db.assert_called_once()
+    assert fake_generator._save_script_to_db.call_args.args[0].id == project.id
+    assert fake_generator._save_script_to_db.call_args.args[1] == repaired
+    assert response.json()["script"] == json.dumps(repaired, ensure_ascii=False)
+
+
 def test_production_id_persistence_duplicate_submission_status_cancel(setup, monkeypatch):
     client, db, _ = setup
     submitted = []

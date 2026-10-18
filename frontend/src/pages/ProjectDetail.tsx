@@ -52,6 +52,9 @@ export function ProjectDetail() {
                 const theme = project.theme?.trim() || undefined;
                 const outline = project.outline?.trim() || undefined;
                 await projectApi.generateScript(Number(id), {...options, theme, outline});
+            } else if (operation === '按故事房建议重写剧本') {
+                await projectApi.repairScript(Number(id));
+                setTab('script');
             } else if (operation === '提升 Draft 正式片') {
                 await projectApi.promoteDrafts(Number(id));
                 setTab('production');
@@ -243,6 +246,17 @@ export function ProjectDetail() {
         {busy && <p role="status" className="wb-alert"><RefreshCw size={15} className="inline animate-spin"/> {busy}进行中</p>}
         <VideoEngineStatus/>
         <ProductionReadinessPanel report={readiness} loading={readinessLoading} onRefresh={refreshReadiness}/>
+        {readiness?.checks.story_room?.missing?.length && (
+            <section className="wb-item" aria-label="故事房修复">
+                <div className="wb-row wb-between">
+                    <div>
+                        <strong>故事房质量仍有缺项</strong>
+                        <p className="wb-muted">先让审核模型依据当前剧本证据重写，再重新生成视觉资产。</p>
+                    </div>
+                    <button className="wb-button" disabled={locked} onClick={() => run('按故事房建议重写剧本')}>按建议重写剧本</button>
+                </div>
+            </section>
+        )}
         <section className="wb-item" aria-label="本次视频生成配置">
             <div className="wb-row wb-between"><strong>本次视频生成配置</strong><span className="wb-muted">留空 provider 使用环境默认值</span></div>
             <div className="wb-fields">
