@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { BadgeCheck, Image, Languages, Plus, Trash2, Upload, X } from 'lucide-react';
-import { characterApi, Character, CharacterIdentityPlan, CharacterReference, CharacterTurnaroundGeneration } from '../api/characterApi';
+import { BadgeCheck, Image, Languages, Mic2, Plus, Trash2, Upload, X } from 'lucide-react';
+import { characterApi, Character, CharacterIdentityPlan, CharacterReference, CharacterTurnaroundGeneration, CharacterVoiceProfile } from '../api/characterApi';
 import { errorText } from '../api/client';
 import { ProjectImage } from '../components/ProjectMedia';
 
@@ -9,6 +9,7 @@ export default function CharacterManager({projectId, locked = false}: {projectId
     const [references, setReferences] = useState<Record<number, CharacterReference[]>>({});
     const [plans, setPlans] = useState<Record<number, CharacterIdentityPlan>>({});
     const [albums, setAlbums] = useState<Record<number, CharacterTurnaroundGeneration>>({});
+    const [voiceProfiles, setVoiceProfiles] = useState<Record<number, CharacterVoiceProfile>>({});
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -43,10 +44,28 @@ export default function CharacterManager({projectId, locked = false}: {projectId
                     const album = await characterApi.generateTurnaroundAlbum(projectId, c.id, 2, true);
                     setAlbums(current => ({...current, [c.id]: album}));
                 })}><Image size={16}/>生成并冻结立体画册</button>
-                <button className="wb-button" disabled={locked || busy} onClick={() => operate(() => characterApi.freezeAssetPack(projectId, c.id, 'approved from character workbench'))}><BadgeCheck size={16}/>冻结定妆资产包</button>
+                <button className="wb-button" disabled={locked || busy} onClick={() => operate(async () => {
+                    const profile = voiceProfiles[c.id] || {};
+                    const result = await characterApi.freezeAssetPack(projectId, c.id, {
+                        notes: 'approved from character workbench',
+                        voice_id: profile.voice_id?.trim(),
+                        voice_style: profile.style?.trim(),
+                        voice_language: profile.language?.trim(),
+                    });
+                    const frozen = result.asset_pack?.voice_profile;
+                    if (frozen) setVoiceProfiles(current => ({...current, [c.id]: frozen}));
+                })}><BadgeCheck size={16}/>冻结定妆资产包</button>
                 <button className="wb-icon" aria-label={`删除角色 ${c.name}`} title="删除角色" disabled={locked || busy} onClick={() => { if (window.confirm(`删除角色“${c.name}”？`)) operate(() => characterApi.deleteCharacter(projectId, c.id)); }}><Trash2 size={16}/></button>
             </div></div>
             <p>{c.description}</p><p className="wb-muted">{c.appearance}</p>
+            <div className="wb-panel">
+                <div className="wb-row"><Mic2 size={16}/><strong>角色声音身份</strong><span className="wb-muted">冻结后用于跨场景保持同一声线</span></div>
+                <div className="wb-grid compact">
+                    <label>声音 ID<input maxLength={200} disabled={locked || busy} value={voiceProfiles[c.id]?.voice_id || ''} onChange={e => setVoiceProfiles(current => ({...current, [c.id]: {...current[c.id], voice_id: e.target.value}}))} placeholder="如 voice_female_01" /></label>
+                    <label>声音风格<input maxLength={200} disabled={locked || busy} value={voiceProfiles[c.id]?.style || ''} onChange={e => setVoiceProfiles(current => ({...current, [c.id]: {...current[c.id], style: e.target.value}}))} placeholder="如 冷静、低沉、克制" /></label>
+                    <label>语言/地区<input maxLength={40} disabled={locked || busy} value={voiceProfiles[c.id]?.language || ''} onChange={e => setVoiceProfiles(current => ({...current, [c.id]: {...current[c.id], language: e.target.value}}))} placeholder="如 zh-CN" /></label>
+                </div>
+            </div>
             {plans[c.id] && <div className="wb-panel">
                 <div className="wb-row"><Languages size={16}/><strong>身份锚点</strong><span className="wb-badge">{plans[c.id].distinctiveness.status}</span></div>
                 <p>{plans[c.id].identity_spec.identity_anchor}</p>

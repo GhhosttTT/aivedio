@@ -12,6 +12,12 @@ export interface Character {
   appearance?: string;
 }
 
+export interface CharacterVoiceProfile {
+  voice_id?: string;
+  style?: string;
+  language?: string;
+}
+
 export interface CharacterReference {
   id: number;
   character_id: number;
@@ -142,9 +148,13 @@ export const characterApi = {
     );
   },
 
-  freezeAssetPack: async (projectId: number, characterId: number, notes = '') => {
+  freezeAssetPack: async (
+    projectId: number,
+    characterId: number,
+    data: {notes?: string; voice_id?: string; voice_style?: string; voice_language?: string} = {},
+  ) => {
     return apiClient.post<any, {character_id: number; status: string; asset_pack: Record<string, any>}>(
-      `/projects/${projectId}/characters/${characterId}/freeze-asset-pack`, {notes}
+      `/projects/${projectId}/characters/${characterId}/freeze-asset-pack`, data
     );
   },
 
