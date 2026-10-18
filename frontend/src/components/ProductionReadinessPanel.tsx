@@ -254,6 +254,7 @@ function labelScorecardAction(action: string): string {
         split_scene: '拆分复杂分镜',
         refreeze_spatial_plan: '重做空间计划',
         fix_workflow_profile: '修复 Workflow Profile',
+        run_real_gpu_sample_validation: '运行真实 GPU 样片验证',
     };
     return labels[action] || action;
 }
