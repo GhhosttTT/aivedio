@@ -17,6 +17,7 @@ const names: Record<string, string> = {
     dialogue_delivery_audit: '对白音频与字幕交付',
     generation_context_audit: '生成上下文一致性',
     atomic_video_motion_audit: '原子镜头运动质量',
+    first_frame_consistency_audit: '锁定关键帧首帧一致性',
     sequence_timeline_audit: '多镜头时间轴一致性',
     seed_dance_baseline_comparison: 'Seed Dance 对比验收',
     causal_logic: '因果逻辑',
@@ -347,6 +348,28 @@ function AtomicVideoMotionEvidence({report}: {report: any}) {
         {scenes.slice(0, 8).map((scene: any) => <div className="wb-kv" key={scene.scene_number}>
             <span>分镜 {scene.scene_number}</span>
             <strong>技术分 {scene.technical_score ?? '-'} · 运动 {scene.motion_energy ?? '-'}</strong>
+        </div>)}
+        {issues.slice(0, 6).map((issue: any, index: number) => <p className="wb-alert" key={`${issue.code}-${issue.scene_number}-${index}`}>
+            分镜 {issue.scene_number || '-'} · {issue.code} · {issue.message}
+        </p>)}
+    </div>;
+}
+
+function FirstFrameConsistencyEvidence({report}: {report: any}) {
+    if (report?.kind !== 'first_frame_consistency_audit') return null;
+    const scenes = Array.isArray(report.scenes) ? report.scenes : [];
+    const issues = Array.isArray(report.issues) ? report.issues : [];
+    return <div className="wb-summary-actions" aria-label="锁定关键帧首帧一致性证据">
+        <div className="wb-row wb-between">
+            <h4>锁定关键帧首帧一致性</h4>
+            <span className="wb-badge">已检查 {report.checked_scene_count || 0} 镜头</span>
+        </div>
+        <p className={issues.length ? 'wb-alert' : 'wb-muted'}>
+            {issues.length ? `发现 ${issues.length} 项首帧偏离或证据缺失，成片暂不可交付。` : '每个参考图生视频镜头的首帧均通过锁定关键帧门禁。'}
+        </p>
+        {scenes.slice(0, 8).map((scene: any) => <div className="wb-kv" key={scene.scene_number}>
+            <span>分镜 {scene.scene_number}</span>
+            <strong>{scene.status === 'available' ? `引用分 ${scene.score ?? '-'}/5` : scene.status || '缺失'}</strong>
         </div>)}
         {issues.slice(0, 6).map((issue: any, index: number) => <p className="wb-alert" key={`${issue.code}-${issue.scene_number}-${index}`}>
             分镜 {issue.scene_number || '-'} · {issue.code} · {issue.message}
@@ -781,6 +804,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <DialogueDeliveryEvidence report={report}/>
             <GenerationContextEvidence report={report}/>
             <AtomicVideoMotionEvidence report={report}/>
+            <FirstFrameConsistencyEvidence report={report}/>
             <SequenceTimelineEvidence report={report}/>
             <Scores review={report.review}/>
             {report.batches?.map((batch: any, index: number) => <div key={index}>

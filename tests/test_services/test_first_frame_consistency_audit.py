@@ -1,0 +1,45 @@
+import json
+from types import SimpleNamespace
+
+from src.services.first_frame_consistency_audit import FirstFrameConsistencyAuditService
+
+
+def _scene(number, video_path):
+    return SimpleNamespace(scene_number=number, video_path=str(video_path), image_path=f"keyframe-{number}.png")
+
+
+def _write_sidecar(video, reference):
+    video.write_bytes(b"video")
+    video.with_suffix(".quality.json").write_text(json.dumps({"metrics": {"start_frame_reference": reference}}), encoding="utf-8")
+
+
+def test_first_frame_audit_accepts_reference_backed_clips(tmp_path):
+    video = tmp_path / "scene_1.mp4"
+    _write_sidecar(video, {"status": "available", "score": 4.1, "brightness_delta": 0.02})
+
+    report = FirstFrameConsistencyAuditService().audit([_scene(1, video)])
+
+    assert report.status == "passed"
+    assert report.checked_scene_count == 1
+    assert report.issues == []
+
+
+def test_first_frame_audit_flags_drift_and_missing_evidence(tmp_path):
+    drift = tmp_path / "scene_1.mp4"
+    missing = tmp_path / "scene_2.mp4"
+    _write_sidecar(drift, {"status": "available", "score": 1.9})
+    _write_sidecar(missing, {"status": "unavailable", "error": "unreadable"})
+
+    report = FirstFrameConsistencyAuditService().audit([_scene(1, drift), _scene(2, missing)])
+
+    assert report.status == "needs_review"
+    assert {issue["code"] for issue in report.issues} == {"opening_frame_drift", "reference_evidence_unavailable"}
+
+
+def test_first_frame_audit_ignores_clips_without_quality_evidence(tmp_path):
+    video = tmp_path / "scene_1.mp4"
+    video.write_bytes(b"video")
+
+    report = FirstFrameConsistencyAuditService().audit([_scene(1, video)])
+
+    assert report.status == "not_applicable"
