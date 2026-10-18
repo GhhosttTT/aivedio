@@ -39,6 +39,26 @@ def _write_json_atomic(path: Path, payload: dict) -> None:
             os.unlink(temporary_name)
 
 
+def _delivery_generation_evidence(reports: dict) -> list[dict]:
+    """Keep the provider and spatial hashes visible at the delivery root."""
+    evidence = []
+    for name, report in (reports or {}).items():
+        if not isinstance(report, dict):
+            continue
+        run = report.get("generation_run_evidence")
+        if not isinstance(run, dict):
+            continue
+        evidence.append({
+            "report": name,
+            "status": run.get("status"),
+            "request_contract_hashes": list(run.get("request_contract_hashes") or []),
+            "spatial_scene_contract_hashes": list(run.get("spatial_scene_contract_hashes") or []),
+            "spatial_project_signatures": list(run.get("spatial_project_signatures") or []),
+            "providers": list(run.get("providers") or []),
+        })
+    return evidence
+
+
 def verify_delivery_package(package_path: str | Path) -> dict:
     """Verify a delivery ZIP against its embedded SHA-256 manifest."""
     path = Path(package_path).resolve()
@@ -222,6 +242,7 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
     files = _collect_files(project, root, reports)
 
     project_metadata = delivery_root / "project_metadata.json"
+    generation_evidence = _delivery_generation_evidence(reports)
     topic_brief = {}
     topic_brief_path = root / "topic_brief.json"
     if topic_brief_path.is_file():
@@ -238,6 +259,7 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         "outline": getattr(project, "outline", None),
         "script": getattr(project, "script", None),
         "topic_brief": topic_brief,
+        "generation_evidence": generation_evidence,
     })
     files.append((project_metadata, "metadata/project.json"))
     if cover_report.get("status") == "ready":
@@ -290,6 +312,7 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         "report_statuses": report_statuses,
         "cover": cover_report,
         "platform_covers": platform_cover_reports,
+        "generation_evidence": generation_evidence,
         "files": manifest_files,
         "package_path": str(package_path),
     }

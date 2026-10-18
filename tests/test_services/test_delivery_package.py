@@ -25,7 +25,19 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
     (tmp_path / "topic_brief.json").write_text(json.dumps({"platform": "抖音", "genre": "都市悬疑"}), encoding="utf-8")
     project = SimpleNamespace(id=7, name="Pilot", theme="都市悬疑", outline="outline", script='{"scenes": []}', final_video_path=str(final), scenes=[])
 
-    manifest = build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)}, {"status": "ready"})
+    manifest = build_delivery_package(project, tmp_path, {
+        "generation": {
+            "status": "passed",
+            "generation_run_evidence": {
+                "status": "passed",
+                "request_contract_hashes": ["request-hash"],
+                "spatial_scene_contract_hashes": ["scene-hash"],
+                "spatial_project_signatures": ["project-hash"],
+                "providers": ["seedance_api"],
+            },
+        },
+        "final_composition": _passed_final_composition(final),
+    }, {"status": "ready"})
 
     package = tmp_path / "delivery" / "delivery_package.zip"
     assert package.is_file()
@@ -39,6 +51,8 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
     with zipfile.ZipFile(package) as archive:
         metadata = json.loads(archive.read("metadata/project.json").decode("utf-8"))
     assert metadata["topic_brief"]["platform"] == "抖音"
+    assert metadata["generation_evidence"][0]["spatial_scene_contract_hashes"] == ["scene-hash"]
+    assert manifest["generation_evidence"][0]["request_contract_hashes"] == ["request-hash"]
     assert "metadata/platform_covers.json" in names
 
 
