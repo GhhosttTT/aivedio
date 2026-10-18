@@ -16,6 +16,9 @@ from src.utils.storage import storage_manager
 class SpatialControlAssetService:
     """Freeze per-shot camera, blocking, and control-reference contracts."""
 
+    PLANNER_CONTRACT_VERSION = "spatial-director-v2"
+    REQUIRED_CONTROL_TYPES = ("pose", "depth", "camera", "character_turnaround")
+
     def freeze_project_pack(
         self,
         project: Project,
@@ -131,17 +134,20 @@ class SpatialControlAssetService:
             })
         project_signature = self._hash({
             "project_id": project.id,
+            "planner_contract_version": self.PLANNER_CONTRACT_VERSION,
+            "required_control_types": self.REQUIRED_CONTROL_TYPES,
             "scene_numbers": [item["scene_number"] for item in scene_items],
             "source_hashes": [item["source_hash"] for item in scene_items],
             "spatial_plan_hashes": [item["spatial_plan_hash"] for item in scene_items],
             "turnaround_hashes": [item["turnaround_controls_hash"] for item in scene_items],
         })
         return {
-            "version": 1,
+            "version": 2,
+            "planner_contract_version": self.PLANNER_CONTRACT_VERSION,
             "status": "draft",
             "project_id": project.id,
             "project_signature": project_signature,
-            "required_control_types": ["pose", "depth", "camera", "character_turnaround"],
+            "required_control_types": list(self.REQUIRED_CONTROL_TYPES),
             "scenes": scene_items,
         }
 

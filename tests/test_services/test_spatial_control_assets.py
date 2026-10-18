@@ -28,12 +28,17 @@ def test_spatial_control_pack_freezes_pose_depth_camera_contracts(tmp_path, monk
     pack = service.freeze_project_pack(project, scenes, characters, notes="approved blocking")
 
     assert pack["status"] == "frozen"
+    assert pack["version"] == 2
+    assert pack["planner_contract_version"] == SpatialControlAssetService.PLANNER_CONTRACT_VERSION
     assert pack["required_control_types"] == ["pose", "depth", "camera", "character_turnaround"]
     controls = pack["scenes"][0]["control_references"]
     assert "pose_reference_prompt" in controls
     assert "depth_reference_prompt" in controls
     assert "camera_reference_prompt" in controls
     assert service.validate_project_pack(project, scenes, characters)["status"] == "valid"
+
+    service.PLANNER_CONTRACT_VERSION = "spatial-director-v3"
+    assert service.validate_project_pack(project, scenes, characters)["status"] == "stale"
 
     scenes[0].visual_description = "Alice runs from the office table to the door."
     stale = service.validate_project_pack(project, scenes, characters)
