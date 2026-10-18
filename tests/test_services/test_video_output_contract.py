@@ -50,3 +50,38 @@ def test_output_contract_blocks_resolution_audio_and_model_drift():
 def test_output_contract_is_not_applicable_to_legacy_assets_without_contract():
     report = audit_video_output_contract(None, {}, _metrics(), "/tmp/scene.mp4")
     assert report["status"] == "not_applicable"
+
+
+def test_output_contract_requires_per_shot_spatial_contracts_for_frozen_sequence():
+    report = audit_video_output_contract(
+        _contract(
+            sequence_level_multi_shot=True,
+            spatial_asset_pack={"scene_contract_hash": "current"},
+            sequence_shot_contracts=[],
+        ),
+        {"provider_model": "model-a"},
+        _metrics(),
+        "/tmp/scene.mp4",
+    )
+
+    assert report["status"] == "needs_review"
+    assert "sequence_spatial_contracts_missing" in {item["code"] for item in report["issues"]}
+
+
+def test_output_contract_accepts_unique_sequence_spatial_contracts():
+    report = audit_video_output_contract(
+        _contract(
+            sequence_level_multi_shot=True,
+            spatial_asset_pack={"scene_contract_hash": "current"},
+            sequence_shot_contracts=[
+                {"scene_number": 1, "scene_contract_hash": "scene-1"},
+                {"scene_number": 2, "scene_contract_hash": "scene-2"},
+            ],
+        ),
+        {"provider_model": "model-a"},
+        _metrics(),
+        "/tmp/scene.mp4",
+    )
+
+    assert report["status"] == "passed"
+    assert "sequence_spatial_contracts" in report["checked"]

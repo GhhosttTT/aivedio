@@ -64,6 +64,25 @@ def audit_video_output_contract(
         checked.append("model")
         if requested_model != actual_model:
             issues.append(_issue("model_drift", f"Requested model {requested_model} but provider reported {actual_model}."))
+    if contract.get("sequence_level_multi_shot") and contract.get("spatial_asset_pack"):
+        checked.append("sequence_spatial_contracts")
+        sequence_contracts = contract.get("sequence_shot_contracts")
+        valid_contracts = [
+            item for item in sequence_contracts or []
+            if isinstance(item, dict)
+            and item.get("scene_number") is not None
+            and str(item.get("scene_contract_hash") or "").strip()
+        ]
+        if not isinstance(sequence_contracts, list) or not valid_contracts:
+            issues.append(_issue(
+                "sequence_spatial_contracts_missing",
+                "Sequence-level generation has a frozen spatial asset pack but no per-shot spatial contracts.",
+            ))
+        elif len({item["scene_number"] for item in valid_contracts}) != len(valid_contracts):
+            issues.append(_issue(
+                "sequence_spatial_contracts_duplicate",
+                "Sequence-level generation contains duplicate per-shot spatial contracts.",
+            ))
     return {
         "status": "needs_review" if issues else "passed",
         "contract_hash": contract.get("contract_hash"),
