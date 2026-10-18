@@ -2076,8 +2076,15 @@ def _video_request_fingerprint(request: VideoGenerationRequest) -> str:
         "shot_plan": request.shot_plan or {},
         "duration_seconds": request.duration_seconds,
         "aspect_ratio": request.aspect_ratio,
+        "width": request.width,
+        "height": request.height,
         "fps": request.fps,
         "seed": request.seed,
+        "motion_bucket_id": request.motion_bucket_id,
+        "noise_aug_strength": request.noise_aug_strength,
+        "quality_mode": request.quality_mode,
+        "repair_action": request.repair_action,
+        "quality_pipeline": request.quality_pipeline or {},
     }
     for field in media_fields:
         value = getattr(request, field)

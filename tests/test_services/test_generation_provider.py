@@ -554,6 +554,31 @@ def test_video_request_fingerprint_resolves_environment_defaults(monkeypatch):
     assert first != second
 
 
+def test_video_request_fingerprint_changes_with_motion_and_repair_controls():
+    base = VideoGenerationRequest(
+        prompt="a shot",
+        output_path="scene.mp4",
+        width=768,
+        height=1344,
+        motion_bucket_id=92,
+        noise_aug_strength=0.012,
+        repair_action="increase_motion_and_regenerate_video",
+        quality_pipeline={"stages": ["motion_control"]},
+    )
+    changed = VideoGenerationRequest(
+        prompt="a shot",
+        output_path="scene.mp4",
+        width=768,
+        height=1344,
+        motion_bucket_id=118,
+        noise_aug_strength=0.012,
+        repair_action="increase_motion_and_regenerate_video",
+        quality_pipeline={"stages": ["motion_control"]},
+    )
+
+    assert generation_provider._video_request_fingerprint(base) != generation_provider._video_request_fingerprint(changed)
+
+
 def test_native_ark_25_1080p_rejects_8_bit_h264_output(tmp_path, monkeypatch):
     monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
     monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")
