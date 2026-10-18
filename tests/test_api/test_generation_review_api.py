@@ -41,6 +41,29 @@ def test_review_api_returns_score_evidence(tmp_path, monkeypatch):
     assert result["summary"]["status"] == "blocked"
 
 
+def test_review_api_marks_old_seedance_baseline_stale_after_candidate_changes(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    project_root = storage_manager.get_project_path(1)
+    candidate = project_root / "final.mp4"
+    candidate.write_bytes(b"new-candidate")
+    write_report(project_root / "reviews" / "seed_dance_baseline_comparison.json", {
+        "kind": "seed_dance_baseline_comparison",
+        "status": "passed",
+        "candidate_video_path": str(candidate),
+        "candidate_signature": "old-version",
+    })
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        id=1, final_video_path=str(candidate), scenes=[],
+    )
+
+    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+
+    assert result["reports"]["seed_dance_baseline_comparison"]["status"] == "stale"
+    assert any("Seed Dance baseline comparison" in item for item in result["summary"]["action_items"])
+
+
 def test_review_api_summarizes_repair_queue_from_quality_reports(tmp_path, monkeypatch):
     from src.utils.storage import storage_manager
     monkeypatch.setattr(storage_manager, "base_path", tmp_path)
@@ -177,6 +200,7 @@ def test_seed_dance_baseline_endpoint_writes_project_review(tmp_path, monkeypatc
     assert result["status"] == "passed"
     assert result["candidate_video_path"] == str(candidate)
     assert result["baseline_video_path"] == str(baseline)
+    assert result["candidate_signature"]
     assert result["contact_sheet_path"].endswith("seed_dance_contact_sheet.png")
     report = storage_manager.get_project_path(1) / "reviews" / "seed_dance_baseline_comparison.json"
     assert json.loads(report.read_text(encoding="utf-8"))["kind"] == "seed_dance_baseline_comparison"
@@ -212,6 +236,7 @@ def test_seed_dance_baseline_upload_writes_project_review(tmp_path, monkeypatch)
     assert saved_baseline.read_bytes() == b"baseline-video"
     assert result["candidate_video_path"] == str(candidate)
     assert result["baseline_video_path"] == str(saved_baseline)
+    assert result["candidate_signature"]
     assert result["contact_sheet_path"].endswith("seed_dance_contact_sheet.png")
     report = storage_manager.get_project_path(1) / "reviews" / "seed_dance_baseline_comparison.json"
     assert json.loads(report.read_text(encoding="utf-8"))["uploaded_baseline_path"] == str(saved_baseline)

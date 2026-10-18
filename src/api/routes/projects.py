@@ -64,6 +64,15 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/projects", tags=["项目管理"], dependencies=[Depends(require_project_access)])
 
+
+def _video_version_signature(path: Path) -> str | None:
+    """Return a cheap version marker for invalidating media-based reviews."""
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return f"{path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
+
 class SeedDanceBaselineRequest(BaseModel):
     baseline_path: str
     candidate_path: Optional[str] = None
@@ -301,6 +310,7 @@ async def compare_seed_dance_baseline(
     report = compare(candidate, baseline, artifact_dir=review_root)
     report["candidate_video_path"] = str(candidate)
     report["baseline_video_path"] = str(baseline)
+    report["candidate_signature"] = _video_version_signature(candidate)
     write_report(review_root / "seed_dance_baseline_comparison.json", report)
     return report
 
@@ -345,6 +355,7 @@ async def upload_seed_dance_baseline(
     report["candidate_video_path"] = str(candidate)
     report["baseline_video_path"] = str(baseline)
     report["uploaded_baseline_path"] = str(baseline)
+    report["candidate_signature"] = _video_version_signature(candidate)
     write_report(review_root / "seed_dance_baseline_comparison.json", report)
     return report
 
@@ -392,6 +403,18 @@ async def get_generation_review(
                     report["status"] = "stale"
             except (OSError, TypeError, ValueError):
                 report["status"] = "stale"
+    baseline_report = reports.get("seed_dance_baseline_comparison")
+    if isinstance(baseline_report, dict) and baseline_report.get("status") == "passed":
+        candidate_path = Path(
+            baseline_report.get("candidate_video_path")
+            or getattr(project, "final_video_path", None)
+            or ""
+        )
+        if (
+            not baseline_report.get("candidate_signature")
+            or _video_version_signature(candidate_path) != baseline_report.get("candidate_signature")
+        ):
+            baseline_report["status"] = "stale"
     summary = _generation_review_summary(reports, repair_output=root)
     return {"project_id": project_id, "reports": reports, "summary": summary}
 
