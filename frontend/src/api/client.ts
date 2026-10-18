@@ -16,6 +16,8 @@ const apiClient = axios.create({
     }
 });
 
+let refreshInFlight: Promise<{access_token: string; refresh_token: string}> | null = null;
+
 // 请求拦截器 - 添加认证 Token
 apiClient.interceptors.request.use((config) => {
     const token = localStorage.getItem('auth_token');
@@ -28,15 +30,35 @@ apiClient.interceptors.request.use((config) => {
 // 响应拦截器 - 处理错误和 401/403
 apiClient.interceptors.response.use(
     (response) => response.data,
-    (error) => {
-        // 处理 401 未授权或 403 禁止访问错误
-        if (error.response?.status === 401) {
-            console.warn('Token 失效或权限不足，清除认证状态');
-            useAuthStore.getState().logout();
-            // 如果不在登录页，跳转到登录页
-            if (!window.location.pathname.includes('/login')) {
-                window.location.href = '/login';
+    async (error) => {
+        const originalRequest = error.config as (typeof error.config & {_authRetry?: boolean}) | undefined;
+        const requestUrl = String(originalRequest?.url || '');
+        if (
+            error.response?.status === 401 &&
+            originalRequest &&
+            !originalRequest._authRetry &&
+            !requestUrl.includes('/auth/login') &&
+            !requestUrl.includes('/auth/refresh')
+        ) {
+            originalRequest._authRetry = true;
+            try {
+                if (!refreshInFlight) refreshInFlight = authApi.refreshToken();
+                const tokens = await refreshInFlight;
+                refreshInFlight = null;
+                useAuthStore.getState().updateTokens(tokens.access_token, tokens.refresh_token);
+                originalRequest.headers = originalRequest.headers || {};
+                originalRequest.headers.Authorization = `Bearer ${tokens.access_token}`;
+                return apiClient(originalRequest);
+            } catch (refreshError) {
+                refreshInFlight = null;
+                useAuthStore.getState().logout();
+                if (!window.location.pathname.includes('/login')) window.location.href = '/login';
+                return Promise.reject(refreshError);
             }
+        }
+        if (error.response?.status === 401) {
+            useAuthStore.getState().logout();
+            if (!window.location.pathname.includes('/login')) window.location.href = '/login';
         }
         console.error('API 请求失败:', error);
         return Promise.reject(error);
@@ -59,8 +81,15 @@ export const authApi = {
     /**
      * 刷新 Token
      */
-    refreshToken: async (): Promise<{ token: string }> => {
-        return apiClient.post('/auth/refresh');
+    refreshToken: async (): Promise<{ access_token: string; refresh_token: string }> => {
+        const refreshToken = useAuthStore.getState().refreshTokenValue || localStorage.getItem('refresh_token');
+        if (!refreshToken) throw new Error('缺少刷新令牌');
+        const response = await axios.post<{ access_token: string; refresh_token: string }>(
+            `${apiBase}/auth/refresh`,
+            { refresh_token: refreshToken },
+            { headers: { 'Content-Type': 'application/json' } },
+        );
+        return response.data;
     },
 };
 

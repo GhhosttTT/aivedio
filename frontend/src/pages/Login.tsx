@@ -11,7 +11,7 @@ export function Login() {
         <h1 className="wb-row"><Film size={26}/>短剧工作台</h1>
         <form style={{marginTop: 30}} onSubmit={async e => {
             e.preventDefault(); setBusy(true); setError('');
-            try { const response = await authApi.login(username, password); useAuthStore.getState().login(response.access_token, response.user); }
+            try { const response = await authApi.login(username, password); useAuthStore.getState().login(response.access_token, response.user, response.refresh_token); }
             catch(e) { setError(errorText(e)); }
             finally { setBusy(false); }
         }}>
