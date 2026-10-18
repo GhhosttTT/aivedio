@@ -539,6 +539,12 @@ export interface ProductionReadinessReport {
             score_status?: string;
             score_missing?: string[];
             recommendations?: string[];
+            market_fit?: {
+                status: string;
+                score: number;
+                score_max: number;
+                recommendations?: string[];
+            };
         };
         visual_format?: {
             status: string;

@@ -60,6 +60,7 @@ export function ProductionReadinessPanel({
                 <Metric label="剧情节奏" value={storyRhythm ? `${storyRhythm.score}/5 ${storyRhythm.status}` : '未检查'}/>
                 <Metric label="故事房质量" value={storyRoom ? `${storyRoom.score}/9 ${storyRoom.status}` : '未检查'}/>
                 <Metric label="选题商业度" value={topicBrief?.score != null ? `${topicBrief.score}/${topicBrief.score_max || 10} ${topicBrief.score_status || ''}` : '未检查'}/>
+                <Metric label="市场证据" value={topicBrief?.market_fit ? `${topicBrief.market_fit.score}/${topicBrief.market_fit.score_max} ${topicBrief.market_fit.status}` : '未录入'}/>
                 <Metric label="整集节奏" value={episodeRhythm ? `${episodeRhythm.total_duration_seconds.toFixed(1)}s ${episodeRhythm.status}` : '未检查'}/>
                 <Metric label="成片画幅" value={visualFormat ? `${visualFormat.width}x${visualFormat.height}` : '未检查'}/>
                 <Metric label="角色身份" value={characters ? `${characters.characters.filter(item => item.has_identity_spec && !item.missing_identity_fields.length).length}/${characters.visible_character_names.length}` : '未检查'}/>
@@ -104,6 +105,18 @@ export function ProductionReadinessPanel({
                     {topicBrief.recommendations.slice(0, 4).map(item => <div className="wb-issue warning" key={item}><span>建议</span><p>{item}</p></div>)}
                 </div>
             ) : null}
+            {topicBrief?.market_fit && topicBrief.market_fit.status !== 'passed' && (
+                <div className="wb-summary-actions">
+                    <div className="wb-row wb-between">
+                        <div>
+                            <h3>市场证据仍需补强</h3>
+                            <p className="wb-muted">生成前补充可比作品、差异化和可衡量指标，方便后续复盘成片表现。</p>
+                        </div>
+                        <span className="wb-badge">{topicBrief.market_fit.score}/{topicBrief.market_fit.score_max}</span>
+                    </div>
+                    {(topicBrief.market_fit.recommendations || []).slice(0, 3).map((item: string) => <div className="wb-issue warning" key={item}><span>建议</span><p>{item}</p></div>)}
+                </div>
+            )}
             {qualityScorecard && (
                 <div className="wb-summary-actions">
                     <div className="wb-row wb-between">
