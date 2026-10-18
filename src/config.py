@@ -15,6 +15,9 @@ class Settings(BaseSettings):
 
     model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    # Runtime profile controls production-only safety checks at application startup.
+    ENVIRONMENT: str = "development"
+
     # 数据库配置
     DATABASE_URL: str = "sqlite:///./short_drama.db"
 

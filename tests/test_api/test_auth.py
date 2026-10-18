@@ -16,7 +16,9 @@ from src.api.auth import (
     create_access_token,
     create_refresh_token,
     decode_access_token,
+    validate_auth_configuration,
 )
+from src.config import settings as auth_settings
 from src.database.session import get_db_session
 
 # 导入所有模型以确保它们注册到 Base.metadata
@@ -51,6 +53,25 @@ def setup_database():
     Base.metadata.create_all(bind=test_engine)
     yield
     Base.metadata.drop_all(bind=test_engine)
+
+
+def test_production_auth_configuration_rejects_example_secret(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setattr(
+        auth_settings,
+        "JWT_SECRET_KEY",
+        "your-secret-key-change-this-in-production",
+    )
+
+    with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
+        validate_auth_configuration()
+
+
+def test_production_auth_configuration_accepts_long_secret(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setattr(auth_settings, "JWT_SECRET_KEY", "s" * 64)
+
+    validate_auth_configuration()
 
 
 # ==================== 密码哈希测试 ====================

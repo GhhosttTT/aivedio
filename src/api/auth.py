@@ -5,6 +5,7 @@
 """
 from datetime import datetime, timedelta
 from typing import Optional
+import os
 
 import bcrypt
 from jose import JWTError, jwt
@@ -13,6 +14,26 @@ from src.config import settings
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def validate_auth_configuration() -> None:
+    """Reject example or weak JWT secrets when running in production."""
+    environment = str(
+        os.getenv("ENVIRONMENT")
+        or getattr(settings, "ENVIRONMENT", "development")
+    ).strip().lower()
+    if environment not in {"prod", "production"}:
+        return
+
+    secret = str(getattr(settings, "JWT_SECRET_KEY", "") or "").strip()
+    insecure_values = {
+        "your-secret-key-change-this-in-production",
+        "your_jwt_secret_key_here",
+    }
+    if len(secret) < 32 or secret in insecure_values:
+        raise RuntimeError(
+            "Production requires JWT_SECRET_KEY with at least 32 non-example characters"
+        )
 
 
 def hash_password(password: str) -> str:

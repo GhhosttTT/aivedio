@@ -13,6 +13,7 @@ import time
 import os
 
 from src.utils.logger import get_logger
+from src.api.auth import validate_auth_configuration
 
 logger = get_logger(__name__)
 
@@ -26,6 +27,7 @@ async def lifespan(app: FastAPI):
     """
     # 启动时执行
     logger.info("FastAPI 应用启动中...")
+    validate_auth_configuration()
     
     # 创建必要的目录
     storage_path = os.getenv("STORAGE_PATH", "./storage")
