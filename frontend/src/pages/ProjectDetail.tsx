@@ -118,7 +118,12 @@ export function ProjectDetail() {
         if (automaticRepairActions.has(action)) {
             setBusy('提交自动视频返修'); setError('');
             try {
-                await projectApi.runAutoRepairQueue(Number(id), {max_actions: 5, action});
+                const result = await projectApi.runAutoRepairQueue(Number(id), {max_actions: 5, action});
+                if (result.status === 'no_auto_actions') {
+                    setError('当前项目没有匹配该动作的可执行分镜返修；请先完成项目级视频审核或选择具体分镜。');
+                } else if (result.status === 'manual_review_required') {
+                    setError('该动作已达到自动返修预算上限，请先完成人工审核后再继续。');
+                }
                 await reload();
             } catch(e) { setError(errorText(e)); }
             finally { setBusy(''); }
