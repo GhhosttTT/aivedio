@@ -338,7 +338,13 @@ def compose_final_video_task(
         if subtitle_paths:
             # 合并所有字幕文件
             merged_subtitle_path = final_video_path.replace(".mp4", ".srt")
-            _merge_subtitles(subtitle_paths, merged_subtitle_path, scenes, video_composer)
+            _merge_subtitles(
+                subtitle_paths,
+                merged_subtitle_path,
+                scenes,
+                video_composer,
+                editing_plan=editing_plan,
+            )
             
             # 烧录字幕到视频
             subtitle_generator.burn_subtitle(
@@ -433,7 +439,13 @@ def compose_final_video_task(
             db.close()
 
 
-def _merge_subtitles(subtitle_paths: list, output_path: str, scenes: list, video_composer=None) -> None:
+def _merge_subtitles(
+    subtitle_paths: list,
+    output_path: str,
+    scenes: list,
+    video_composer=None,
+    editing_plan: list[dict] | None = None,
+) -> None:
     """
     合并多个字幕文件
     
@@ -451,7 +463,7 @@ def _merge_subtitles(subtitle_paths: list, output_path: str, scenes: list, video
     fallback_subtitle_paths = iter(subtitle_paths or [])
     use_scene_subtitle_paths = any(_scene_subtitle_path(scene) for scene in scenes)
 
-    for scene in scenes:
+    for scene_index, scene in enumerate(scenes):
         subtitle_path = _scene_subtitle_path(scene)
         if not subtitle_path and not use_scene_subtitle_paths:
             subtitle_path = next(fallback_subtitle_paths, None)
@@ -491,6 +503,18 @@ def _merge_subtitles(subtitle_paths: list, output_path: str, scenes: list, video
                 subtitle_index += 1
 
         current_time_offset += _scene_composition_duration(scene, video_composer)
+        # The compositor overlaps the next scene by the transition duration.
+        # Keep subtitle cues on the rendered timeline instead of accumulating
+        # the pre-transition source durations and drifting after every cut.
+        next_plan = (editing_plan or [])[scene_index + 1] if scene_index + 1 < len(editing_plan or []) else None
+        transition = next_plan.get("transition", {}) if isinstance(next_plan, dict) else {}
+        if transition.get("video") == "crossfade":
+            try:
+                overlap = float(transition.get("duration_seconds", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                overlap = 0.0
+            if math.isfinite(overlap) and overlap > 0:
+                current_time_offset = max(0.0, round(current_time_offset - overlap, 3))
     
     # 写入合并后的字幕文件
     with open(output_path, "w", encoding="utf-8") as f:
@@ -1379,9 +1403,9 @@ def _format_srt_time(seconds: float) -> str:
     Returns:
         str: SRT 时间字符串（HH:MM:SS,mmm）
     """
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    milliseconds = int((seconds % 1) * 1000)
+    total_milliseconds = max(0, int(round(float(seconds) * 1000)))
+    hours, remainder = divmod(total_milliseconds, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    secs, milliseconds = divmod(remainder, 1_000)
     
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"

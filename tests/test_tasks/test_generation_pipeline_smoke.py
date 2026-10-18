@@ -441,6 +441,40 @@ def test_merge_subtitles_falls_back_to_audio_duration_when_video_probe_fails(tmp
     assert "00:00:02,500 --> 00:00:03,500" in content
 
 
+def test_merge_subtitles_accounts_for_crossfade_overlap(tmp_path):
+    first_subtitle = tmp_path / "scene_001.srt"
+    first_subtitle.write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\n先等等\n",
+        encoding="utf-8",
+    )
+    second_subtitle = tmp_path / "scene_002.srt"
+    second_subtitle.write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\n现在走\n",
+        encoding="utf-8",
+    )
+    scenes = [
+        Mock(scene_number=1, subtitle_path=str(first_subtitle), video_path="scene_001.mp4", audio_duration=1.0),
+        Mock(scene_number=2, subtitle_path=str(second_subtitle), video_path="scene_002.mp4", audio_duration=1.0),
+    ]
+    service = Mock()
+    service._get_duration.side_effect = lambda _path: 2.0
+
+    output = tmp_path / "merged.srt"
+    composition_tasks._merge_subtitles(
+        [str(first_subtitle), str(second_subtitle)],
+        str(output),
+        scenes,
+        service,
+        editing_plan=[
+            {"scene_number": 1, "transition": {"video": "none", "duration_seconds": 0.0}},
+            {"scene_number": 2, "transition": {"video": "crossfade", "duration_seconds": 0.12}},
+        ],
+    )
+
+    content = output.read_text(encoding="utf-8")
+    assert "00:00:01,880 --> 00:00:02,880" in content
+
+
 def test_composition_blocks_audio_video_duration_mismatch():
     service = Mock()
     service._get_duration.side_effect = [4.0, 1.0]
