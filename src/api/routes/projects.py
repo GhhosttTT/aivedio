@@ -1590,6 +1590,7 @@ async def promote_seedance_drafts(
     expired = []
     missing = []
     for scene in sorted(project.scenes, key=lambda item: item.scene_number):
+        scene_video_path = Path(scene.video_path) if scene.video_path else None
         provider_path = Path(scene.video_path).with_suffix(".provider.json") if scene.video_path else None
         data = None
         if provider_path and provider_path.is_file():
@@ -1600,6 +1601,14 @@ async def promote_seedance_drafts(
         task_id = data.get("provider_task_id") if isinstance(data, dict) else None
         is_draft = bool(data.get("requested_draft")) if isinstance(data, dict) else False
         if isinstance(task_id, str) and task_id.strip() and is_draft:
+            current_video_hash = (
+                file_hash(scene_video_path)
+                if scene_video_path and scene_video_path.is_file()
+                else None
+            )
+            if not current_video_hash or data.get("video_sha256") != current_video_hash:
+                missing.append(scene.scene_number)
+                continue
             if isinstance(data, dict) and _draft_expired(
                 data.get("provider_created_at"), data.get("provider_expires_at")
             ):

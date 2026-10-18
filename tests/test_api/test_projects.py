@@ -16,6 +16,16 @@ from src.api.dependencies import get_current_user, require_project_access
 from src.database.session import get_db_session
 from src.database.models import Project, Character, Scene, User, TaskStatus, ProjectStatus
 from src.api.routes.projects import ProductionOptions, _normalized_production_options
+from src.services.generation_review import file_hash
+
+
+def _write_draft_evidence(scene, payload: dict) -> None:
+    video_path = Path(scene.video_path)
+    video_path.write_bytes(b"draft-video")
+    Path(scene.video_path).with_suffix(".provider.json").write_text(
+        json.dumps({**payload, "video_sha256": file_hash(video_path)}),
+        encoding="utf-8",
+    )
 
 
 @pytest.fixture
@@ -500,15 +510,14 @@ def test_promote_drafts_reuses_requested_model(client, tmp_path):
     scene.scene_number = 1
     scene.video_path = str(tmp_path / "scene-01.mp4")
     project.scenes = [scene]
-    provider_path = tmp_path / "scene-01.provider.json"
-    provider_path.write_text(json.dumps({
+    _write_draft_evidence(scene, {
         "provider_task_id": "draft-task-1",
         "requested_draft": True,
         "requested_model": "doubao-seedance-2-5-260628",
         "requested_output_format": "mov",
         "requested_watermark": False,
         "requested_return_last_frame": True,
-    }), encoding="utf-8")
+    })
 
     task_record = Mock()
     task_record.celery_task_id = "promote-task"
@@ -534,6 +543,34 @@ def test_promote_drafts_reuses_requested_model(client, tmp_path):
     assert kwargs["output_format"] == "mov"
     assert kwargs["watermark"] is False
     assert kwargs["return_last_frame"] is True
+
+
+def test_promote_drafts_rejects_stale_provider_evidence(client, tmp_path):
+    project = Mock(spec=Project)
+    project.id = 1
+    project.status = ProjectStatus.SCRIPT_GENERATED
+    project.final_video_path = None
+    scene = Mock(spec=Scene)
+    scene.id = 11
+    scene.scene_number = 1
+    scene.video_path = str(tmp_path / "scene-01.mp4")
+    Path(scene.video_path).write_bytes(b"new-video")
+    Path(scene.video_path).with_suffix(".provider.json").write_text(json.dumps({
+        "provider_task_id": "old-draft",
+        "requested_draft": True,
+        "video_sha256": "stale-hash",
+    }), encoding="utf-8")
+    project.scenes = [scene]
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = project
+
+    with patch("src.api.routes.projects.TaskOrchestrator") as mock_orchestrator:
+        client.app.dependency_overrides[get_db_session] = lambda: db
+        response = client.post("/api/projects/1/promote-drafts")
+
+    assert response.status_code == 400
+    assert "没有可提升的 Draft" in response.json()["detail"]
+    mock_orchestrator.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -572,12 +609,12 @@ def test_promote_drafts_rejects_expired_draft(client, tmp_path):
     scene.id = 1
     scene.scene_number = 1
     scene.video_path = str(tmp_path / "scene-01.mp4")
-    Path(scene.video_path).with_suffix(".provider.json").write_text(json.dumps({
+    _write_draft_evidence(scene, {
         "provider_task_id": "expired-draft",
         "requested_draft": True,
         "requested_model": "doubao-seedance-2-5-260628",
         "provider_created_at": "2026-10-01T00:00:00Z",
-    }), encoding="utf-8")
+    })
     project.scenes = [scene]
     db = Mock()
     db.query.return_value.filter.return_value.first.return_value = project
@@ -600,13 +637,13 @@ def test_promote_drafts_rejects_provider_declared_expiry(client, tmp_path):
     scene.id = 1
     scene.scene_number = 1
     scene.video_path = str(tmp_path / "scene-01.mp4")
-    Path(scene.video_path).with_suffix(".provider.json").write_text(json.dumps({
+    _write_draft_evidence(scene, {
         "provider_task_id": "declared-expired-draft",
         "requested_draft": True,
         "requested_model": "doubao-seedance-2-5-260628",
         "provider_created_at": "2026-10-17T00:00:00Z",
         "provider_expires_at": "2026-10-17T12:00:00Z",
-    }), encoding="utf-8")
+    })
     project.scenes = [scene]
     db = Mock()
     db.query.return_value.filter.return_value.first.return_value = project
@@ -629,14 +666,14 @@ def test_promote_drafts_rejects_mixed_output_controls(client, tmp_path):
         scene.id = index
         scene.scene_number = index
         scene.video_path = str(tmp_path / f"scene-{index:02d}.mp4")
-        Path(scene.video_path).with_suffix(".provider.json").write_text(json.dumps({
+        _write_draft_evidence(scene, {
             "provider_task_id": f"draft-task-{index}",
             "requested_draft": True,
             "requested_model": "doubao-seedance-2-5-260628",
             "requested_output_format": output_format,
             "requested_watermark": watermark,
             "requested_return_last_frame": return_last_frame,
-        }), encoding="utf-8")
+        })
         project.scenes.append(scene)
     db = Mock()
     db.query.return_value.filter.return_value.first.return_value = project
@@ -659,11 +696,11 @@ def test_promote_drafts_rejects_mixed_models(client, tmp_path):
         scene.id = index
         scene.scene_number = index
         scene.video_path = str(tmp_path / f"scene-{index:02d}.mp4")
-        Path(scene.video_path).with_suffix(".provider.json").write_text(json.dumps({
+        _write_draft_evidence(scene, {
             "provider_task_id": f"draft-task-{index}",
             "requested_draft": True,
             "requested_model": model,
-        }), encoding="utf-8")
+        })
         project.scenes.append(scene)
     db = Mock()
     db.query.return_value.filter.return_value.first.return_value = project
