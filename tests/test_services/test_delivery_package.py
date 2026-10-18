@@ -22,7 +22,11 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
     exports = tmp_path / "exports"
     exports.mkdir()
     (exports / "douyin.mp4").write_bytes(b"platform-video")
-    (exports / "douyin.json").write_text(json.dumps({"status": "ready", "preset": "douyin"}), encoding="utf-8")
+    (exports / "douyin.json").write_text(json.dumps({
+        "status": "ready",
+        "preset": "douyin",
+        "output_sha256": _sha256(exports / "douyin.mp4"),
+    }), encoding="utf-8")
     (tmp_path / "topic_brief.json").write_text(json.dumps({"platform": "抖音", "genre": "都市悬疑"}), encoding="utf-8")
     project = SimpleNamespace(id=7, name="Pilot", theme="都市悬疑", outline="outline", script='{"scenes": []}', final_video_path=str(final), scenes=[])
 
@@ -224,6 +228,27 @@ def test_delivery_package_verification_rejects_inconsistent_review_index(tmp_pat
     verification = verify_delivery_package(tampered)
     assert verification["status"] == "failed"
     assert any("unmanifested file" in error for error in verification["errors"])
+
+
+def test_delivery_package_rejects_stale_platform_export_manifest(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    exports = tmp_path / "exports"
+    exports.mkdir()
+    export = exports / "douyin.mp4"
+    export.write_bytes(b"platform-video")
+    (exports / "douyin.json").write_text(json.dumps({
+        "status": "ready", "preset": "douyin", "output_sha256": "0" * 64,
+    }), encoding="utf-8")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+
+    with pytest.raises(DeliveryPackageError, match="manifest is stale"):
+        build_delivery_package(
+            project,
+            tmp_path,
+            {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)},
+            {"status": "ready"},
+        )
 
 
 def test_delivery_package_includes_scene_assets_and_quality_sidecars(tmp_path):

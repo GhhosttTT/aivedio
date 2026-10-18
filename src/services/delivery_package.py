@@ -186,6 +186,19 @@ def _collect_files(project, project_root: Path, reports: dict) -> list[tuple[Pat
     export_root = project_root / "exports"
     for export_path in sorted(export_root.iterdir()) if export_root.is_dir() else []:
         if export_path.is_file() and export_path.suffix.lower() in {".mp4", ".mov", ".json"}:
+            if export_path.suffix.lower() in {".mp4", ".mov"}:
+                export_manifest_path = export_root / f"{export_path.stem}.json"
+                try:
+                    export_manifest = json.loads(export_manifest_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError) as exc:
+                    raise DeliveryPackageError(
+                        f"Platform export manifest is missing or invalid: {export_manifest_path}"
+                    ) from exc
+                expected_hash = export_manifest.get("output_sha256")
+                if not isinstance(expected_hash, str) or expected_hash.lower() != _sha256(export_path):
+                    raise DeliveryPackageError(
+                        f"Platform export manifest is stale for {export_path.name}"
+                    )
             candidates.append((export_path, f"exports/{export_path.name}"))
 
     scene_subtitles = [
