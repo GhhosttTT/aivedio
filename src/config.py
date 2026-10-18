@@ -124,6 +124,7 @@ class Settings(BaseSettings):
     GENERATION_VIDEO_MAX_STATIC_RUN_SECONDS: float = 1.8
     GENERATION_VIDEO_MAX_BLACK_SECONDS: float = 0.2
     GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO: float = 0.05
+    GENERATION_VIDEO_MIN_COMPARISON_SAMPLES: int = 4
     # Mobile short-drama output should fill the target canvas; ``contain`` is
     # available for workflows that explicitly prefer letterboxing.
     GENERATION_VIDEO_FRAME_FIT_MODE: str = "cover"

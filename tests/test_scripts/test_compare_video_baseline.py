@@ -113,6 +113,22 @@ def test_compare_video_baseline_blocks_static_candidate(tmp_path):
     assert report["gates"]["motion_not_static"] is False
 
 
+def test_compare_video_baseline_requires_temporal_sample_evidence(monkeypatch, tmp_path):
+    def fake_stats(path, max_samples):
+        return VideoStats(
+            path=str(path), duration_seconds=2.0, width=160, height=90, fps=24,
+            sampled_frames=3, motion_energy=8, sharpness=30, brightness=90,
+            brightness_variance=40,
+        )
+
+    monkeypatch.setattr("scripts.compare_video_baseline.video_stats", fake_stats)
+
+    report = compare(tmp_path / "candidate.mp4", tmp_path / "baseline.mp4", max_samples=3)
+
+    assert report["status"] == "needs_review"
+    assert report["gates"]["sufficient_temporal_samples"] is False
+
+
 @requires_ffprobe
 def test_compare_video_baseline_blocks_aspect_ratio_mismatch(tmp_path):
     baseline = tmp_path / "seed_dance_vertical.mp4"
