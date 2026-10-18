@@ -58,6 +58,12 @@ The same contract can also target a production HTTP video gateway. Set
 - `audio`: optional audio reference, `generate_audio`, `multi_shot`, and `shot_plan`
 - `duration_seconds`, `aspect_ratio`, `width`, `height`, `fps`, `seed`
 
+For production workflow parity, the `shot_plan` also carries the frozen spatial
+contract. A local workflow can consume `{spatial_plan_json}`,
+`{spatial_control_references_json}`, and `{spatial_asset_pack_json}` (or
+`{spatial_scene_contract_hash}`). Production preflight requires these spatial
+inputs; a workflow that only records them as metadata is intentionally blocked.
+
 The gateway may return `video_url` or `video_base64` immediately. For async
 providers, it may return `job_id`; then set `HTTP_VIDEO_STATUS_ENDPOINT` with a
 `{job_id}` placeholder and return `video_url` or `video_base64` from the status

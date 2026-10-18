@@ -148,7 +148,9 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 同一个视频子项门槛也用于视频 `platform_reference_scores`。VLM 需要返回 `seed_dance_gap`、`premium_casting`、`mobile_frame_value`、`production_design` 和 `viewer_scroll_stop_appeal`，系统会把它写入视频 `platform_reference_gate`；单镜头候选、最终归一化视频和整片合成审核都会要求该门槛通过，避免“基础分合格但明显不像高质短剧平台成片”的视频进入发布链路。
 当这些平台参考项失败并进入 `refine_video_commercial_aesthetic` 返修时，系统会提高视频候选数和精修轮数，并把 Seed Dance 差距、首秒停留、演员质感、手机画面价值、制作设计写入下一轮视频生成与 workflow 能力提示。
 
-若配置 `COMFYUI_VIDEO_WORKFLOW_PATH`，视频阶段会改用本地 ComfyUI 图生视频 API workflow，适合接入 Wan、AnimateDiff、VideoHelperSuite 或其他本地视频节点。工作流 JSON 可使用 `{prompt}`、`{negative_prompt}`、`{reference_image}`、`{width}`、`{height}`、`{duration_seconds}`、`{fps}`、`{seed}`、`{output_prefix}`、`{motion_bucket_id}`、`{noise_aug_strength}` 占位符；执行时系统会上传当前关键帧并替换这些值。低分精修轮会把 motion/noise 下调，因此工作流应把这两个占位符接到对应的视频采样节点。留空时继续使用内置 SVD 服务。
+若配置 `COMFYUI_VIDEO_WORKFLOW_PATH`，视频阶段会改用本地 ComfyUI 图生视频 API workflow，适合接入 Wan、AnimateDiff、VideoHelperSuite 或其他本地视频节点。工作流 JSON 可使用 `{prompt}`、`{negative_prompt}`、`{reference_image}`、`{width}`、`{height}`、`{duration_seconds}`、`{fps}`、`{seed}`、`{output_prefix}`、`{motion_bucket_id}`、`{noise_aug_strength}` 占位符；执行时系统会上传当前关键帧并替换这些值。低分精修轮会把 motion/noise 下调，因此工作流应把这两个占位符接到对应的视频采样节点。
+
+生产级视频 workflow 还必须真实消费空间合同：`{spatial_plan_json}`（景别、机位、轴线、人物站位）、`{spatial_control_references_json}`（pose/depth/camera 控制提示）以及 `{spatial_asset_pack_json}` 或 `{spatial_scene_contract_hash}`（冻结包绑定）。这些值应连接到实际的控制节点、条件节点或 prompt 编译节点；仅把它们写入无效的 metadata 不会通过生产 profile/preflight。系统会把同一合同写入 provider request、生成证据和交付 manifest。留空时继续使用内置 SVD 服务，但生产 readiness 会阻断该路径，避免把草稿 fallback 当成 Seedance 级成片。
 
 ## 5. 审核与抽帧评分
 
