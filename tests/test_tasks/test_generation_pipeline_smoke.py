@@ -961,6 +961,22 @@ def test_scene_image_quality_report_must_match_current_image(tmp_path):
     assert composition_tasks._read_scene_image_quality_report(scene) is None
 
 
+def test_episode_style_gate_blocks_non_passed_image_quality_report(tmp_path):
+    image = tmp_path / "scene_001.png"
+    image.write_bytes(b"current image")
+    image.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "needs_review",
+        "image_sha256": composition_tasks.file_hash(image),
+    }), encoding="utf-8")
+    scene = Mock(scene_number=1, image_path=str(image))
+
+    report = composition_tasks._episode_style_consistency_gate([scene])
+
+    assert report["status"] == "needs_review"
+    assert report["missing_reports"] == [1]
+    assert report["low"]["scene_1_missing_style_report"]["score"] == 0.0
+
+
 def test_final_composed_video_review_blocks_platform_reference_gap(tmp_path, monkeypatch):
     final_video = tmp_path / "final.mp4"
     final_video.write_bytes(b"final video")

@@ -1158,6 +1158,9 @@ def _episode_style_consistency_gate(scenes: list[Scene]) -> dict | None:
             if _scene_image_path(scene) is not None:
                 missing_reports.append(getattr(scene, "scene_number", None))
             continue
+        if report.get("status") != "passed":
+            missing_reports.append(getattr(scene, "scene_number", None))
+            continue
         candidate = _selected_image_candidate(report)
         gate = candidate.get("platform_aesthetic_gate") if isinstance(candidate.get("platform_aesthetic_gate"), dict) else {}
         scores = gate.get("scores") if isinstance(gate.get("scores"), dict) else {}
@@ -1194,9 +1197,26 @@ def _episode_style_consistency_gate(scenes: list[Scene]) -> dict | None:
                     "dimension": feature,
                 }
     for scene_number in missing_reports:
+        report_status = None
+        if scene_number is not None:
+            scene = next(
+                (item for item in scenes if getattr(item, "scene_number", None) == scene_number),
+                None,
+            )
+            report = _read_scene_image_quality_report(scene) if scene is not None else None
+            report_status = report.get("status") if isinstance(report, dict) else None
         low[f"scene_{scene_number}_missing_style_report"] = {
             "score": 0.0,
-            "evidence": f"style drift cannot be ruled out because scene {scene_number} has no image quality report",
+            "evidence": (
+                (
+                    f"style drift cannot be ruled out because scene {scene_number} has no image quality report"
+                    if report_status is None
+                    else (
+                        f"scene {scene_number} image quality report status={report_status}; "
+                        "style consistency cannot be accepted"
+                    )
+                )
+            ),
             "scene_number": scene_number,
             "dimension": "style_consistency",
         }
