@@ -555,6 +555,18 @@ def _require_passed_scene_audio(scenes: list[Scene]) -> None:
         if report.get("dialogue_fingerprint") != _dialogue_fingerprint(scene.dialogue):
             failed.append(f"{scene.scene_number}: audio quality report is stale for current dialogue")
             continue
+        reported_speaker = report.get("speaker")
+        expected_speaker = getattr(scene, "character_name", None)
+        expected_speaker = (
+            str(expected_speaker).strip()
+            if isinstance(expected_speaker, str) and expected_speaker.strip()
+            else "default"
+        )
+        if reported_speaker is not None and str(reported_speaker).strip() != expected_speaker:
+            failed.append(
+                f"{scene.scene_number}: audio voice binding is {reported_speaker!r}, expected {expected_speaker!r}"
+            )
+            continue
         gate = report.get("dialogue_audio_quality_gate")
         if isinstance(gate, dict) and gate.get("status") != "passed":
             failed.append(f"{scene.scene_number}: dialogue audio quality gate failed")

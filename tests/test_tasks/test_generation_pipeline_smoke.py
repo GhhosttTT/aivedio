@@ -138,6 +138,22 @@ def test_composition_accepts_passed_audio_quality_report_for_dialogue(tmp_path):
     composition_tasks._require_passed_scene_audio([scene])
 
 
+def test_composition_rejects_audio_bound_to_the_wrong_character(tmp_path):
+    audio = tmp_path / "scene_001.mp3"
+    audio.write_bytes(b"fake audio")
+    audio.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "passed",
+        "audio_path": str(audio),
+        "dialogue_fingerprint": composition_tasks._dialogue_fingerprint("你为什么骗我"),
+        "speaker": "villain",
+        "dialogue_audio_quality_gate": {"status": "passed", "low": {}, "missing": []},
+    }), encoding="utf-8")
+    scene = Mock(scene_number=1, dialogue="你为什么骗我", character_name="hero", audio_path=str(audio))
+
+    with pytest.raises(ValueError, match="voice binding"):
+        composition_tasks._require_passed_scene_audio([scene])
+
+
 def test_composition_skips_audio_quality_for_no_dialogue_scene():
     scene = Mock(scene_number=1, dialogue="无对白", audio_path=None)
 

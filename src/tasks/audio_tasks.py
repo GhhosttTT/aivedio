@@ -81,6 +81,7 @@ def dialogue_audio_quality_report(
     duration: float | None,
     audio_path: str | None,
     profile: dict[str, object],
+    speaker: str | None = None,
 ) -> dict[str, object]:
     low: dict[str, dict[str, object]] = {}
     missing: list[str] = []
@@ -126,6 +127,11 @@ def dialogue_audio_quality_report(
             " ".join((text or "").split()).encode("utf-8")
         ).hexdigest(),
         "duration": duration or 0.0,
+        "speaker": str(speaker or "default").strip() or "default",
+        "voice_identity": {
+            "speaker": str(speaker or "default").strip() or "default",
+            "binding": "scene_character_name",
+        },
         "audio_profile": profile,
         "dialogue_audio_quality_gate": gate,
     }
@@ -196,7 +202,7 @@ def generate_audio_task(
         scene.audio_path = result_path
         scene.audio_duration = duration
         scene.subtitle_path = None
-        report = dialogue_audio_quality_report(scene, text, duration, result_path, profile)
+        report = dialogue_audio_quality_report(scene, text, duration, result_path, profile, speaker=speaker)
         Path(result_path).with_suffix(".quality.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2),
             encoding="utf-8",

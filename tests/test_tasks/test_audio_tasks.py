@@ -31,12 +31,15 @@ def test_dialogue_audio_quality_report_creates_audio_repair_queue_for_bad_pacing
         duration=1.0,
         audio_path=str(audio),
         profile={"emotion": "neutral", "speed": 1.0, "source": "tts"},
+        speaker="hero",
     )
 
     assert report["status"] == "needs_review"
     assert report["dialogue_audio_quality_gate"]["low"]["speech_pacing"]["score"] == 2
     assert report["repair_queue"][0]["action"] == "refine_dialogue_audio_delivery"
     assert report["repair_queue"][0]["execution"] == "auto"
+    assert report["speaker"] == "hero"
+    assert report["voice_identity"]["binding"] == "scene_character_name"
 
 
 def test_dialogue_audio_quality_report_requires_existing_audio_file():
