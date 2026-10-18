@@ -220,6 +220,22 @@ function OutputContractEvidence({report}: {report: any}) {
     </div>;
 }
 
+function ReferenceAssetEvidence({report}: {report: any}) {
+    const metadata = report?.selected_provider_metadata || report?.provider_metadata || report?.final_video_review?.provider_metadata;
+    const assets = metadata?.request_contract?.reference_assets;
+    if (!Array.isArray(assets) || !assets.length) return null;
+    return <div className="wb-summary-actions" aria-label="参考资产绑定证据">
+        <h4>参考资产绑定</h4>
+        <p className="wb-muted">已记录实际发送给视频模型的参考素材及内容指纹。</p>
+        <div className="wb-grid compact">
+            {assets.map((asset: any, index: number) => <div className="wb-kv" key={`${asset.role || 'asset'}-${asset.index || index}`}>
+                <span>{asset.role || 'reference'}{asset.index ? ` #${asset.index}` : ''}</span>
+                <strong>{asset.kind || 'unknown'}{asset.sha256 ? ` · ${String(asset.sha256).slice(0, 12)}` : ''}</strong>
+            </div>)}
+        </div>
+    </div>;
+}
+
 function GenerationRunEvidence({report}: {report: any}) {
     const evidence = report?.generation_run_evidence || report?.final_video_review?.generation_run_evidence;
     const attempts = evidence?.attempts;
@@ -503,6 +519,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             </div>
             {report.error && <p className="wb-alert">{String(report.error)}</p>}
             <ProviderTrace report={report}/>
+            <ReferenceAssetEvidence report={report}/>
             <OutputContractEvidence report={report}/>
             <GenerationRunEvidence report={report}/>
             <FinalCompositionEvidence projectId={projectId} report={report}/>
