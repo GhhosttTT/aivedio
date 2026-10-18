@@ -257,6 +257,7 @@ export const taskApi = {
         provider_progress?: number;
         provider_stage?: string;
         provider_state?: string;
+        production_options?: ProductionTask['production_options'];
     }> => {
         return apiClient.get(`/tasks/${taskId}/status`);
     },
