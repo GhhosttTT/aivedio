@@ -118,6 +118,29 @@ class TestSubtitleGenerator:
         lines = service._split_text(text)
         
         assert len(lines) <= service.max_lines
+
+    def test_split_dialogue_timeline_uses_punctuation_and_preserves_duration(self, service):
+        """测试：对白按标点切 cue，且时间轴完整覆盖音频。"""
+        segments = service.split_dialogue_timeline(
+            "别走！我还有话要说。",
+            start_time=1.25,
+            duration=4.0,
+        )
+
+        assert [segment["text"] for segment in segments] == ["别走！", "我还有话要说。"]
+        assert segments[0]["start_time"] == 1.25
+        assert segments[-1]["start_time"] + segments[-1]["duration"] == 5.25
+        for previous, current in zip(segments, segments[1:]):
+            assert previous["start_time"] + previous["duration"] <= current["start_time"]
+
+    def test_split_dialogue_timeline_bounds_long_unpunctuated_text(self):
+        """测试：无标点长对白仍被限制在可读的最大 cue 长度内。"""
+        service = SubtitleGenerator(max_chars_per_line=5, max_lines=2)
+        segments = service.split_dialogue_timeline("这是一段没有标点但很长的对白" * 3, 0.0, 6.0)
+
+        assert len(segments) > 1
+        assert all(len(segment["text"]) <= 10 for segment in segments)
+        assert sum(segment["duration"] for segment in segments) == 6.0
     
     def test_format_time(self, service):
         """测试：时间格式化"""

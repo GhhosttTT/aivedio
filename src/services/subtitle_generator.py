@@ -5,6 +5,7 @@
 """
 
 import os
+import re
 import subprocess
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
@@ -60,6 +61,68 @@ class SubtitleGenerator:
         self.bold = bold
         
         logger.info("字幕生成服务初始化完成")
+
+    def split_dialogue_timeline(
+        self,
+        text: str,
+        start_time: float,
+        duration: float,
+    ) -> List[Dict[str, object]]:
+        """按标点和可读长度把一条对白拆成连续字幕 cue。
+
+        字幕不应把长对白压成一个覆盖整段音频的文本块。这里先按中文、英文
+        标点切分，再按屏幕可容纳的最大字符数兜底拆分，并按文本长度分配时间。
+        这样既保留对白节奏，又保证所有 cue 精确覆盖原音频区间。
+        """
+        normalized = re.sub(r"\s+", " ", str(text or "")).strip()
+        if not normalized:
+            return []
+
+        total_duration = max(float(duration), 0.001)
+        cursor = float(start_time)
+        max_chars = max(1, self.max_chars_per_line * self.max_lines)
+        punctuation = set("，。！？；：,.!?;:、")
+
+        chunks: List[str] = []
+        current = ""
+        for char in normalized:
+            current += char
+            if char in punctuation:
+                chunks.append(current.strip())
+                current = ""
+        if current.strip():
+            chunks.append(current.strip())
+
+        # 标点不足以切开超长片段时，按最大可读字符数继续拆分。
+        bounded_chunks: List[str] = []
+        for chunk in chunks or [normalized]:
+            while len(chunk) > max_chars:
+                bounded_chunks.append(chunk[:max_chars].strip())
+                chunk = chunk[max_chars:]
+            if chunk:
+                bounded_chunks.append(chunk)
+
+        weights = [max(1, len(re.sub(r"\s+", "", chunk))) for chunk in bounded_chunks]
+        total_weight = sum(weights)
+        segments: List[Dict[str, object]] = []
+        allocated_duration = 0.0
+        for index, (chunk, weight) in enumerate(zip(bounded_chunks, weights)):
+            if index == len(bounded_chunks) - 1:
+                end_time = float(start_time) + total_duration
+            else:
+                end_time = cursor + total_duration * weight / total_weight
+            cue_duration = round(max(end_time - cursor, 0.001), 3)
+            if index == len(bounded_chunks) - 1:
+                cue_duration = round(total_duration - allocated_duration, 3)
+            segments.append({
+                "text": chunk,
+                "start_time": round(cursor, 3),
+                "duration": cue_duration,
+            })
+            allocated_duration += cue_duration
+            cursor = end_time
+
+        return segments
     
     def generate_srt(
         self,

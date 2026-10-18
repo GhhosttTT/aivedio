@@ -72,14 +72,13 @@ def generate_subtitle_task(
         self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "生成 SRT"})
         
         duration = subtitle_generator._get_audio_duration(scene.audio_path) or 2.0
+        dialogue_segments = subtitle_generator.split_dialogue_timeline(
+            scene.dialogue,
+            start_time=0.0,
+            duration=duration,
+        )
         result_path = subtitle_generator.generate_srt(
-            dialogues=[
-                {
-                    "text": scene.dialogue,
-                    "start_time": 0.0,
-                    "duration": duration,
-                }
-            ],
+            dialogues=dialogue_segments,
             output_path=subtitle_path,
         )
         subtitle_content = Path(result_path).read_text(encoding="utf-8")
@@ -89,6 +88,9 @@ def generate_subtitle_task(
             "scene": {"scene_number": scene.scene_number},
             "subtitle_path": result_path,
             "expected_text": scene.dialogue,
+            "cue_strategy": "punctuation_timed",
+            "source_duration_seconds": duration,
+            "generated_cue_count": len(dialogue_segments),
         })
         Path(result_path).with_suffix(".quality.json").write_text(
             json.dumps(quality_report, ensure_ascii=False, indent=2),
