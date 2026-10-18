@@ -5,10 +5,12 @@ export function ProductionReadinessPanel({
     report,
     loading,
     onRefresh,
+    onRepairAction,
 }: {
     report: ProductionReadinessReport | null;
     loading: boolean;
     onRefresh: () => void;
+    onRepairAction?: (action: string) => void;
 }) {
     const status = report?.status || 'loading';
     const blocked = status === 'blocked';
@@ -181,6 +183,15 @@ export function ProductionReadinessPanel({
                         <div className="wb-issue blocker" key={item.action}>
                             <span>{labelScorecardAction(item.action)}</span>
                             <p>{item.recommendation} · {item.reason}</p>
+                            {isExecutableRepairAction(item.action) && (
+                                <button
+                                    className="wb-button"
+                                    disabled={loading}
+                                    onClick={() => onRepairAction?.(item.action)}
+                                >
+                                    执行
+                                </button>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -228,4 +239,8 @@ function labelScorecardAction(action: string): string {
         fix_workflow_profile: '修复 Workflow Profile',
     };
     return labels[action] || action;
+}
+
+function isExecutableRepairAction(action: string): boolean {
+    return action === 'refreeze_spatial_plan' || action === 'fix_workflow_profile';
 }

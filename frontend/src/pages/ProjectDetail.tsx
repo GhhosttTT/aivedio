@@ -98,6 +98,21 @@ export function ProjectDetail() {
         } catch(e) { setError(errorText(e)); }
         finally { setBusy(''); }
     };
+    const executeReadinessAction = async (action: string) => {
+        if (locked) return;
+        if (action === 'refreeze_spatial_plan') {
+            await run('冻结空间计划');
+            return;
+        }
+        if (action === 'fix_workflow_profile') {
+            setBusy('冻结 Workflow Profile'); setError('');
+            try {
+                await projectApi.freezeWorkflowProfile({notes: assetNotes});
+                await reload();
+            } catch(e) { setError(errorText(e)); }
+            finally { setBusy(''); }
+        }
+    };
     const uploadBgm = async (file: File) => {
         setBusy('上传 BGM'); setError('');
         try {
@@ -328,7 +343,7 @@ export function ProjectDetail() {
         {error && <p role="alert" className="wb-alert">{error}</p>}
         {busy && <p role="status" className="wb-alert"><RefreshCw size={15} className="inline animate-spin"/> {busy}进行中</p>}
         <VideoEngineStatus/>
-        <ProductionReadinessPanel report={readiness} loading={readinessLoading} onRefresh={refreshReadiness}/>
+        <ProductionReadinessPanel report={readiness} loading={readinessLoading} onRefresh={refreshReadiness} onRepairAction={executeReadinessAction}/>
         <section className="wb-item" aria-label="连续性资产锁">
             <div className="wb-row wb-between">
                 <div>
