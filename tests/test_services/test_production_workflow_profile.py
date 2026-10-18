@@ -16,7 +16,11 @@ def write_production_workflows(tmp_path):
           "4": {"class_type": "ZoeDepthPreprocessor"},
           "5": {"class_type": "FaceDetailer"},
           "6": {"class_type": "ImageUpscaleWithModel"},
-          "7": {"class_type": "SaveImage"}
+          "7": {"class_type": "SaveImage", "inputs": {
+            "spatial_plan": "{spatial_plan_json}",
+            "spatial_references": "{spatial_control_references_json}",
+            "spatial_contract": "{spatial_asset_pack_json}"
+          }}
         }
         """,
         encoding="utf-8",

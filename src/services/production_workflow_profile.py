@@ -65,6 +65,11 @@ VIDEO_WORKFLOW_PLACEHOLDER_GROUPS = {
     "spatial_control_references": {"spatial_control_references_json"},
     "spatial_asset_contract": {"spatial_asset_pack_json", "spatial_scene_contract_hash"},
 }
+IMAGE_WORKFLOW_PLACEHOLDER_GROUPS = {
+    "spatial_plan": {"spatial_plan_json"},
+    "spatial_control_references": {"spatial_control_references_json"},
+    "spatial_asset_contract": {"spatial_asset_pack_json", "spatial_scene_contract_hash"},
+}
 
 
 class ProductionWorkflowProfileService:
@@ -101,6 +106,12 @@ class ProductionWorkflowProfileService:
                 "video workflow quality placeholders are missing: "
                 + ", ".join(video_contract["missing_groups"])
             )
+        image_contract = self._image_workflow_contract(workflow_paths.get("image", ""))
+        if image_contract["missing_groups"]:
+            raise ValueError(
+                "image workflow spatial placeholders are missing: "
+                + ", ".join(image_contract["missing_groups"])
+            )
         manifest = {
             "version": 1,
             "status": "approved",
@@ -120,6 +131,11 @@ class ProductionWorkflowProfileService:
                 for name, values in VIDEO_WORKFLOW_PLACEHOLDER_GROUPS.items()
             },
             "video_workflow_contract": video_contract,
+            "required_image_workflow_placeholders": {
+                name: sorted(values)
+                for name, values in IMAGE_WORKFLOW_PLACEHOLDER_GROUPS.items()
+            },
+            "image_workflow_contract": image_contract,
             "capabilities": caps,
             "capability_evidence": detected_capabilities,
             "quality_gates": self._current_quality_gates(),
@@ -155,6 +171,12 @@ class ProductionWorkflowProfileService:
         }
         if profile.get("required_video_workflow_placeholders") != required_video_placeholders:
             stale.append("required_video_workflow_placeholders")
+        required_image_placeholders = {
+            name: sorted(values)
+            for name, values in IMAGE_WORKFLOW_PLACEHOLDER_GROUPS.items()
+        }
+        if profile.get("required_image_workflow_placeholders") != required_image_placeholders:
+            stale.append("required_image_workflow_placeholders")
         capabilities = profile.get("capabilities") if isinstance(profile.get("capabilities"), dict) else {}
         capability_evidence = profile.get("capability_evidence") if isinstance(profile.get("capability_evidence"), dict) else {}
         missing_capabilities = sorted(name for name in REQUIRED_CAPABILITIES if not capabilities.get(name))
@@ -187,6 +209,12 @@ class ProductionWorkflowProfileService:
             missing.append("video_workflow_quality_placeholders")
         if stored_video_contract and stored_video_contract != current_video_contract:
             stale.append("video_workflow_contract")
+        current_image_contract = self._image_workflow_contract(current_paths.get("image", ""))
+        stored_image_contract = profile.get("image_workflow_contract") if isinstance(profile.get("image_workflow_contract"), dict) else {}
+        if current_image_contract.get("missing_groups"):
+            missing.append("image_workflow_spatial_placeholders")
+        if stored_image_contract and stored_image_contract != current_image_contract:
+            stale.append("image_workflow_contract")
         for name, current_path in current_paths.items():
             if name in REQUIRED_WORKFLOWS and not current_path:
                 missing.append(f"{name}_workflow_path")
@@ -209,12 +237,14 @@ class ProductionWorkflowProfileService:
             "missing_capabilities": missing_capabilities,
             "quality_budget_issues": low_budget,
             "video_workflow_contract": current_video_contract,
+            "image_workflow_contract": current_image_contract,
             "minimum_quality_budget": {
                 **MIN_QUALITY_BUDGET,
                 "approved_quality_profiles": sorted(APPROVED_QUALITY_PROFILES),
                 "video_end_frame_enabled": True,
                 "required_image_pipeline_stages": REQUIRED_IMAGE_PIPELINE_STAGES,
                 "required_video_workflow_placeholders": required_video_placeholders,
+                "required_image_workflow_placeholders": required_image_placeholders,
             },
             "profile": profile,
         }
@@ -385,6 +415,19 @@ class ProductionWorkflowProfileService:
         group_status = {
             name: bool(values & placeholder_set)
             for name, values in VIDEO_WORKFLOW_PLACEHOLDER_GROUPS.items()
+        }
+        return {
+            "placeholders": placeholders,
+            "groups": group_status,
+            "missing_groups": sorted(name for name, present in group_status.items() if not present),
+        }
+
+    def _image_workflow_contract(self, workflow_path: str) -> dict:
+        placeholders = sorted(self._workflow_placeholders(workflow_path))
+        placeholder_set = set(placeholders)
+        group_status = {
+            name: bool(values & placeholder_set)
+            for name, values in IMAGE_WORKFLOW_PLACEHOLDER_GROUPS.items()
         }
         return {
             "placeholders": placeholders,

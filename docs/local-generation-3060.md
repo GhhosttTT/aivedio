@@ -151,6 +151,7 @@ python -m celery -A src.tasks.celery_app worker --pool=solo --concurrency=1 --lo
 若配置 `COMFYUI_VIDEO_WORKFLOW_PATH`，视频阶段会改用本地 ComfyUI 图生视频 API workflow，适合接入 Wan、AnimateDiff、VideoHelperSuite 或其他本地视频节点。工作流 JSON 可使用 `{prompt}`、`{negative_prompt}`、`{reference_image}`、`{width}`、`{height}`、`{duration_seconds}`、`{fps}`、`{seed}`、`{output_prefix}`、`{motion_bucket_id}`、`{noise_aug_strength}` 占位符；执行时系统会上传当前关键帧并替换这些值。低分精修轮会把 motion/noise 下调，因此工作流应把这两个占位符接到对应的视频采样节点。
 
 生产级视频 workflow 还必须真实消费空间合同：`{spatial_plan_json}`（景别、机位、轴线、人物站位）、`{spatial_control_references_json}`（pose/depth/camera 控制提示）以及 `{spatial_asset_pack_json}` 或 `{spatial_scene_contract_hash}`（冻结包绑定）。这些值应连接到实际的控制节点、条件节点或 prompt 编译节点；仅把它们写入无效的 metadata 不会通过生产 profile/preflight。系统会把同一合同写入 provider request、生成证据和交付 manifest。留空时继续使用内置 SVD 服务，但生产 readiness 会阻断该路径，避免把草稿 fallback 当成 Seedance 级成片。
+关键帧 image workflow 也必须声明并消费同一组 `{spatial_plan_json}`、`{spatial_control_references_json}` 和 `{spatial_asset_pack_json}`/`{spatial_scene_contract_hash}` 占位符。`POST /api/projects/workflow-profile/freeze` 会同时校验 image 与 video workflow；图片阶段如果只把空间合同写进报告而没有接到控制节点或 prompt 编译节点，profile 会拒绝冻结，避免首帧先于视频阶段发生构图漂移。
 
 ## 5. 审核与抽帧评分
 

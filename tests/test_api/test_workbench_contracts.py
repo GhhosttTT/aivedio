@@ -651,7 +651,9 @@ def test_workflow_profile_freeze_clears_readiness_workflow_profile_blocker(setup
         '{"1":{"class_type":"KSampler"},"2":{"class_type":"ControlNetApply"},'
         '"3":{"class_type":"OpenPosePreprocessor"},"4":{"class_type":"ZoeDepthPreprocessor"},'
         '"5":{"class_type":"FaceDetailer"},"6":{"class_type":"ImageUpscaleWithModel"},'
-        '"7":{"class_type":"SaveImage"}}',
+            '"7":{"class_type":"SaveImage","inputs":{"spatial_plan":"{spatial_plan_json}",'
+            '"spatial_references":"{spatial_control_references_json}",'
+            '"spatial_contract":"{spatial_asset_pack_json}"}}}',
         encoding="utf-8",
     )
     reference.write_text('{"1":{"class_type":"IPAdapterFaceID"},"2":{"class_type":"SaveImage"}}', encoding="utf-8")
