@@ -311,6 +311,7 @@ async def compare_seed_dance_baseline(
     report["candidate_video_path"] = str(candidate)
     report["baseline_video_path"] = str(baseline)
     report["candidate_signature"] = _video_version_signature(candidate)
+    report["baseline_signature"] = _video_version_signature(baseline)
     write_report(review_root / "seed_dance_baseline_comparison.json", report)
     return report
 
@@ -356,6 +357,7 @@ async def upload_seed_dance_baseline(
     report["baseline_video_path"] = str(baseline)
     report["uploaded_baseline_path"] = str(baseline)
     report["candidate_signature"] = _video_version_signature(candidate)
+    report["baseline_signature"] = _video_version_signature(baseline)
     write_report(review_root / "seed_dance_baseline_comparison.json", report)
     return report
 
@@ -410,9 +412,12 @@ async def get_generation_review(
             or getattr(project, "final_video_path", None)
             or ""
         )
+        baseline_path = Path(baseline_report.get("baseline_video_path") or "")
         if (
             not baseline_report.get("candidate_signature")
             or _video_version_signature(candidate_path) != baseline_report.get("candidate_signature")
+            or not baseline_report.get("baseline_signature")
+            or _video_version_signature(baseline_path) != baseline_report.get("baseline_signature")
         ):
             baseline_report["status"] = "stale"
     summary = _generation_review_summary(reports, repair_output=root)

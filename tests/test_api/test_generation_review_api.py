@@ -52,6 +52,8 @@ def test_review_api_marks_old_seedance_baseline_stale_after_candidate_changes(tm
         "status": "passed",
         "candidate_video_path": str(candidate),
         "candidate_signature": "old-version",
+        "baseline_video_path": str(project_root / "baseline.mp4"),
+        "baseline_signature": "old-baseline-version",
     })
     db = Mock()
     db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
@@ -201,6 +203,7 @@ def test_seed_dance_baseline_endpoint_writes_project_review(tmp_path, monkeypatc
     assert result["candidate_video_path"] == str(candidate)
     assert result["baseline_video_path"] == str(baseline)
     assert result["candidate_signature"]
+    assert result["baseline_signature"]
     assert result["contact_sheet_path"].endswith("seed_dance_contact_sheet.png")
     report = storage_manager.get_project_path(1) / "reviews" / "seed_dance_baseline_comparison.json"
     assert json.loads(report.read_text(encoding="utf-8"))["kind"] == "seed_dance_baseline_comparison"
@@ -237,6 +240,7 @@ def test_seed_dance_baseline_upload_writes_project_review(tmp_path, monkeypatch)
     assert result["candidate_video_path"] == str(candidate)
     assert result["baseline_video_path"] == str(saved_baseline)
     assert result["candidate_signature"]
+    assert result["baseline_signature"]
     assert result["contact_sheet_path"].endswith("seed_dance_contact_sheet.png")
     report = storage_manager.get_project_path(1) / "reviews" / "seed_dance_baseline_comparison.json"
     assert json.loads(report.read_text(encoding="utf-8"))["uploaded_baseline_path"] == str(saved_baseline)
