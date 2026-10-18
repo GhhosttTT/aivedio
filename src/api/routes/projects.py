@@ -764,6 +764,7 @@ async def create_platform_export(
             project.final_video_path,
             storage_manager.get_project_path(project_id),
             preset,
+            approval_report=review["reports"].get("final_composition"),
         )
     except PlatformExportError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

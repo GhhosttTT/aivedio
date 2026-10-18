@@ -1,8 +1,15 @@
+import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
-from src.services.platform_export import PlatformExportError, export_platform_video
+from src.services.platform_export import PlatformExportError, export_platform_video as _export_platform_video
+
+
+def export_platform_video(source, project_root, preset, **kwargs):
+    kwargs.setdefault("approval_report", _approved_report(Path(source)))
+    return _export_platform_video(source, project_root, preset, **kwargs)
 
 
 def test_platform_export_is_cached_and_has_contract(tmp_path, monkeypatch):
@@ -368,3 +375,42 @@ def test_platform_export_rejects_unknown_preset(tmp_path):
     source.write_bytes(b"source")
     with pytest.raises(PlatformExportError, match="Unknown"):
         export_platform_video(source, tmp_path, "unknown")
+def _approved_report(source, **updates):
+    report = {
+        "status": "passed",
+        "video_path": str(source),
+        "video_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "final_technical_metrics": {
+            "status": "available",
+            "temporal_sample_evidence": "sufficient",
+        },
+    }
+    report.update(updates)
+    return report
+
+
+def test_platform_export_requires_final_composition_approval(tmp_path):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source")
+
+    with pytest.raises(PlatformExportError, match="approval evidence"):
+        _export_platform_video(source, tmp_path, "douyin")
+
+
+def test_platform_export_rejects_stale_final_composition_approval(tmp_path):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source")
+    report = _approved_report(source)
+    source.write_bytes(b"changed")
+
+    with pytest.raises(PlatformExportError, match="stale"):
+        export_platform_video(source, tmp_path, "douyin", approval_report=report)
+
+
+def test_platform_export_requires_native_audio_evidence(tmp_path):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source")
+    report = _approved_report(source, final_audio_expected=True)
+
+    with pytest.raises(PlatformExportError, match="native-audio evidence"):
+        export_platform_video(source, tmp_path, "douyin", approval_report=report)

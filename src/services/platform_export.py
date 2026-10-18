@@ -55,7 +55,46 @@ def _write_json(path: Path, payload: dict) -> None:
             os.unlink(temp_name)
 
 
-def export_platform_video(final_video_path: str | Path, project_root: str | Path, preset: str) -> dict:
+def _validate_source_approval(source: Path, approval_report: dict | None) -> None:
+    """Require the platform export to be derived from the reviewed master."""
+    if not isinstance(approval_report, dict):
+        raise PlatformExportError(
+            "Final composition approval evidence is required before platform export"
+        )
+    human_approved = (
+        approval_report.get("status") in {"needs_review", "review_unavailable"}
+        and isinstance(approval_report.get("human_decision"), dict)
+        and approval_report["human_decision"].get("decision") == "approved"
+    )
+    if approval_report.get("status") != "passed" and not human_approved:
+        raise PlatformExportError("Final composition review is not approved for platform export")
+    if Path(str(approval_report.get("video_path") or "")).resolve() != source.resolve():
+        raise PlatformExportError("Final composition review points to a different source video")
+    if approval_report.get("video_sha256") != _sha256(source):
+        raise PlatformExportError("Final composition review is stale for the current source video")
+    technical = approval_report.get("final_technical_metrics")
+    if (
+        not isinstance(technical, dict)
+        or technical.get("status") != "available"
+        or technical.get("temporal_sample_evidence") != "sufficient"
+    ):
+        raise PlatformExportError(
+            "Final composition technical evidence is missing or insufficient for platform export"
+        )
+    if approval_report.get("final_audio_expected") is True and (
+        technical.get("audio_signal_status") != "usable"
+        or technical.get("audio_quality_status") != "passed"
+    ):
+        raise PlatformExportError("Final composition native-audio evidence is missing or failed")
+
+
+def export_platform_video(
+    final_video_path: str | Path,
+    project_root: str | Path,
+    preset: str,
+    *,
+    approval_report: dict | None = None,
+) -> dict:
     """Export a final video with a fixed geometry/audio contract.
 
     The source is never modified. A manifest makes repeated requests idempotent
@@ -67,6 +106,7 @@ def export_platform_video(final_video_path: str | Path, project_root: str | Path
     source = Path(final_video_path)
     if not source.is_file() or source.stat().st_size <= 0:
         raise PlatformExportError("Final video is missing or empty")
+    _validate_source_approval(source, approval_report)
     root = Path(project_root).resolve()
     export_dir = root / "exports"
     output = export_dir / f"{str(preset).strip().lower()}.mp4"
