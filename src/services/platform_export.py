@@ -208,6 +208,16 @@ def _validate_export_metrics(
         )
     if metrics.get("audio_present") and metrics.get("audio_clipping_status") == "clipped":
         raise PlatformExportError("Platform export audio signal is clipped at digital full scale")
+    audio_start_delta = metrics.get("audio_video_start_delta_seconds")
+    if (
+        metrics.get("audio_present")
+        and isinstance(audio_start_delta, (int, float))
+        and abs(float(audio_start_delta)) > 0.35
+    ):
+        raise PlatformExportError(
+            "Platform export audio/video start offset is out of sync: "
+            f"{float(audio_start_delta):.3f}s"
+        )
     if isinstance(source_metrics, dict) and source_metrics.get("status") == "available":
         source_duration = float(source_metrics.get("duration_seconds") or 0.0)
         output_duration = float(metrics.get("duration_seconds") or 0.0)
