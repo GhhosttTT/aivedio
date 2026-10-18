@@ -22,6 +22,21 @@ def test_dialogue_audio_profile_forces_non_neutral_emotion_on_repair():
     assert profile["profile"] == "short_drama_repair"
 
 
+def test_dialogue_audio_profile_uses_character_personality_when_line_is_neutral():
+    profile = dialogue_audio_profile("好的，我知道了。", personality="外冷内热、克制、沉稳")
+
+    assert profile["emotion"] == "neutral"
+    assert profile["personality_influence"] == "restrained_pacing"
+    assert profile["speed"] == 0.92  # short lines keep the existing mobile pacing guard
+
+
+def test_dialogue_audio_profile_lets_line_emotion_override_personality():
+    profile = dialogue_audio_profile("你竟然骗我！", personality="温柔、乐观")
+
+    assert profile["emotion"] == "angry"
+    assert profile["reason"] == "keyword_angry"
+
+
 def test_dialogue_audio_quality_report_creates_audio_repair_queue_for_bad_pacing(tmp_path):
     audio = tmp_path / "scene_006.mp3"
     audio.write_bytes(b"fake audio")

@@ -28,6 +28,13 @@ EMOTION_KEYWORDS = (
     ("happy", ("开心", "太好了", "终于", "谢谢", "喜欢")),
 )
 
+PERSONALITY_CUES = (
+    ("angry", ("暴躁", "强势", "攻击性", "易怒", "冷酷")),
+    ("sad", ("忧郁", "敏感", "脆弱", "悲观", "孤独")),
+    ("fearful", ("胆小", "谨慎", "怯懦", "不安", "紧张")),
+    ("happy", ("开朗", "乐观", "活泼", "热情", "爽朗")),
+)
+
 
 def has_spoken_dialogue(text: str | None) -> bool:
     if not text:
@@ -36,21 +43,42 @@ def has_spoken_dialogue(text: str | None) -> bool:
     return normalized not in {"无", "无对白", "none", "null", "n/a", "na", "-", "没有对白"}
 
 
-def dialogue_audio_profile(text: str | None, repair_action: str | None = None) -> dict[str, object]:
-    """Return TTS controls tuned for mobile short-drama dialogue delivery."""
+def dialogue_audio_profile(
+    text: str | None,
+    repair_action: str | None = None,
+    personality: str | None = None,
+) -> dict[str, object]:
+    """Return TTS controls from both the character bible and the current line."""
     normalized = (text or "").strip()
+    personality_text = (personality or "").strip().lower()
     emotion = "neutral"
     reason = "default_dialogue"
+    personality_influence = "none"
     for candidate, keywords in EMOTION_KEYWORDS:
         if any(keyword in normalized for keyword in keywords):
             emotion = candidate
             reason = f"keyword_{candidate}"
             break
+    if emotion == "neutral":
+        for candidate, keywords in PERSONALITY_CUES:
+            if any(keyword.lower() in personality_text for keyword in keywords):
+                emotion = candidate
+                reason = f"personality_{candidate}"
+                personality_influence = candidate
+                break
 
     punctuation_count = sum(normalized.count(mark) for mark in "！？!?")
     short_line = 0 < len(normalized) <= 12
     long_line = len(normalized) >= 42
     speed = 1.0
+    if any(term in personality_text for term in ("冷静", "克制", "沉稳", "内敛", "calm", "restrained")):
+        speed = 0.96
+        if personality_influence == "none":
+            personality_influence = "restrained_pacing"
+    elif any(term in personality_text for term in ("急躁", "冲动", "直接", "energetic", "impulsive")):
+        speed = 1.04
+        if personality_influence == "none":
+            personality_influence = "energetic_pacing"
     if punctuation_count >= 2 or short_line:
         speed = 0.92
     if long_line:
@@ -67,6 +95,7 @@ def dialogue_audio_profile(text: str | None, repair_action: str | None = None) -
             "profile": "short_drama_repair",
             "source": "tts",
             "reason": reason,
+            "personality_influence": personality_influence,
         }
 
     return {
@@ -75,6 +104,7 @@ def dialogue_audio_profile(text: str | None, repair_action: str | None = None) -
         "profile": "short_drama_default",
         "source": "tts",
         "reason": reason,
+        "personality_influence": personality_influence,
     }
 
 
@@ -202,7 +232,6 @@ def generate_audio_task(
 
         audio_path = get_scene_audio_path(project_id, scene_id)
         self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "tts_generation"})
-        profile = dialogue_audio_profile(text, kwargs.get("repair_action"))
         character = db.query(Character).filter(
             Character.project_id == project_id,
             Character.name == str(speaker or "").strip(),
@@ -212,6 +241,14 @@ def generate_audio_task(
             asset_pack = get_character_manager().get_character_asset_pack(character.id, project_id)
             if isinstance(asset_pack, dict) and asset_pack.get("status") == "frozen":
                 voice_profile = asset_pack.get("voice_profile") or {}
+        character_personality = getattr(character, "personality", None) if character else None
+        if not isinstance(character_personality, str):
+            character_personality = None
+        profile = dialogue_audio_profile(
+            text,
+            kwargs.get("repair_action"),
+            character_personality,
+        )
         resolved_speaker, voice_source = resolve_speaker_id(speaker, voice_profile)
         profile = {
             **profile,
