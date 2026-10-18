@@ -1073,6 +1073,11 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
 
 def _effective_review_status(report: dict) -> str | None:
     status_value = report.get("status")
+    # Story-room failures describe missing structural beats, not subjective
+    # presentation preferences. A human may acknowledge them, but cannot
+    # turn an incomplete story contract into a production-ready one.
+    if report.get("kind") == "story_room_quality" and status_value != "passed":
+        return status_value
     decision = report.get("human_decision")
     if (
         status_value in {"needs_review", "review_unavailable"}

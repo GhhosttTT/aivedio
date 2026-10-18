@@ -11,6 +11,7 @@ from starlette.datastructures import UploadFile
 from src.api.routes.projects import (
     SeedDanceBaselineRequest,
     _generation_review_summary,
+    _effective_review_status,
     record_human_review,
     compare_seed_dance_baseline,
     create_delivery_package,
@@ -485,6 +486,16 @@ def test_generation_review_summary_blocks_failed_composition():
     })
 
     assert summary["status"] == "blocked"
+
+
+def test_human_approval_cannot_override_story_room_failure():
+    report = {
+        "kind": "story_room_quality",
+        "status": "warn",
+        "human_decision": {"decision": "approved"},
+    }
+
+    assert _effective_review_status(report) == "warn"
 
 
 def test_generation_review_summary_requires_final_human_approval():
