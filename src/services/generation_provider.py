@@ -29,7 +29,7 @@ import httpx
 
 from src.config import settings
 from src.utils.logger import get_logger
-from src.services.video_quality_metrics import video_candidate_metrics
+from src.services.video_quality_metrics import temporal_sample_evidence_error, video_candidate_metrics
 
 logger = get_logger(__name__)
 
@@ -960,6 +960,10 @@ class ApiVideoProvider:
                 "temporal quality evidence is unavailable: "
                 f"{metrics.get('error') or 'video frames could not be sampled'}"
             )
+        temporal_error = temporal_sample_evidence_error(metrics, context="native provider output")
+        if temporal_error:
+            self.last_result_metadata["temporal_quality_status"] = "insufficient"
+            raise ValueError(temporal_error)
         self.last_result_metadata["temporal_quality"] = {
             key: metrics.get(key)
             for key in (

@@ -166,6 +166,35 @@ def test_platform_export_rejects_temporal_quality_regression(tmp_path, monkeypat
         export_platform_video(source, tmp_path, "douyin")
 
 
+def test_platform_export_rejects_insufficient_temporal_evidence(tmp_path, monkeypatch):
+    source = tmp_path / "final.mp4"
+    source.write_bytes(b"source")
+
+    def fake_run(command, **_kwargs):
+        output = tmp_path / "exports" / ".douyin.tmp.mp4"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"exported")
+
+    monkeypatch.setattr("src.services.platform_export.subprocess.run", fake_run)
+    metrics = {
+        "status": "available",
+        "width": 1080,
+        "height": 1920,
+        "fps": 30.0,
+        "duration_seconds": 2.0,
+        "sampled_frames": 3,
+        "temporal_sample_evidence": "insufficient",
+        "temporal_sample_minimum": 4,
+    }
+    monkeypatch.setattr(
+        "src.services.platform_export.video_candidate_metrics",
+        lambda *_args, **_kwargs: dict(metrics),
+    )
+
+    with pytest.raises(PlatformExportError, match="insufficient temporal evidence"):
+        export_platform_video(source, tmp_path, "douyin")
+
+
 def test_platform_export_rejects_clipped_audio(tmp_path, monkeypatch):
     source = tmp_path / "final.mp4"
     source.write_bytes(b"source")

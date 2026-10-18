@@ -5,6 +5,7 @@ import pytest
 from src.services.video_quality_metrics import (
     _probe,
     _sample_frames,
+    temporal_sample_evidence_error,
     video_boundary_continuity,
     video_start_frame_reference_metrics,
     video_technical_score,
@@ -229,6 +230,26 @@ def test_video_technical_score_penalizes_repeated_temporal_visual_jumps():
     stable = video_technical_score({**shared, "temporal_jump_ratio": 0.0})
     reset_heavy = video_technical_score({**shared, "temporal_jump_ratio": 0.6})
     assert stable - reset_heavy >= 0.15
+
+
+def test_temporal_sample_evidence_error_rejects_insufficient_samples():
+    error = temporal_sample_evidence_error({
+        "status": "available",
+        "sampled_frames": 3,
+        "temporal_sample_evidence": "insufficient",
+        "temporal_sample_minimum": 4,
+    }, context="final composed video")
+
+    assert error == "final composed video has insufficient temporal evidence: sampled_frames=3, minimum=4"
+
+
+def test_temporal_sample_evidence_error_allows_sufficient_samples():
+    assert temporal_sample_evidence_error({
+        "status": "available",
+        "sampled_frames": 4,
+        "temporal_sample_evidence": "sufficient",
+        "temporal_sample_minimum": 4,
+    }) is None
 
 
 def test_probe_reports_audio_stream_and_duration(monkeypatch, tmp_path):

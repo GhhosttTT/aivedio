@@ -149,6 +149,26 @@ def test_repair_queue_maps_extreme_temporal_resets_to_targeted_motion_repair():
     assert "extreme single-frame resets" in reset_items[0]["recommendation"]
 
 
+def test_repair_queue_maps_insufficient_temporal_evidence_to_motion_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 1,
+            "scene": {"scene_number": 8},
+            "technical_metrics": {
+                "technical_score": 4.1,
+                "temporal_sample_evidence": "insufficient",
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    evidence_items = [item for item in queue if "insufficient temporal evidence" in item["reason"]]
+    assert evidence_items
+    assert evidence_items[0]["action"] == "lower_motion_and_regenerate_video"
+
+
 def test_repair_queue_uses_configured_temporal_reset_threshold(monkeypatch):
     monkeypatch.setattr(
         "src.services.repair_queue.settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95",

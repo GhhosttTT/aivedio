@@ -9,6 +9,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from src.config import settings
+
 
 def video_candidate_metrics(path: str | Path, max_samples: int | None = None) -> dict[str, Any]:
     """Return bounded, local technical metrics for one candidate clip.
@@ -87,6 +89,12 @@ def video_candidate_metrics(path: str | Path, max_samples: int | None = None) ->
             "pixel_format": probe.get("pixel_format"),
             "high_bit_depth": bool(probe.get("high_bit_depth")),
             "sampled_frames": len(frames),
+            "temporal_sample_evidence": (
+                "sufficient"
+                if len(frames) >= settings.GENERATION_VIDEO_MIN_TEMPORAL_SAMPLES
+                else "insufficient"
+            ),
+            "temporal_sample_minimum": settings.GENERATION_VIDEO_MIN_TEMPORAL_SAMPLES,
             "sampling_interval_seconds": round(sample_interval, 3),
             "sampling_strategy": "explicit" if max_samples is not None else "adaptive_temporal",
             "motion_energy": round(motion_energy, 3),
@@ -122,7 +130,6 @@ def video_candidate_metrics(path: str | Path, max_samples: int | None = None) ->
                 float(metrics["audio_video_start_delta_seconds"]), 3
             )
         metrics["technical_score"] = video_technical_score(metrics)
-        return metrics
     except Exception as exc:
         return {
             "status": "unavailable",
@@ -130,6 +137,22 @@ def video_candidate_metrics(path: str | Path, max_samples: int | None = None) ->
             "technical_score": None,
             "error": str(exc),
         }
+
+
+def temporal_sample_evidence_error(
+    metrics: dict[str, Any], *, context: str = "video"
+) -> str | None:
+    """Return a delivery error when temporal metrics lack enough samples."""
+    if not isinstance(metrics, dict) or metrics.get("status") != "available":
+        return None
+    if metrics.get("temporal_sample_evidence") != "insufficient":
+        return None
+    sampled = metrics.get("sampled_frames")
+    minimum = metrics.get("temporal_sample_minimum", settings.GENERATION_VIDEO_MIN_TEMPORAL_SAMPLES)
+    return (
+        f"{context} has insufficient temporal evidence: sampled_frames={sampled}, "
+        f"minimum={minimum}"
+    )
 
 
 def video_technical_score(

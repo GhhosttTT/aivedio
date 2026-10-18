@@ -24,7 +24,7 @@ from src.services.generation_review import (
 from src.services.repair_queue import attach_repair_queue
 from src.services.rhythm_audit import RhythmAuditService
 from src.services.video_composer import get_video_composer
-from src.services.video_quality_metrics import video_boundary_continuity, video_candidate_metrics
+from src.services.video_quality_metrics import temporal_sample_evidence_error, video_boundary_continuity, video_candidate_metrics
 from src.services.sequence_plan import build_sequence_context
 from src.services.subtitle_generator import get_subtitle_generator
 from src.tasks.audio_tasks import has_spoken_dialogue
@@ -1082,6 +1082,9 @@ def _composition_review_error(report: dict) -> str | None:
                 f"{pixel_format_mismatch_count} shot boundary(s)"
             )
     technical = report.get("final_technical_metrics")
+    temporal_error = temporal_sample_evidence_error(technical, context="final composed video")
+    if temporal_error:
+        return temporal_error
     if isinstance(technical, dict) and technical.get("status") == "unavailable":
         return (
             "final composed video technical metrics are unavailable: "

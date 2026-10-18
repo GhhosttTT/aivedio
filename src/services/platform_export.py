@@ -10,7 +10,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.services.video_quality_metrics import video_candidate_metrics
+from src.services.video_quality_metrics import temporal_sample_evidence_error, video_candidate_metrics
 from src.config import settings
 
 
@@ -153,6 +153,9 @@ def _validate_export_metrics(
             "Platform export could not be decoded for technical validation"
             + (f": {detail}" if detail else "")
         )
+    temporal_error = temporal_sample_evidence_error(metrics, context="Platform export")
+    if temporal_error:
+        raise PlatformExportError(temporal_error)
     actual_width = int(metrics.get("width") or 0)
     actual_height = int(metrics.get("height") or 0)
     if actual_width != int(config["width"]) or actual_height != int(config["height"]):

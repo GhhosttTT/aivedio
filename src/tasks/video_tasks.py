@@ -40,6 +40,7 @@ from src.services.generation_run_evidence import build_video_generation_evidence
 from src.services.repair_queue import attach_repair_queue, build_repair_queue
 from src.services.svd_service import SVDError, get_svd_service
 from src.services.video_quality_metrics import (
+    temporal_sample_evidence_error,
     video_boundary_continuity,
     video_candidate_metrics,
     video_start_frame_reference_metrics,
@@ -1967,6 +1968,9 @@ def _final_video_acceptance_error(
         if isinstance(final_review.get("technical_metrics"), dict)
         else {}
     )
+    temporal_error = temporal_sample_evidence_error(technical_metrics, context="Final normalized video")
+    if temporal_error:
+        return temporal_error
     if (
         enforce_technical_evidence
         and settings.GENERATION_REQUIRE_VIDEO_REVIEW

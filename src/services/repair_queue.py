@@ -352,6 +352,8 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
         evidence.append("video sequence pixel format mismatch at shot boundaries")
     if video_metrics.get("black_frame_ratio", 0) > settings.GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO:
         evidence.append("video contains too many scattered black frames")
+    if video_metrics.get("temporal_sample_evidence") == "insufficient":
+        evidence.append("video has insufficient temporal evidence for quality acceptance")
     if video_metrics.get("audio_signal_status") == "near_silent":
         evidence.append("audio signal is near-silent despite an expected output track")
     elif video_metrics.get("audio_signal_status") == "unavailable" and video_metrics.get("audio_expected") is True:
@@ -509,6 +511,20 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
             "recommendation": (
                 "Regenerate from the accepted keyframe with lower motion/noise and stronger temporal continuity; "
                 "reject candidates with repeated scene resets, including extreme single-frame resets, before composition."
+            ),
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
+    if "insufficient temporal evidence" in text:
+        return {
+            "priority": "high",
+            "stage": "video",
+            "action": "lower_motion_and_regenerate_video",
+            "execution": _execution_mode("lower_motion_and_regenerate_video"),
+            "reason": evidence[:240],
+            "recommendation": (
+                "Regenerate the clip and rerun technical review with at least the configured minimum "
+                "number of temporal samples before accepting it."
             ),
             "candidate_index": candidate.get("index"),
             "scene_number": _scene_number(candidate),
