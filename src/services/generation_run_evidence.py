@@ -183,6 +183,12 @@ def build_video_generation_evidence(
         "request_contract_hashes": contract_hashes,
         "video_sha256s": video_sha256s,
         "selected_video_sha256": selected_video_sha256,
+        "accepted_video_sha256": (
+            quality_report.get("video_sha256")
+            if isinstance(quality_report.get("video_sha256"), str)
+            and len(quality_report.get("video_sha256")) == 64
+            else None
+        ),
         "spatial_scene_contract_hashes": spatial_contract_hashes,
         "spatial_project_signatures": spatial_project_signatures,
         "quality_budget": quality_report.get("quality_budget", {}),

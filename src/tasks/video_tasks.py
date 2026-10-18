@@ -1999,6 +1999,7 @@ def _review_final_video_after_postprocess(
         final_review["error"] = review["error"]
     quality_report["video_sha256"] = final_review["video_sha256"]
     quality_report["final_video_review"] = final_review
+    quality_report["generation_run_evidence"] = build_video_generation_evidence(quality_report)
     gate_ok, gate_scores = _video_gate_passes(final_review)
     aesthetic_ok = _video_aesthetic_gate_passes(final_review)
     reference_ok = _platform_reference_gate_passes(final_review)

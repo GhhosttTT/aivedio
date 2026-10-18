@@ -53,6 +53,7 @@ def test_build_video_generation_evidence_tracks_attempts_and_provider_contracts(
             "status": "passed",
             "selected_path": "clip.candidate_02.mp4",
             "promoted_path": "clip.mp4",
+            "video_sha256": "c" * 64,
             "quality_budget": {"candidate_count": 2},
             "candidates": [
                 {
@@ -105,5 +106,6 @@ def test_build_video_generation_evidence_tracks_attempts_and_provider_contracts(
     assert evidence["request_contract_hashes"] == ["hash-a", "hash-b"]
     assert evidence["video_sha256s"] == ["a" * 64, "b" * 64]
     assert evidence["selected_video_sha256"] == "b" * 64
+    assert evidence["accepted_video_sha256"] == "c" * 64
     assert evidence["spatial_scene_contract_hashes"] == ["scene-a", "scene-b"]
     assert evidence["spatial_project_signatures"] == ["project-a"]
