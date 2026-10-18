@@ -11,6 +11,7 @@ import os
 import ipaddress
 import base64
 import hashlib
+from io import BytesIO
 import json
 import shutil
 import subprocess
@@ -1407,6 +1408,15 @@ class ApiVideoProvider:
                 raise GenerationProviderError("last-frame endpoint returned a non-image response")
             if not response.content:
                 raise GenerationProviderError("last-frame endpoint returned an empty response")
+            try:
+                from PIL import Image
+
+                with Image.open(BytesIO(response.content)) as image:
+                    image.verify()
+            except Exception as exc:
+                raise GenerationProviderError(
+                    "last-frame endpoint returned invalid image bytes"
+                ) from exc
             target.parent.mkdir(parents=True, exist_ok=True)
             temporary.write_bytes(response.content)
             temporary.replace(target)

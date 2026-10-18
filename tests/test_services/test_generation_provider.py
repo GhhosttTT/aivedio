@@ -1,11 +1,13 @@
 """Tests for generation provider abstraction."""
 
 import json
+from io import BytesIO
 from types import SimpleNamespace
 
 import httpx
 import pytest
 import src.services.generation_provider as generation_provider
+from PIL import Image
 
 from src.services.generation_provider import (
     GenerationCancelledError,
@@ -866,6 +868,10 @@ def test_seedance_legacy_persists_requested_output_controls(tmp_path, monkeypatc
 
 
 def test_api_provider_persists_last_frame_for_cross_shot_continuity(tmp_path, monkeypatch):
+    image_buffer = BytesIO()
+    Image.new("RGB", (2, 2), (32, 64, 96)).save(image_buffer, format="PNG")
+    valid_png = image_buffer.getvalue()
+
     class FakeResponse:
         def __init__(self, payload=None, *, content=b"", content_type="application/json"):
             self.payload = payload or {}
@@ -896,7 +902,7 @@ def test_api_provider_persists_last_frame_for_cross_shot_continuity(tmp_path, mo
 
         def get(self, url, **_kwargs):
             if url.endswith("last.png"):
-                return FakeResponse(content=b"png-bytes", content_type="image/png")
+                return FakeResponse(content=valid_png, content_type="image/png")
             return FakeResponse(content=b"mp4-bytes", content_type="video/mp4")
 
     monkeypatch.setattr("src.services.generation_provider.httpx.Client", FakeClient)
@@ -910,8 +916,34 @@ def test_api_provider_persists_last_frame_for_cross_shot_continuity(tmp_path, mo
     ))
 
     persisted = tmp_path / "scene.last_frame.png"
-    assert persisted.read_bytes() == b"png-bytes"
+    assert persisted.read_bytes() == valid_png
     assert result.metadata["last_frame_path"] == str(persisted)
+
+
+def test_api_provider_rejects_invalid_last_frame_bytes(tmp_path):
+    class FakeResponse:
+        headers = {"content-type": "image/png"}
+        content = b"not-an-image"
+
+        def raise_for_status(self):
+            return None
+
+    class FakeClient:
+        def get(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    provider = SeedanceApiProvider(endpoint="https://gateway.example/video", api_key="secret")
+    provider.last_result_metadata["last_frame_url"] = "https://media.example/last.png"
+
+    result = provider._persist_last_frame(
+        FakeClient(),
+        str(tmp_path / "scene.mp4"),
+        {"Authorization": "Bearer secret"},
+    )
+
+    assert result is None
+    assert "last_frame_path" not in provider.last_result_metadata
+    assert not (tmp_path / "scene.last_frame.png").exists()
 
 
 def test_native_ark_nested_content_response_urls_are_extracted():
