@@ -219,6 +219,12 @@ def _draft_fallback_allowed(error: Exception, video_generator) -> bool:
     """Allow placeholders only for failures before a quality decision exists."""
     if isinstance(error, (ComfyUIWaitTimeout, GenerationCancelledError, ReviewError)):
         return False
+    provider_options = getattr(video_generator, "provider_options", None)
+    if isinstance(provider_options, dict):
+        draft_requested = provider_options.get("DRAFT")
+        draft_task_id = provider_options.get("DRAFT_TASK_ID")
+        if not _setting_enabled(draft_requested) and not str(draft_task_id or "").strip():
+            return False
     if _provider_task_state_is_ambiguous(video_generator):
         return False
     return draft_fallback_enabled()

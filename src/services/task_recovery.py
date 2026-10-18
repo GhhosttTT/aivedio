@@ -16,6 +16,7 @@ _PRODUCTION_OPTION_KEYS = (
     "multi_shot",
     "sequence_level_multi_shot",
     "native_audio",
+    "draft",
     "draft_task_id",
     "draft_task_ids",
     "model",

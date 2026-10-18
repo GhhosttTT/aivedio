@@ -223,6 +223,7 @@ class TaskOrchestrator:
                 "multi_shot": multi_shot,
                 "sequence_level_multi_shot": sequence_level_multi_shot,
                 "native_audio": native_audio,
+                "draft": draft,
                 "draft_task_id": draft_task_id,
                 "draft_task_ids": draft_task_ids,
                 "model": model,

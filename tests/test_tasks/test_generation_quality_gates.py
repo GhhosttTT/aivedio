@@ -408,6 +408,14 @@ def test_quality_review_failure_never_allows_draft_fallback(monkeypatch):
     assert _draft_fallback_allowed(ReviewError("low quality"), Mock()) is False
 
 
+def test_draft_fallback_requires_explicit_draft_run(monkeypatch):
+    monkeypatch.setenv("ENABLE_DRAFT_MEDIA_FALLBACK", "true")
+    generator = Mock(provider_options={"DRAFT": False})
+    assert _draft_fallback_allowed(RuntimeError("provider unavailable"), generator) is False
+    generator.provider_options = {"DRAFT": True}
+    assert _draft_fallback_allowed(RuntimeError("provider unavailable"), generator) is True
+
+
 def test_required_video_review_rejects_incomplete_identity_gate(monkeypatch):
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
     passes, scores = _video_gate_passes({

@@ -10,6 +10,7 @@ from src.services.generation_review import (
     GenerationReviewService, ReviewError, file_hash, fingerprint, require_passed, write_report,
 )
 from src.tasks.celery_app import celery_app
+from src.services.task_recovery import load_production_video_options
 from src.utils.storage import storage_manager
 
 
@@ -198,7 +199,9 @@ def review_generation_task(self, project_id: int, task_id: int):
         cleanup_llm_service()
         cleanup_svd_service()
         report["input_hash"] = generation_signature(project, scenes)
-        if len(scenes) == 1 and os.getenv("ENABLE_DRAFT_MEDIA_FALLBACK", "false").lower() in {"1", "true", "yes", "on"}:
+        production_options = load_production_video_options(project_id, task_id) or {}
+        explicit_draft_run = bool(production_options.get("draft"))
+        if len(scenes) == 1 and explicit_draft_run and os.getenv("ENABLE_DRAFT_MEDIA_FALLBACK", "false").lower() in {"1", "true", "yes", "on"}:
             report.update({
                 "status": "passed",
                 "mode": "single_shot_smoke_test",
