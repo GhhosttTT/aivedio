@@ -1973,6 +1973,15 @@ def _final_video_acceptance_error(
     if isinstance(request_contract_audit, dict) and request_contract_audit.get("status") == "needs_review":
         issue = (request_contract_audit.get("issues") or [{}])[0]
         return f"Video output contract failed: {issue.get('message') or 'provider output drifted from the requested contract'}"
+    if technical_metrics.get("audio_present") is True:
+        audio_signal_status = technical_metrics.get("audio_signal_status")
+        if audio_signal_status in {"near_silent", "unavailable"}:
+            return (
+                "Final normalized video audio signal is not usable: "
+                f"{audio_signal_status}"
+            )
+        if technical_metrics.get("audio_clipping_status") == "clipped":
+            return "Final normalized video audio signal is clipped at digital full scale"
     if technical_metrics.get("audio_expected") is True and technical_metrics.get("audio_quality_status") != "passed":
         return (
             "Final normalized video native-audio check failed: "
