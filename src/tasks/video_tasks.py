@@ -1095,12 +1095,64 @@ def _promote_sequence_sidecar(staging_path: Path, output_path: Path, suffix: str
                     payload[key] = str(output_path)
                 elif value == str(staging_path.with_suffix(".final_review.json")):
                     payload[key] = str(output_path.with_suffix(".final_review.json"))
-            destination.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2, default=str),
-                encoding="utf-8",
-            )
+            _write_json_sidecar(destination, payload)
     except (OSError, TypeError, ValueError):
         logger.warning("Could not update promoted sequence quality sidecar: {}", destination)
+
+
+def _publish_sequence_artifacts_atomically(
+    staging_paths: list[Path],
+    output_paths: list[Path],
+) -> None:
+    """Publish sequence clips and their reports as one recoverable batch."""
+    if len(staging_paths) != len(output_paths):
+        raise ValueError("Sequence staging and output batches must have equal sizes")
+    pairs: list[tuple[Path, Path]] = []
+    for staging_path, output_path in zip(staging_paths, output_paths):
+        if not staging_path.is_file():
+            raise FileNotFoundError(f"Missing staged sequence clip: {staging_path}")
+        pairs.append((staging_path, output_path))
+        for suffix in (".quality.json", ".final_review.json"):
+            source = staging_path.with_suffix(suffix)
+            if not source.is_file():
+                continue
+            destination = output_path.with_suffix(suffix)
+            try:
+                payload = json.loads(source.read_text(encoding="utf-8"))
+                if isinstance(payload, dict):
+                    for key in ("path", "review_path"):
+                        value = payload.get(key)
+                        if value == str(staging_path):
+                            payload[key] = str(output_path)
+                        elif value == str(staging_path.with_suffix(".final_review.json")):
+                            payload[key] = str(output_path.with_suffix(".final_review.json"))
+                    _write_json_sidecar(source, payload)
+            except (OSError, TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid staged sequence sidecar: {source}") from exc
+            pairs.append((source, destination))
+
+    backups: list[tuple[Path, Path]] = []
+    promoted: list[Path] = []
+    try:
+        for source, destination in pairs:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if destination.exists():
+                backup = destination.with_name(f".{destination.name}.{uuid4().hex}.bak")
+                destination.replace(backup)
+                backups.append((backup, destination))
+            source.replace(destination)
+            promoted.append(destination)
+    except Exception as exc:
+        for destination in reversed(promoted):
+            destination.unlink(missing_ok=True)
+        for backup, destination in reversed(backups):
+            if backup.exists():
+                backup.replace(destination)
+        raise RuntimeError(f"Could not publish the complete sequence batch: {exc}") from exc
+    finally:
+        for backup, destination in backups:
+            if backup.exists() and destination.exists():
+                backup.unlink(missing_ok=True)
 
 
 def _review_score_from_batch(batch: dict, key: str) -> float | None:
@@ -2421,10 +2473,7 @@ def generate_sequence_video_task(
                     f"{segment_report.get('error') or 'quality review failed'}"
                 )
         # Publish only after every derived scene has passed its own review.
-        for staging_path, output_path in zip(staging_paths, output_paths):
-            staging_path.replace(output_path)
-            _promote_sequence_sidecar(staging_path, output_path, ".quality.json")
-            _promote_sequence_sidecar(staging_path, output_path, ".final_review.json")
+        _publish_sequence_artifacts_atomically(staging_paths, output_paths)
 
         for scene, output_path in zip(scenes, output_paths):
             scene.video_path = str(output_path)

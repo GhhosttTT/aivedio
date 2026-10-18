@@ -13,7 +13,7 @@ from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _character_sheet_generation_contract, _complexity_report, _composition_constraint, _feedback_repair_directive, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
-from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_audio_quality_contract, _apply_video_repair_action, _apply_video_repair_prompt, _aspect_ratio_for_size, _build_video_generator, _configured_reference_limit, _continuity_metadata_path, _draft_fallback_allowed, _final_video_acceptance_error, _generate_quality_video_candidates, _multimodal_references_for_scene, _native_audio_enabled, _normalization_duration_for_provider, _preserve_generated_audio, _promote_sequence_sidecar, _provider_metadata_path, _provider_task_state_is_ambiguous, _read_scene_continuity_reference, _review_final_video_after_postprocess, _scene_review_payload, _select_best_video_candidate, _sequence_segment_quality_report, _video_gate_evidence_complete, _video_gate_passes, _video_repair_action_from_candidates, _write_provider_metadata, _write_scene_continuity_metadata
+from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_audio_quality_contract, _apply_video_repair_action, _apply_video_repair_prompt, _aspect_ratio_for_size, _build_video_generator, _configured_reference_limit, _continuity_metadata_path, _draft_fallback_allowed, _final_video_acceptance_error, _generate_quality_video_candidates, _multimodal_references_for_scene, _native_audio_enabled, _normalization_duration_for_provider, _preserve_generated_audio, _promote_sequence_sidecar, _publish_sequence_artifacts_atomically, _provider_metadata_path, _provider_task_state_is_ambiguous, _read_scene_continuity_reference, _review_final_video_after_postprocess, _scene_review_payload, _select_best_video_candidate, _sequence_segment_quality_report, _video_gate_evidence_complete, _video_gate_passes, _video_repair_action_from_candidates, _write_provider_metadata, _write_scene_continuity_metadata
 
 
 def passed_video_aesthetic_scores(score: int = 5) -> dict:
@@ -341,6 +341,23 @@ def test_promote_sequence_sidecar_rewrites_staged_paths(tmp_path):
     promoted = json.loads(output.with_suffix(".quality.json").read_text(encoding="utf-8"))
     assert promoted["path"] == str(output)
     assert promoted["review_path"] == str(output.with_suffix(".final_review.json"))
+
+
+def test_sequence_artifacts_publish_as_one_batch(tmp_path):
+    staging = [tmp_path / ".scene-1.part.mp4", tmp_path / ".scene-2.part.mp4"]
+    outputs = [tmp_path / "scene-1.mp4", tmp_path / "scene-2.mp4"]
+    for index, path in enumerate(staging, start=1):
+        path.write_bytes(f"new-{index}".encode())
+        path.with_suffix(".quality.json").write_text(json.dumps({"path": str(path)}), encoding="utf-8")
+    outputs[0].write_bytes(b"old-1")
+    outputs[0].with_suffix(".quality.json").write_text(json.dumps({"path": str(outputs[0])}), encoding="utf-8")
+
+    _publish_sequence_artifacts_atomically(staging, outputs)
+
+    assert outputs[0].read_bytes() == b"new-1"
+    assert outputs[1].read_bytes() == b"new-2"
+    assert json.loads(outputs[0].with_suffix(".quality.json").read_text())["path"] == str(outputs[0])
+    assert json.loads(outputs[1].with_suffix(".quality.json").read_text())["path"] == str(outputs[1])
 
 
 @pytest.mark.parametrize(
