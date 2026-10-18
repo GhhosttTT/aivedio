@@ -301,6 +301,7 @@ class ProjectResponse(BaseModel):
     scenes: List[SceneResponse] = []
     draft_ready: bool = False
     draft_missing_scenes: List[int] = []
+    draft_expired_scenes: List[int] = []
 
 
 class ProjectListResponse(BaseModel):

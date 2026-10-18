@@ -1007,6 +1007,7 @@ async def create_project(
 def _draft_evidence_status(project) -> dict:
     """Expose whether every scene has a current Seedance Draft to promote."""
     missing: list[int] = []
+    expired: list[int] = []
     for scene in sorted(project.scenes or [], key=lambda item: item.scene_number):
         video_path = Path(scene.video_path) if scene.video_path else None
         provider_path = video_path.with_suffix(".provider.json") if video_path else None
@@ -1032,7 +1033,13 @@ def _draft_evidence_status(project) -> dict:
         )
         if not valid:
             missing.append(int(scene.scene_number))
-    return {"draft_ready": bool(project.scenes) and not missing, "draft_missing_scenes": missing}
+        elif _draft_expired(metadata.get("provider_created_at"), metadata.get("provider_expires_at")):
+            expired.append(int(scene.scene_number))
+    return {
+        "draft_ready": bool(project.scenes) and not missing and not expired,
+        "draft_missing_scenes": missing,
+        "draft_expired_scenes": expired,
+    }
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)

@@ -190,13 +190,33 @@ def test_draft_evidence_status_requires_current_seedance_sidecars(tmp_path):
     assert _draft_evidence_status(project) == {
         "draft_ready": True,
         "draft_missing_scenes": [],
+        "draft_expired_scenes": [],
     }
 
     Path(scene.video_path).write_bytes(b"changed-video")
     assert _draft_evidence_status(project) == {
         "draft_ready": False,
         "draft_missing_scenes": [2],
+        "draft_expired_scenes": [],
     }
+
+
+def test_draft_evidence_status_reports_expired_seedance_sidecars(tmp_path):
+    scene = Mock(spec=Scene)
+    scene.scene_number = 3
+    scene.video_path = str(tmp_path / "scene-03.mp4")
+    _write_draft_evidence(scene, {
+        "provider_task_id": "draft-3",
+        "requested_draft": True,
+        "provider_created_at": "2026-10-01T00:00:00Z",
+    })
+    project = Mock()
+    project.scenes = [scene]
+
+    status = _draft_evidence_status(project)
+    assert status["draft_ready"] is False
+    assert status["draft_missing_scenes"] == []
+    assert status["draft_expired_scenes"] == [3]
 
 
 def test_update_project_success(client, mock_project):

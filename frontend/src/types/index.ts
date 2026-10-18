@@ -57,6 +57,7 @@ export interface Project {
     final_video_path?: string;
     draft_ready?: boolean;
     draft_missing_scenes?: number[];
+    draft_expired_scenes?: number[];
 }
 
 export interface User {
