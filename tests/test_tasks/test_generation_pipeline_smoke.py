@@ -1350,3 +1350,18 @@ def test_sequence_task_forwards_explicit_output_path_before_provider_generation(
     )
     assert sequence_update_state.call_args.kwargs["meta"]["provider_task_id"] == "sequence-remote-42"
     assert sequence_update_state.call_args.kwargs["meta"]["provider_status"] == "running"
+
+
+def test_sequence_boundary_gate_rejects_unavailable_evidence(tmp_path):
+    with pytest.raises(Exception, match="unavailable"):
+        video_tasks._validate_sequence_boundary_report(
+            {"status": "unavailable"}, tmp_path / "sequence.boundary.json"
+        )
+
+
+def test_sequence_boundary_gate_rejects_transition_failures(tmp_path):
+    with pytest.raises(Exception, match="severe_transitions=1"):
+        video_tasks._validate_sequence_boundary_report(
+            {"status": "available", "severe_transition_count": 1, "geometry_mismatch_count": 0},
+            tmp_path / "sequence.boundary.json",
+        )

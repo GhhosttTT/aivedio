@@ -1289,6 +1289,23 @@ def _sequence_segment_quality_report(
     return report
 
 
+def _validate_sequence_boundary_report(boundary_report: dict, report_path: Path) -> None:
+    """Require measurable continuity evidence before publishing sequence cuts."""
+    if boundary_report.get("status") != "available":
+        raise ReviewError(
+            "Sequence boundary quality gate is unavailable; refusing to publish without "
+            f"continuity evidence: report={report_path}"
+        )
+    severe_count = int(boundary_report.get("severe_transition_count") or 0)
+    geometry_count = int(boundary_report.get("geometry_mismatch_count") or 0)
+    if severe_count or geometry_count:
+        raise ReviewError(
+            "Sequence boundary quality gate failed: "
+            f"severe_transitions={severe_count}, geometry_mismatches={geometry_count}; "
+            f"report={report_path}"
+        )
+
+
 def _derive_sequence_segment_provider_metadata(
     provider_metadata: dict | None,
     *,
@@ -2764,15 +2781,7 @@ def generate_sequence_video_task(
         boundary_report = video_boundary_continuity([str(path) for path in staging_paths])
         boundary_report_path = sequence_path.with_suffix(".boundary.json")
         write_report(boundary_report_path, boundary_report)
-        if boundary_report.get("status") == "available":
-            severe_count = int(boundary_report.get("severe_transition_count") or 0)
-            geometry_count = int(boundary_report.get("geometry_mismatch_count") or 0)
-            if severe_count or geometry_count:
-                raise ReviewError(
-                    "Sequence boundary quality gate failed: "
-                    f"severe_transitions={severe_count}, geometry_mismatches={geometry_count}; "
-                    f"report={boundary_report_path}"
-                )
+        _validate_sequence_boundary_report(boundary_report, boundary_report_path)
         segment_provider_metadata: dict[int, dict] = {}
         for scene, staging_path, segment in zip(scenes, staging_paths, segments):
             derived_metadata = _derive_sequence_segment_provider_metadata(
