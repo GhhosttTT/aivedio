@@ -65,6 +65,34 @@ def _setting_enabled(value) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _reference_asset_evidence(role: str, value: str | None, index: int | None = None) -> dict | None:
+    """Describe the exact reference bound to a provider request without copying media."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    locator = value.strip()
+    evidence = {"role": role, "index": index, "locator": locator[:1000]}
+    if locator.startswith("data:"):
+        evidence["kind"] = "data_url"
+        evidence["locator"] = "data_url"
+        evidence["sha256"] = hashlib.sha256(locator.encode("utf-8")).hexdigest()
+    else:
+        try:
+            path = Path(locator)
+            is_file = path.is_file()
+        except (OSError, TypeError, ValueError):
+            path = None
+            is_file = False
+        if is_file and path is not None:
+            digest = hashlib.sha256()
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            evidence.update({"kind": "local_file", "sha256": digest.hexdigest(), "size": path.stat().st_size})
+        else:
+            evidence["kind"] = "remote_locator"
+    return evidence
+
+
 def _video_request_contract(request: VideoGenerationRequest, *, request_mode: str, sequence_level: bool) -> dict:
     """Capture the exact controls handed to a video provider."""
     shot_plan = request.shot_plan if isinstance(request.shot_plan, dict) else {}
@@ -78,6 +106,26 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         for item in (raw_bindings or [])
         if isinstance(item, dict)
     ]
+    reference_assets = []
+    for role, value in (
+        ("reference_image", request.reference_image),
+        ("end_image", request.end_image),
+        ("continuity_reference_image", request.continuity_reference_image),
+        ("extend_video", request.extend_video),
+        ("audio_path", request.audio_path),
+    ):
+        item = _reference_asset_evidence(role, value)
+        if item:
+            reference_assets.append(item)
+    for role, values in (
+        ("reference_image", request.reference_images),
+        ("reference_video", request.reference_videos),
+        ("reference_audio", request.reference_audios),
+    ):
+        for index, value in enumerate(values or [], start=1):
+            item = _reference_asset_evidence(role, value, index)
+            if item:
+                reference_assets.append(item)
     contract = {
         "provider_request_version": 1,
         "request_mode": request_mode,
@@ -97,6 +145,7 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         "has_reference_image": bool(request.reference_image or request.reference_images),
         "reference_video_count": len(request.reference_videos or []),
         "reference_audio_count": len(request.reference_audios or []),
+        "reference_assets": reference_assets,
         "character_reference_binding_count": len(character_bindings),
         "character_reference_bindings": character_bindings,
     }

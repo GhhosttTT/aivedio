@@ -27,7 +27,25 @@ def test_video_request_contract_captures_effective_generation_controls():
     assert contract["model"] == "doubao-seedance-2-5-260628"
     assert contract["sequence_level_multi_shot"] is True
     assert contract["reference_video_count"] == 1
+    assert {item["role"] for item in contract["reference_assets"]} >= {
+        "reference_image", "reference_video", "reference_audio",
+    }
     assert len(contract["contract_hash"]) == 64
+
+
+def test_video_request_contract_binds_local_reference_content(tmp_path):
+    reference = tmp_path / "character.png"
+    reference.write_bytes(b"reference-v1")
+    request = VideoGenerationRequest(
+        prompt="shot", output_path=str(tmp_path / "shot.mp4"), reference_image=str(reference),
+    )
+    first = _video_request_contract(request, request_mode="reference", sequence_level=False)
+    reference.write_bytes(b"reference-v2")
+    second = _video_request_contract(request, request_mode="reference", sequence_level=False)
+
+    assert first["reference_assets"][0]["kind"] == "local_file"
+    assert first["reference_assets"][0]["sha256"] != second["reference_assets"][0]["sha256"]
+    assert first["contract_hash"] != second["contract_hash"]
 
 
 def test_video_request_contract_hash_changes_when_a_quality_control_changes():
