@@ -56,7 +56,7 @@ export function ProductionProgress({project, task, onReload}: {project: Project;
         {task?.production_options && <p className="wb-muted">本次参数：{task.production_options.provider || '环境默认'} · {task.production_options.model || '环境默认模型'} · {task.production_options.resolution || '默认分辨率'} · {task.production_options.output_format || '默认格式'}</p>}
         {outputUrl && <div className="wb-production-result"><div className="wb-row wb-between"><p className="wb-muted">最终成片</p><a className="wb-button" href={`${outputUrl}&download=true`} download>下载成片</a></div><video controls preload="metadata" src={outputUrl} aria-label="最终成片预览" style={{maxWidth: '100%', borderRadius: 8}} /></div>}
         {running && task?.live_step && <p role="status">{liveScene ? `分镜 ${liveScene.scene_number} · ` : ''}{stageNames[task.live_step.stage] || task.live_step.stage}</p>}
-        {running && task?.provider_stage && <p role="status" className="wb-muted">{providerStageNames[task.provider_stage] || task.provider_stage}{typeof task.provider_progress === 'number' ? ' · ' + Math.round(task.provider_progress) + '%' : ''}</p>}
+        {running && task?.provider_stage && <p role="status" className="wb-muted">{providerStageNames[task.provider_stage] || task.provider_stage}{typeof task.provider_progress === 'number' ? ' · ' + Math.round(task.provider_progress) + '%' : ''}{task.provider_task_id ? ` · 远端 ${task.provider_task_id}` : ''}{task.provider_status ? ` · ${task.provider_status}` : ''}</p>}
         {(error || task?.error_message) && <p role="alert" className="wb-alert">{error || task?.error_message}</p>}
         <ol>{steps.map((label, index) => {
             const done = task?.status === 'completed' || index < current;

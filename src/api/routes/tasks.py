@@ -56,6 +56,8 @@ async def get_task_status(task_id: str, db_session: Session = Depends(get_db_ses
             provider_progress=task_info.get("provider_progress"),
             provider_stage=task_info.get("provider_stage"),
             provider_state=task_info.get("provider_state"),
+            provider_task_id=task_info.get("provider_task_id"),
+            provider_status=task_info.get("provider_status"),
             production_options=task_info.get("production_options"),
         )
     

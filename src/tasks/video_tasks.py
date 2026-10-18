@@ -2245,16 +2245,28 @@ def generate_video_task(
                 "SEQUENCE_TIMELINE": option("SEQUENCE_TIMELINE"),
                 }.items() if value is not None
             }
-            provider_options["PROGRESS_CALLBACK"] = lambda progress, state: self.update_state(
-                state="PROGRESS",
-                meta={"current": progress, "total": 100, "step": f"provider_{state}"},
-            )
+            provider_ref = {}
+            def report_provider_progress(progress, state):
+                generator = provider_ref.get("generator")
+                metadata = getattr(generator, "last_result_metadata", {}) if generator else {}
+                self.update_state(
+                    state="PROGRESS",
+                    meta={
+                        "current": progress,
+                        "total": 100,
+                        "step": f"provider_{state}",
+                        "provider_task_id": metadata.get("provider_task_id"),
+                        "provider_status": metadata.get("provider_status") or metadata.get("provider_task_status"),
+                    },
+                )
+            provider_options["PROGRESS_CALLBACK"] = report_provider_progress
             provider_options["CANCELLATION_CHECK"] = lambda: (
                 db.query(Task.status).filter(Task.id == task_id).scalar() == TaskStatus.CANCELLED
             )
             video_generator = _build_video_generator(
                 scene, shot_plan, provider_name, end_image, provider_options=provider_options,
             )
+            provider_ref["generator"] = video_generator
             sequence_scenes = None
             if _setting_enabled(kwargs.get("sequence_level_multi_shot")):
                 sequence_scenes = db.query(Scene).filter(

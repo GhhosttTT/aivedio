@@ -32,6 +32,8 @@ def test_get_task_status_success(client):
             "provider_progress": 42,
             "provider_stage": "provider_processing",
             "provider_state": "PROGRESS",
+            "provider_task_id": "ark-task-42",
+            "provider_status": "running",
             "production_options": {
                 "provider": "seedance_api",
                 "model": "doubao-seedance-2-5-260628",
@@ -47,6 +49,8 @@ def test_get_task_status_success(client):
         assert payload["provider_progress"] == 42
         assert payload["provider_stage"] == "provider_processing"
         assert payload["provider_state"] == "PROGRESS"
+        assert payload["provider_task_id"] == "ark-task-42"
+        assert payload["provider_status"] == "running"
         assert payload["production_options"]["model"] == "doubao-seedance-2-5-260628"
         assert payload["production_options"]["native_audio"] is True
 

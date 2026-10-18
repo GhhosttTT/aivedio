@@ -378,7 +378,12 @@ class TestGetTaskStatus:
         # Mock AsyncResult
         mock_result = Mock()
         mock_result.state = "PROGRESS"
-        mock_result.info = {"current": 42, "step": "provider_processing"}
+        mock_result.info = {
+            "current": 42,
+            "step": "provider_processing",
+            "provider_task_id": "ark-task-42",
+            "provider_status": "running",
+        }
         mock_async_result.return_value = mock_result
         
         # 获取任务状态
@@ -390,6 +395,8 @@ class TestGetTaskStatus:
         assert status["progress"] == 50
         assert status["provider_progress"] == 42
         assert status["provider_stage"] == "provider_processing"
+        assert status["provider_task_id"] == "ark-task-42"
+        assert status["provider_status"] == "running"
     
     def test_get_task_status_not_found(self, orchestrator):
         """测试任务不存在"""

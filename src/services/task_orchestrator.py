@@ -647,6 +647,10 @@ class TaskOrchestrator:
                 if stage:
                     result["provider_stage"] = str(stage)
                 result["provider_state"] = async_result.state
+                if info.get("provider_task_id"):
+                    result["provider_task_id"] = str(info["provider_task_id"])
+                if info.get("provider_status"):
+                    result["provider_status"] = str(info["provider_status"])
         except Exception as exc:
             logger.debug("Could not read live provider progress for {}: {}", celery_task_id, exc)
         return result
