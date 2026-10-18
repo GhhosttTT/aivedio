@@ -187,6 +187,21 @@ function ProviderTrace({report}: {report: any}) {
     </div>;
 }
 
+function OutputContractEvidence({report}: {report: any}) {
+    const audit = report?.request_contract_audit || report?.final_video_review?.request_contract_audit;
+    if (!audit || audit.status === 'not_applicable') return null;
+    const failed = audit.status !== 'passed';
+    return <div className="wb-summary-actions" aria-label="视频输出契约验收">
+        <h4>视频输出契约验收</h4>
+        <p className={failed ? 'wb-alert' : 'wb-muted'}>
+            {failed ? '输出与请求契约不一致，已阻止接受。' : `已核对 ${audit.checked?.length || 0} 项输出契约。`}
+        </p>
+        {audit.issues?.map((issue: any, index: number) => <p className="wb-alert" key={index}>
+            {issue.code} · {issue.message}
+        </p>)}
+    </div>;
+}
+
 function FinalCompositionEvidence({projectId, report}: {projectId: number; report: any}) {
     if (report?.stage !== 'final_composition') return null;
     const metrics = report.final_technical_metrics || {};
@@ -439,6 +454,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             </div>
             {report.error && <p className="wb-alert">{String(report.error)}</p>}
             <ProviderTrace report={report}/>
+            <OutputContractEvidence report={report}/>
             <FinalCompositionEvidence projectId={projectId} report={report}/>
             <SeedDanceComparison projectId={projectId} report={report}/>
             <Scores review={report.review}/>
