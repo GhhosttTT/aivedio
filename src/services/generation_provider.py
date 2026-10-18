@@ -776,8 +776,19 @@ class ApiVideoProvider:
         api_format = _seedance_api_format(self.endpoint)
         if api_format not in {"ark", "ark_v3", "volcengine", "volcengine_v3"}:
             return
-        if not _provider_bool("SEEDANCE_VALIDATE_OUTPUT", True) or not shutil.which("ffprobe"):
+        validation_enabled = _provider_bool("SEEDANCE_VALIDATE_OUTPUT", True)
+        if not validation_enabled:
+            self.last_result_metadata["output_validation_status"] = "disabled_by_configuration"
             return
+        if not shutil.which("ffprobe"):
+            try:
+                Path(output_path).unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise GenerationProviderError(
+                "Native Ark output validation requires ffprobe; install ffprobe or explicitly disable "
+                "SEEDANCE_VALIDATE_OUTPUT for a non-production run"
+            )
         try:
             result = subprocess.run(
                 [

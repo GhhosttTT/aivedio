@@ -434,6 +434,19 @@ def test_native_ark_output_validation_rejects_non_video_artifact(tmp_path, monke
     assert not output.exists()
 
 
+def test_native_ark_output_validation_fails_closed_without_ffprobe(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_VALIDATE_OUTPUT", "true")
+    monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: None)
+    output = tmp_path / "unverified.mp4"
+    output.write_bytes(b"unverified-video")
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    with pytest.raises(GenerationProviderError, match="requires ffprobe"):
+        provider._validate_provider_video(str(output))
+    assert not output.exists()
+
+
 def test_native_ark_output_validation_accepts_video_stream(tmp_path, monkeypatch):
     monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
     monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")
