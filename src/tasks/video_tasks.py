@@ -67,6 +67,17 @@ def _setting_enabled(value) -> bool:
 
 def _video_request_contract(request: VideoGenerationRequest, *, request_mode: str, sequence_level: bool) -> dict:
     """Capture the exact controls handed to a video provider."""
+    shot_plan = request.shot_plan if isinstance(request.shot_plan, dict) else {}
+    raw_bindings = shot_plan.get("character_reference_bindings")
+    character_bindings = [
+        {
+            "image_index": item.get("image_index"),
+            "character_name": item.get("character_name"),
+            "view": item.get("view"),
+        }
+        for item in (raw_bindings or [])
+        if isinstance(item, dict)
+    ]
     contract = {
         "provider_request_version": 1,
         "request_mode": request_mode,
@@ -86,6 +97,8 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         "has_reference_image": bool(request.reference_image or request.reference_images),
         "reference_video_count": len(request.reference_videos or []),
         "reference_audio_count": len(request.reference_audios or []),
+        "character_reference_binding_count": len(character_bindings),
+        "character_reference_bindings": character_bindings,
     }
     encoded = json.dumps(contract, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     contract["contract_hash"] = hashlib.sha256(encoded).hexdigest()

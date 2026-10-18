@@ -36,3 +36,24 @@ def test_video_request_contract_hash_changes_when_a_quality_control_changes():
     changed = replace(base, return_last_frame=True)
     second = _video_request_contract(changed, request_mode="reference", sequence_level=False)
     assert first["contract_hash"] != second["contract_hash"]
+
+
+def test_video_request_contract_records_multicharacter_reference_bindings():
+    request = VideoGenerationRequest(
+        prompt="two characters confront each other",
+        output_path="/tmp/shot.mp4",
+        shot_plan={
+            "character_reference_bindings": [
+                {"image_index": 2, "character_name": "Alice", "view": "front", "expected_features": {"hair": "black"}},
+                {"image_index": 3, "character_name": "Bob", "view": "profile"},
+            ],
+        },
+    )
+
+    contract = _video_request_contract(request, request_mode="reference", sequence_level=False)
+
+    assert contract["character_reference_binding_count"] == 2
+    assert contract["character_reference_bindings"] == [
+        {"image_index": 2, "character_name": "Alice", "view": "front"},
+        {"image_index": 3, "character_name": "Bob", "view": "profile"},
+    ]
