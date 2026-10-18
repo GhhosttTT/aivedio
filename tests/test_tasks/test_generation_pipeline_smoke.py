@@ -650,7 +650,9 @@ def test_final_composed_video_review_payload_tracks_episode_context(tmp_path, mo
         "audio_present": True, "audio_duration_delta_seconds": 0.0,
     })
 
-    report = composition_tasks._review_final_composed_video(project, scenes, str(final_video))
+    report = composition_tasks._review_final_composed_video(
+        project, scenes, str(final_video), native_audio_expected=True,
+    )
 
     assert report["path"].endswith(".composition_review.json")
     assert len(report["composition_input_signature"]) == 64
@@ -660,6 +662,7 @@ def test_final_composed_video_review_payload_tracks_episode_context(tmp_path, mo
     assert captured["payload"]["shot_plan"]["shot_role"] == "final_composed_short_drama"
     assert captured["payload"]["technical_boundary_report"]["status"] == "not_applicable"
     assert captured["payload"]["final_technical_metrics"]["status"] == "available"
+    assert report["final_audio_expected"] is True
     assert captured["payload"]["platform_aesthetic_contract"]["video_features"]
     assert "final_composition_finishing_scores" not in captured["payload"]
     assert captured["payload"]["composition_contract"]["finishing_features"]

@@ -397,6 +397,7 @@ def compose_final_video_task(
             add_bgm=add_bgm,
             bgm_path=bgm_path,
             bgm_volume=bgm_volume,
+            native_audio_expected=preserve_native_audio,
         )
         composition_review = _publish_composition_candidate(
             composition_candidate_path,
@@ -1312,6 +1313,7 @@ def _review_final_composed_video(
     add_bgm: bool = False,
     bgm_path: str | Path | None = None,
     bgm_volume: float = 0.3,
+    native_audio_expected: bool = False,
 ) -> dict | None:
     if not settings.GENERATION_REQUIRE_VIDEO_REVIEW:
         return None
@@ -1323,7 +1325,7 @@ def _review_final_composed_video(
     ]
     technical_boundary_report = video_boundary_continuity(scene_video_paths)
     final_technical_metrics = video_candidate_metrics(final_video_path)
-    audio_expected = any(_scene_audio_expected(scene) for scene in scenes)
+    audio_expected = native_audio_expected or any(_scene_audio_expected(scene) for scene in scenes)
     review_payload = _project_final_review_payload(project, scenes)
     # Give the VLM concrete media evidence so it can distinguish an intended
     # dramatic hard cut from an accidental black/exposure/geometry break.
