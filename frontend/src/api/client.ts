@@ -508,6 +508,11 @@ export interface ProductionReadinessReport {
             status: string;
             missing: string[];
             brief?: Record<string, string>;
+            score?: number;
+            score_max?: number;
+            score_status?: string;
+            score_missing?: string[];
+            recommendations?: string[];
         };
         visual_format?: {
             status: string;

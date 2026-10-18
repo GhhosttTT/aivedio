@@ -134,6 +134,13 @@ class ProductionReadinessService:
                 "Lock target audience, platform, genre, opening hook, and region before commercial production.",
                 severity="warning",
             ))
+        elif report.get("score_status") != "passed":
+            warnings.append(ReadinessIssue(
+                "topic_brief_low_specificity",
+                "Improve topic specificity before commercial production: "
+                + "; ".join(report.get("recommendations") or ["review the market brief"]),
+                severity="warning",
+            ))
         return report
 
     def _regional_identity_check(self, project, scenes, blockers) -> dict:
