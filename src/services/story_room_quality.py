@@ -123,6 +123,26 @@ class StoryRoomQualityService:
         escalation_windows = self._escalation_windows(scene_texts)
         goal_count = self._count_terms(full_text, self.GOAL_TERMS)
         stakes_count = self._count_terms(full_text, self.STAKES_TERMS)
+        hook_scenes = self._scene_numbers_with_terms(scene_texts[:2], self.HOOK_TERMS)
+        middle_start = max(0, len(scene_texts) // 3)
+        middle_end = min(len(scene_texts), max(middle_start + 1, len(scene_texts) * 2 // 3 + 1))
+        reversal_scenes = self._scene_numbers_with_terms(
+            scene_texts[middle_start:middle_end], self.REVERSAL_TERMS, offset=middle_start
+        )
+        ending_start = max(0, len(scene_texts) - 2)
+        payoff_scenes = self._scene_numbers_with_terms(
+            scene_texts[ending_start:], self.PAYOFF_TERMS, offset=ending_start
+        )
+        ending_hook_scenes = self._scene_numbers_with_terms(
+            scene_texts[ending_start:], self.ENDING_TERMS, offset=ending_start
+        )
+        beat_order_valid = bool(
+            hook_scenes
+            and reversal_scenes
+            and (payoff_scenes or ending_hook_scenes)
+            and min(hook_scenes) < min(reversal_scenes)
+            and min(reversal_scenes) < min(payoff_scenes or ending_hook_scenes)
+        )
 
         signals = {
             "has_market_brief": len(brief_text.strip()) >= 20 and self._count_terms(brief_text, self.MARKET_TERMS) > 0,
@@ -135,6 +155,11 @@ class StoryRoomQualityService:
             "has_reversal": reversal_count > 0,
             "has_payoff": payoff_count > 0,
             "ending_hook": ending_count > 0,
+            "hook_scenes": hook_scenes,
+            "reversal_scenes": reversal_scenes,
+            "payoff_scenes": payoff_scenes,
+            "ending_hook_scenes": ending_hook_scenes,
+            "beat_order_valid": beat_order_valid,
             "emotion_signals": emotion_count,
             "overloaded_scene_count": len(overloaded),
         }
@@ -165,6 +190,12 @@ class StoryRoomQualityService:
                 "detected": bool(signals["ending_hook"]),
                 "signal_count": ending_count,
             },
+            "ordered_progression": {
+                "detected": beat_order_valid,
+                "hook_scenes": hook_scenes,
+                "reversal_scenes": reversal_scenes,
+                "payoff_or_cliffhanger_scenes": payoff_scenes or ending_hook_scenes,
+            },
         }
         signals["beat_contract"] = beat_evidence
 
@@ -185,6 +216,8 @@ class StoryRoomQualityService:
             missing.append("payoff")
         if not signals["ending_hook"]:
             missing.append("ending_hook")
+        if not beat_order_valid:
+            missing.append("beat_order")
         if emotion_count < max(2, len(ordered) // 4):
             missing.append("emotional_progression")
         if overloaded:
@@ -233,6 +266,20 @@ class StoryRoomQualityService:
         lowered = text.lower()
         return sum(lowered.count(term.lower()) for term in terms)
 
+    def _scene_numbers_with_terms(
+        self,
+        scene_texts: list[str],
+        terms: list[str],
+        *,
+        offset: int = 0,
+    ) -> list[int]:
+        """Return one-based positions so beat evidence proves placement, not only presence."""
+        return [
+            index + offset + 1
+            for index, text in enumerate(scene_texts)
+            if self._count_terms(text, terms) > 0
+        ]
+
     def _escalation_windows(self, scene_texts: list[str]) -> int:
         count = 0
         for start in range(0, len(scene_texts), 4):
@@ -273,6 +320,8 @@ class StoryRoomQualityService:
             actions.append("Give the protagonist a visible short-term payoff or consequence before the final hook.")
         if "ending_hook" in missing:
             actions.append("End with a payoff or next-episode hook visible in the final two shots.")
+        if "beat_order" in missing:
+            actions.append("Place the hook early, a reversal in the middle, and a payoff or cliffhanger after the reversal.")
         if "emotional_progression" in missing:
             actions.append("Assign visible emotions to beats so reactions escalate across the episode.")
         if overloaded:

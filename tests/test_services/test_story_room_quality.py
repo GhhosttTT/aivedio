@@ -77,3 +77,27 @@ def test_story_room_quality_reads_locked_topic_brief(monkeypatch, tmp_path):
 
     assert report["signals"]["has_market_brief"] is True
     assert "market_brief" not in report["missing"]
+
+
+def test_story_room_quality_requires_reversal_before_final_payoff():
+    project = Project(
+        name="Late twist",
+        theme="都市悬疑女性受众抖音竖屏",
+        outline="秘密证据引发危机，最后揭开真相。",
+        description="platform: Douyin, audience: mystery viewers",
+    )
+    scenes = [
+        scene(1, "她发现秘密证据，震惊。", "我必须保护孩子。"),
+        scene(2, "反派威胁她交出证据，她拒绝。", "我不会交出来。"),
+        scene(3, "她继续逃跑，局势更加危机。", "快走。"),
+        scene(4, "她拿出文件准备离开。", "现在轮到我赢。"),
+        scene(5, "原来反派才是真正继承人，身份反转。", "我赢了，真相终于揭开。"),
+        scene(6, "电话响起，新的证据出现，未完。", "还有一个人没出现。"),
+    ]
+
+    report = StoryRoomQualityService().evaluate(project, scenes).to_dict()
+
+    assert report["signals"]["has_reversal"] is True
+    assert report["signals"]["reversal_scenes"] == [5]
+    assert report["signals"]["beat_order_valid"] is False
+    assert "beat_order" in report["missing"]
