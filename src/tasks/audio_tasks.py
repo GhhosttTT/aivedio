@@ -9,7 +9,7 @@ from src.database.models import Scene
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.repair_queue import attach_repair_queue
 from src.services.subtitle_generator import get_subtitle_generator
-from src.services.tts_service import get_tts_service
+from src.services.tts_service import get_tts_service, resolve_speaker_id
 from src.tasks.celery_app import celery_app
 from src.utils.logger import get_logger
 from src.utils.storage import get_scene_audio_path
@@ -130,7 +130,9 @@ def dialogue_audio_quality_report(
         "speaker": str(speaker or "default").strip() or "default",
         "voice_identity": {
             "speaker": str(speaker or "default").strip() or "default",
-            "binding": "scene_character_name",
+            "voice_id": str(profile.get("voice_id") or speaker or "default").strip() or "default",
+            "binding": str(profile.get("voice_source") or "scene_character_name"),
+            "requested_speaker": str(profile.get("requested_speaker") or speaker or "default").strip() or "default",
         },
         "audio_profile": profile,
         "dialogue_audio_quality_gate": gate,
@@ -167,12 +169,19 @@ def generate_audio_task(
         audio_path = get_scene_audio_path(project_id, scene_id)
         self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "tts_generation"})
         profile = dialogue_audio_profile(text, kwargs.get("repair_action"))
+        resolved_speaker, voice_source = resolve_speaker_id(speaker)
+        profile = {
+            **profile,
+            "voice_id": resolved_speaker,
+            "voice_source": voice_source,
+            "requested_speaker": str(speaker or "default").strip() or "default",
+        }
 
         try:
             generated = get_tts_service().generate_speech(
                 text=text,
                 output_path=audio_path,
-                speaker=speaker,
+                speaker=resolved_speaker,
                 emotion=kwargs.get("emotion", profile["emotion"]),
                 speed=kwargs.get("speed", profile["speed"]),
             )
@@ -202,7 +211,9 @@ def generate_audio_task(
         scene.audio_path = result_path
         scene.audio_duration = duration
         scene.subtitle_path = None
-        report = dialogue_audio_quality_report(scene, text, duration, result_path, profile, speaker=speaker)
+        report = dialogue_audio_quality_report(
+            scene, text, duration, result_path, profile, speaker=resolved_speaker
+        )
         Path(result_path).with_suffix(".quality.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2),
             encoding="utf-8",

@@ -7,6 +7,7 @@ TTS 服务（Text-to-Speech Service）
 
 import os
 import time
+import json
 from typing import Optional, List, Dict
 from pathlib import Path
 
@@ -18,6 +19,34 @@ except ImportError:
     httpx = None
 
 from src.utils.logger import logger
+
+
+def resolve_speaker_id(character_name: str | None) -> tuple[str, str]:
+    """Resolve a stable provider voice id for a screenplay character.
+
+    ``speaker`` in a script is a human character name, while TTS providers
+    usually require an account-specific voice id.  Keep the old passthrough
+    behavior when no mapping is configured, but allow production deployments
+    to freeze voice identity with ``TTS_SPEAKER_MAP_JSON`` and a default voice.
+    """
+    requested = str(character_name or "default").strip() or "default"
+    raw_mapping = os.getenv("TTS_SPEAKER_MAP_JSON", "").strip()
+    if raw_mapping:
+        try:
+            mapping = json.loads(raw_mapping)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError("TTS_SPEAKER_MAP_JSON must be a JSON object") from exc
+        if not isinstance(mapping, dict):
+            raise ValueError("TTS_SPEAKER_MAP_JSON must be a JSON object")
+        mapped = mapping.get(requested)
+        if mapped is None:
+            mapped = mapping.get(requested.lower())
+        if mapped is not None and str(mapped).strip():
+            return str(mapped).strip(), "configured_character_voice_map"
+    default_voice = os.getenv("TTS_DEFAULT_SPEAKER", "").strip()
+    if default_voice and requested == "default":
+        return default_voice, "configured_default_voice"
+    return requested, "scene_character_name"
 
 
 class TTSError(Exception):

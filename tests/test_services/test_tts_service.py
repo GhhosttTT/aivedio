@@ -23,7 +23,8 @@ from src.services.tts_service import (
     TTSError,
     TTSQuotaError,
     get_tts_service,
-    cleanup_tts_service
+    cleanup_tts_service,
+    resolve_speaker_id,
 )
 
 # Patch HTTPX_AVAILABLE 为 True
@@ -65,6 +66,20 @@ class TestTTSService:
             assert service.base_url == "https://test.com/api"
             assert service.timeout == 60
             assert service.max_retries == 5
+
+    def test_resolve_speaker_id_uses_frozen_character_voice_mapping(self, monkeypatch):
+        monkeypatch.setenv("TTS_SPEAKER_MAP_JSON", '{"Alice": "voice_female_01"}')
+
+        assert resolve_speaker_id("Alice") == (
+            "voice_female_01",
+            "configured_character_voice_map",
+        )
+
+    def test_resolve_speaker_id_rejects_invalid_mapping(self, monkeypatch):
+        monkeypatch.setenv("TTS_SPEAKER_MAP_JSON", "not-json")
+
+        with pytest.raises(ValueError, match="TTS_SPEAKER_MAP_JSON"):
+            resolve_speaker_id("Alice")
     
     def test_init_no_api_key(self):
         """测试：未提供 API 密钥时抛出异常"""
