@@ -283,6 +283,16 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         cover_report = generate_cover(final_path, cover_path)
     except CoverGenerationError as exc:
         raise DeliveryPackageError(str(exc)) from exc
+    if cover_report.get("status") == "ready":
+        from src.services.cover_quality_audit import audit_cover
+        cover_quality = audit_cover(
+            cover_path,
+            expected_width=int(cover_report.get("width") or 768),
+            expected_height=int(cover_report.get("height") or 1344),
+        )
+        cover_report["quality_audit"] = cover_quality
+        if cover_quality.get("status") != "passed":
+            raise DeliveryPackageError("Generated cover failed the mobile publishability quality gate")
     # Dynamic project audits are part of the signed delivery evidence. Persist
     # them before collecting review files so a package cannot omit the exact
     # continuity/rhythm evidence used by the approval decision.
