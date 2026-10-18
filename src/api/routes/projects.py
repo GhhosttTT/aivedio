@@ -638,6 +638,7 @@ async def get_generation_review(
     if isinstance(final_composition, dict) and final_composition.get("status") == "passed":
         active_final_path = Path(getattr(project, "final_video_path", None) or "")
         reviewed_final_path = Path(final_composition.get("video_path") or "")
+        final_technical_metrics = final_composition.get("final_technical_metrics")
         production_options = load_production_video_options(project_id) or {}
         expected_composition_input = composition_input_signature(
             project,
@@ -648,6 +649,9 @@ async def get_generation_review(
         )
         if (
             not active_final_path.is_file()
+            or not isinstance(final_technical_metrics, dict)
+            or final_technical_metrics.get("status") != "available"
+            or final_technical_metrics.get("temporal_sample_evidence") != "sufficient"
             or not final_composition.get("video_signature")
             or not isinstance(final_composition.get("video_sha256"), str)
             or final_composition.get("video_sha256") != file_hash(active_final_path)
