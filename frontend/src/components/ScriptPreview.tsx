@@ -22,7 +22,7 @@ export function ScriptPreview({project, onReload, locked = false}: {project: Pro
 
     const sceneReview = (sceneNumber: number) => {
         const matches = Object.entries(reports).filter(([key, report]) => (
-            key.includes(`scene_${sceneNumber}`) || report?.scene_number === sceneNumber
+            new RegExp(`(^|_)scene_${sceneNumber}(_|$)`).test(key) || report?.scene_number === sceneNumber
         ));
         const failed = matches.find(([, report]) => ['needs_review', 'error', 'stale'].includes(report?.status));
         const passed = matches.find(([, report]) => report?.status === 'passed');
