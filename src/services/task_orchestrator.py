@@ -343,6 +343,7 @@ class TaskOrchestrator:
         self._reserve_project(project_id)
         self.db.add(task_model)
         self.db.flush()
+        save_production_video_options(project_id, task_model.id, inherited_video_options)
 
         project.final_video_path = None
         previous_assets = {

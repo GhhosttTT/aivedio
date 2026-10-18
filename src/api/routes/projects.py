@@ -36,6 +36,7 @@ from src.api.dependencies import get_current_user, require_project_access
 from src.services.project_manager import ProjectManager, get_project_manager
 from src.services.script_generator import ScriptGenerator, ScriptParseError, get_script_generator
 from src.services.task_orchestrator import TaskOrchestrator, get_task_orchestrator
+from src.services.task_recovery import load_production_video_options
 from src.services.production_readiness import ProductionReadinessService
 from src.services.spatial_control_assets import SpatialControlAssetService
 from src.services.visual_style_assets import VisualStyleAssetService
@@ -1461,6 +1462,9 @@ def latest_production_task(project_id: int, db_session: Session = Depends(get_db
     import json
     from src.utils.storage import storage_manager
     result = TaskOrchestrator(db_session).get_task_status(task.celery_task_id)
+    production_options = load_production_video_options(project_id, task_id=task.id)
+    if production_options:
+        result["production_options"] = production_options
     path = storage_manager.get_project_path(project_id) / "production_progress.json"
     if path.is_file():
         progress = json.loads(path.read_text(encoding="utf-8"))

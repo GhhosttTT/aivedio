@@ -25,7 +25,19 @@ _PRODUCTION_OPTION_KEYS = (
     "camera_fixed",
     "watermark",
     "duration_seconds",
+    "sequence_output_path",
 )
+
+_PRODUCTION_OPTION_ALIASES = {
+    "model": "MODEL",
+    "resolution": "RESOLUTION",
+    "output_format": "OUTPUT_FORMAT",
+    "return_last_frame": "RETURN_LAST_FRAME",
+    "camera_fixed": "CAMERA_FIXED",
+    "watermark": "WATERMARK",
+    "duration_seconds": "DURATION_SECONDS",
+    "sequence_output_path": "SEQUENCE_OUTPUT_PATH",
+}
 
 
 def _production_options_path(project_id: int) -> Path:
@@ -34,12 +46,16 @@ def _production_options_path(project_id: int) -> Path:
 
 def save_production_video_options(project_id: int, task_id: int | str, options: dict) -> None:
     """Persist the effective per-run video controls for later repair tasks."""
+    normalized_options = dict(options or {})
+    for canonical, alias in _PRODUCTION_OPTION_ALIASES.items():
+        if canonical not in normalized_options and alias in normalized_options:
+            normalized_options[canonical] = normalized_options[alias]
     payload = {
         "task_id": str(task_id),
         "options": {
-            key: options[key]
+            key: normalized_options[key]
             for key in _PRODUCTION_OPTION_KEYS
-            if key in options and options[key] is not None
+            if key in normalized_options and normalized_options[key] is not None
         },
     }
     path = _production_options_path(project_id)

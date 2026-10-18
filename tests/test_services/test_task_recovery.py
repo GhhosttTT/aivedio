@@ -90,3 +90,23 @@ def test_production_video_options_round_trip(tmp_path, monkeypatch):
         "draft_task_ids": {1: "draft-1", 2: "draft-2"},
     }
     assert task_recovery.load_production_video_options(7, task_id=41) is None
+
+
+def test_production_video_options_normalize_task_aliases(tmp_path, monkeypatch):
+    monkeypatch.setattr(task_recovery.storage_manager, "get_project_path", lambda project_id: tmp_path)
+
+    task_recovery.save_production_video_options(7, 43, {
+        "provider": "seedance_api",
+        "MODEL": "doubao-seedance-2-5-260628",
+        "RESOLUTION": "1080p",
+        "OUTPUT_FORMAT": "mp4",
+        "SEQUENCE_OUTPUT_PATH": "/tmp/sequence.mp4",
+    })
+
+    assert task_recovery.load_production_video_options(7, task_id=43) == {
+        "provider": "seedance_api",
+        "model": "doubao-seedance-2-5-260628",
+        "resolution": "1080p",
+        "output_format": "mp4",
+        "sequence_output_path": "/tmp/sequence.mp4",
+    }
