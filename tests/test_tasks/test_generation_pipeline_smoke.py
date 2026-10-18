@@ -190,6 +190,21 @@ def test_composition_accepts_passed_audio_quality_report_for_dialogue(tmp_path):
     composition_tasks._require_passed_scene_audio([scene])
 
 
+def test_composition_rejects_audio_report_without_quality_gate(tmp_path):
+    audio = tmp_path / "scene_001.mp3"
+    audio.write_bytes(b"fake audio")
+    audio.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "passed",
+        "audio_path": str(audio),
+        "audio_sha256": hashlib.sha256(audio.read_bytes()).hexdigest(),
+        "dialogue_fingerprint": composition_tasks._dialogue_fingerprint("你为什么骗我"),
+    }), encoding="utf-8")
+    scene = Mock(scene_number=1, dialogue="你为什么骗我", audio_path=str(audio))
+
+    with pytest.raises(ValueError, match="missing dialogue audio quality gate"):
+        composition_tasks._require_passed_scene_audio([scene])
+
+
 def test_composition_rejects_stale_audio_quality_hash(tmp_path):
     audio = tmp_path / "scene_001.mp3"
     audio.write_bytes(b"current audio")

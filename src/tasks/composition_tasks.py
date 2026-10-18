@@ -638,7 +638,10 @@ def _require_passed_scene_audio(scenes: list[Scene]) -> None:
             failed.append(f"{scene.scene_number}: audio quality report is stale for current file")
             continue
         gate = report.get("dialogue_audio_quality_gate")
-        if isinstance(gate, dict) and gate.get("status") != "passed":
+        if not isinstance(gate, dict):
+            failed.append(f"{scene.scene_number}: missing dialogue audio quality gate")
+            continue
+        if gate.get("status") != "passed":
             failed.append(f"{scene.scene_number}: dialogue audio quality gate failed")
     if missing:
         raise ValueError("Missing generated audio for spoken-dialogue scenes: " + ", ".join(missing))
