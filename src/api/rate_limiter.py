@@ -7,6 +7,7 @@ import time
 import weakref
 import math
 from typing import Callable, Optional
+from uuid import uuid4
 
 from fastapi import Request, Response, HTTPException, status
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -139,6 +140,9 @@ class RateLimiter:
         try:
             key = self._get_key(identifier)
             now = time.time()
+            # 时间戳可能在同一进程内重复；ZSET member 必须唯一，否则并发
+            # 请求会互相覆盖，导致滑动窗口低估真实请求数。
+            request_member = f"{now:.9f}:{uuid4().hex}"
             
             # 使用 Redis 的 ZSET 实现滑动窗口
             pipe = self.redis_client.pipeline()
@@ -151,7 +155,7 @@ class RateLimiter:
             pipe.zcard(key)
             
             # 添加当前请求
-            pipe.zadd(key, {str(now): now})
+            pipe.zadd(key, {request_member: now})
             
             # 设置过期时间
             pipe.expire(key, self.period + 1)
@@ -167,7 +171,7 @@ class RateLimiter:
                     oldest_time = oldest[0][1]
                     retry_after = int(self.period - (now - oldest_time)) + 1
                     # 移除刚才添加的请求
-                    self.redis_client.zrem(key, str(now))
+                    self.redis_client.zrem(key, request_member)
                     return False, retry_after
             
             return True, 0

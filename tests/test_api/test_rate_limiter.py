@@ -84,6 +84,39 @@ class TestRateLimiter:
         # 应该回退到本地限流
         allowed, retry_after = limiter._check_rate_limit_redis("test_user")
         assert allowed is True
+
+    def test_check_rate_limit_redis_uses_unique_members(self):
+        class Pipeline:
+            def __init__(self):
+                self.zadd_calls = []
+
+            def zremrangebyscore(self, *args):
+                return self
+
+            def zcard(self, *args):
+                return self
+
+            def zadd(self, key, members):
+                self.zadd_calls.append((key, members))
+                return self
+
+            def expire(self, *args):
+                return self
+
+            def execute(self):
+                return [0, 0, 1, 1]
+
+        pipeline = Pipeline()
+        redis_client = Mock()
+        redis_client.pipeline.return_value = pipeline
+        limiter = RateLimiter(rate=5, period=60, redis_client=redis_client)
+
+        assert limiter._check_rate_limit_redis("test_user") == (True, 0)
+        assert limiter._check_rate_limit_redis("test_user") == (True, 0)
+
+        first_member = next(iter(pipeline.zadd_calls[0][1]))
+        second_member = next(iter(pipeline.zadd_calls[1][1]))
+        assert first_member != second_member
     
     def test_get_redis_client_success(self):
         """测试获取 Redis 客户端 - 成功"""
