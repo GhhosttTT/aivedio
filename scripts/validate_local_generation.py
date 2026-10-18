@@ -1,6 +1,7 @@
 """Validate production media; supports both direct and module execution."""
 
 import argparse
+import hashlib
 import json
 import platform
 import shutil
@@ -928,6 +929,14 @@ def _baseline_comparison_passed(baseline_report: dict | None, output: Path) -> b
     gates = baseline_report.get("gates")
     score = baseline_report.get("score")
     minimum_score = baseline_report.get("min_score")
+    candidate_path = Path(str(baseline_report.get("candidate_video_path") or ""))
+    baseline_path = Path(str(baseline_report.get("baseline_video_path") or ""))
+    provenance_passed = (
+        candidate_path.is_file()
+        and baseline_path.is_file()
+        and baseline_report.get("candidate_sha256") == _sha256(candidate_path)
+        and baseline_report.get("baseline_sha256") == _sha256(baseline_path)
+    )
     return bool(
         baseline_report.get("kind") == "seed_dance_baseline_comparison"
         and isinstance(gates, dict)
@@ -937,7 +946,16 @@ def _baseline_comparison_passed(baseline_report: dict | None, output: Path) -> b
         and isinstance(minimum_score, (int, float))
         and score >= minimum_score
         and _baseline_contact_sheet_present(baseline_report, output)
+        and provenance_passed
     )
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _manual_media_reference_exists(output: Path, value) -> bool:
@@ -2123,6 +2141,10 @@ def main():
         if not args.candidate or not args.baseline:
             parser.error("compare-baseline needs --candidate and --baseline")
         report = compare_video_baseline(Path(args.candidate), Path(args.baseline), artifact_dir=args.output)
+        report["candidate_video_path"] = str(Path(args.candidate).resolve())
+        report["baseline_video_path"] = str(Path(args.baseline).resolve())
+        report["candidate_sha256"] = _sha256(Path(args.candidate))
+        report["baseline_sha256"] = _sha256(Path(args.baseline))
         write_report(args.output / "seed_dance_baseline_comparison.json", report)
     elif args.mode == "summarize":
         report = summarize_validation(args.output)

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sys
 
@@ -105,12 +106,20 @@ def passed_video_review():
 def passed_seed_dance_baseline(tmp_path):
     contact_sheet = tmp_path / "seed_dance_contact_sheet.png"
     contact_sheet.write_bytes(b"visual comparison evidence")
+    candidate = tmp_path / "candidate.mp4"
+    baseline = tmp_path / "baseline.mp4"
+    candidate.write_bytes(b"candidate video")
+    baseline.write_bytes(b"baseline video")
     return {
         "kind": "seed_dance_baseline_comparison",
         "status": "passed",
         "score": 4.2,
         "min_score": 4.0,
         "contact_sheet_path": str(contact_sheet),
+        "candidate_video_path": str(candidate),
+        "baseline_video_path": str(baseline),
+        "candidate_sha256": hashlib.sha256(candidate.read_bytes()).hexdigest(),
+        "baseline_sha256": hashlib.sha256(baseline.read_bytes()).hexdigest(),
         "gates": {name: True for name in validator.REQUIRED_BASELINE_GATES},
     }
 
@@ -713,6 +722,8 @@ def test_manual_review_template_writes_dimension_scaffold(tmp_path):
 
 def test_compare_baseline_cli_writes_contact_sheet_to_output(tmp_path, monkeypatch, capsys):
     seen = {}
+    (tmp_path / "candidate.mp4").write_bytes(b"candidate")
+    (tmp_path / "baseline.mp4").write_bytes(b"baseline")
 
     def fake_compare(candidate, baseline, artifact_dir=None):
         seen["candidate"] = candidate
@@ -731,9 +742,9 @@ def test_compare_baseline_cli_writes_contact_sheet_to_output(tmp_path, monkeypat
         "--output",
         str(tmp_path),
         "--candidate",
-        "candidate.mp4",
+        str(tmp_path / "candidate.mp4"),
         "--baseline",
-        "baseline.mp4",
+        str(tmp_path / "baseline.mp4"),
     ])
 
     assert validator.main() == 0
