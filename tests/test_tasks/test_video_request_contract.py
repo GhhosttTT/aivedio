@@ -1,7 +1,7 @@
 from dataclasses import replace
 
 from src.services.generation_provider import VideoGenerationRequest
-from src.tasks.video_tasks import _video_request_contract
+from src.tasks.video_tasks import _bounded_multi_shot_plan, _video_request_contract
 
 
 def test_video_request_contract_captures_effective_generation_controls():
@@ -112,3 +112,41 @@ def test_video_request_contract_binds_frozen_spatial_asset_pack():
     contract = _video_request_contract(request, request_mode="reference", sequence_level=False)
 
     assert contract["spatial_asset_pack"]["scene_contract_hash"] == "scene-hash"
+
+
+def test_bounded_multi_shot_plan_carries_each_frozen_spatial_contract():
+    shots = _bounded_multi_shot_plan({
+        "sequence_shots": [
+            {"scene_number": 1, "visual_summary": "entrance"},
+            {"scene_number": 2, "visual_summary": "confrontation"},
+        ],
+        "spatial_contracts": {
+            "1": {"scene_contract_hash": "scene-1"},
+            "2": {"scene_contract_hash": "scene-2"},
+        },
+    })
+
+    assert [shot["spatial_asset_pack"]["scene_contract_hash"] for shot in shots] == [
+        "scene-1", "scene-2",
+    ]
+
+
+def test_video_request_contract_records_sequence_spatial_contract_hashes():
+    request = VideoGenerationRequest(
+        prompt="sequence",
+        output_path="/tmp/sequence.mp4",
+        multi_shot=True,
+        shot_plan={
+            "shots": [
+                {"scene_number": 1, "spatial_asset_pack": {"scene_contract_hash": "scene-1"}},
+                {"scene_number": 2, "spatial_asset_pack": {"scene_contract_hash": "scene-2"}},
+            ],
+        },
+    )
+
+    contract = _video_request_contract(request, request_mode="multi_shot", sequence_level=True)
+
+    assert contract["sequence_shot_contracts"] == [
+        {"scene_number": 1, "scene_contract_hash": "scene-1"},
+        {"scene_number": 2, "scene_contract_hash": "scene-2"},
+    ]

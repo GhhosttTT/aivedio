@@ -147,6 +147,19 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         for item in (raw_bindings or [])
         if isinstance(item, dict)
     ]
+    sequence_shot_contracts = [
+        {
+            "scene_number": shot.get("scene_number"),
+            "scene_contract_hash": (
+                shot.get("spatial_asset_pack", {}).get("scene_contract_hash")
+                if isinstance(shot.get("spatial_asset_pack"), dict)
+                else None
+            ),
+        }
+        for shot in (shot_plan.get("shots") or [])
+        if isinstance(shot, dict)
+        and isinstance(shot.get("spatial_asset_pack"), dict)
+    ]
     reference_assets = []
     for role, value in (
         ("reference_image", request.reference_image),
@@ -201,6 +214,7 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         "character_reference_binding_count": len(character_bindings),
         "character_reference_bindings": character_bindings,
         "spatial_asset_pack": spatial_contract,
+        "sequence_shot_contracts": sequence_shot_contracts,
     }
     encoded = json.dumps(contract, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     contract["contract_hash"] = hashlib.sha256(encoded).hexdigest()
@@ -354,10 +368,12 @@ def _bounded_multi_shot_plan(sequence_context: dict | None) -> list[dict]:
     else:
         source = [(key, sequence_context.get(key)) for key in ("previous", "current", "next")]
     shots = []
+    spatial_contracts = sequence_context.get("spatial_contracts")
+    spatial_contracts = spatial_contracts if isinstance(spatial_contracts, dict) else {}
     for key, shot in source:
         if not isinstance(shot, dict):
             continue
-        shots.append({
+        payload = {
             "scene_number": shot.get("scene_number"),
             "role": shot.get("role") or "story_shot",
             "character": shot.get("character_name") or "",
@@ -365,7 +381,13 @@ def _bounded_multi_shot_plan(sequence_context: dict | None) -> list[dict]:
             "dialogue": str(shot.get("dialogue") or "")[:180],
             "duration_seconds": shot.get("duration_seconds"),
             "transition": "continue from previous shot" if shots else "opening shot",
-        })
+        }
+        scene_contract = spatial_contracts.get(str(shot.get("scene_number")))
+        if not isinstance(scene_contract, dict):
+            scene_contract = spatial_contracts.get(shot.get("scene_number"))
+        if isinstance(scene_contract, dict):
+            payload["spatial_asset_pack"] = scene_contract
+        shots.append(payload)
     return shots
 
 
@@ -1200,11 +1222,21 @@ def _multimodal_references_for_sequence(
 
 def _sequence_context_for_scene(scene: Scene, project_id: int, db) -> dict:
     scenes = db.query(Scene).filter(Scene.project_id == project_id).order_by(Scene.scene_number).all()
-    return build_sequence_context(
+    context = build_sequence_context(
         scenes,
         scene.scene_number,
         sequence_id=f"project-{project_id}",
     ).as_dict()
+    spatial_contracts = {}
+    if SpatialControlAssetService().get_project_pack(project_id) is not None:
+        for sequence_scene in scenes:
+            contract = SpatialControlAssetService().get_scene_contract(
+                project_id, sequence_scene.scene_number,
+            )
+            if isinstance(contract, dict):
+                spatial_contracts[str(sequence_scene.scene_number)] = contract
+    context["spatial_contracts"] = spatial_contracts
+    return context
 
 
 def _scene_end_frame_path(project_id: int, scene_id: int) -> str:
