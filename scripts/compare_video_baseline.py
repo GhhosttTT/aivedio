@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -36,6 +37,9 @@ class VideoStats:
     brightness_step_p95: float = 0.0
     motion_jitter_ratio: float = 0.0
     temporal_jump_ratio: float = 0.0
+    audio_signal_status: str | None = None
+    audio_clipping_status: str | None = None
+    audio_peak_db: float | None = None
 
 
 def _probe(path: Path) -> dict:
@@ -138,6 +142,7 @@ def video_stats(path: Path, max_samples: int = 16) -> VideoStats:
     ]
     motion_median = float(np.median(diffs)) if diffs else 0.0
     sample_interval = probe["duration_seconds"] / max(len(frames) - 1, 1)
+    audio_metrics = _audio_signal_stats(path) if probe["audio_present"] else {}
     return VideoStats(
         path=str(path),
         duration_seconds=round(probe["duration_seconds"], 3),
@@ -177,6 +182,9 @@ def video_stats(path: Path, max_samples: int = 16) -> VideoStats:
             if histogram_jumps else 0.0,
             3,
         ),
+        audio_signal_status=audio_metrics.get("audio_signal_status"),
+        audio_clipping_status=audio_metrics.get("audio_clipping_status"),
+        audio_peak_db=audio_metrics.get("audio_peak_db"),
     )
 
 
@@ -220,6 +228,11 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
             if candidate_stats.audio_duration_seconds is not None
             and baseline_stats.audio_duration_seconds is not None else None
         ),
+        "audio_peak_delta_db": (
+            round(candidate_stats.audio_peak_db - baseline_stats.audio_peak_db, 3)
+            if candidate_stats.audio_peak_db is not None
+            and baseline_stats.audio_peak_db is not None else None
+        ),
     }
     audio_duration_delta = differences["audio_duration_delta_seconds"]
     gates = {
@@ -247,6 +260,14 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
                 and audio_duration_delta is not None
                 and abs(audio_duration_delta) <= 0.5
             )
+        ),
+        "audio_signal_usable": (
+            not baseline_stats.audio_present
+            or candidate_stats.audio_signal_status == "usable"
+        ),
+        "audio_not_clipped": (
+            not baseline_stats.audio_present
+            or candidate_stats.audio_clipping_status != "clipped"
         ),
     }
     score = _technical_similarity_score(differences, gates)
@@ -322,6 +343,37 @@ def _load_cv2_numpy():
             "Install them before running video baseline comparison."
         ) from exc
     return cv2, np
+
+
+def _audio_signal_stats(path: Path) -> dict[str, object]:
+    """Measure whether a present audio stream contains usable, unclipped signal."""
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-v", "error", "-i", str(path), "-vn",
+                "-af", "volumedetect", "-f", "null", "-",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=90,
+        )
+        output = f"{result.stdout}\n{result.stderr}"
+        matches = re.findall(
+            r"max_volume:\s*(-?(?:\d+(?:\.\d+)?|inf))\s*dB",
+            output,
+            re.I,
+        )
+        if result.returncode != 0 or not matches or matches[-1].lower() == "inf":
+            return {"audio_signal_status": "unavailable", "audio_clipping_status": "unavailable"}
+        peak_db = float(matches[-1])
+        return {
+            "audio_signal_status": "near_silent" if peak_db <= -55.0 else "usable",
+            "audio_clipping_status": "clipped" if peak_db >= -0.1 else "ok",
+            "audio_peak_db": round(peak_db, 3),
+        }
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {"audio_signal_status": "unavailable", "audio_clipping_status": "unavailable"}
 
 
 def _safe_ratio(value: float, baseline: float) -> float | None:
