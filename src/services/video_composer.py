@@ -344,6 +344,15 @@ class VideoComposer:
         """
         if not video_files:
             raise ValueError("视频文件列表不能为空")
+
+        for video_file in video_files:
+            if not os.path.exists(video_file):
+                raise FileNotFoundError(f"视频文件不存在: {video_file}")
+        for audio_file in audio_files or []:
+            if not os.path.exists(audio_file):
+                raise FileNotFoundError(f"音频文件不存在: {audio_file}")
+        if bgm_path and not os.path.exists(bgm_path):
+            raise FileNotFoundError(f"背景音乐文件不存在: {bgm_path}")
         
         logger.info(
             f"开始合成视频: videos={len(video_files)}, "

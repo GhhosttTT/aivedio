@@ -399,6 +399,12 @@ class TestVideoComposer:
         """测试：空视频列表时抛出异常"""
         with pytest.raises(ValueError, match="视频文件列表不能为空"):
             service.compose_video([])
+
+    def test_compose_video_validates_all_media_inputs_before_processing(self, service, tmp_path):
+        video = tmp_path / "video.mp4"
+        video.write_bytes(b"video")
+        with pytest.raises(FileNotFoundError, match="音频文件不存在"):
+            service.compose_video([str(video)], audio_files=[str(tmp_path / "missing.mp3")])
     
     def test_compose_video_single_video_no_audio_no_bgm(self, service, tmp_path):
         """测试：单个视频，无音频，无背景音乐"""
