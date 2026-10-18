@@ -61,6 +61,9 @@ VIDEO_WORKFLOW_PLACEHOLDER_GROUPS = {
         "quality_pipeline", "quality_pipeline_json", "quality_pipeline_stages",
         "quality_pipeline_prompt", "quality_pipeline_negative",
     },
+    "spatial_plan": {"spatial_plan_json"},
+    "spatial_control_references": {"spatial_control_references_json"},
+    "spatial_asset_contract": {"spatial_asset_pack_json", "spatial_scene_contract_hash"},
 }
 
 

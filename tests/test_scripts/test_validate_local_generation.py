@@ -359,6 +359,9 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
                 "quality_mode": "{quality_mode}",
                 "repair_action": "{repair_action}",
                 "pipeline": "{quality_pipeline_json}",
+                "spatial_plan": "{spatial_plan_json}",
+                "spatial_references": "{spatial_control_references_json}",
+                "spatial_contract": "{spatial_asset_pack_json}",
             },
         },
         "5": {"class_type": "VHS_VideoCombine", "inputs": {"filename_prefix": "{output_prefix}"}},
@@ -398,9 +401,13 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
     assert report["checks"]["has_quality_profile_placeholder"] is True
     assert report["checks"]["has_repair_action_placeholder"] is True
     assert report["checks"]["has_quality_pipeline_placeholder"] is True
+    assert report["checks"]["has_spatial_plan_placeholder"] is True
+    assert report["checks"]["has_spatial_control_references_placeholder"] is True
+    assert report["checks"]["has_spatial_asset_contract_placeholder"] is True
     assert report["placeholders"] == [
         "last_frame", "output_prefix", "prompt", "quality_mode",
         "quality_pipeline_json", "reference_image", "repair_action",
+        "spatial_asset_pack_json", "spatial_control_references_json", "spatial_plan_json",
     ]
     assert report["likely_output_nodes"][0]["class_type"] == "VHS_VideoCombine"
     assert report["action_items"] == []

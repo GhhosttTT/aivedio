@@ -660,7 +660,9 @@ def test_workflow_profile_freeze_clears_readiness_workflow_profile_blocker(setup
         '"2":{"class_type":"LoadImage","inputs":{"image":"{last_frame}"}},'
         '"3":{"class_type":"CLIPTextEncode","inputs":{"text":"{prompt}"}},'
         '"4":{"class_type":"VideoQualitySwitch","inputs":{"quality_mode":"{quality_mode}",'
-        '"repair_action":"{repair_action}","pipeline":"{quality_pipeline_json}"}},'
+        '"repair_action":"{repair_action}","pipeline":"{quality_pipeline_json}",'
+        '"spatial_plan":"{spatial_plan_json}","spatial_references":"{spatial_control_references_json}",'
+        '"spatial_contract":"{spatial_asset_pack_json}"}},'
         '"5":{"class_type":"SVD_img2vid_Conditioning"},'
         '"6":{"class_type":"VHS_VideoCombine","inputs":{"filename_prefix":"{output_prefix}"}}}',
         encoding="utf-8",

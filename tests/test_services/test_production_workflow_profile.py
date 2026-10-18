@@ -41,7 +41,10 @@ def write_production_workflows(tmp_path):
             "inputs": {
               "quality_mode": "{quality_mode}",
               "repair_action": "{repair_action}",
-              "quality_pipeline": "{quality_pipeline_json}"
+              "quality_pipeline": "{quality_pipeline_json}",
+              "spatial_plan": "{spatial_plan_json}",
+              "spatial_references": "{spatial_control_references_json}",
+              "spatial_contract": "{spatial_asset_pack_json}"
             }
           },
           "5": {"class_type": "SVD_img2vid_Conditioning"},

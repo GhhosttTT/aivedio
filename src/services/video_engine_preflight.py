@@ -31,6 +31,8 @@ VIDEO_WORKFLOW_PLACEHOLDERS = {
     "quality_mode", "quality_profile", "repair_action", "quality_pipeline",
     "quality_pipeline_json", "quality_pipeline_stages", "quality_pipeline_prompt",
     "quality_pipeline_negative",
+    "shot_plan_json", "spatial_plan_json", "spatial_control_references_json",
+    "spatial_asset_pack_json", "spatial_scene_contract_hash",
 }
 
 # Keep the selectable catalog next to the provider contract so the UI and
@@ -112,11 +114,18 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
             "quality_pipeline", "quality_pipeline_json", "quality_pipeline_stages",
             "quality_pipeline_prompt", "quality_pipeline_negative",
         } & set(placeholders))
+        checks["has_spatial_plan_placeholder"] = "spatial_plan_json" in set(placeholders)
+        checks["has_spatial_control_references_placeholder"] = "spatial_control_references_json" in set(placeholders)
+        checks["has_spatial_asset_contract_placeholder"] = bool({
+            "spatial_asset_pack_json", "spatial_scene_contract_hash",
+        } & set(placeholders))
         checks["has_likely_video_output"] = bool(outputs)
         contract_required = (
             "workflow_file", "has_reference_placeholder", "has_prompt_placeholder",
             "has_quality_profile_placeholder", "has_repair_action_placeholder",
             "has_quality_pipeline_placeholder", "has_likely_video_output",
+            "has_spatial_plan_placeholder", "has_spatial_control_references_placeholder",
+            "has_spatial_asset_contract_placeholder",
         )
         if not all(checks.get(key) for key in contract_required):
             checks["comfyui_preflight"] = False
@@ -152,6 +161,13 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
                 "quality_pipeline_stages": ", ".join(quality_pipeline["stages"]),
                 "quality_pipeline_prompt": quality_pipeline["prompt_directive"],
                 "quality_pipeline_negative": quality_pipeline["negative_directive"],
+                "shot_plan_json": json.dumps({"spatial_plan": {"camera_angle": "validation"}}, ensure_ascii=False),
+                "spatial_plan_json": json.dumps({"camera_angle": "validation"}, ensure_ascii=False),
+                "spatial_control_references_json": json.dumps(
+                    {"pose_reference_prompt": "validation"}, ensure_ascii=False,
+                ),
+                "spatial_asset_pack_json": json.dumps({"scene_contract_hash": "validation"}, ensure_ascii=False),
+                "spatial_scene_contract_hash": "validation",
             })
             service.preflight(resolved)
             checks["comfyui_preflight"] = True
@@ -279,6 +295,12 @@ def _video_workflow_action_items(checks: dict) -> list[str]:
             "Add {quality_pipeline_json}, {quality_pipeline_stages}, {quality_pipeline_prompt}, "
             "or {quality_pipeline_negative} so commercial quality stages reach the workflow."
         )
+    if not checks.get("has_spatial_plan_placeholder"):
+        items.append("Add {spatial_plan_json} so the approved camera/blocking contract reaches the video workflow.")
+    if not checks.get("has_spatial_control_references_placeholder"):
+        items.append("Add {spatial_control_references_json} so pose/depth/camera control references reach the video workflow.")
+    if not checks.get("has_spatial_asset_contract_placeholder"):
+        items.append("Add {spatial_asset_pack_json} or {spatial_scene_contract_hash} to bind the frozen spatial asset pack.")
     if not checks.get("has_likely_video_output"):
         items.append("Add a video output node such as VHS_VideoCombine, WebM/GIF export, or another video save node.")
     if not checks.get("comfyui_preflight"):
