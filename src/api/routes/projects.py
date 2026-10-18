@@ -445,6 +445,7 @@ async def get_generation_review(
         current_story,
         generation_signature,
         validate_generation_review_coverage,
+        validate_generation_review_evidence,
         validate_story_review_coverage,
     )
     from src.services.generation_review import fingerprint, write_report
@@ -509,6 +510,14 @@ async def get_generation_review(
                 "Generation review does not cover every scene: "
                 f"missing={coverage['missing']}, duplicate={coverage['duplicate']}, "
                 f"unexpected={coverage['unexpected']}, not_passed={coverage['not_passed']}"
+            )
+        evidence = validate_generation_review_evidence(generation_report, audit_scenes)
+        generation_report["evidence"] = evidence
+        if not evidence["passed"]:
+            generation_report["status"] = "needs_review"
+            generation_report["error"] = (
+                "Generation review evidence is missing or stale: "
+                f"missing={evidence['missing']}, invalid={evidence['invalid']}"
             )
     baseline_report = reports.get("seed_dance_baseline_comparison")
     if isinstance(baseline_report, dict) and baseline_report.get("status") == "passed":

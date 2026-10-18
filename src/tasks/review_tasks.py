@@ -97,6 +97,48 @@ def validate_story_review_coverage(report: dict, scenes) -> dict:
     }
 
 
+def validate_generation_review_evidence(report: dict, scenes) -> dict:
+    """Verify that each reviewed scene points to a live, matching evidence file."""
+    if isinstance(report, dict) and report.get("mode") == "single_shot_smoke_test":
+        return {"passed": True, "missing": [], "invalid": [], "reason": "smoke_test"}
+    expected = {int(scene.scene_number): scene for scene in scenes}
+    missing: list[int] = []
+    invalid: list[int] = []
+    for item in (report.get("scenes", []) if isinstance(report, dict) else []):
+        if not isinstance(item, dict) or not str(item.get("scene_number", "")).strip().isdigit():
+            continue
+        number = int(item["scene_number"])
+        evidence_path = Path(str(item.get("report") or ""))
+        if not evidence_path.is_file():
+            missing.append(number)
+            continue
+        try:
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError):
+            invalid.append(number)
+            continue
+        scene = expected.get(number)
+        expected_hash = (
+            file_hash(Path(scene.video_path))
+            if scene and scene.video_path and Path(scene.video_path).is_file()
+            else None
+        )
+        if (
+            not isinstance(evidence, dict)
+            or evidence.get("status") != "passed"
+            or not expected_hash
+            or evidence.get("video_sha256") != expected_hash
+        ):
+            invalid.append(number)
+    passed = not missing and not invalid
+    return {
+        "passed": passed,
+        "missing": sorted(set(missing)),
+        "invalid": sorted(set(invalid)),
+        "reason": "ok" if passed else "scene review evidence is missing or stale",
+    }
+
+
 def require_generation_review(project, scenes):
     require_story_review(project, scenes)
     path = storage_manager.get_project_path(project.id) / "reviews" / "generation.json"
@@ -113,6 +155,12 @@ def require_generation_review(project, scenes):
         )
     if report.get("input_hash") != generation_signature(project, scenes):
         raise ReviewError("Story or media changed after review; rerun sampled-frame review")
+    evidence = validate_generation_review_evidence(report, scenes)
+    if not evidence["passed"]:
+        raise ReviewError(
+            "Generation review evidence is missing or stale: "
+            f"missing={evidence['missing']}, invalid={evidence['invalid']}"
+        )
     return report
 
 

@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Character, Project, Scene, Task, TaskStatus, User
-from src.services.generation_review import PLATFORM_REFERENCE_FEATURES, VIDEO_AESTHETIC_FEATURES, VIDEO_PERFORMANCE_FEATURES, fingerprint, write_report, ReviewError
+from src.services.generation_review import PLATFORM_REFERENCE_FEATURES, VIDEO_AESTHETIC_FEATURES, VIDEO_PERFORMANCE_FEATURES, file_hash, fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName, GenerationResult
 from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _character_sheet_generation_contract, _complexity_report, _composition_constraint, _feedback_repair_directive, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
@@ -1165,7 +1165,15 @@ def test_review_becomes_invalid_after_media_or_story_changes(project_data):
     write_report(root / "generation.json", {
         "status": "passed",
         "input_hash": generation_signature(project, [scene]),
-        "scenes": [{"scene_id": scene.id, "scene_number": scene.scene_number, "status": "passed"}],
+        "scenes": [{
+            "scene_id": scene.id,
+            "scene_number": scene.scene_number,
+            "status": "passed",
+            "report": str(root / f"scene_{scene.id}.json"),
+        }],
+    })
+    write_report(root / f"scene_{scene.id}.json", {
+        "status": "passed", "video_sha256": file_hash(path),
     })
     assert require_generation_review(project, [scene])["status"] == "passed"
     path.write_bytes(b"changed video")
