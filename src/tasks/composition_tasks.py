@@ -265,7 +265,7 @@ def compose_final_video_task(
             _require_native_scene_audio(scenes, video_composer)
         else:
             _require_passed_scene_audio(scenes)
-        _require_scene_subtitles(scenes)
+        _require_scene_subtitles(scenes, video_composer)
         audio_segments = None if preserve_native_audio else _require_audio_video_duration_alignment(scenes, video_composer)
 
         # 收集所有分镜的视频和音频路径
@@ -659,7 +659,7 @@ def _require_native_scene_audio(scenes: list[Scene], video_composer) -> None:
         )
 
 
-def _require_scene_subtitles(scenes: list[Scene]) -> None:
+def _require_scene_subtitles(scenes: list[Scene], video_composer=None) -> None:
     missing = []
     failed = []
     for scene in scenes:
@@ -710,6 +710,22 @@ def _require_scene_subtitles(scenes: list[Scene]) -> None:
         current_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         if not isinstance(reported_hash, str) or reported_hash.strip().lower() != current_hash:
             failed.append(f"{scene.scene_number}: subtitle quality report is stale for current file")
+            continue
+        subtitle_duration = quality_report.get("total_duration_seconds")
+        if (
+            video_composer is not None
+            and scene.video_path
+            and isinstance(subtitle_duration, (int, float))
+        ):
+            try:
+                video_duration = float(video_composer._get_duration(scene.video_path))
+            except (OSError, TypeError, ValueError):
+                video_duration = 0.0
+            if video_duration > 0 and float(subtitle_duration) > video_duration + (1.0 / max(int(settings.GENERATION_VIDEO_OUTPUT_FPS), 1)):
+                failed.append(
+                    f"{scene.scene_number}: subtitle timeline exceeds video duration "
+                    f"subtitle={float(subtitle_duration):.3f}s, video={video_duration:.3f}s"
+                )
     if missing:
         raise ValueError("Missing subtitle for spoken-dialogue scenes: " + ", ".join(missing))
     if failed:
