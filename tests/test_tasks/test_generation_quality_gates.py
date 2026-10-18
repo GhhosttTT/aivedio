@@ -190,6 +190,39 @@ def test_final_video_acceptance_rejects_clipped_audio_even_when_optional():
     assert error == "Final normalized video audio signal is clipped at digital full scale"
 
 
+@pytest.mark.parametrize(
+    ("metric_name", "metric_value", "expected_text"),
+    [
+        ("audio_video_start_delta_seconds", -0.6, "audio/video start offset"),
+        ("audio_duration_delta_seconds", 0.6, "audio duration"),
+    ],
+)
+def test_final_video_acceptance_rejects_optional_audio_sync_drift(
+    metric_name, metric_value, expected_text
+):
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {
+                "audio_present": True,
+                "audio_signal_status": "usable",
+                metric_name: metric_value,
+            },
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+
+    assert error is not None
+    assert expected_text in error
+
+
 def test_opening_frame_reference_floor_blocks_obvious_keyframe_drift(monkeypatch):
     monkeypatch.setattr(
         "src.tasks.video_tasks.settings.GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE",

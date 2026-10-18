@@ -1190,10 +1190,19 @@ def _composition_review_error(report: dict) -> str | None:
                 return "final composed video audio signal is not measurable for the expected audio track"
             if technical.get("audio_clipping_status") == "clipped":
                 return "final composed video audio signal is clipped at digital full scale"
+            audio_start_delta = technical.get("audio_video_start_delta_seconds")
+            if (
+                isinstance(audio_start_delta, (int, float))
+                and abs(float(audio_start_delta)) > settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS
+            ):
+                return (
+                    "final composed video audio/video start offset is out of sync by "
+                    f"{abs(float(audio_start_delta)):.3f}s"
+                )
             audio_delta = technical.get("audio_duration_delta_seconds")
             if not isinstance(audio_delta, (int, float)):
                 return "final composed video audio duration is not measurable"
-            if audio_delta > settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS:
+            if abs(float(audio_delta)) > settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS:
                 return (
                     "final composed video audio duration is out of sync by "
                     f"{audio_delta:.3f}s"

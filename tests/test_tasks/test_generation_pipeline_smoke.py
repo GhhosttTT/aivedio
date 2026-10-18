@@ -771,6 +771,26 @@ def test_composition_review_blocks_audio_duration_drift():
     )
 
 
+def test_composition_review_blocks_expected_audio_start_drift():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_audio_expected": True,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "audio_present": True,
+            "audio_signal_status": "usable",
+            "audio_video_start_delta_seconds": -0.6,
+            "audio_duration_delta_seconds": 0.0,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video audio/video start offset is out of sync by 0.600s"
+    )
+
+
 @pytest.mark.parametrize("audio_signal_status", ["near_silent", "unavailable"])
 def test_composition_review_blocks_unusable_optional_audio(audio_signal_status):
     report = {

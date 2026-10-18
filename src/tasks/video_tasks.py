@@ -1984,6 +1984,24 @@ def _final_video_acceptance_error(
             )
         if technical_metrics.get("audio_clipping_status") == "clipped":
             return "Final normalized video audio signal is clipped at digital full scale"
+        audio_start_delta = technical_metrics.get("audio_video_start_delta_seconds")
+        if (
+            isinstance(audio_start_delta, (int, float))
+            and abs(float(audio_start_delta)) > settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS
+        ):
+            return (
+                "Final normalized video audio/video start offset is out of sync by "
+                f"{abs(float(audio_start_delta)):.3f}s"
+            )
+        audio_duration_delta = technical_metrics.get("audio_duration_delta_seconds")
+        if (
+            isinstance(audio_duration_delta, (int, float))
+            and abs(float(audio_duration_delta)) > settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS
+        ):
+            return (
+                "Final normalized video audio duration is out of sync by "
+                f"{abs(float(audio_duration_delta)):.3f}s"
+            )
     if technical_metrics.get("audio_expected") is True and technical_metrics.get("audio_quality_status") != "passed":
         return (
             "Final normalized video native-audio check failed: "
