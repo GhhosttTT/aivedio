@@ -376,6 +376,8 @@ async def compare_seed_dance_baseline(
     report["baseline_video_path"] = str(baseline)
     report["candidate_signature"] = _video_version_signature(candidate)
     report["baseline_signature"] = _video_version_signature(baseline)
+    report["candidate_sha256"] = file_hash(candidate)
+    report["baseline_sha256"] = file_hash(baseline)
     write_report(review_root / "seed_dance_baseline_comparison.json", report)
     return report
 
@@ -422,6 +424,8 @@ async def upload_seed_dance_baseline(
     report["uploaded_baseline_path"] = str(baseline)
     report["candidate_signature"] = _video_version_signature(candidate)
     report["baseline_signature"] = _video_version_signature(baseline)
+    report["candidate_sha256"] = file_hash(candidate)
+    report["baseline_sha256"] = file_hash(baseline)
     write_report(review_root / "seed_dance_baseline_comparison.json", report)
     return report
 
@@ -674,6 +678,10 @@ async def get_generation_review(
             or _video_version_signature(candidate_path) != baseline_report.get("candidate_signature")
             or not baseline_report.get("baseline_signature")
             or _video_version_signature(baseline_path) != baseline_report.get("baseline_signature")
+            or not baseline_report.get("candidate_sha256")
+            or file_hash(candidate_path) != baseline_report.get("candidate_sha256")
+            or not baseline_report.get("baseline_sha256")
+            or file_hash(baseline_path) != baseline_report.get("baseline_sha256")
         ):
             baseline_report["status"] = "stale"
     final_composition = reports.get("final_composition")

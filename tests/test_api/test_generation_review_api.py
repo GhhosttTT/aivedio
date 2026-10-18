@@ -18,7 +18,7 @@ from src.api.routes.projects import (
     get_generation_review,
     upload_seed_dance_baseline,
 )
-from src.services.generation_review import write_report
+from src.services.generation_review import file_hash, write_report
 from src.api.routes.projects import _video_version_signature
 from src.tasks.composition_tasks import composition_input_signature
 from src.services.delivery_package import _sha256
@@ -700,6 +700,8 @@ def test_seed_dance_baseline_endpoint_writes_project_review(tmp_path, monkeypatc
     assert result["baseline_video_path"] == str(baseline)
     assert result["candidate_signature"]
     assert result["baseline_signature"]
+    assert result["candidate_sha256"] == file_hash(candidate)
+    assert result["baseline_sha256"] == file_hash(baseline)
     assert result["contact_sheet_path"].endswith("seed_dance_contact_sheet.png")
     report = storage_manager.get_project_path(1) / "reviews" / "seed_dance_baseline_comparison.json"
     assert json.loads(report.read_text(encoding="utf-8"))["kind"] == "seed_dance_baseline_comparison"
@@ -737,6 +739,8 @@ def test_seed_dance_baseline_upload_writes_project_review(tmp_path, monkeypatch)
     assert result["baseline_video_path"] == str(saved_baseline)
     assert result["candidate_signature"]
     assert result["baseline_signature"]
+    assert result["candidate_sha256"] == file_hash(candidate)
+    assert result["baseline_sha256"] == file_hash(saved_baseline)
     assert result["contact_sheet_path"].endswith("seed_dance_contact_sheet.png")
     report = storage_manager.get_project_path(1) / "reviews" / "seed_dance_baseline_comparison.json"
     assert json.loads(report.read_text(encoding="utf-8"))["uploaded_baseline_path"] == str(saved_baseline)
