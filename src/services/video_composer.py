@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 from typing import List, Optional, Tuple
 from pathlib import Path
+from uuid import uuid4
 
 from src.config import settings
 from src.utils.logger import logger
@@ -359,6 +360,8 @@ class VideoComposer:
             f"audios={len(audio_files) if audio_files else 0}, "
             f"bgm={'是' if bgm_path else '否'}"
         )
+
+        temporary_paths: list[Path] = []
         
         try:
             # 确定输出路径
@@ -366,6 +369,15 @@ class VideoComposer:
                 output_dir = Path("./storage/temp")
                 output_dir.mkdir(parents=True, exist_ok=True)
                 output_path = str(output_dir / "composed.mp4")
+            else:
+                Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+            compose_token = uuid4().hex
+
+            def temporary_output(suffix: str) -> str:
+                path = Path(output_path).parent / f".{Path(output_path).stem}.{compose_token}.{suffix}"
+                temporary_paths.append(path)
+                return str(path)
             
             current_video = None
             
@@ -381,7 +393,7 @@ class VideoComposer:
                 )
                 current_video = self.concat_videos(
                     video_files,
-                    str(Path(output_path).parent / "temp_concat.mp4"),
+                    temporary_output("concat.mp4"),
                     preserve_audio=preserve_native_audio,
                 )
             else:
@@ -395,7 +407,7 @@ class VideoComposer:
                 if len(audio_files) > 1:
                     merged_audio = self._concat_audio(
                         audio_files,
-                        str(Path(output_path).parent / "temp_audio.mp3")
+                        temporary_output("audio.mp3")
                     )
                 else:
                     merged_audio = audio_files[0]
@@ -403,7 +415,7 @@ class VideoComposer:
                 current_video = self.sync_audio_video(
                     current_video,
                     merged_audio,
-                    str(Path(output_path).parent / "temp_synced.mp4")
+                    temporary_output("synced.mp4")
                 )
             
             # 步骤 3：添加背景音乐（如果提供了）
@@ -421,17 +433,14 @@ class VideoComposer:
                     import shutil
                     # Keep the scene source available for review, repair, and
                     # future re-composition; finalization must not consume it.
-                    temporary_output = Path(output_path).with_name(
+                    finalization_path = Path(output_path).with_name(
                         f".{Path(output_path).name}.compose.tmp"
                     )
                     try:
-                        shutil.copyfile(current_video, temporary_output)
-                        os.replace(temporary_output, output_path)
+                        shutil.copyfile(current_video, finalization_path)
+                        os.replace(finalization_path, output_path)
                     finally:
-                        temporary_output.unlink(missing_ok=True)
-            
-            # 清理临时文件
-            self._cleanup_temp_files(Path(output_path).parent)
+                        finalization_path.unlink(missing_ok=True)
             
             logger.info(f"视频合成成功: {output_path}")
             
@@ -441,6 +450,12 @@ class VideoComposer:
             error_msg = f"视频合成失败: {e}"
             logger.error(error_msg)
             raise VideoComposerError(error_msg) from e
+        finally:
+            for temporary_path in temporary_paths:
+                try:
+                    temporary_path.unlink(missing_ok=True)
+                except OSError as cleanup_error:
+                    logger.warning("清理合成临时文件失败: %s (%s)", temporary_path, cleanup_error)
     
     def _get_duration(self, file_path: str) -> float:
         """

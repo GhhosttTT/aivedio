@@ -440,6 +440,27 @@ class TestVideoComposer:
         
         assert result == str(output_path)
 
+    def test_compose_video_uses_isolated_intermediate_paths(self, service, tmp_path):
+        video1 = tmp_path / "video1.mp4"
+        video2 = tmp_path / "video2.mp4"
+        video1.write_text("fake video 1")
+        video2.write_text("fake video 2")
+        output_one = tmp_path / "output-one.mp4"
+        output_two = tmp_path / "output-two.mp4"
+
+        with patch.object(service, "has_audio_stream", return_value=False), patch.object(
+            service, "concat_videos", return_value=str(video1)
+        ) as concat:
+            service.compose_video([str(video1), str(video2)], output_path=str(output_one))
+            service.compose_video([str(video1), str(video2)], output_path=str(output_two))
+
+        first_intermediate = concat.call_args_list[0].args[1]
+        second_intermediate = concat.call_args_list[1].args[1]
+        assert first_intermediate != second_intermediate
+        assert "temp_concat.mp4" not in first_intermediate
+        assert "temp_concat.mp4" not in second_intermediate
+        assert not list(tmp_path.glob(".*.concat.mp4"))
+
     def test_compose_video_preserves_native_audio_without_external_dialogue(self, service, tmp_path):
         video1 = tmp_path / "video1.mp4"
         video2 = tmp_path / "video2.mp4"
