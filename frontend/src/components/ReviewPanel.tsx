@@ -7,6 +7,7 @@ import { ProjectImage } from './ProjectMedia';
 const names: Record<string, string> = {
     story: '生成情节复审',
     production_story: '制作前情节复审',
+    story_room_quality: '故事房质量证据',
     generation: '成片质量审核',
     final_composition: '最终合成质量',
     continuity_audit: '相邻分镜连续性',
@@ -205,6 +206,33 @@ function SequenceBoundaryEvidence({report}: {report: any}) {
             <div className="wb-kv"><span>画幅不一致</span><strong>{report.geometry_mismatch_count ?? '-'}</strong></div>
             <div className="wb-kv"><span>报告任务</span><strong>{report.sequence_task_id || '-'}</strong></div>
         </div>
+    </div>;
+}
+
+function StoryRoomEvidence({report}: {report: any}) {
+    if (report?.kind !== 'story_room_quality') return null;
+    const beats = report.signals?.beat_contract || {};
+    const beatLabels: Record<string, string> = {
+        hook: '开场钩子',
+        escalation: '冲突升级',
+        reversal: '中段反转',
+        payoff: '情绪回收',
+        cliffhanger: '结尾悬念',
+    };
+    return <div className="wb-summary-actions" aria-label="故事房质量证据">
+        <div className="wb-row wb-between">
+            <h4>故事房质量证据</h4>
+            <span className="wb-badge">{report.score ?? 0}/9</span>
+        </div>
+        <div className="wb-grid compact">
+            {Object.entries(beatLabels).map(([key, label]) => {
+                const beat = beats[key] || {};
+                return <div className="wb-kv" key={key}>
+                    <span>{label}</span><strong>{beat.detected ? '已检测' : '缺失'}</strong>
+                </div>;
+            })}
+        </div>
+        {report.missing?.length ? <p className="wb-alert">缺项：{report.missing.join('、')}</p> : <p className="wb-muted">关键节奏证据完整，输入哈希：{String(report.input_hash || '').slice(0, 12)}</p>}
     </div>;
 }
 
@@ -607,6 +635,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <FinalCompositionEvidence projectId={projectId} report={report}/>
             <SeedDanceComparison projectId={projectId} report={report}/>
             <SequenceBoundaryEvidence report={report}/>
+            <StoryRoomEvidence report={report}/>
             <Scores review={report.review}/>
             {report.batches?.map((batch: any, index: number) => <div key={index}>
                 <p>帧组 {index + 1} · {statuses[batch.status] || batch.status} · {batch.average}/5</p>
