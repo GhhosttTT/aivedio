@@ -206,6 +206,8 @@ def _validate_export_metrics(
         raise PlatformExportError(
             f"Platform export audio signal is not usable: {metrics.get('audio_signal_status')}"
         )
+    if metrics.get("audio_present") and metrics.get("audio_clipping_status") == "clipped":
+        raise PlatformExportError("Platform export audio signal is clipped at digital full scale")
     if isinstance(source_metrics, dict) and source_metrics.get("status") == "available":
         source_duration = float(source_metrics.get("duration_seconds") or 0.0)
         output_duration = float(metrics.get("duration_seconds") or 0.0)

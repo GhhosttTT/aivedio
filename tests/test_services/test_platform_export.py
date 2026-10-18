@@ -160,6 +160,31 @@ def test_platform_export_rejects_temporal_quality_regression(tmp_path, monkeypat
         export_platform_video(source, tmp_path, "douyin")
 
 
+def test_platform_export_rejects_clipped_audio(tmp_path, monkeypatch):
+    source = tmp_path / "final.mp4"
+    source.write_bytes(b"source")
+
+    def fake_run(command, **_kwargs):
+        output = tmp_path / "exports" / ".douyin.tmp.mp4"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"exported")
+
+    monkeypatch.setattr("src.services.platform_export.subprocess.run", fake_run)
+    monkeypatch.setattr("src.services.platform_export.video_candidate_metrics", lambda *_args, **_kwargs: {
+        "status": "available",
+        "width": 1080,
+        "height": 1920,
+        "fps": 30.0,
+        "duration_seconds": 2.0,
+        "audio_present": True,
+        "audio_signal_status": "usable",
+        "audio_clipping_status": "clipped",
+    })
+
+    with pytest.raises(PlatformExportError, match="audio signal is clipped"):
+        export_platform_video(source, tmp_path, "douyin")
+
+
 def test_platform_export_rejects_unknown_preset(tmp_path):
     source = tmp_path / "final.mp4"
     source.write_bytes(b"source")
