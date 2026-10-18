@@ -56,6 +56,7 @@ def test_composition_candidate_publishes_video_and_review_together(tmp_path):
     final.write_bytes(b"old-final")
     candidate.with_suffix(".composition_review.json").write_text(json.dumps({
         "path": str(candidate.with_suffix(".composition_review.json")),
+        "video_path": str(candidate),
         "status": "passed",
     }), encoding="utf-8")
     final.with_suffix(".composition_review.json").write_text(json.dumps({
@@ -72,7 +73,9 @@ def test_composition_candidate_publishes_video_and_review_together(tmp_path):
     assert not candidate.exists()
     report = json.loads(final.with_suffix(".composition_review.json").read_text(encoding="utf-8"))
     assert report["path"] == str(final.with_suffix(".composition_review.json"))
+    assert report["video_path"] == str(final)
     assert review["path"] == str(final.with_suffix(".composition_review.json"))
+    assert review["video_path"] == str(final)
 
 
 def test_composition_accepts_passed_video_quality_report(tmp_path):

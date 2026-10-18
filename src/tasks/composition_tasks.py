@@ -92,9 +92,11 @@ def _publish_composition_candidate(
             report_payload = json.loads(source_report.read_text(encoding="utf-8"))
             if isinstance(report_payload, dict):
                 report_payload["path"] = str(destination_report)
+                report_payload["video_path"] = str(final)
                 write_report(source_report, report_payload)
             pairs.append((source_report, destination_report))
             published_review["path"] = str(destination_report)
+            published_review["video_path"] = str(final)
 
     backups: list[tuple[Path, Path]] = []
     promoted: list[Path] = []
