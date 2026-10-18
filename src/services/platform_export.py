@@ -33,6 +33,14 @@ def _signature(path: Path) -> str | None:
     return f"{path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
@@ -63,6 +71,7 @@ def export_platform_video(final_video_path: str | Path, project_root: str | Path
     output = export_dir / f"{str(preset).strip().lower()}.mp4"
     manifest_path = export_dir / f"{str(preset).strip().lower()}.json"
     source_version = _signature(source)
+    source_sha256 = _sha256(source)
 
     if output.is_file() and manifest_path.is_file():
         try:
@@ -72,7 +81,9 @@ def export_platform_video(final_video_path: str | Path, project_root: str | Path
         if (
             isinstance(cached, dict)
             and cached.get("source_signature") == source_version
+            and cached.get("source_sha256") == source_sha256
             and cached.get("output_signature") == _signature(output)
+            and cached.get("output_sha256") == _sha256(output)
             and isinstance(cached.get("technical_metrics"), dict)
             and cached["technical_metrics"].get("status") == "available"
         ):
@@ -114,8 +125,10 @@ def export_platform_video(final_video_path: str | Path, project_root: str | Path
         "fps": fps,
         "source_path": str(source),
         "source_signature": source_version,
+        "source_sha256": source_sha256,
         "output_path": str(output),
         "output_signature": _signature(output),
+        "output_sha256": _sha256(output),
         "technical_metrics": technical_metrics,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }

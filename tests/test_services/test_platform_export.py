@@ -33,6 +33,32 @@ def test_platform_export_is_cached_and_has_contract(tmp_path, monkeypatch):
     assert len(calls) == 1
     assert json.loads((tmp_path / "exports" / "douyin.json").read_text())["preset"] == "douyin"
     assert first["technical_metrics"]["status"] == "available"
+    assert len(first["source_sha256"]) == 64
+    assert len(first["output_sha256"]) == 64
+
+
+def test_platform_export_rebuilds_when_content_changes_without_signature_change(tmp_path, monkeypatch):
+    source = tmp_path / "final.mp4"
+    source.write_bytes(b"source")
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        output = tmp_path / "exports" / ".douyin.tmp.mp4"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"exported")
+
+    monkeypatch.setattr("src.services.platform_export.subprocess.run", fake_run)
+    monkeypatch.setattr("src.services.platform_export._signature", lambda _path: "stable-signature")
+    monkeypatch.setattr("src.services.platform_export.video_candidate_metrics", lambda *_args, **_kwargs: {
+        "status": "available", "width": 1080, "height": 1920, "fps": 30.0, "duration_seconds": 2.0,
+    })
+    export_platform_video(source, tmp_path, "douyin")
+    (tmp_path / "exports" / "douyin.mp4").write_bytes(b"tampered")
+
+    export_platform_video(source, tmp_path, "douyin")
+
+    assert len(calls) == 2
 
 
 def test_platform_export_rejects_decoded_geometry_drift(tmp_path, monkeypatch):
