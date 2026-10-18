@@ -50,9 +50,8 @@ class StoryRoomQualityService:
         "fight", "breakdown", "expose",
     ]
     REVERSAL_TERMS = [
-        "反转", "突然", "没想到", "竟然", "原来", "发现", "揭露", "身份", "证据",
-        "误会", "亲子", "遗嘱", "suddenly", "reveals", "discovers", "evidence",
-        "identity", "twist",
+        "反转", "突然", "没想到", "竟然", "原来", "揭露", "误会", "亲子", "遗嘱",
+        "suddenly", "reveals", "reveal", "twist", "unexpectedly", "misunderstanding",
     ]
     ENDING_TERMS = [
         "未完", "待续", "门被推开", "电话响", "真相", "证据", "出现", "转身",
