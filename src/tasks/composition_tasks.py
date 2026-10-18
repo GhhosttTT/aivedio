@@ -21,6 +21,7 @@ from src.services.generation_review import (
     write_report,
 )
 from src.services.repair_queue import attach_repair_queue
+from src.services.rhythm_audit import RhythmAuditService
 from src.services.video_composer import get_video_composer
 from src.services.video_quality_metrics import video_boundary_continuity, video_candidate_metrics
 from src.services.sequence_plan import build_sequence_context
@@ -835,6 +836,7 @@ def _project_final_review_payload(project: Project, scenes: list[Scene]) -> dict
         )
         if scene.dialogue:
             dialogue_lines.append(str(scene.dialogue))
+    rhythm_audit = RhythmAuditService().audit(project, scenes).to_dict()
     return {
         "scene_number": "final_composition",
         "project_id": project.id,
@@ -843,6 +845,8 @@ def _project_final_review_payload(project: Project, scenes: list[Scene]) -> dict
         "dialogue": "\n".join(dialogue_lines),
         "scenes": scene_summaries,
         "sequence_contexts": sequence_contexts,
+        "rhythm_audit": rhythm_audit,
+        "editing_plan": rhythm_audit.get("editing_plan", []),
         "visible_characters": visible_characters,
         "shot_plan": {
             "shot_role": "final_composed_short_drama",
@@ -865,6 +869,7 @@ def _project_final_review_payload(project: Project, scenes: list[Scene]) -> dict
                 "burned subtitles are readable and do not cover faces",
                 "audio and lip/action timing feel aligned",
                 "the full clip is publishable on a mobile short-drama feed",
+                "cuts follow the provided editorial intent and audio strategy",
             ],
             "finishing_features": list(FINAL_COMPOSITION_FINISHING_FEATURES),
         },

@@ -16,6 +16,7 @@ class RhythmAuditReport:
     issues: list[dict]
     timeline: list[dict]
     repair_queue: list[dict]
+    editing_plan: list[dict] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -26,6 +27,7 @@ class RhythmAuditReport:
             "issues": self.issues,
             "timeline": self.timeline,
             "repair_queue": self.repair_queue,
+            "editing_plan": list(self.editing_plan or []),
         }
 
 
@@ -44,7 +46,7 @@ class RhythmAuditService:
     def audit(self, project, scenes) -> RhythmAuditReport:
         ordered = sorted(list(scenes or []), key=lambda scene: scene.scene_number)
         if not ordered:
-            return RhythmAuditReport("not_applicable", 0, 0.0, [], [], [])
+            return RhythmAuditReport("not_applicable", 0, 0.0, [], [], [], [])
 
         director = VideoDirectorService()
         timeline = []
@@ -63,6 +65,7 @@ class RhythmAuditService:
                 "end_seconds": round(cursor + duration, 3),
                 "has_dialogue": bool(dialogue),
                 "audio_duration_seconds": round(audio_duration, 3) if audio_duration else None,
+                "action_intensity": getattr(plan, "action_intensity", None),
             }
             timeline.append(item)
             if duration < self.MIN_SHOT_SECONDS:
@@ -97,6 +100,7 @@ class RhythmAuditService:
             }
             for item in issues
         ]
+        editing_plan = self._editing_plan(timeline)
         return RhythmAuditReport(
             status=status,
             scene_count=len(ordered),
@@ -104,7 +108,55 @@ class RhythmAuditService:
             issues=issues,
             timeline=timeline,
             repair_queue=repair_queue,
+            editing_plan=editing_plan,
         )
+
+    @staticmethod
+    def _editing_plan(timeline: list[dict]) -> list[dict]:
+        """Turn shot roles into an explicit, reviewable editorial blueprint."""
+        plan = []
+        previous_role = None
+        for index, item in enumerate(timeline):
+            role = str(item.get("shot_role") or "story_shot")
+            if index == 0:
+                cut_type = "opening_hold"
+                reason = "Open on the first readable story beat; do not spend the hook on a transition."
+                audio_strategy = "start_at_zero"
+            elif role == "emotion_reaction":
+                cut_type = "reaction_cut"
+                reason = "Cut to the emotional response after the preceding beat lands."
+                audio_strategy = "hold_room_tone_then_dialogue"
+            elif role == "prop_interaction":
+                cut_type = "match_cut_prop"
+                reason = "Cut on the prop result so the audience can read the cause and effect."
+                audio_strategy = "action_cut_with_short_crossfade"
+            elif role == "action" or item.get("action_intensity") == "high":
+                cut_type = "hard_cut_action"
+                reason = "Cut on a readable physical action while preserving screen direction."
+                audio_strategy = "cut_on_action"
+            elif role == "dialogue_reaction" and previous_role == "dialogue_reaction":
+                cut_type = "eyeline_cut"
+                reason = "Alternate dialogue coverage while keeping the established eyeline."
+                audio_strategy = "dialogue_pre_lap"
+            elif role == "establishing":
+                cut_type = "location_cut"
+                reason = "Use a clean location reset only when the story changes visual space."
+                audio_strategy = "room_tone_bridge"
+            else:
+                cut_type = "motivated_hard_cut"
+                reason = "Use a direct cut at the next settled story beat."
+                audio_strategy = "short_crossfade"
+            plan.append({
+                "scene_number": item.get("scene_number"),
+                "start_seconds": item.get("start_seconds"),
+                "end_seconds": item.get("end_seconds"),
+                "cut_type": cut_type,
+                "reason": reason,
+                "audio_strategy": audio_strategy,
+                "shot_role": role,
+            })
+            previous_role = role
+        return plan
 
     def _duration(self, scene, plan) -> float:
         audio_duration = self._positive_number(getattr(scene, "audio_duration", None))
