@@ -34,6 +34,7 @@ class VideoStats:
     max_black_run_seconds: float = 0.0
     brightness_step_p95: float = 0.0
     motion_jitter_ratio: float = 0.0
+    temporal_jump_ratio: float = 0.0
 
 
 def _probe(path: Path) -> dict:
@@ -124,6 +125,17 @@ def video_stats(path: Path, max_samples: int = 16) -> VideoStats:
         abs(brightness_values[index] - brightness_values[index - 1])
         for index in range(1, len(brightness_values))
     ]
+    histograms = []
+    for frame in frames:
+        histogram = cv2.calcHist([frame], [0, 1], None, [16, 16], [0, 256, 0, 256])
+        cv2.normalize(histogram, histogram)
+        histograms.append(histogram)
+    histogram_jumps = [
+        max(0.0, min(1.0, float(cv2.compareHist(
+            histograms[index], histograms[index - 1], cv2.HISTCMP_BHATTACHARYYA
+        ))))
+        for index in range(1, len(histograms))
+    ]
     motion_median = float(np.median(diffs)) if diffs else 0.0
     sample_interval = probe["duration_seconds"] / max(len(frames) - 1, 1)
     return VideoStats(
@@ -159,6 +171,11 @@ def video_stats(path: Path, max_samples: int = 16) -> VideoStats:
             if diffs else 0.0,
             3,
         ),
+        temporal_jump_ratio=round(
+            sum(value >= 0.55 for value in histogram_jumps) / len(histogram_jumps)
+            if histogram_jumps else 0.0,
+            3,
+        ),
     )
 
 
@@ -192,6 +209,9 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
         "motion_jitter_ratio_delta": round(
             candidate_stats.motion_jitter_ratio - baseline_stats.motion_jitter_ratio, 3
         ),
+        "temporal_jump_ratio_delta": round(
+            candidate_stats.temporal_jump_ratio - baseline_stats.temporal_jump_ratio, 3
+        ),
         "audio_duration_delta_seconds": (
             round(candidate_stats.audio_duration_seconds - baseline_stats.audio_duration_seconds, 3)
             if candidate_stats.audio_duration_seconds is not None
@@ -213,6 +233,7 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
         "no_prolonged_black_run": candidate_stats.max_black_run_seconds <= 0.2,
         "no_temporal_exposure_jumps": candidate_stats.brightness_step_p95 <= 36.0,
         "stable_motion_cadence": candidate_stats.motion_jitter_ratio <= 1.5,
+        "no_temporal_visual_resets": candidate_stats.temporal_jump_ratio <= 0.35,
         "audio_presence_matches": candidate_stats.audio_present == baseline_stats.audio_present,
         "audio_duration_close": (
             not baseline_stats.audio_present
@@ -340,6 +361,7 @@ def _technical_similarity_score(differences: dict, gates: dict[str, bool]) -> fl
         _ratio_score(differences.get("sharpness_ratio"), tolerance=0.75),
         _delta_score(float(differences["brightness_delta"]), 60.0),
         _ratio_score(differences.get("brightness_variance_ratio"), tolerance=2.0),
+        _delta_score(float(differences["temporal_jump_ratio_delta"]), 0.5),
         _delta_score(float(differences["audio_duration_delta_seconds"] or 0.0), 1.0),
     ]
     metric_score = sum(component_scores) / len(component_scores)

@@ -175,3 +175,21 @@ def test_compare_video_baseline_blocks_prolonged_static_run(monkeypatch, tmp_pat
     assert report["gates"]["motion_not_static"] is True
     assert report["gates"]["no_prolonged_static_run"] is False
     assert report["differences"]["max_static_run_delta_seconds"] == 1.9
+
+
+def test_compare_video_baseline_blocks_temporal_visual_resets(monkeypatch, tmp_path):
+    def fake_stats(path, max_samples):
+        return VideoStats(
+            path=str(path), duration_seconds=2.0, width=160, height=90, fps=24,
+            sampled_frames=6, motion_energy=8, sharpness=30, brightness=90,
+            brightness_variance=40,
+            temporal_jump_ratio=0.8 if "candidate" in path.name else 0.1,
+        )
+
+    monkeypatch.setattr("scripts.compare_video_baseline.video_stats", fake_stats)
+
+    report = compare(tmp_path / "candidate.mp4", tmp_path / "baseline.mp4", max_samples=6)
+
+    assert report["status"] == "needs_review"
+    assert report["gates"]["no_temporal_visual_resets"] is False
+    assert report["differences"]["temporal_jump_ratio_delta"] == 0.7
