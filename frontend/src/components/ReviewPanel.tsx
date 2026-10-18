@@ -219,6 +219,10 @@ function SequenceBoundaryEvidence({report}: {report: any}) {
 function StoryRoomEvidence({report}: {report: any}) {
     if (report?.kind !== 'story_room_quality') return null;
     const beats = report.signals?.beat_contract || {};
+    const progression = report.signals?.ordered_progression || {};
+    const sceneList = (value: unknown) => Array.isArray(value) && value.length
+        ? value.join('、')
+        : '—';
     const beatLabels: Record<string, string> = {
         hook: '开场钩子',
         escalation: '冲突升级',
@@ -240,6 +244,14 @@ function StoryRoomEvidence({report}: {report: any}) {
             })}
         </div>
         {report.missing?.length ? <p className="wb-alert">缺项：{report.missing.join('、')}</p> : <p className="wb-muted">关键节奏证据完整，输入哈希：{String(report.input_hash || '').slice(0, 12)}</p>}
+        <div className="wb-grid compact" aria-label="节拍位置证据">
+            <div className="wb-kv"><span>钩子分镜</span><strong>{sceneList(progression.hook_scenes)}</strong></div>
+            <div className="wb-kv"><span>反转分镜</span><strong>{sceneList(progression.reversal_scenes)}</strong></div>
+            <div className="wb-kv"><span>兑现/悬念分镜</span><strong>{sceneList(progression.payoff_or_cliffhanger_scenes)}</strong></div>
+        </div>
+        <p className={progression.detected ? 'wb-muted' : 'wb-alert'}>
+            {progression.detected ? '节拍顺序有效：钩子 → 反转 → 兑现/悬念。' : '节拍顺序无效：需要把反转放在兑现或结尾悬念之前。'}
+        </p>
     </div>;
 }
 
