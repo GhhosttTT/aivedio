@@ -46,7 +46,16 @@ const repairActionLabels: Record<string, string> = {
     regenerate_character_identity: '重做角色身份/参考图',
     regenerate_keyframe_with_prop_constraints: '重做关键帧并强化手和道具约束',
     refine_prompt_composition: '优化构图、光线和提示词',
+    refine_project_style_consistency: '按项目视觉圣经重做关键帧',
+    refine_face_aesthetic_detail: '优化面部质感与商业审美',
+    regenerate_keyframe_with_role_separation: '强化多角色身份区分后重做关键帧',
     lower_motion_and_regenerate_video: '降低运动强度后重做视频',
+    increase_motion_and_regenerate_video: '增强运动表现后重做视频',
+    regenerate_video_with_performance_direction: '强化表演、凝视和动作方向后重做视频',
+    refine_video_commercial_aesthetic: '按商业短剧审美重做视频',
+    refine_final_composition_finish: '重做最终合成精修',
+    fix_video_output_contract: '按生产契约修复模型与输出规格',
+    refine_dialogue_audio_delivery: '重做对白音频与字幕时序',
     split_scene: '拆分为更简单的原子镜头',
     start_local_reviewer: '启动 llama.cpp 视觉审核后重跑',
     manual_review: '人工复核',
@@ -72,9 +81,18 @@ function labelRepairAction(action?: string) {
 function executableRepair(action?: string, sceneNumber?: number) {
     return Boolean(sceneNumber && action && [
         'regenerate_keyframe_with_identity_lock',
+        'regenerate_keyframe_with_role_separation',
         'regenerate_keyframe_with_prop_constraints',
         'refine_prompt_composition',
+        'refine_project_style_consistency',
+        'refine_face_aesthetic_detail',
         'lower_motion_and_regenerate_video',
+        'increase_motion_and_regenerate_video',
+        'regenerate_video_with_performance_direction',
+        'refine_video_commercial_aesthetic',
+        'refine_final_composition_finish',
+        'fix_video_output_contract',
+        'refine_dialogue_audio_delivery',
     ].includes(action));
 }
 
