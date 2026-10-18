@@ -23,6 +23,7 @@ export function ProjectDetail() {
     const [readinessLoading, setReadinessLoading] = useState(false);
     const [deliveryUrl, setDeliveryUrl] = useState('');
     const [topicBrief, setTopicBrief] = useState({audience: '', platform: '', genre: '', hook_type: '', region: '', policy_notes: ''});
+    const [platformExportUrls, setPlatformExportUrls] = useState<Record<string, string>>({});
     const [options, setOptions] = useState({num_scenes: 16, num_characters: 2, style: '现代都市'});
     const [productionOptions, setProductionOptions] = useState({provider: '', request_mode: 'reference', multi_shot: true, sequence_level_multi_shot: false, native_audio: true, draft: false, model: '', resolution: '1080p', output_format: 'mp4', return_last_frame: true, camera_fixed: false, watermark: false, duration_seconds: null as number | null});
     const reload = useCallback(async () => {
@@ -66,6 +67,11 @@ export function ProjectDetail() {
                 setDeliveryUrl(await projectApi.mediaUrl(Number(id), exported.package_path, true));
             } else if (operation === '保存选题定位') {
                 await projectApi.updateTopicBrief(Number(id), topicBrief);
+            } else if (operation.startsWith('导出平台:')) {
+                const preset = operation.split(':')[1];
+                const exported = await projectApi.platformExport(Number(id), preset);
+                const url = await projectApi.mediaUrl(Number(id), exported.output_path, true);
+                setPlatformExportUrls(current => ({...current, [preset]: url}));
             } else {
                 await projectApi.startProduction(Number(id), productionOptions);
                 setTab('production');
@@ -274,6 +280,12 @@ export function ProjectDetail() {
             </div>
             <button className="wb-button" disabled={locked || Object.entries(topicBrief).some(([key, value]) => key !== 'policy_notes' && !value.trim())} onClick={() => run('保存选题定位')}>保存选题定位</button>
         </section>
+        {project.final_video_path && <section className="wb-item" aria-label="平台版本导出">
+            <div className="wb-row wb-between"><strong>平台版本导出</strong><span className="wb-muted">固定尺寸、帧率、H.264/AAC 与响度规范</span></div>
+            <div className="wb-row">
+                {[['douyin', '抖音竖屏'], ['shorts', 'Shorts / Reels'], ['landscape', '横屏 16:9'], ['square', '方形 1:1']].map(([preset, label]) => <span key={preset} className="wb-row"><button className="wb-button" disabled={locked || !readiness || readiness.status !== 'ready'} onClick={() => run(`导出平台:${preset}`)}>{label}</button>{platformExportUrls[preset] && <a className="wb-button" href={platformExportUrls[preset]}>下载</a>}</span>)}
+            </div>
+        </section>}
         {readiness?.checks.story_room?.missing?.length && (
             <section className="wb-item" aria-label="故事房修复">
                 <div className="wb-row wb-between">

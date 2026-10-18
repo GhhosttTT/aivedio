@@ -48,6 +48,7 @@ from src.services.generation_review import require_passed
 from src.services.story_room_quality import StoryRoomQualityService
 from src.services.delivery_package import DeliveryPackageError, build_delivery_package
 from src.services.topic_brief import TopicBriefService
+from src.services.platform_export import PLATFORM_EXPORT_PRESETS, PlatformExportError, export_platform_video
 from src.database.session import get_db_session
 from src.database.models import Character, Project, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
@@ -484,6 +485,39 @@ async def create_delivery_package(
         )
     except DeliveryPackageError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/{project_id}/platform-export-presets")
+def list_platform_export_presets(project_id: int, current_user=Depends(get_current_user), db_session: Session = Depends(get_db_session)):
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return {"presets": [{"id": key, **value} for key, value in PLATFORM_EXPORT_PRESETS.items()]}
+
+
+@router.post("/{project_id}/platform-export/{preset}")
+async def create_platform_export(
+    project_id: int,
+    preset: str,
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    from src.utils.storage import storage_manager
+
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    review = await get_generation_review(project_id, current_user, db_session)
+    if review["summary"].get("status") != "ready":
+        raise HTTPException(status_code=409, detail="质量审核尚未 ready，不能导出平台版本")
+    try:
+        return export_platform_video(
+            project.final_video_path,
+            storage_manager.get_project_path(project_id),
+            preset,
+        )
+    except PlatformExportError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/{project_id}/topic-brief")
