@@ -72,7 +72,7 @@ def _persist_callback(sidecar: Path, payload: dict) -> None:
         # Provider callbacks can arrive out of order. Never let a delayed
         # queued/running event erase a terminal result already consumed by
         # the polling worker.
-        if existing_state in _TERMINAL_STATES and incoming_state not in _TERMINAL_STATES:
+        if existing_state in _TERMINAL_STATES and incoming_state != existing_state:
             return
     temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
     temporary.write_text(
