@@ -24,7 +24,7 @@ export function ProjectDetail() {
     const [deliveryUrl, setDeliveryUrl] = useState('');
     const [topicBrief, setTopicBrief] = useState({audience: '', platform: '', genre: '', hook_type: '', region: '', policy_notes: ''});
     const [assetNotes, setAssetNotes] = useState('');
-    const [platformExportUrls, setPlatformExportUrls] = useState<Record<string, string>>({});
+    const [platformExports, setPlatformExports] = useState<Record<string, {url: string; width: number; height: number; fps: number; technicalStatus?: string}>>({});
     const [options, setOptions] = useState({num_scenes: 16, num_characters: 2, style: '现代都市'});
     const [productionOptions, setProductionOptions] = useState({provider: '', request_mode: 'reference', multi_shot: true, sequence_level_multi_shot: false, native_audio: true, draft: false, model: '', resolution: '1080p', output_format: 'mp4', return_last_frame: true, camera_fixed: false, watermark: false, duration_seconds: null as number | null, add_bgm: false, bgm_path: null as string | null, bgm_volume: 0.3});
     const [bgmName, setBgmName] = useState('');
@@ -79,7 +79,13 @@ export function ProjectDetail() {
                 const preset = operation.split(':')[1];
                 const exported = await projectApi.platformExport(Number(id), preset);
                 const url = await projectApi.mediaUrl(Number(id), exported.output_path, true);
-                setPlatformExportUrls(current => ({...current, [preset]: url}));
+                setPlatformExports(current => ({...current, [preset]: {
+                    url,
+                    width: exported.width,
+                    height: exported.height,
+                    fps: exported.fps,
+                    technicalStatus: exported.technical_metrics?.status,
+                }}));
             } else {
                 await projectApi.startProduction(Number(id), productionOptions);
                 setTab('production');
@@ -335,7 +341,16 @@ export function ProjectDetail() {
         {project.final_video_path && <section className="wb-item" aria-label="平台版本导出">
             <div className="wb-row wb-between"><strong>平台版本导出</strong><span className="wb-muted">固定尺寸、帧率、H.264/AAC 与响度规范</span></div>
             <div className="wb-row">
-                {[['douyin', '抖音竖屏'], ['shorts', 'Shorts / Reels'], ['landscape', '横屏 16:9'], ['square', '方形 1:1']].map(([preset, label]) => <span key={preset} className="wb-row"><button className="wb-button" disabled={locked || !readiness || readiness.status !== 'ready'} onClick={() => run(`导出平台:${preset}`)}>{label}</button>{platformExportUrls[preset] && <a className="wb-button" href={platformExportUrls[preset]}>下载</a>}</span>)}
+                {[['douyin', '抖音竖屏'], ['shorts', 'Shorts / Reels'], ['landscape', '横屏 16:9'], ['square', '方形 1:1']].map(([preset, label]) => {
+                    const exported = platformExports[preset];
+                    return <span key={preset} className="wb-row">
+                        <button className="wb-button" disabled={locked || !readiness || readiness.status !== 'ready'} onClick={() => run(`导出平台:${preset}`)}>{label}</button>
+                        {exported && <>
+                            <span className="wb-muted" title="导出文件技术验收">{exported.width}×{exported.height} · {exported.fps}fps · {exported.technicalStatus === 'available' ? '已验收' : '需复核'}</span>
+                            <a className="wb-button" href={exported.url}>下载</a>
+                        </>}
+                    </span>;
+                })}
             </div>
         </section>}
         {readiness?.checks.story_room?.missing?.length && (

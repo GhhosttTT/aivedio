@@ -84,7 +84,7 @@ export const projectApi = {
             timeout: 300000,
         });
     },
-    platformExport: (id: number, preset: string) => apiClient.post<any, {output_path: string; preset: string; label: string; width: number; height: number}>(`/projects/${id}/platform-export/${preset}`),
+    platformExport: (id: number, preset: string) => apiClient.post<any, {output_path: string; preset: string; label: string; width: number; height: number; fps: number; technical_metrics?: {status?: string}}>(`/projects/${id}/platform-export/${preset}`),
     qualityLoopPlan: (id: number, maxActions = 5) => apiClient.get<any, QualityLoopPlanResponse>(`/projects/${id}/quality-loop/plan`, {params: {max_actions: maxActions}}),
     runAutoRepairQueue: (id: number, data: {max_actions?: number; dry_run?: boolean}) => apiClient.post<any, RepairQueueAutoRunResponse>(`/projects/${id}/repair-queue/auto`, data),
     productionReadiness: (id: number, includeEnginePreflight = true, providerOverride?: string, modelOverride?: string, requestModeOverride?: string, resolutionOverride?: string, outputFormatOverride?: string, durationOverride?: number | null) => apiClient.get<any, ProductionReadinessReport>(`/projects/${id}/production-readiness`, {params: {include_engine_preflight: includeEnginePreflight, ...(providerOverride ? {provider_override: providerOverride} : {}), ...(modelOverride ? {model_override: modelOverride} : {}), ...(requestModeOverride ? {request_mode_override: requestModeOverride} : {}), ...(resolutionOverride ? {resolution_override: resolutionOverride} : {}), ...(outputFormatOverride ? {output_format_override: outputFormatOverride} : {}), ...(durationOverride !== null && durationOverride !== undefined ? {duration_override: durationOverride} : {})}}),
