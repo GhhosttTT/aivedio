@@ -314,7 +314,7 @@ export const localizationApi = {
 export default apiClient;
 
 
-export interface ProductionTask { task_id: number; celery_task_id: string; project_id: number; status: string; progress: number; current_step: number; total_steps: number; error_message?: string; live_step?: {stage: string; scene_id?: number}; provider_progress?: number; provider_stage?: string; provider_state?: string; production_options?: {provider?: string; request_mode?: string; model?: string; resolution?: string; output_format?: string; duration_seconds?: number; native_audio?: boolean; multi_shot?: boolean}; }
+export interface ProductionTask { task_id: number; celery_task_id: string; project_id: number; status: string; progress: number; current_step: number; total_steps: number; error_message?: string; result?: {output_path?: string}; live_step?: {stage: string; scene_id?: number}; provider_progress?: number; provider_stage?: string; provider_state?: string; production_options?: {provider?: string; request_mode?: string; model?: string; resolution?: string; output_format?: string; duration_seconds?: number; native_audio?: boolean; multi_shot?: boolean}; }
 
 export interface GenerationReviewSummary {
     status: 'ready' | 'blocked' | string;
