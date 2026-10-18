@@ -19,6 +19,7 @@ export function ProductionReadinessPanel({
     const script = report?.checks.script;
     const storyRhythm = report?.checks.story_rhythm;
     const storyRoom = report?.checks.story_room;
+    const episodeRhythm = report?.checks.episode_rhythm;
     const visualFormat = report?.checks.visual_format;
     const characters = report?.checks.characters;
     const complexity = report?.checks.shot_complexity;
@@ -54,6 +55,7 @@ export function ProductionReadinessPanel({
                 <Metric label="分镜" value={script ? `${script.scene_count}/${script.minimum_production_scenes}` : '未检查'}/>
                 <Metric label="剧情节奏" value={storyRhythm ? `${storyRhythm.score}/5 ${storyRhythm.status}` : '未检查'}/>
                 <Metric label="故事房质量" value={storyRoom ? `${storyRoom.score}/9 ${storyRoom.status}` : '未检查'}/>
+                <Metric label="整集节奏" value={episodeRhythm ? `${episodeRhythm.total_duration_seconds.toFixed(1)}s ${episodeRhythm.status}` : '未检查'}/>
                 <Metric label="成片画幅" value={visualFormat ? `${visualFormat.width}x${visualFormat.height}` : '未检查'}/>
                 <Metric label="角色身份" value={characters ? `${characters.characters.filter(item => item.has_identity_spec && !item.missing_identity_fields.length).length}/${characters.visible_character_names.length}` : '未检查'}/>
                 <Metric label="角色参考" value={characters ? `${characters.visible_character_names.length - characters.missing_references.length}/${characters.visible_character_names.length}` : '未检查'}/>

@@ -493,6 +493,12 @@ export interface ProductionReadinessReport {
             signals?: Record<string, any>;
             scene_notes?: Array<{scene_number: number; reason: string; signals?: string[]}>;
         };
+        episode_rhythm?: {
+            status: string;
+            scene_count: number;
+            total_duration_seconds: number;
+            issues?: Array<{code: string; severity: string; scene_number: number; message: string}>;
+        };
         topic_brief?: {
             status: string;
             missing: string[];

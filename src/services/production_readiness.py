@@ -29,6 +29,7 @@ from src.services.production_workflow_profile import ProductionWorkflowProfileSe
 from src.services.quality_loop import build_quality_loop_plan
 from src.services.story_room_quality import StoryRoomQualityService
 from src.services.topic_brief import TopicBriefService
+from src.services.rhythm_audit import RhythmAuditService
 from src.services.video_director_service import get_video_director_service
 from src.services.video_engine_preflight import preflight_production_video_engine
 from src.utils.storage import storage_manager
@@ -87,6 +88,7 @@ class ProductionReadinessService:
             "script": self._script_check(project, scenes, blockers),
             "story_rhythm": self._story_rhythm_check(project, scenes, warnings),
             "story_room": self._story_room_check(project, scenes, warnings),
+            "episode_rhythm": self._episode_rhythm_check(project, scenes, blockers, warnings),
             "topic_brief": self._topic_brief_check(project, warnings),
             "visual_format": self._visual_format_check(blockers),
             "draft_media_fallback": self._draft_media_fallback_check(blockers),
@@ -378,6 +380,27 @@ class ProductionReadinessService:
             warnings.append(ReadinessIssue(
                 "weak_story_room_quality",
                 "Improve story-room quality before final production: " + ", ".join(report["missing"]),
+                severity="warning",
+            ))
+        return report
+
+    def _episode_rhythm_check(
+        self,
+        project: Project,
+        scenes: list[Scene],
+        blockers: list[ReadinessIssue],
+        warnings: list[ReadinessIssue],
+    ) -> dict:
+        report = RhythmAuditService().audit(project, scenes).to_dict()
+        if report["status"] == "needs_review":
+            blockers.append(ReadinessIssue(
+                "episode_rhythm_conflict",
+                "Resolve hard episode rhythm and dialogue timing conflicts before GPU production.",
+            ))
+        elif report["status"] == "warn":
+            warnings.append(ReadinessIssue(
+                "episode_rhythm_warning",
+                "Review episode rhythm warnings before final production.",
                 severity="warning",
             ))
         return report
