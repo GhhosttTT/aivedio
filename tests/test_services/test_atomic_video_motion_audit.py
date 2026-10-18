@@ -59,6 +59,26 @@ def test_atomic_video_motion_audit_flags_temporal_visual_resets(tmp_path):
     assert report.issues[0]["code"] == "temporal_visual_jump"
 
 
+def test_atomic_video_motion_audit_flags_extreme_temporal_visual_reset(tmp_path):
+    video = tmp_path / "scene_1.mp4"
+    _write_sidecar(
+        video,
+        technical_score=4.2,
+        motion_energy=10,
+        static_transition_ratio=0.1,
+        max_black_run_seconds=0.0,
+        motion_jitter_ratio=0.2,
+        temporal_jump_ratio=0.01,
+        temporal_jump_p95=0.9,
+    )
+
+    report = AtomicVideoMotionAuditService().audit([_scene(1, video)])
+
+    assert report.status == "needs_review"
+    assert report.issues[0]["code"] == "extreme_temporal_visual_jump"
+    assert report.issues[0]["action"] == "lower_motion_and_regenerate_video"
+
+
 def test_atomic_video_motion_audit_is_not_applicable_without_quality_sidecar(tmp_path):
     video = tmp_path / "scene_1.mp4"
     video.write_bytes(b"video")

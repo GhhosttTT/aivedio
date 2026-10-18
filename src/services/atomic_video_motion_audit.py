@@ -78,6 +78,8 @@ class AtomicVideoMotionAuditService:
                 issues.append(self._issue(number, "frozen_motion", "clip spends too much of its sampled timeline in near-static transitions", "increase_motion_and_regenerate_video"))
             if float(item.get("temporal_jump_ratio") or 0) >= float(settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO):
                 issues.append(self._issue(number, "temporal_visual_jump", "sampled frames contain repeated full-frame visual resets", "refine_video_commercial_aesthetic"))
+            if float(item.get("temporal_jump_p95") or 0) > float(settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95):
+                issues.append(self._issue(number, "extreme_temporal_visual_jump", "a worst-case sampled transition contains an extreme full-frame visual reset", "lower_motion_and_regenerate_video"))
         status = "needs_review" if any(issue["severity"] == "high" for issue in issues) else ("warn" if issues else "passed")
         return AtomicVideoMotionAuditReport(status, len(reports), reports, issues)
 

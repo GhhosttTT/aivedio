@@ -182,6 +182,16 @@ def _validate_export_metrics(
             f"temporal_jump_ratio={temporal_jump_ratio:.3f}, "
             f"limit={settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO:.3f}"
         )
+    temporal_jump_p95 = metrics.get("temporal_jump_p95")
+    if (
+        isinstance(temporal_jump_p95, (int, float))
+        and temporal_jump_p95 > settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95
+    ):
+        raise PlatformExportError(
+            "Platform export contains an extreme temporal visual reset: "
+            f"temporal_jump_p95={temporal_jump_p95:.3f}, "
+            f"limit={settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95:.3f}"
+        )
     motion_jitter_ratio = metrics.get("motion_jitter_ratio")
     if (
         isinstance(motion_jitter_ratio, (int, float))
