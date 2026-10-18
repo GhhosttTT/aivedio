@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from src.config import settings
 from src.database.database import get_db
-from src.database.models import Scene, Task, TaskStatus
+from src.database.models import Character, Project, Scene, Task, TaskStatus
 from src.services.draft_media_service import draft_fallback_enabled, get_draft_media_service
 from src.services.generation_provider import (
     ImageGenerationRequest, VideoGenerationRequest, GenerationProviderError,
@@ -233,6 +233,32 @@ def _draft_fallback_allowed(error: Exception, video_generator) -> bool:
     if _provider_task_state_is_ambiguous(video_generator):
         return False
     return draft_fallback_enabled()
+
+
+def _frozen_spatial_contract_for_generation(db, project_id: int, scene_number: int) -> dict | None:
+    """Load only a current frozen spatial contract for a production shot.
+
+    A missing pack is left to the production-readiness gate so draft and
+    legacy workflows remain usable. An existing but stale pack is different:
+    silently using it would make the provider request disagree with the
+    project's current script and character bible.
+    """
+    service = SpatialControlAssetService()
+    if service.get_project_pack(project_id) is None:
+        return None
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise ValueError(f"Project not found: {project_id}")
+    scenes = db.query(Scene).filter(Scene.project_id == project_id).order_by(Scene.scene_number).all()
+    characters = db.query(Character).filter(Character.project_id == project_id).all()
+    validation = service.validate_project_pack(project, scenes, characters)
+    if validation.get("status") != "valid":
+        reasons = ", ".join(validation.get("stale") or [validation.get("status", "invalid")])
+        raise ValueError(
+            f"Frozen spatial asset pack is not current for project {project_id}: {reasons}. "
+            "Re-freeze the spatial plan before generating video."
+        )
+    return service.get_scene_contract(project_id, scene_number)
 
 
 def _configured_reference_limit(
@@ -2441,8 +2467,8 @@ def generate_video_task(
                 logger.warning("Could not ask ComfyUI to free memory before video generation; continuing: {}", exc)
             visible_characters = _visible_characters_for_scene(scene, project_id, db)
             shot_plan = get_video_director_service().plan_scene(scene, project_id, visible_characters)
-            spatial_contract = SpatialControlAssetService().get_scene_contract(
-                project_id, scene.scene_number,
+            spatial_contract = _frozen_spatial_contract_for_generation(
+                db, project_id, scene.scene_number,
             )
             if spatial_contract:
                 # VideoShotPlan is frozen: replace the generated spatial plan
