@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,6 +78,8 @@ class DialogueDeliveryAuditService:
         scene_reports: list[dict[str, Any]] = []
         cues_count = 0
         checked = 0
+        voice_by_speaker: dict[str, str] = {}
+        voice_scene_by_speaker: dict[str, int] = {}
         for scene in dialogue_scenes:
             number = scene.scene_number
             audio_path = Path(str(getattr(scene, "audio_path", "") or ""))
@@ -90,6 +93,31 @@ class DialogueDeliveryAuditService:
                 "subtitle_cues": 0,
             }
             checked += 1
+            voice_report = self._read_voice_report(audio_path)
+            if voice_report:
+                voice_identity = voice_report.get("voice_identity")
+                if isinstance(voice_identity, dict):
+                    speaker = str(
+                        voice_identity.get("requested_speaker")
+                        or getattr(scene, "character_name", None)
+                        or voice_identity.get("speaker")
+                        or "default"
+                    ).strip() or "default"
+                    voice_id = str(voice_identity.get("voice_id") or "").strip()
+                    if voice_id:
+                        report["speaker"] = speaker
+                        report["voice_id"] = voice_id
+                        previous_voice = voice_by_speaker.get(speaker)
+                        if previous_voice and previous_voice != voice_id:
+                            issues.append(self._issue(
+                                number,
+                                "inconsistent_voice_identity",
+                                f"Speaker {speaker} uses voice {voice_id}, but scene "
+                                f"{voice_scene_by_speaker[speaker]} uses {previous_voice}.",
+                            ))
+                        else:
+                            voice_by_speaker[speaker] = voice_id
+                            voice_scene_by_speaker[speaker] = number
             if not audio_path.is_file():
                 issues.append(self._issue(number, "missing_dialogue_audio", "Dialogue scene has no readable audio asset."))
             if audio_duration is None:
@@ -120,6 +148,16 @@ class DialogueDeliveryAuditService:
             scene_reports.append(report)
         status = "needs_review" if any(issue["severity"] == "high" for issue in issues) else ("warn" if issues else "passed")
         return DialogueDeliveryAuditReport(status, len(dialogue_scenes), checked, cues_count, issues, scene_reports)
+
+    def _read_voice_report(self, audio_path: Path) -> dict[str, Any] | None:
+        if not audio_path.is_file():
+            return None
+        report_path = audio_path.with_suffix(".quality.json")
+        try:
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, TypeError, ValueError):
+            return None
+        return payload if isinstance(payload, dict) else None
 
     def _parse_srt(self, path: Path) -> list[dict[str, Any]]:
         try:

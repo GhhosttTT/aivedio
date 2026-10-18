@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import json
 
 from src.services.dialogue_delivery_audit import DialogueDeliveryAuditService
 
@@ -47,3 +48,34 @@ def test_dialogue_delivery_audit_ignores_unrendered_dialogue_scenes(tmp_path):
 
     assert report.status == "not_applicable"
     assert report.dialogue_scene_count == 1
+
+
+def test_dialogue_delivery_audit_flags_inconsistent_voice_identity(tmp_path):
+    subtitle_one = tmp_path / "scene_001.srt"
+    subtitle_two = tmp_path / "scene_002.srt"
+    audio_one = tmp_path / "scene_001.wav"
+    audio_two = tmp_path / "scene_002.wav"
+    for audio in (audio_one, audio_two):
+        audio.write_bytes(b"audio")
+    for subtitle in (subtitle_one, subtitle_two):
+        subtitle.write_text("1\n00:00:00,000 --> 00:00:01,000\n台词\n", encoding="utf-8")
+    audio_one.with_suffix(".quality.json").write_text(json.dumps({
+        "voice_identity": {
+            "requested_speaker": "林安",
+            "voice_id": "voice-a",
+        },
+    }), encoding="utf-8")
+    audio_two.with_suffix(".quality.json").write_text(json.dumps({
+        "voice_identity": {
+            "requested_speaker": "林安",
+            "voice_id": "voice-b",
+        },
+    }), encoding="utf-8")
+
+    report = DialogueDeliveryAuditService().audit([
+        _scene(1, audio_path=audio_one, subtitle_path=subtitle_one),
+        _scene(2, audio_path=audio_two, subtitle_path=subtitle_two),
+    ])
+
+    assert report.status == "needs_review"
+    assert any(issue["code"] == "inconsistent_voice_identity" for issue in report.issues)
