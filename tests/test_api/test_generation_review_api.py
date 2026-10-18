@@ -112,6 +112,18 @@ def test_review_api_persists_version_bound_project_audits(tmp_path, monkeypatch)
             to_dict=lambda: {"kind": "rhythm_audit", "status": "passed", "scene_count": 2}
         ),
     )
+    monkeypatch.setattr(
+        "src.api.routes.projects.EpisodeStyleConsistencyService.audit",
+        lambda self, project, scenes: SimpleNamespace(
+            to_dict=lambda: {
+                "kind": "episode_style_consistency",
+                "status": "passed",
+                "sampled_count": 2,
+                "issues": [],
+                "repair_queue": [],
+            }
+        ),
+    )
     db = Mock()
     db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
         id=1, user_id=2, script="{}", scenes=scenes, final_video_path=None,
@@ -121,10 +133,13 @@ def test_review_api_persists_version_bound_project_audits(tmp_path, monkeypatch)
 
     assert result["reports"]["continuity_audit"]["evidence_schema_version"] == 1
     assert result["reports"]["rhythm_audit"]["input_hash"]
+    assert result["reports"]["episode_style_consistency"]["evidence_schema_version"] == 1
+    assert result["reports"]["episode_style_consistency"]["input_hash"]
     assert result["reports"]["story_room_quality"]["evidence_schema_version"] == 1
     assert result["reports"]["story_room_quality"]["input_hash"]
     assert (storage_manager.get_project_path(1) / "reviews" / "continuity_audit.json").is_file()
     assert (storage_manager.get_project_path(1) / "reviews" / "rhythm_audit.json").is_file()
+    assert (storage_manager.get_project_path(1) / "reviews" / "episode_style_consistency.json").is_file()
     assert (storage_manager.get_project_path(1) / "reviews" / "story_room_quality.json").is_file()
 
 

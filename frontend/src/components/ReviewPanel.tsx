@@ -12,6 +12,7 @@ const names: Record<string, string> = {
     final_composition: '最终合成质量',
     continuity_audit: '相邻分镜连续性',
     rhythm_audit: '整集节奏与对白时序',
+    episode_style_consistency: '全集视觉风格一致性',
     seed_dance_baseline_comparison: 'Seed Dance 对比验收',
     causal_logic: '因果逻辑',
     character_motivation: '角色动机',
@@ -233,6 +234,30 @@ function StoryRoomEvidence({report}: {report: any}) {
             })}
         </div>
         {report.missing?.length ? <p className="wb-alert">缺项：{report.missing.join('、')}</p> : <p className="wb-muted">关键节奏证据完整，输入哈希：{String(report.input_hash || '').slice(0, 12)}</p>}
+    </div>;
+}
+
+function EpisodeStyleConsistencyEvidence({report}: {report: any}) {
+    if (report?.kind !== 'episode_style_consistency') return null;
+    const scenes = Array.isArray(report.scenes) ? report.scenes : [];
+    const issues = Array.isArray(report.issues) ? report.issues : [];
+    return <div className="wb-summary-actions" aria-label="全集视觉风格一致性证据">
+        <div className="wb-row wb-between">
+            <h4>全集视觉风格一致性</h4>
+            <span className="wb-badge">{report.sampled_count || 0}/{report.scene_count || 0} 个关键帧</span>
+        </div>
+        <p className={issues.length ? 'wb-alert' : 'wb-muted'}>
+            {issues.length ? `发现 ${issues.length} 项跨镜头风格漂移，建议先按视觉圣经返工。` : '曝光、饱和度、对比度、清晰度和画幅整体稳定。'}
+        </p>
+        {scenes.length > 0 && <div className="wb-grid compact">
+            {scenes.slice(0, 8).map((scene: any) => <div className="wb-kv" key={scene.scene_number}>
+                <span>分镜 {scene.scene_number}</span>
+                <strong>{scene.width || '-'}×{scene.height || '-'} · {scene.brightness ?? '-'}亮度</strong>
+            </div>)}
+        </div>}
+        {issues.slice(0, 6).map((issue: any, index: number) => <p className="wb-alert" key={`${issue.code}-${issue.scene_number}-${index}`}>
+            分镜 {issue.scene_number || '-'} · {issue.code} · {issue.evidence || issue.recommendation}
+        </p>)}
     </div>;
 }
 
@@ -636,6 +661,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <SeedDanceComparison projectId={projectId} report={report}/>
             <SequenceBoundaryEvidence report={report}/>
             <StoryRoomEvidence report={report}/>
+            <EpisodeStyleConsistencyEvidence report={report}/>
             <Scores review={report.review}/>
             {report.batches?.map((batch: any, index: number) => <div key={index}>
                 <p>帧组 {index + 1} · {statuses[batch.status] || batch.status} · {batch.average}/5</p>
