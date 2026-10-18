@@ -413,8 +413,11 @@ async def get_generation_review(
             or ""
         )
         baseline_path = Path(baseline_report.get("baseline_video_path") or "")
+        active_candidate = str(getattr(project, "final_video_path", None) or "")
         if (
-            not baseline_report.get("candidate_signature")
+            not active_candidate
+            or str(candidate_path.resolve()) != str(Path(active_candidate).resolve())
+            or not baseline_report.get("candidate_signature")
             or _video_version_signature(candidate_path) != baseline_report.get("candidate_signature")
             or not baseline_report.get("baseline_signature")
             or _video_version_signature(baseline_path) != baseline_report.get("baseline_signature")

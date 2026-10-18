@@ -66,6 +66,32 @@ def test_review_api_marks_old_seedance_baseline_stale_after_candidate_changes(tm
     assert any("Seed Dance baseline comparison" in item for item in result["summary"]["action_items"])
 
 
+def test_review_api_marks_baseline_stale_when_project_has_no_current_candidate(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    project_root = storage_manager.get_project_path(1)
+    candidate = project_root / "old-final.mp4"
+    baseline = project_root / "baseline.mp4"
+    candidate.write_bytes(b"old-candidate")
+    baseline.write_bytes(b"baseline")
+    write_report(project_root / "reviews" / "seed_dance_baseline_comparison.json", {
+        "kind": "seed_dance_baseline_comparison",
+        "status": "passed",
+        "candidate_video_path": str(candidate),
+        "baseline_video_path": str(baseline),
+        "candidate_signature": "old-version",
+        "baseline_signature": "old-baseline",
+    })
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        id=1, final_video_path=None, scenes=[],
+    )
+
+    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+
+    assert result["reports"]["seed_dance_baseline_comparison"]["status"] == "stale"
+
+
 def test_review_api_summarizes_repair_queue_from_quality_reports(tmp_path, monkeypatch):
     from src.utils.storage import storage_manager
     monkeypatch.setattr(storage_manager, "base_path", tmp_path)
