@@ -416,12 +416,19 @@ class VideoComposer:
                     bgm_volume
                 )
             else:
-                # 没有背景音乐，直接移动到输出路径
+                # 没有背景音乐，安全复制到输出路径并保留源文件
                 if current_video != output_path:
                     import shutil
                     # Keep the scene source available for review, repair, and
                     # future re-composition; finalization must not consume it.
-                    shutil.copyfile(current_video, output_path)
+                    temporary_output = Path(output_path).with_name(
+                        f".{Path(output_path).name}.compose.tmp"
+                    )
+                    try:
+                        shutil.copyfile(current_video, temporary_output)
+                        os.replace(temporary_output, output_path)
+                    finally:
+                        temporary_output.unlink(missing_ok=True)
             
             # 清理临时文件
             self._cleanup_temp_files(Path(output_path).parent)

@@ -420,6 +420,7 @@ class TestVideoComposer:
         assert result == str(output_path)
         assert output_path.read_text() == "fake video"
         assert video_file.read_text() == "fake video"
+        assert not list(tmp_path.glob("*.compose.tmp"))
     
     def test_compose_video_with_concat(self, service, tmp_path):
         """测试：多个视频拼接"""
