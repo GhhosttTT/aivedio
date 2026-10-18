@@ -441,7 +441,12 @@ async def get_generation_review(
                 "video_path": str(final_video_path),
                 "error": "Final composition review evidence could not be read.",
             }
-    from src.tasks.review_tasks import current_story, generation_signature, validate_generation_review_coverage
+    from src.tasks.review_tasks import (
+        current_story,
+        generation_signature,
+        validate_generation_review_coverage,
+        validate_story_review_coverage,
+    )
     from src.services.generation_review import fingerprint, write_report
     continuity_report = ContinuityAuditService().audit(project, getattr(project, "scenes", []) or []).to_dict()
     if continuity_report.get("status") != "not_applicable":
@@ -483,6 +488,17 @@ async def get_generation_review(
                     report["status"] = "stale"
             except (OSError, TypeError, ValueError):
                 report["status"] = "stale"
+    story_report = reports.get("production_story")
+    if isinstance(story_report, dict) and story_report.get("status") == "passed":
+        coverage = validate_story_review_coverage(story_report, audit_scenes)
+        story_report["scene_coverage"] = coverage
+        if not coverage["passed"]:
+            story_report["status"] = "needs_review"
+            story_report["error"] = (
+                "Story review does not cover every scene: "
+                f"missing={coverage['missing']}, duplicate={coverage['duplicate']}, "
+                f"unexpected={coverage['unexpected']}"
+            )
     generation_report = reports.get("generation")
     if isinstance(generation_report, dict) and generation_report.get("status") == "passed":
         coverage = validate_generation_review_coverage(generation_report, audit_scenes)

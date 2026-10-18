@@ -72,6 +72,31 @@ def validate_generation_review_coverage(report: dict, scenes) -> dict:
     }
 
 
+def validate_story_review_coverage(report: dict, scenes) -> dict:
+    """Verify that the nested story review covers every scene exactly once."""
+    expected = [int(scene.scene_number) for scene in scenes]
+    review = report.get("review") if isinstance(report, dict) else None
+    reviewed = review.get("reviewed_scenes") if isinstance(review, dict) else None
+    if not isinstance(reviewed, list):
+        return {
+            "passed": False, "expected": expected, "reviewed": [],
+            "missing": expected, "duplicate": [], "unexpected": [],
+            "reason": "reviewed_scenes is missing",
+        }
+    numbers = [int(value) for value in reviewed if str(value).strip().isdigit()]
+    expected_set = set(expected)
+    number_set = set(numbers)
+    duplicate = sorted({number for number in numbers if numbers.count(number) > 1})
+    missing = sorted(expected_set - number_set)
+    unexpected = sorted(number_set - expected_set)
+    passed = not missing and not duplicate and not unexpected and len(numbers) == len(expected)
+    return {
+        "passed": passed, "expected": expected, "reviewed": numbers,
+        "missing": missing, "duplicate": duplicate, "unexpected": unexpected,
+        "reason": "ok" if passed else "story review coverage is incomplete",
+    }
+
+
 def require_generation_review(project, scenes):
     require_story_review(project, scenes)
     path = storage_manager.get_project_path(project.id) / "reviews" / "generation.json"
@@ -97,6 +122,13 @@ def require_story_review(project, scenes):
         raise ReviewError("Missing production story review")
     review = json.loads(path.read_text(encoding="utf-8"))
     require_passed(review)
+    coverage = validate_story_review_coverage(review, scenes)
+    if not coverage["passed"]:
+        raise ReviewError(
+            "Story review does not cover every scene: "
+            f"missing={coverage['missing']}, duplicate={coverage['duplicate']}, "
+            f"unexpected={coverage['unexpected']}"
+        )
     if review.get("input_hash") != fingerprint(current_story(project, scenes)):
         raise ReviewError("Story changed after review")
 
