@@ -2143,6 +2143,12 @@ def test_reference_upload_and_signed_media_access(setup):
     assert media.status_code == 200, media.text
     assert client.get(media.json()["url"]).headers["content-type"].startswith("image/")
     assert client.get("/api/projects/1/media-url", params={"path": "../outside.txt"}).status_code == 404
+    mov_path = path / "storage" / "projects" / "1" / "videos" / "preview.mov"
+    mov_path.parent.mkdir(parents=True, exist_ok=True)
+    mov_path.write_bytes(b"mov-preview")
+    mov_media = client.get("/api/projects/1/media-url", params={"path": str(mov_path)})
+    assert mov_media.status_code == 200, mov_media.text
+    assert client.get(mov_media.json()["url"]).content == b"mov-preview"
     assert client.get("/storage/characters/1/1/reference_1.png").status_code == 404
     expired = create_access_token({"kind": "media", "project_id": 1, "path": response.json()["image_path"]}, timedelta(seconds=-1))
     assert client.get("/api/media", params={"token": expired}).status_code == 401
