@@ -73,6 +73,11 @@ def test_verify_password():
     assert verify_password("wrong_password", hashed) is False
 
 
+@pytest.mark.parametrize("malformed_hash", ["", "not-a-bcrypt-hash", None])
+def test_verify_password_rejects_malformed_hash(malformed_hash):
+    assert verify_password("test_password_123", malformed_hash) is False
+
+
 # ==================== JWT 令牌测试 ====================
 
 def test_create_and_decode_access_token():

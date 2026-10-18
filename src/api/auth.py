@@ -46,10 +46,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         密码是否匹配
     """
     # 将密码转换为字节
-    password_bytes = plain_password.encode('utf-8')
-    hashed_bytes = hashed_password.encode('utf-8')
-    # 验证密码
-    return bcrypt.checkpw(password_bytes, hashed_bytes)
+    try:
+        password_bytes = plain_password.encode("utf-8")
+        hashed_bytes = hashed_password.encode("utf-8")
+        # 损坏或过期的凭据按普通认证失败处理，不能让登录接口返回 500。
+        return bcrypt.checkpw(password_bytes, hashed_bytes)
+    except (AttributeError, TypeError, ValueError, UnicodeError):
+        logger.warning("密码哈希格式无效，拒绝认证")
+        return False
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
