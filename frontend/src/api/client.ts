@@ -503,6 +503,7 @@ export interface ProductionReadinessReport {
         action: string;
         stage: string;
         execution: string;
+        scope?: 'project' | 'global_sample' | string;
         severity?: string;
         source_report: string;
         reason: string;

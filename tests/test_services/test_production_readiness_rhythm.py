@@ -111,3 +111,4 @@ def test_production_readiness_maps_video_sample_failures_to_targeted_repairs():
         "refine_video_commercial_aesthetic",
     ]
     assert all(item["execution"] == "auto" for item in actions)
+    assert all(item["scope"] == "global_sample" for item in actions)

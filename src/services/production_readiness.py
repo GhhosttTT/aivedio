@@ -178,7 +178,7 @@ class ProductionReadinessService:
             if action in seen:
                 continue
             seen.add(action)
-            actions.append({
+            action_item = {
                 "action": action,
                 "stage": stage,
                 "execution": execution,
@@ -189,7 +189,14 @@ class ProductionReadinessService:
                     f"Resolve production readiness {'blocker' if issue.severity == 'blocker' else 'warning'}: "
                     f"{issue.code}."
                 ),
-            })
+            }
+            # Local sample validation is a global capability gate, not
+            # project-scoped scene evidence. Keep its suggested automation
+            # metadata for reporting, but prevent the UI from pretending it
+            # can target a project's unknown scene.
+            if issue.code.startswith("sample_validation_"):
+                action_item["scope"] = "global_sample"
+            actions.append(action_item)
         return actions
 
     def _topic_brief_check(self, project: Project, warnings: list[ReadinessIssue]) -> dict:

@@ -195,9 +195,9 @@ export function ProductionReadinessPanel({
                     <h3>就绪修复动作</h3>
                     {readinessActions.slice(0, 8).map((item) => (
                         <div className={`wb-issue ${item.severity === 'warning' ? 'warning' : 'blocker'}`} key={item.action}>
-                            <span>{item.severity === 'warning' ? '建议' : '阻断'} · {labelScorecardAction(item.action)}</span>
+                            <span>{item.scope === 'global_sample' ? '全局样片 · ' : ''}{item.severity === 'warning' ? '建议' : '阻断'} · {labelScorecardAction(item.action)}</span>
                             <p>{item.recommendation} · {item.reason}</p>
-                            {isExecutableRepairAction(item.action) && (
+                            {item.scope !== 'global_sample' && isExecutableRepairAction(item.action) && (
                                 <button
                                     className="wb-button"
                                     disabled={loading}
