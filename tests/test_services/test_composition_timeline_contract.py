@@ -113,6 +113,30 @@ def test_audio_alignment_pads_each_scene_and_inserts_silence(monkeypatch, tmp_pa
     assert not list(tmp_path.glob("*_concat_list.txt"))
 
 
+def test_audio_alignment_mirrors_crossfade_overlap(monkeypatch, tmp_path):
+    calls = []
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        Path(cmd[-1]).write_bytes(b"aligned audio")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("src.services.video_composer.subprocess.run", run)
+    result = VideoComposer().compose_scene_audio(
+        [(None, 2.0), (None, 2.0)],
+        str(tmp_path / "track.wav"),
+        editing_plan=[
+            {"scene_number": 1, "transition": {"video": "none", "duration_seconds": 0.0}},
+            {"scene_number": 2, "transition": {"video": "crossfade", "duration_seconds": 0.12}},
+        ],
+    )
+
+    assert result.endswith("track.wav")
+    assert len(calls) == 3
+    final_filter = calls[-1][calls[-1].index("-filter_complex") + 1]
+    assert "acrossfade=d=0.120000" in final_filter
+
+
 def test_alignment_failure_cleans_temporary_tracks(monkeypatch, tmp_path):
     def fail(cmd, **_kwargs):
         raise subprocess.CalledProcessError(1, cmd, stderr="encoder failed")

@@ -776,8 +776,9 @@ class VideoComposer:
         self,
         segments: List[Tuple[Optional[str], float]],
         output_path: str,
+        editing_plan: Optional[List[dict]] = None,
     ) -> str:
-        """Preserve every scene boundary, including tail pauses and silent shots."""
+        """Preserve scene timing and mirror reviewed transition overlaps."""
         if not segments:
             raise ValueError("Scene audio segments cannot be empty")
         frame_tolerance = 1.0 / max(int(settings.GENERATION_VIDEO_OUTPUT_FPS), 1)
@@ -811,12 +812,36 @@ class VideoComposer:
                 except subprocess.CalledProcessError as exc:
                     raise VideoComposerError(f"Scene audio alignment failed: {exc.stderr}") from exc
                 aligned_paths.append(aligned)
-            return self._concat_audio(aligned_paths, str(output))
+            transition_durations = None
+            if editing_plan:
+                if len(editing_plan) != len(aligned_paths):
+                    raise ValueError("Editing plan must contain one entry per audio segment")
+                transition_durations = [
+                    self._transition_audio_overlap(editing_plan[index])
+                    for index in range(1, len(editing_plan))
+                ]
+            return self._concat_audio(
+                aligned_paths,
+                str(output),
+                transition_durations=transition_durations,
+            )
+
+    @staticmethod
+    def _transition_audio_overlap(plan: dict) -> float:
+        transition = plan.get("transition", {}) if isinstance(plan, dict) else {}
+        mode = transition.get("video")
+        if mode == "crossfade":
+            try:
+                return max(0.001, min(0.12, float(transition.get("duration_seconds", 0.0) or 0.0)))
+            except (TypeError, ValueError):
+                return 0.001
+        return 0.001 if mode in {"hard_cut", "none"} else 0.0
 
     def _concat_audio(
         self,
         audio_files: List[str],
-        output_path: str
+        output_path: str,
+        transition_durations: Optional[List[float]] = None,
     ) -> str:
         """
         拼接多个音频文件
@@ -840,16 +865,31 @@ class VideoComposer:
                     abs_path = Path(audio_file).resolve().as_posix().replace("'", "'\\''")
                     f.write(f"file '{abs_path}'\n")
             
-            # 拼接音频
-            cmd = [
-                "ffmpeg",
-                "-f", "concat",
-                "-safe", "0",
-                "-i", str(concat_list_path),
-                "-c", "copy",
-                "-y",
-                output_path
-            ]
+            if transition_durations:
+                if len(transition_durations) != len(audio_files) - 1:
+                    raise ValueError("Transition durations must cover each audio boundary")
+                inputs = [argument for audio_file in audio_files for argument in ("-i", audio_file)]
+                filters = []
+                current = "0:a"
+                for index, duration in enumerate(transition_durations, start=1):
+                    if not math.isfinite(float(duration)) or not 0 < float(duration) <= 0.12:
+                        raise ValueError("Audio transition duration must be finite and within 0-0.12 seconds")
+                    output_label = f"af{index}"
+                    filters.append(
+                        f"[{current}][{index}:a]acrossfade=d={float(duration):.6f}:"
+                        f"c1=tri:c2=tri[{output_label}]"
+                    )
+                    current = output_label
+                cmd = [
+                    "ffmpeg", *inputs, "-filter_complex", ";".join(filters),
+                    "-map", f"[{current}]", "-c:a", "pcm_s16le", "-y", output_path,
+                ]
+            else:
+                # Plain concat remains stream-copy based for the common path.
+                cmd = [
+                    "ffmpeg", "-f", "concat", "-safe", "0", "-i", str(concat_list_path),
+                    "-c", "copy", "-y", output_path,
+                ]
             
             subprocess.run(cmd, capture_output=True, text=True, check=True)
             

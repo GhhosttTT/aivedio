@@ -311,7 +311,11 @@ def compose_final_video_task(
         if not preserve_native_audio:
             temp_video_with_audio = final_video_path.replace(".mp4", "_with_audio.mp4")
             merged_audio_path = final_video_path.replace(".mp4", "_merged_audio.wav")
-            audio_path = video_composer.compose_scene_audio(audio_segments, merged_audio_path)
+            audio_path = video_composer.compose_scene_audio(
+                audio_segments,
+                merged_audio_path,
+                editing_plan=editing_plan,
+            )
             video_composer.sync_audio_video(
                 video_path=temp_video_path,
                 audio_path=audio_path,
@@ -508,13 +512,18 @@ def _merge_subtitles(
         # the pre-transition source durations and drifting after every cut.
         next_plan = (editing_plan or [])[scene_index + 1] if scene_index + 1 < len(editing_plan or []) else None
         transition = next_plan.get("transition", {}) if isinstance(next_plan, dict) else {}
-        if transition.get("video") == "crossfade":
+        transition_mode = transition.get("video")
+        if transition_mode == "crossfade":
             try:
                 overlap = float(transition.get("duration_seconds", 0.0) or 0.0)
             except (TypeError, ValueError):
                 overlap = 0.0
             if math.isfinite(overlap) and overlap > 0:
                 current_time_offset = max(0.0, round(current_time_offset - overlap, 3))
+        elif transition_mode in {"hard_cut", "none"}:
+            # The FFmpeg transition graph uses a 1ms xfade even for hard cuts
+            # so mixed transition plans share one stable filter graph.
+            current_time_offset = max(0.0, round(current_time_offset - 0.001, 3))
     
     # 写入合并后的字幕文件
     with open(output_path, "w", encoding="utf-8") as f:
