@@ -2132,9 +2132,15 @@ async def run_auto_repair_queue(
 async def get_quality_loop_plan(
     project_id: int,
     max_actions: int = Query(5, ge=1, le=20, description="本轮最多规划的自动返工任务数"),
+    action: str | None = Query(None, min_length=1, max_length=100, description="只预览指定的自动返工动作"),
     current_user=Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
 ):
+    if action and repair_execution_mode(action) != "auto":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"指定返修动作不可自动执行: {action}",
+        )
     review = await get_generation_review(project_id, current_user, db_session)
     summary = review.get("summary", {})
     return {
@@ -2142,7 +2148,7 @@ async def get_quality_loop_plan(
         "summary_status": summary.get("status"),
         "quality_scorecard": summary.get("quality_scorecard", {}),
         "recent_cycles": RepairCycleStore(project_id).recent(5),
-        "plan": build_quality_loop_plan(summary, max_actions),
+        "plan": build_quality_loop_plan(summary, max_actions, action),
     }
 
 

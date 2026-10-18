@@ -570,6 +570,54 @@ def test_quality_loop_plan_exposes_next_repair_cycle(setup):
     assert payload["quality_scorecard"]["next_focus"]["dimension"] == "identity"
 
 
+def test_quality_loop_plan_filters_requested_auto_action(setup):
+    client, _db, _ = setup
+    report_root = storage_manager.get_project_path(1) / "videos"
+    report_root.mkdir(parents=True, exist_ok=True)
+    (report_root / "scene_1.quality.json").write_text(json.dumps({
+        "status": "needs_review",
+        "repair_queue": [
+            {
+                "scene_number": 1,
+                "priority": "high",
+                "stage": "video",
+                "action": "lower_motion_and_regenerate_video",
+                "execution": "auto",
+            },
+            {
+                "scene_number": 2,
+                "priority": "high",
+                "stage": "video",
+                "action": "regenerate_video_with_performance_direction",
+                "execution": "auto",
+            },
+        ],
+    }), encoding="utf-8")
+
+    response = client.get(
+        "/api/projects/1/quality-loop/plan",
+        params={"action": "lower_motion_and_regenerate_video"},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert [item["action"] for item in payload["plan"]["selected"]] == [
+        "lower_motion_and_regenerate_video"
+    ]
+
+
+def test_quality_loop_plan_rejects_manual_action_filter(setup):
+    client, _db, _ = setup
+
+    response = client.get(
+        "/api/projects/1/quality-loop/plan",
+        params={"action": "manual_review"},
+    )
+
+    assert response.status_code == 400
+    assert "不可自动执行" in response.json()["detail"]
+
+
 def test_production_readiness_warns_when_project_generation_repair_queue_is_not_empty(setup):
     client, db, _ = setup
     report_root = storage_manager.get_project_path(1) / "images"
