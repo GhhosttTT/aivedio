@@ -124,14 +124,15 @@ def _normalized_production_options(options: ProductionOptions) -> dict:
     resolution = options.resolution.strip().lower() if isinstance(options.resolution, str) else options.resolution
     output_format = options.output_format.strip().lower() if isinstance(options.output_format, str) else options.output_format
     valid_modes = {
-        "reference", "reference_to_video", "auto", "multi_shot", "seedance_2_5", "2.5", "edit", "extend",
+        "reference", "reference_to_video", "auto", "multi_shot", "seedance_2_5", "2.5",
+        "first_frame", "first_last_frame", "edit", "extend",
     }
     if request_mode is not None and request_mode not in valid_modes:
         raise HTTPException(
             status_code=422,
             detail=(
                 "request_mode must be one of reference, reference_to_video, auto, multi_shot, "
-                "seedance_2_5, 2.5, edit, or extend"
+                "seedance_2_5, 2.5, first_frame, first_last_frame, edit, or extend"
             ),
         )
     if resolution is not None and resolution not in {"480p", "720p", "1080p", "4k"}:
@@ -176,6 +177,22 @@ def _normalized_production_options(options: ProductionOptions) -> dict:
             raise HTTPException(
                 status_code=422,
                 detail="Native Seedance omni_reference_task_type=auto requires Seedance 2.5.",
+            )
+        if request_mode == "first_frame" and not (
+            _seedance_model_is_10(configured_model) or _seedance_model_is_25(configured_model)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Native Seedance explicit first_frame mode requires Seedance 1.0 or 2.5.",
+            )
+        if (
+            request_mode == "first_frame"
+            and _seedance_model_is_25(configured_model)
+            and not options.draft
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Seedance 2.5 first_frame mode requires draft=true; promote the Draft task for final output.",
             )
         if options.duration_seconds is not None:
             minimum_duration, maximum_duration = _seedance_duration_bounds(configured_model, request_mode)
