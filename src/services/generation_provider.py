@@ -1476,7 +1476,15 @@ class SeedanceApiProvider(ApiVideoProvider):
         image_paths = _unique_media_paths(request.reference_images or [])
         if not image_paths and request.reference_image:
             image_paths = [request.reference_image]
-        if request.continuity_reference_image and request.continuity_reference_image not in image_paths:
+        request_mode = str(
+            request.request_mode or _provider_setting("SEEDANCE_REQUEST_MODE", "reference")
+        ).strip().lower()
+        explicit_frame_mode = request_mode in {"first_frame", "first_last_frame"}
+        if (
+            request.continuity_reference_image
+            and not explicit_frame_mode
+            and request.continuity_reference_image not in image_paths
+        ):
             image_paths.append(request.continuity_reference_image)
         video_paths = _unique_media_paths(request.reference_videos or [])
         audio_paths = _unique_media_paths(request.reference_audios or [])
@@ -1583,20 +1591,25 @@ class SeedanceApiProvider(ApiVideoProvider):
 
         self._validate_reference_limits(request, native_ark=True)
         prompt = _seedance_prompt(request, native_ark=True)
+        request_mode = str(
+            request.request_mode or _provider_setting("SEEDANCE_REQUEST_MODE", "reference")
+        ).strip().lower()
+        explicit_frame_mode = request_mode in {"first_frame", "first_last_frame"}
         user_prompt_lower = str(request.prompt or "").strip().lower()
         content: list[dict] = [{"type": "text", "text": prompt}]
         image_paths = _unique_media_paths(request.reference_images or [])
         if not image_paths and request.reference_image:
             image_paths = [request.reference_image]
-        if request.continuity_reference_image and request.continuity_reference_image not in image_paths:
+        if (
+            request.continuity_reference_image
+            and not explicit_frame_mode
+            and request.continuity_reference_image not in image_paths
+        ):
             image_paths.append(request.continuity_reference_image)
         video_paths = _unique_media_paths(request.reference_videos or [])
         audio_paths = _unique_media_paths(request.reference_audios or [])
         if not audio_paths and request.audio_path:
             audio_paths = [request.audio_path]
-        request_mode = str(
-            request.request_mode or _provider_setting("SEEDANCE_REQUEST_MODE", "reference")
-        ).strip().lower()
         if request_mode in {"seedance_2_5", "2.5"}:
             request_mode = "multi_shot"
         if request_mode not in {
@@ -1848,7 +1861,14 @@ class SeedanceApiProvider(ApiVideoProvider):
         image_paths = _unique_media_paths(request.reference_images or [])
         if not image_paths and request.reference_image:
             image_paths = [request.reference_image]
-        if request.continuity_reference_image and request.continuity_reference_image not in image_paths:
+        explicit_frame_mode = str(request.request_mode or _provider_setting(
+            "SEEDANCE_REQUEST_MODE", "reference"
+        )).strip().lower() in {"first_frame", "first_last_frame"}
+        if (
+            request.continuity_reference_image
+            and not explicit_frame_mode
+            and request.continuity_reference_image not in image_paths
+        ):
             image_paths.append(request.continuity_reference_image)
         first_last_frame = bool(
             native_ark

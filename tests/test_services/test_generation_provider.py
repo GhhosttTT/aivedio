@@ -1578,8 +1578,10 @@ def test_seedance_provider_native_ark_uses_first_last_frame_contract(tmp_path, m
     monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
     first = tmp_path / "first.png"
     last = tmp_path / "last.png"
+    continuity = tmp_path / "previous.last_frame.png"
     first.write_bytes(b"first")
     last.write_bytes(b"last")
+    continuity.write_bytes(b"previous")
     provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
 
     payload = provider._video_payload(VideoGenerationRequest(
@@ -1587,6 +1589,8 @@ def test_seedance_provider_native_ark_uses_first_last_frame_contract(tmp_path, m
         output_path=str(tmp_path / "out.mp4"),
         reference_image=str(first),
         end_image=str(last),
+        continuity_reference_image=str(continuity),
+        request_mode="first_last_frame",
         duration_seconds=6,
         draft=True,
     ))
