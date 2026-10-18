@@ -38,7 +38,7 @@ def test_audio_signal_stats_reads_ffmpeg_peak_level(monkeypatch, tmp_path):
         return type("Result", (), {
             "returncode": 0,
             "stdout": "",
-            "stderr": "[Parsed_volumedetect_0 @ 0x0] max_volume: -12.3 dB",
+            "stderr": "[Parsed_volumedetect_0 @ 0x0] max_volume: -12.3 dB\nRMS level dB: -20.5",
         })()
 
     monkeypatch.setattr("scripts.compare_video_baseline.subprocess.run", fake_run)
@@ -48,6 +48,7 @@ def test_audio_signal_stats_reads_ffmpeg_peak_level(monkeypatch, tmp_path):
     assert result["audio_signal_status"] == "usable"
     assert result["audio_clipping_status"] == "ok"
     assert result["audio_peak_db"] == pytest.approx(-12.3)
+    assert result["audio_rms_db"] == pytest.approx(-20.5)
     assert captured["command"][2] == "info"
 
 
@@ -279,6 +280,25 @@ def test_compare_video_baseline_blocks_large_audio_level_drift(monkeypatch, tmp_
     assert report["status"] == "needs_review"
     assert report["gates"]["audio_level_close"] is False
     assert report["differences"]["audio_peak_delta_db"] == -22.0
+
+
+def test_compare_video_baseline_blocks_large_audio_rms_drift(monkeypatch, tmp_path):
+    def fake_stats(path, max_samples):
+        return VideoStats(
+            path=str(path), duration_seconds=2.0, width=160, height=90, fps=24,
+            sampled_frames=6, motion_energy=8, sharpness=30, brightness=90,
+            brightness_variance=40, audio_present=True, audio_duration_seconds=2.0,
+            audio_signal_status="usable", audio_clipping_status="ok",
+            audio_peak_db=-12.0, audio_rms_db=-35.0 if "candidate" in path.name else -10.0,
+        )
+
+    monkeypatch.setattr("scripts.compare_video_baseline.video_stats", fake_stats)
+
+    report = compare(tmp_path / "candidate.mp4", tmp_path / "baseline.mp4", max_samples=6)
+
+    assert report["status"] == "needs_review"
+    assert report["gates"]["audio_rms_close"] is False
+    assert report["differences"]["audio_rms_delta_db"] == -25.0
 
 
 def test_compare_video_baseline_blocks_prolonged_static_run(monkeypatch, tmp_path):

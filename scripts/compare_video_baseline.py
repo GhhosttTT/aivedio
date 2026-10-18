@@ -44,6 +44,7 @@ class VideoStats:
     audio_signal_status: str | None = None
     audio_clipping_status: str | None = None
     audio_peak_db: float | None = None
+    audio_rms_db: float | None = None
     audio_video_start_delta_seconds: float | None = None
 
 
@@ -211,6 +212,7 @@ def video_stats(path: Path, max_samples: int = 16) -> VideoStats:
         audio_signal_status=audio_metrics.get("audio_signal_status"),
         audio_clipping_status=audio_metrics.get("audio_clipping_status"),
         audio_peak_db=audio_metrics.get("audio_peak_db"),
+        audio_rms_db=audio_metrics.get("audio_rms_db"),
         audio_video_start_delta_seconds=probe.get("audio_video_start_delta_seconds"),
     )
 
@@ -262,6 +264,11 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
             round(candidate_stats.audio_peak_db - baseline_stats.audio_peak_db, 3)
             if candidate_stats.audio_peak_db is not None
             and baseline_stats.audio_peak_db is not None else None
+        ),
+        "audio_rms_delta_db": (
+            round(candidate_stats.audio_rms_db - baseline_stats.audio_rms_db, 3)
+            if candidate_stats.audio_rms_db is not None
+            and baseline_stats.audio_rms_db is not None else None
         ),
         "audio_video_start_delta_seconds": (
             round(candidate_stats.audio_video_start_delta_seconds, 3)
@@ -322,6 +329,15 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
                 candidate_stats.audio_peak_db is not None
                 and baseline_stats.audio_peak_db is not None
                 and abs(candidate_stats.audio_peak_db - baseline_stats.audio_peak_db) <= settings.GENERATION_VIDEO_BASELINE_MAX_AUDIO_PEAK_DELTA_DB
+            )
+        ),
+        "audio_rms_close": (
+            not baseline_stats.audio_present
+            or (
+                candidate_stats.audio_rms_db is not None
+                and baseline_stats.audio_rms_db is not None
+                and abs(candidate_stats.audio_rms_db - baseline_stats.audio_rms_db)
+                <= settings.GENERATION_VIDEO_BASELINE_MAX_AUDIO_RMS_DELTA_DB
             )
         ),
     }
@@ -406,7 +422,7 @@ def _audio_signal_stats(path: Path) -> dict[str, object]:
         result = subprocess.run(
             [
                 "ffmpeg", "-v", "info", "-i", str(path), "-vn",
-                "-af", "volumedetect", "-f", "null", "-",
+                "-af", "volumedetect,astats=metadata=1:reset=1", "-f", "null", "-",
             ],
             capture_output=True,
             text=True,
@@ -422,6 +438,16 @@ def _audio_signal_stats(path: Path) -> dict[str, object]:
         if result.returncode != 0 or not matches or matches[-1].lower() == "inf":
             return {"audio_signal_status": "unavailable", "audio_clipping_status": "unavailable"}
         peak_db = float(matches[-1])
+        rms_matches = re.findall(
+            r"RMS level dB:\s*(-?(?:\d+(?:\.\d+)?|inf))",
+            output,
+            re.I,
+        )
+        rms_db = (
+            float(rms_matches[-1])
+            if rms_matches and rms_matches[-1].lower() != "inf"
+            else None
+        )
         return {
             "audio_signal_status": (
                 "near_silent"
@@ -434,6 +460,7 @@ def _audio_signal_stats(path: Path) -> dict[str, object]:
                 else "ok"
             ),
             "audio_peak_db": round(peak_db, 3),
+            "audio_rms_db": round(rms_db, 3) if rms_db is not None else None,
         }
     except (OSError, subprocess.SubprocessError, ValueError):
         return {"audio_signal_status": "unavailable", "audio_clipping_status": "unavailable"}
