@@ -2816,6 +2816,13 @@ def generate_sequence_video_task(
             "scene_ids": scene_ids,
             "video_paths": [str(path) for path in output_paths],
             "segments": [segment.as_dict() for segment in segments],
+            "sequence_evidence": {
+                "boundary_status": boundary_report.get("status"),
+                "severe_transition_count": int(boundary_report.get("severe_transition_count") or 0),
+                "geometry_mismatch_count": int(boundary_report.get("geometry_mismatch_count") or 0),
+                "segment_count": len(segments),
+                "report_path": str(boundary_report_path),
+            },
             "status": "completed",
         }
     except Exception:
