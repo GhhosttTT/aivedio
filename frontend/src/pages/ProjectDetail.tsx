@@ -46,7 +46,7 @@ export function ProjectDetail() {
                 projectApi.reviews(projectId),
             ]);
             setProject(data); setTask(latest); setReadiness(ready); setReviewSummary(review); setTopicBrief(current => ({...current, ...(brief.brief || {})}));
-            setMarketScore(signals); setMarketEvidence(current => ({...current, comparables: (signals.evidence?.comparables || []).map((item: any) => item.title || '').join('\n'), differentiation: signals.evidence?.differentiation || '', success_metric: signals.evidence?.success_metric || '', notes: signals.evidence?.notes || ''})); setError('');
+            setMarketScore(signals); setMarketEvidence(current => ({...current, comparables: (signals.evidence?.comparables || []).map((item: any) => [item.title, item.platform, item.genre, item.signal].filter(Boolean).join(' | ')).join('\n'), differentiation: signals.evidence?.differentiation || '', success_metric: signals.evidence?.success_metric || '', notes: signals.evidence?.notes || ''})); setError('');
         } catch(e) { setError(errorText(e)); }
         finally { setLoading(false); }
     }, [id, productionOptions.provider, productionOptions.model, productionOptions.request_mode, productionOptions.resolution, productionOptions.output_format, productionOptions.duration_seconds]);
@@ -80,7 +80,10 @@ export function ProjectDetail() {
             } else if (operation === '保存选题定位') {
                 await projectApi.updateTopicBrief(Number(id), topicBrief);
             } else if (operation === '保存市场证据') {
-                const comparables = marketEvidence.comparables.split('\n').map(title => title.trim()).filter(Boolean);
+                const comparables = marketEvidence.comparables.split('\n').map(line => {
+                    const [title, platform, genre, signal] = line.split('|').map(item => item.trim());
+                    return {title, platform, genre, signal};
+                }).filter(item => item.title);
                 await projectApi.updateMarketSignals(Number(id), {comparables, differentiation: marketEvidence.differentiation, success_metric: marketEvidence.success_metric, notes: marketEvidence.notes});
             } else if (operation === '冻结空间计划') {
                 await projectApi.freezeSpatialPlan(Number(id), assetNotes);
@@ -387,7 +390,7 @@ export function ProjectDetail() {
             <div className="wb-row wb-between"><strong>市场证据包</strong><span className={`wb-badge ${marketScore.status === 'passed' ? 'success' : ''}`}>评分 {marketScore.score}/{marketScore.score_max} · {marketScore.status}</span></div>
             <p className="wb-muted">记录可比作品和差异化依据，帮助脚本与视觉生成保持商业定位；这不是爆款预测。</p>
             <div className="wb-fields">
-                <label>可比作品（每行一个）<textarea disabled={locked} value={marketEvidence.comparables} onChange={e => setMarketEvidence({...marketEvidence, comparables: e.target.value})} placeholder="如：对照剧 A\n对照剧 B" rows={3}/></label>
+                <label>可比作品（作品名 | 平台 | 类型 | 表现信号）<textarea disabled={locked} value={marketEvidence.comparables} onChange={e => setMarketEvidence({...marketEvidence, comparables: e.target.value})} placeholder={'如：对照剧 A | 抖音 | 都市复仇 | 完播率 38%\n对照剧 B | 抖音 | 悬疑 | 评论率 9%'} rows={3}/></label>
                 <label>差异化定位<textarea disabled={locked} value={marketEvidence.differentiation} onChange={e => setMarketEvidence({...marketEvidence, differentiation: e.target.value})} placeholder="首分钟证据钩子、角色视角或情绪差异" rows={3}/></label>
                 <label>成功指标<input disabled={locked} value={marketEvidence.success_metric} onChange={e => setMarketEvidence({...marketEvidence, success_metric: e.target.value})} placeholder="如：前五集完播率达到 35%"/></label>
                 <label>复盘备注<input disabled={locked} value={marketEvidence.notes} onChange={e => setMarketEvidence({...marketEvidence, notes: e.target.value})} placeholder="可选：来源、时间窗口、样本量"/></label>
