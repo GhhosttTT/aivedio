@@ -1,11 +1,12 @@
 import shutil
+from types import SimpleNamespace
 from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
 
-from scripts.compare_video_baseline import VideoStats, _parse_fps, compare
+from scripts.compare_video_baseline import VideoStats, _parse_fps, _probe, compare
 
 
 requires_ffprobe = pytest.mark.skipif(shutil.which("ffprobe") is None, reason="ffprobe is required")
@@ -27,6 +28,33 @@ def _write_test_video(path: Path, *, frames: int = 12, moving: bool = True, size
 
 def test_parse_fps_fraction():
     assert _parse_fps("30000/1001") == pytest.approx(29.970, rel=0.001)
+
+
+def test_probe_reads_video_and_audio_streams(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        return SimpleNamespace(
+            stdout=(
+                '{"streams":['
+                '{"codec_type":"video","width":1920,"height":1080,'
+                '"r_frame_rate":"24/1","duration":"5.0","codec_name":"h264"},'
+                '{"codec_type":"audio","duration":"4.9","codec_name":"aac"}'
+                '],"format":{"duration":"5.0"}}'
+            )
+        )
+
+    monkeypatch.setattr("scripts.compare_video_baseline.subprocess.run", fake_run)
+
+    result = _probe(tmp_path / "candidate.mp4")
+
+    assert result["width"] == 1920
+    assert result["height"] == 1080
+    assert result["audio_present"] is True
+    assert result["audio_duration_seconds"] == pytest.approx(4.9)
+    assert result["audio_codec"] == "aac"
+    assert "-select_streams" not in captured["command"]
 
 
 @requires_ffprobe
