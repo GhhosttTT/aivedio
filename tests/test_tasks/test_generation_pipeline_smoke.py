@@ -816,6 +816,23 @@ def test_composition_review_blocks_severe_style_boundary_transition():
     )
 
 
+def test_composition_review_blocks_fps_boundary_mismatch():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "technical_boundary_report": {
+            "status": "available",
+            "severe_transition_count": 0,
+            "severe_style_transition_count": 0,
+            "geometry_mismatch_count": 0,
+            "fps_mismatch_count": 1,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video has mismatched frame rates across 1 shot boundary(s)"
+    )
+
+
 def test_composition_review_blocks_unavailable_boundary_metrics():
     report = {
         "status": "passed",
