@@ -123,6 +123,7 @@ class ProductionReadinessService:
         characters = self.db.query(Character).filter(Character.project_id == project_id).all()
         blockers: list[ReadinessIssue] = []
         warnings: list[ReadinessIssue] = []
+        sample_warning_start = len(warnings)
         checks = {
             "script": self._script_check(project, scenes, blockers),
             "story_rhythm": self._story_rhythm_check(project, scenes, blockers, warnings),
@@ -143,6 +144,11 @@ class ProductionReadinessService:
             "project_generation_quality": self._project_generation_quality_check(project, warnings),
             "sample_validation": self._sample_validation_check(warnings),
         }
+        if len(warnings) > sample_warning_start:
+            blockers.append(ReadinessIssue(
+                "sample_validation_not_production_ready",
+                "Resolve all real GPU sample-validation and human-review findings before final production.",
+            ))
         if include_engine_preflight:
             checks["video_engine"] = self._video_engine_check(
                 blockers,

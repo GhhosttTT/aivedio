@@ -1047,6 +1047,7 @@ def test_production_readiness_requires_real_sample_validation_summary(setup):
     payload = response.json()
     assert payload["checks"]["sample_validation"]["status"] == "missing"
     assert any(item["code"] == "missing_sample_validation" for item in payload["warnings"])
+    assert any(item["code"] == "sample_validation_not_production_ready" for item in payload["blockers"])
 
 
 def test_production_readiness_accepts_passing_sample_validation_summary(setup):
