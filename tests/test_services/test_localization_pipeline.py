@@ -1,12 +1,15 @@
 import json
+from io import BytesIO
 from pathlib import Path
 
 import pytest
+from fastapi import UploadFile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database import Base
 from src.database.models import LocalizationJob, LocalizationJobStatus, LocalizationStage, Project, SourceVideo, User
+from src.config import settings
 from src.services.asr_service import ASRResult, ASRSegment
 from src.services.localization_pipeline import LocalizationPipeline
 from src.services.translation_service import TranslationResult
@@ -257,3 +260,68 @@ def test_run_moderation_writes_quality_report(db_session, tmp_path, monkeypatch)
     assert payload["status"] == "passed"
     assert payload["source_summary"]["segments"] == 1
     assert job.moderation_report_path == report_path
+
+
+class _FakeDb:
+    def __init__(self):
+        self.project = type("ProjectStub", (), {"id": 7})()
+        self.added = []
+
+    def query(self, _model):
+        return self
+
+    def filter(self, *_args):
+        return self
+
+    def first(self):
+        return self.project
+
+    def add(self, item):
+        self.added.append(item)
+
+    def commit(self):
+        pass
+
+    def refresh(self, item):
+        item.id = 1
+
+
+def _upload(filename: str, content: bytes) -> UploadFile:
+    return UploadFile(file=BytesIO(content), filename=filename)
+
+
+def test_source_video_upload_uses_unique_atomic_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "STORAGE_PATH", str(tmp_path))
+    db = _FakeDb()
+    pipeline = LocalizationPipeline(db)
+
+    first = pipeline.save_source_video(7, _upload("../episode.mp4", b"first"))
+    second = pipeline.save_source_video(7, _upload("episode.mp4", b"second"))
+
+    assert first.original_filename == "episode.mp4"
+    assert second.original_filename == "episode.mp4"
+    assert first.file_path != second.file_path
+    assert first.file_path.endswith(".mp4")
+    assert Path(first.file_path).read_bytes() == b"first"
+    assert Path(second.file_path).read_bytes() == b"second"
+    assert not list((tmp_path / "project_7" / "source_videos").glob("*.part"))
+
+
+def test_source_video_upload_rejects_empty_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "STORAGE_PATH", str(tmp_path))
+
+    with pytest.raises(ValueError, match="cannot be empty"):
+        LocalizationPipeline(_FakeDb()).save_source_video(7, _upload("empty.mp4", b""))
+
+
+def test_source_video_upload_enforces_configured_size_limit(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr(settings, "LOCALIZATION_MAX_SOURCE_VIDEO_SIZE_MB", 1)
+
+    with pytest.raises(ValueError, match="upload limit"):
+        LocalizationPipeline(_FakeDb()).save_source_video(
+            7,
+            _upload("large.mp4", b"x" * (1024 * 1024 + 1)),
+        )
+
+    assert not list((tmp_path / "project_7" / "source_videos").glob("*"))

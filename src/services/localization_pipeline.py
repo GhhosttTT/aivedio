@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 from typing import Iterable, List, Optional
+from uuid import uuid4
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
@@ -51,9 +51,33 @@ class LocalizationPipeline:
         video_dir = self.storage_root / f"project_{project_id}" / "source_videos"
         video_dir.mkdir(parents=True, exist_ok=True)
 
-        output_path = video_dir / filename
-        with output_path.open("wb") as buffer:
-            shutil.copyfileobj(upload.file, buffer)
+        # Keep the user-visible filename in the database while using a unique
+        # on-disk name so repeated uploads never overwrite an existing source
+        # video or an in-progress localization job.
+        output_path = video_dir / f"{uuid4().hex}{Path(filename).suffix.lower()}"
+        temporary_path = output_path.with_name(f".{output_path.name}.part")
+        max_bytes = max(1, int(settings.LOCALIZATION_MAX_SOURCE_VIDEO_SIZE_MB)) * 1024 * 1024
+        total_bytes = 0
+        try:
+            with temporary_path.open("wb") as buffer:
+                while True:
+                    chunk = upload.file.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total_bytes += len(chunk)
+                    if total_bytes > max_bytes:
+                        raise ValueError(
+                            "source video exceeds the configured upload limit of "
+                            f"{settings.LOCALIZATION_MAX_SOURCE_VIDEO_SIZE_MB} MB"
+                        )
+                    buffer.write(chunk)
+            if total_bytes <= 0:
+                raise ValueError("source video cannot be empty")
+            temporary_path.replace(output_path)
+        except Exception:
+            temporary_path.unlink(missing_ok=True)
+            output_path.unlink(missing_ok=True)
+            raise
 
         source_video = SourceVideo(
             project_id=project_id,

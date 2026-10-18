@@ -171,6 +171,7 @@ class Settings(BaseSettings):
 
     # 源片出海译制配置
     LOCALIZATION_TARGET_LANGUAGES: str = "en,es,pt,ar,id,th,vi,ja,ko"
+    LOCALIZATION_MAX_SOURCE_VIDEO_SIZE_MB: int = 2048
     SUBTITLE_REMOVAL_BACKEND: str = "manual_mask"
     OCCLUSION_REMOVAL_BACKEND: str = "detect_only"
     OCCLUSION_MASK_DETECTOR_COMMAND: str = ""
