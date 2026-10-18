@@ -194,6 +194,20 @@ def _collect_files(project, project_root: Path, reports: dict) -> list[tuple[Pat
                     raise DeliveryPackageError(
                         f"Platform export manifest is missing or invalid: {export_manifest_path}"
                     ) from exc
+                technical_metrics = (
+                    export_manifest.get("technical_metrics")
+                    if isinstance(export_manifest, dict) else None
+                )
+                if (
+                    not isinstance(export_manifest, dict)
+                    or export_manifest.get("status") != "ready"
+                    or not isinstance(technical_metrics, dict)
+                    or technical_metrics.get("status") != "available"
+                    or technical_metrics.get("temporal_sample_evidence") != "sufficient"
+                ):
+                        raise DeliveryPackageError(
+                            f"Platform export manifest is stale or incomplete for {export_path.name}"
+                        )
                 expected_hash = export_manifest.get("output_sha256")
                 if not isinstance(expected_hash, str) or expected_hash.lower() != _sha256(export_path):
                     raise DeliveryPackageError(

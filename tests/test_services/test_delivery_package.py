@@ -34,6 +34,7 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
         "status": "ready",
         "preset": "douyin",
         "output_sha256": _sha256(exports / "douyin.mp4"),
+        "technical_metrics": {"status": "available", "temporal_sample_evidence": "sufficient"},
     }), encoding="utf-8")
     (tmp_path / "topic_brief.json").write_text(json.dumps({"platform": "抖音", "genre": "都市悬疑"}), encoding="utf-8")
     (tmp_path / "market_signals.json").write_text(json.dumps({"comparables": [{"title": "对照剧 A"}]}), encoding="utf-8")
@@ -271,6 +272,29 @@ def test_delivery_package_rejects_stale_platform_export_manifest(tmp_path):
     project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
 
     with pytest.raises(DeliveryPackageError, match="manifest is stale"):
+        build_delivery_package(
+            project,
+            tmp_path,
+            {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)},
+            {"status": "ready"},
+        )
+
+
+def test_delivery_package_rejects_platform_export_without_quality_evidence(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    exports = tmp_path / "exports"
+    exports.mkdir()
+    export = exports / "douyin.mp4"
+    export.write_bytes(b"platform-video")
+    (exports / "douyin.json").write_text(json.dumps({
+        "status": "ready",
+        "preset": "douyin",
+        "output_sha256": _sha256(export),
+    }), encoding="utf-8")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+
+    with pytest.raises(DeliveryPackageError, match="stale or incomplete"):
         build_delivery_package(
             project,
             tmp_path,
