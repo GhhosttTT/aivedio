@@ -36,17 +36,22 @@ class TestVideoComposer:
         with pytest.raises(ValueError, match="视频文件列表不能为空"):
             service.concat_videos([])
     
-    def test_concat_videos_single_file(self, service):
+    def test_concat_videos_single_file(self, service, tmp_path):
         """测试：单个视频文件时直接返回"""
-        video_file = "video.mp4"
-        result = service.concat_videos([video_file])
+        video_file = tmp_path / "video.mp4"
+        video_file.write_bytes(b"video")
+        result = service.concat_videos([str(video_file)])
         
-        assert result == video_file
+        assert result == str(video_file)
     
     def test_concat_videos_file_not_exists(self, service):
         """测试：视频文件不存在时抛出异常"""
         with pytest.raises(FileNotFoundError, match="视频文件不存在"):
             service.concat_videos(["nonexistent1.mp4", "nonexistent2.mp4"])
+
+    def test_concat_videos_single_missing_file_does_not_bypass_validation(self, service):
+        with pytest.raises(FileNotFoundError, match="视频文件不存在"):
+            service.concat_videos(["missing-single.mp4"])
     
     def test_concat_videos_success(self, service, tmp_path):
         """测试：成功拼接视频"""

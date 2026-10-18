@@ -70,17 +70,18 @@ class VideoComposer:
         """
         if not video_files:
             raise ValueError("视频文件列表不能为空")
-        
-        if len(video_files) == 1 and not output_path:
-            logger.info("只有一个视频文件，无需拼接")
-            return video_files[0]
-        
-        logger.info(f"开始拼接视频: {len(video_files)} 个文件")
-        
+
         # 验证所有文件存在
         for video_file in video_files:
             if not os.path.exists(video_file):
                 raise FileNotFoundError(f"视频文件不存在: {video_file}")
+
+        if len(video_files) == 1 and not output_path:
+            logger.info("只有一个视频文件，无需拼接")
+            return video_files[0]
+
+        logger.info(f"开始拼接视频: {len(video_files)} 个文件")
+
         
         try:
             # 确定输出路径
