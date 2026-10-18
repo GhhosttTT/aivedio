@@ -18,7 +18,17 @@ export default function CharacterManager({projectId, locked = false}: {projectId
         try {
             const data = await characterApi.listCharacters(projectId);
             setCharacters(data);
-            const entries = await Promise.all(data.map(async c => [c.id, await characterApi.listReferences(projectId, c.id)] as const));
+            const entries = await Promise.all(data.map(async c => {
+                const [refs, pack] = await Promise.all([
+                    characterApi.listReferences(projectId, c.id),
+                    characterApi.getAssetPack(projectId, c.id),
+                ]);
+                const voice = pack.asset_pack?.voice_profile;
+                if (voice && typeof voice === 'object') {
+                    setVoiceProfiles(current => ({...current, [c.id]: voice}));
+                }
+                return [c.id, refs] as const;
+            }));
             setReferences(Object.fromEntries(entries));
         } catch(e) { setError(errorText(e)); }
     }, [projectId]);

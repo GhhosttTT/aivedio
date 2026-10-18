@@ -158,6 +158,12 @@ export const characterApi = {
     );
   },
 
+  getAssetPack: async (projectId: number, characterId: number) => {
+    return apiClient.get<never, {character_id: number; status: string; asset_pack: Record<string, any>}>(
+      `/projects/${projectId}/characters/${characterId}/asset-pack`
+    );
+  },
+
   freezeTurnaroundAlbum: async (projectId: number, characterId: number, views: Record<string, string>, notes = '') => {
     return apiClient.post<any, {character_id: number; status: string; album: Record<string, any>}>(
       `/projects/${projectId}/characters/${characterId}/freeze-turnaround-album`, {views, notes}

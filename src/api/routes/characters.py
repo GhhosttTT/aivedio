@@ -426,6 +426,27 @@ async def freeze_character_asset_pack(
         raise HTTPException(status_code=500, detail=f"冻结角色定妆包失败: {e}")
 
 
+@router.get("/{character_id}/asset-pack", response_model=CharacterAssetPackResponse)
+async def get_character_asset_pack(
+    project_id: int,
+    character_id: int,
+    db_session: Session = Depends(get_db_session),
+):
+    """读取角色当前冻结的定妆/声音资产，供工作台恢复编辑状态。"""
+    character = db_session.query(Character).filter(
+        Character.id == character_id,
+        Character.project_id == project_id,
+    ).first()
+    if not character:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"角色不存在: {character_id}")
+    asset_pack = get_character_manager().get_character_asset_pack(character_id, project_id) or {}
+    return CharacterAssetPackResponse(
+        character_id=character_id,
+        status=str(asset_pack.get("status") or "missing"),
+        asset_pack=asset_pack,
+    )
+
+
 @router.post("/{character_id}/freeze-turnaround-album", response_model=CharacterTurnaroundAlbumResponse)
 async def freeze_character_turnaround_album(
     project_id: int,

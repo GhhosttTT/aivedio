@@ -1961,9 +1961,19 @@ def test_character_asset_pack_freeze_clears_readiness_asset_pack_blocker(setup):
     assert "Alice" in before["checks"]["characters"]["missing_asset_packs"]
     assert any(item["code"] == "missing_character_asset_pack" for item in before["blockers"])
 
-    frozen = client.post(f"/api/projects/1/characters/{character.id}/freeze-asset-pack", json={"notes": "approved"})
+    frozen = client.post(
+        f"/api/projects/1/characters/{character.id}/freeze-asset-pack",
+        json={"notes": "approved", "voice_id": "voice-alice", "voice_style": "冷静克制", "voice_language": "zh-CN"},
+    )
     assert frozen.status_code == 200, frozen.text
     assert frozen.json()["status"] == "frozen"
+    restored = client.get(f"/api/projects/1/characters/{character.id}/asset-pack")
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["asset_pack"]["voice_profile"] == {
+        "voice_id": "voice-alice",
+        "style": "冷静克制",
+        "language": "zh-CN",
+    }
 
     after = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
     assert after["checks"]["characters"]["missing_asset_packs"] == []
