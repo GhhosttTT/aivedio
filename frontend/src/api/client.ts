@@ -76,6 +76,8 @@ export const projectApi = {
     verifyDeliveryPackage: (id: number) => apiClient.get<any, {status: string; checked_files: number; errors: string[]}>(`/projects/${id}/delivery-package/verify`),
     topicBrief: (id: number) => apiClient.get<any, {status: string; missing: string[]; brief: Record<string, string>}>(`/projects/${id}/topic-brief`),
     updateTopicBrief: (id: number, data: Record<string, string>) => apiClient.put<any, Record<string, string>>(`/projects/${id}/topic-brief`, data),
+    marketSignals: (id: number) => apiClient.get<any, {status: string; score: number; score_max: number; recommendations?: string[]}>(`/projects/${id}/topic-brief/market-signals`),
+    updateMarketSignals: (id: number, data: {comparables: Array<Record<string, string> | string>; differentiation?: string; success_metric?: string; notes?: string}) => apiClient.put(`/projects/${id}/topic-brief/market-signals`, data),
     uploadBgm: async (id: number, file: File) => {
         const formData = new FormData();
         formData.append('file', file);

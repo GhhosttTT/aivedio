@@ -60,6 +60,8 @@ class ProductionReadinessService:
         "missing_character_references": ("regenerate_character_identity", "character", "setup_required"),
         "topic_brief_incomplete": ("complete_topic_brief", "story", "manual"),
         "topic_brief_low_specificity": ("refine_topic_brief", "story", "manual"),
+        "market_evidence_missing": ("complete_market_evidence", "story", "manual"),
+        "market_evidence_low_confidence": ("complete_market_evidence", "story", "manual"),
         "weak_story_rhythm": ("rewrite_short_drama_story_rhythm", "script", "setup_required"),
         "weak_story_room_quality": ("rewrite_short_drama_story_rhythm", "script", "setup_required"),
         "episode_rhythm_warning": ("rewrite_short_drama_story_rhythm", "script", "setup_required"),
@@ -185,6 +187,19 @@ class ProductionReadinessService:
                 "topic_brief_low_specificity",
                 "Improve topic specificity before commercial production: "
                 + "; ".join(report.get("recommendations") or ["review the market brief"]),
+                severity="warning",
+            ))
+        market_fit = report.get("market_fit") or {}
+        if market_fit.get("status") == "missing":
+            warnings.append(ReadinessIssue(
+                "market_evidence_missing",
+                "Add comparable titles, differentiation, and a measurable success metric before commercial production.",
+                severity="warning",
+            ))
+        elif market_fit.get("status") != "passed":
+            warnings.append(ReadinessIssue(
+                "market_evidence_low_confidence",
+                "Strengthen market evidence: " + "; ".join(market_fit.get("recommendations") or []),
                 severity="warning",
             ))
         return report

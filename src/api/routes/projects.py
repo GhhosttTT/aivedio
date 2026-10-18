@@ -119,6 +119,13 @@ class TopicBriefRequest(BaseModel):
     policy_notes: str = Field("", max_length=240)
 
 
+class MarketSignalsRequest(BaseModel):
+    comparables: list[dict | str] = Field(..., min_length=1, max_length=12)
+    differentiation: str = Field("", max_length=500)
+    success_metric: str = Field("", max_length=500)
+    notes: str = Field("", max_length=500)
+
+
 def _normalized_production_options(options: ProductionOptions) -> dict:
     """Validate and normalize per-run controls before reserving a task."""
     request_mode = options.request_mode.strip().lower() if isinstance(options.request_mode, str) else options.request_mode
@@ -719,6 +726,32 @@ def update_topic_brief(
         raise HTTPException(status_code=409, detail="项目正在制作，不能修改选题定位")
     try:
         return TopicBriefService().save(project_id, request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/{project_id}/topic-brief/market-signals")
+def get_market_signals(project_id: int, current_user=Depends(get_current_user), db_session: Session = Depends(get_db_session)):
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return TopicBriefService().market_score(project_id)
+
+
+@router.put("/{project_id}/topic-brief/market-signals")
+def update_market_signals(
+    project_id: int,
+    request: MarketSignalsRequest,
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if project.status == ProjectStatus.IN_PRODUCTION:
+        raise HTTPException(status_code=409, detail="项目正在制作，不能修改市场证据")
+    try:
+        return TopicBriefService().save_market_signals(project_id, request.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

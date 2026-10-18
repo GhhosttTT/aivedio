@@ -24,11 +24,15 @@ HOOK_SIGNALS = (
     "复仇", "重生", "secret", "evidence", "betrayal", "threat", "identity", "twist",
 )
 RISK_TERMS = ("未成年人", "暴力", "血腥", "自残", "色情", "赌博", "仇恨", "minor", "violence", "gambling")
+MARKET_SIGNAL_FIELDS = ("comparables", "differentiation", "success_metric", "notes")
 
 
 class TopicBriefService:
     def path(self, project_id: int) -> Path:
         return storage_manager.get_project_path(project_id) / "topic_brief.json"
+
+    def market_signal_path(self, project_id: int) -> Path:
+        return storage_manager.get_project_path(project_id) / "market_signals.json"
 
     def normalize(self, payload: dict) -> dict:
         if not isinstance(payload, dict):
@@ -73,7 +77,95 @@ class TopicBriefService:
         }
         if not missing:
             result.update(self._score(payload))
+            result["market_fit"] = self.market_score(project_id)
         return result
+
+    def normalize_market_signals(self, payload: dict) -> dict:
+        if not isinstance(payload, dict):
+            raise ValueError("Market signals must be an object")
+        comparables = payload.get("comparables") or []
+        if not isinstance(comparables, list):
+            raise ValueError("comparables must be a list")
+        normalized = []
+        for item in comparables[:12]:
+            if isinstance(item, str):
+                title = item.strip()
+                item = {"title": title}
+            if not isinstance(item, dict):
+                raise ValueError("Each comparable must be an object or title")
+            comparable = {
+                "title": str(item.get("title") or "").strip(),
+                "platform": str(item.get("platform") or "").strip(),
+                "genre": str(item.get("genre") or "").strip(),
+                "hook": str(item.get("hook") or "").strip(),
+                "audience": str(item.get("audience") or "").strip(),
+                "signal": str(item.get("signal") or "").strip(),
+            }
+            if not comparable["title"]:
+                raise ValueError("Each comparable must have a title")
+            if any(len(value) > 240 for value in comparable.values()):
+                raise ValueError("Comparable fields must be 240 characters or fewer")
+            normalized.append(comparable)
+        result = {
+            "comparables": normalized,
+            "differentiation": str(payload.get("differentiation") or "").strip(),
+            "success_metric": str(payload.get("success_metric") or "").strip(),
+            "notes": str(payload.get("notes") or "").strip(),
+        }
+        if any(len(result[field]) > 500 for field in ("differentiation", "success_metric", "notes")):
+            raise ValueError("Market signal notes must be 500 characters or fewer")
+        if not normalized:
+            raise ValueError("At least one comparable is required")
+        return result
+
+    def save_market_signals(self, project_id: int, payload: dict) -> dict:
+        normalized = self.normalize_market_signals(payload)
+        result = {**normalized, "updated_at": datetime.now(timezone.utc).isoformat()}
+        self.market_signal_path(project_id).write_text(
+            json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        return result
+
+    def load_market_signals(self, project_id: int) -> dict | None:
+        try:
+            payload = json.loads(self.market_signal_path(project_id).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def market_score(self, project_id: int) -> dict:
+        evidence = self.load_market_signals(project_id)
+        if evidence is None:
+            return {"status": "missing", "score": 0, "score_max": 5, "missing": list(MARKET_SIGNAL_FIELDS)}
+        comparables = [item for item in evidence.get("comparables", []) if isinstance(item, dict)]
+        signals = {
+            "comparable_library": len(comparables) >= 2,
+            "platform_or_genre_match": any(
+                item.get("platform") or item.get("genre") for item in comparables
+            ),
+            "performance_signal": any(item.get("signal") for item in comparables),
+            "differentiation": len(str(evidence.get("differentiation") or "")) >= 20,
+            "success_metric": len(str(evidence.get("success_metric") or "")) >= 6,
+        }
+        missing = [name for name, passed in signals.items() if not passed]
+        score = sum(signals.values())
+        recommendations = {
+            "comparable_library": "Add at least two comparable short dramas.",
+            "platform_or_genre_match": "Record the comparable platform or commercial genre.",
+            "performance_signal": "Capture a concrete comparable signal such as completion, comments, or retention.",
+            "differentiation": "Explain the visible premise or emotional difference from the comparables.",
+            "success_metric": "Define a measurable success metric for the first release batch.",
+        }
+        return {
+            "status": "passed" if score >= 4 else ("warn" if score >= 2 else "weak"),
+            "score": score,
+            "score_max": len(signals),
+            "signals": signals,
+            "missing": missing,
+            "recommendations": [recommendations[item] for item in missing],
+            "evidence": evidence,
+            "path": str(self.market_signal_path(project_id)),
+        }
 
     def _score(self, brief: dict) -> dict:
         """Score commercial specificity without pretending to predict virality.
@@ -137,6 +229,15 @@ class TopicBriefService:
         if report["status"] != "ready":
             return ""
         brief = report["brief"]
+        market_fit = report.get("market_fit") or {}
+        evidence_hint = ""
+        if market_fit.get("status") == "passed":
+            evidence_hint = (
+                "\nMARKET EVIDENCE LOCK:\n"
+                f"Comparable titles: {', '.join(item.get('title', '') for item in market_fit.get('evidence', {}).get('comparables', []))}\n"
+                f"Differentiation: {market_fit.get('evidence', {}).get('differentiation', '')}\n"
+                f"Success metric: {market_fit.get('evidence', {}).get('success_metric', '')}\n"
+            )
         return (
             "\nMARKET AND AUDIENCE LOCK:\n"
             f"Target audience: {brief['audience']}\n"
@@ -146,4 +247,5 @@ class TopicBriefService:
             f"Region/language: {brief['region']}\n"
             f"Policy and brand constraints: {brief.get('policy_notes') or 'none specified'}\n"
             "Keep the hook, visual tone, dialogue density, and ending payoff aligned with this lock."
+            + evidence_hint
         )
