@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BadgeCheck, Image, Languages, Plus, Trash2, Upload, X } from 'lucide-react';
-import { characterApi, Character, CharacterIdentityPlan, CharacterReference } from '../api/characterApi';
+import { characterApi, Character, CharacterIdentityPlan, CharacterReference, CharacterTurnaroundGeneration } from '../api/characterApi';
 import { errorText } from '../api/client';
 import { ProjectImage } from '../components/ProjectMedia';
 
@@ -8,6 +8,7 @@ export default function CharacterManager({projectId, locked = false}: {projectId
     const [characters, setCharacters] = useState<Character[]>([]);
     const [references, setReferences] = useState<Record<number, CharacterReference[]>>({});
     const [plans, setPlans] = useState<Record<number, CharacterIdentityPlan>>({});
+    const [albums, setAlbums] = useState<Record<number, CharacterTurnaroundGeneration>>({});
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -38,6 +39,11 @@ export default function CharacterManager({projectId, locked = false}: {projectId
                     setPlans(current => ({...current, [c.id]: plan}));
                 })}><BadgeCheck size={16}/>生成身份方案</button>
                 <button className="wb-button" disabled={locked || busy} onClick={() => operate(() => characterApi.generateReference(projectId, c.id, 3))}><Image size={16}/>自动定妆</button>
+                <button className="wb-button" disabled={locked || busy} onClick={() => operate(async () => {
+                    const album = await characterApi.generateTurnaroundAlbum(projectId, c.id, 2, true);
+                    setAlbums(current => ({...current, [c.id]: album}));
+                })}><Image size={16}/>生成并冻结立体画册</button>
+                <button className="wb-button" disabled={locked || busy} onClick={() => operate(() => characterApi.freezeAssetPack(projectId, c.id, 'approved from character workbench'))}><BadgeCheck size={16}/>冻结定妆资产包</button>
                 <button className="wb-icon" aria-label={`删除角色 ${c.name}`} title="删除角色" disabled={locked || busy} onClick={() => { if (window.confirm(`删除角色“${c.name}”？`)) operate(() => characterApi.deleteCharacter(projectId, c.id)); }}><Trash2 size={16}/></button>
             </div></div>
             <p>{c.description}</p><p className="wb-muted">{c.appearance}</p>
@@ -55,6 +61,15 @@ export default function CharacterManager({projectId, locked = false}: {projectId
                         <div className="wb-code" key={lang}><strong>{lang}</strong><br/>{prompt.scene_prefix}</div>
                     )}
                 </details>
+            </div>}
+            {albums[c.id] && <div className="wb-panel">
+                <div className="wb-row wb-between"><strong>生产级立体画册</strong><span className="wb-badge">{albums[c.id].album?.status || '已生成'}</span></div>
+                <div className="wb-thumbnails">
+                    {Object.entries(albums[c.id].selected_views || {}).map(([view, path]) => <div key={view}>
+                        <ProjectImage projectId={projectId} path={path} alt={`${c.name} ${view}`}/>
+                        <small className="wb-muted">{view}</small>
+                    </div>)}
+                </div>
             </div>}
             <div className="wb-thumbnails">{references[c.id]?.map(ref => <ProjectImage key={ref.image_path} projectId={projectId} path={ref.image_path} alt={`${c.name} 参考图 ${ref.id}`}/>)}</div>
             <label style={{maxWidth: 330}}><span className="wb-row"><Upload size={16}/>上传 {c.name} 参考图</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={locked || busy} onChange={e => {

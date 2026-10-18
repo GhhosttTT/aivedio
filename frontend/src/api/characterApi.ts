@@ -41,6 +41,14 @@ export interface CharacterReferenceGeneration {
   quality_report: Record<string, any>;
 }
 
+export interface CharacterTurnaroundGeneration {
+  character_id: number;
+  selected_views: Record<string, string>;
+  candidate_images: Record<string, string[]>;
+  quality_reports: Record<string, any>;
+  album?: Record<string, any>;
+}
+
 export const characterApi = {
   /**
    * 创建角色
@@ -123,6 +131,26 @@ export const characterApi = {
     return apiClient.post<any, CharacterReferenceGeneration>(
       `/projects/${projectId}/characters/${characterId}/generate-reference`,
       { count }
+    );
+  },
+
+  generateTurnaroundAlbum: async (projectId: number, characterId: number, countPerView = 2, freezeAlbum = true) => {
+    return apiClient.post<any, CharacterTurnaroundGeneration>(
+      `/projects/${projectId}/characters/${characterId}/generate-turnaround-album`,
+      {count_per_view: countPerView, freeze_album: freezeAlbum},
+      {timeout: 900000}
+    );
+  },
+
+  freezeAssetPack: async (projectId: number, characterId: number, notes = '') => {
+    return apiClient.post<any, {character_id: number; status: string; asset_pack: Record<string, any>}>(
+      `/projects/${projectId}/characters/${characterId}/freeze-asset-pack`, {notes}
+    );
+  },
+
+  freezeTurnaroundAlbum: async (projectId: number, characterId: number, views: Record<string, string>, notes = '') => {
+    return apiClient.post<any, {character_id: number; status: string; album: Record<string, any>}>(
+      `/projects/${projectId}/characters/${characterId}/freeze-turnaround-album`, {views, notes}
     );
   },
 };
