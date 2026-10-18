@@ -29,6 +29,7 @@ from src.services.video_engine_preflight import (
     scan_placeholders as _scan_placeholders,
 )
 from src.services.generation_review import GenerationReviewService, platform_video_score, write_report
+from src.services.generation_run_evidence import build_generation_run_evidence
 from src.services.generation_quality_scorecard import (
     MIN_COMMERCIAL_PRODUCTION_SCORE,
     build_generation_quality_scorecard,
@@ -305,6 +306,8 @@ def render_images(
             except Exception as exc:
                 report["resource_release_error"] = str(exc)
             service.client.close()
+    report["run_evidence"] = build_generation_run_evidence(report)
+    write_report(output / "generation_run_evidence.json", report["run_evidence"])
     write_report(output / "render.json", report)
     return report
 
@@ -1069,6 +1072,10 @@ def summarize_validation(output: Path):
     composition_reviews = _composition_reviews(composition_reports)
     baseline_comparison_report = _read_json(output / "seed_dance_baseline_comparison.json")
     manual_review = _read_json(output / "manual_review.json")
+    run_evidence = _read_json(output / "generation_run_evidence.json")
+    if not run_evidence and isinstance(render_report, dict):
+        run_evidence = build_generation_run_evidence(render_report, preflight_report)
+        write_report(output / "generation_run_evidence.json", run_evidence)
     report = {
         "status": "needs_action",
         "generated_at": round(time.time()),
@@ -1082,7 +1089,9 @@ def summarize_validation(output: Path):
             "composition_review_reports": sorted(composition_reports),
             "seed_dance_baseline_comparison": str(output / "seed_dance_baseline_comparison.json"),
             "manual_review": str(output / "manual_review.json"),
+            "generation_run_evidence": str(output / "generation_run_evidence.json"),
         },
+        "run_evidence": run_evidence or {},
         "checks": {},
         "action_items": [],
         "calibration_recommendations": [],
@@ -1362,6 +1371,7 @@ def _collect_validation_evidence(output: Path) -> dict:
         "video_review": output / "video_review.json",
         "seed_dance_baseline_comparison": output / "seed_dance_baseline_comparison.json",
         "manual_review": output / "manual_review.json",
+        "generation_run_evidence": output / "generation_run_evidence.json",
         "validation_summary": output / "validation_summary.json",
     }
     return {
