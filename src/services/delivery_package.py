@@ -303,6 +303,15 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
                 topic_brief = loaded_brief
         except (OSError, ValueError):
             topic_brief = {}
+    market_signals = {}
+    market_signals_path = root / "market_signals.json"
+    if market_signals_path.is_file():
+        try:
+            loaded_signals = json.loads(market_signals_path.read_text(encoding="utf-8"))
+            if isinstance(loaded_signals, dict):
+                market_signals = loaded_signals
+        except (OSError, ValueError):
+            market_signals = {}
     _write_json_atomic(project_metadata, {
         "project_id": getattr(project, "id", None),
         "name": getattr(project, "name", ""),
@@ -310,6 +319,7 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         "outline": getattr(project, "outline", None),
         "script": getattr(project, "script", None),
         "topic_brief": topic_brief,
+        "market_signals": market_signals,
         "generation_evidence": generation_evidence,
     })
     files.append((project_metadata, "metadata/project.json"))

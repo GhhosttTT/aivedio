@@ -28,6 +28,7 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
         "output_sha256": _sha256(exports / "douyin.mp4"),
     }), encoding="utf-8")
     (tmp_path / "topic_brief.json").write_text(json.dumps({"platform": "抖音", "genre": "都市悬疑"}), encoding="utf-8")
+    (tmp_path / "market_signals.json").write_text(json.dumps({"comparables": [{"title": "对照剧 A"}]}), encoding="utf-8")
     project = SimpleNamespace(id=7, name="Pilot", theme="都市悬疑", outline="outline", script='{"scenes": []}', final_video_path=str(final), scenes=[])
 
     manifest = build_delivery_package(project, tmp_path, {
@@ -61,6 +62,7 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
     with zipfile.ZipFile(package) as archive:
         metadata = json.loads(archive.read("metadata/project.json").decode("utf-8"))
     assert metadata["topic_brief"]["platform"] == "抖音"
+    assert metadata["market_signals"]["comparables"][0]["title"] == "对照剧 A"
     assert metadata["generation_evidence"][0]["spatial_scene_contract_hashes"] == ["scene-hash"]
     assert manifest["generation_evidence"][0]["request_contract_hashes"] == ["request-hash"]
     assert "metadata/platform_covers.json" in names

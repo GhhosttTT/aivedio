@@ -151,11 +151,13 @@ Already implemented or partially implemented:
    - Needed: a structured story-review contract with short-drama-specific
      metrics and automatic rewrite attempts.
 
-2. Market and topic selection are missing
+2. Market and topic selection need a deeper external-data loop
    - The current system starts from a user idea, but strong platforms treat
      topic, audience, genre, region, hook type, and platform policy as inputs.
-   - Needed: a topic brief, comparable-hit library, risk checklist, and scoring
-     model before script generation.
+   - Current implementation has a structured topic brief, a comparable-work
+     evidence pack, explainable market-fit scoring, readiness warnings, and
+     delivery-package archival. It still does not fetch live platform data or
+     predict virality.
 
 3. Character bible is not strong enough
    - Character references exist, but the platform still needs a required
@@ -226,7 +228,9 @@ Current system advantages:
 
 Current system gaps before it can be treated as a production platform:
 
-- No topic library or market scoring loop.
+- No live topic library or platform analytics connector; the current market
+  evidence loop is manually curated and intentionally does not claim to
+  predict virality.
 - No required story-room approval gate before generation.
 - Character bible exists technically, but still needs a UI workflow for
   approving and freezing character packs.
