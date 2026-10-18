@@ -350,6 +350,8 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
     if isinstance(start_frame_reference, dict) and start_frame_reference.get("status") == "available":
         if float(start_frame_reference.get("score") or 0) < 2.5:
             evidence.append("video opening frame diverges from the locked scene keyframe")
+    if video_metrics.get("temporal_jump_ratio", 0) > 0.35:
+        evidence.append("video temporal visual resets between sampled frames")
     if video_metrics and isinstance(video_score, (int, float)) and video_score < 3:
         if video_metrics.get("motion_energy", 99) < 2:
             evidence.append("video motion too static or frozen")
@@ -482,6 +484,20 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
             "execution": _execution_mode("fix_video_output_contract"),
             "reason": evidence[:240],
             "recommendation": "Align provider output settings with the requested model, resolution, format, duration, and audio contract before regenerating.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
+    if text.startswith("video temporal visual resets"):
+        return {
+            "priority": "high",
+            "stage": "video",
+            "action": "lower_motion_and_regenerate_video",
+            "execution": _execution_mode("lower_motion_and_regenerate_video"),
+            "reason": evidence[:240],
+            "recommendation": (
+                "Regenerate from the accepted keyframe with lower motion/noise and stronger temporal continuity; "
+                "reject candidates with repeated scene resets before composition."
+            ),
             "candidate_index": candidate.get("index"),
             "scene_number": _scene_number(candidate),
         }

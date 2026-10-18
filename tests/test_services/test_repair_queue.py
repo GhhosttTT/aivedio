@@ -104,6 +104,28 @@ def test_repair_queue_maps_temporal_instability_to_motion_repair():
     assert temporal_items[0]["action"] == "lower_motion_and_regenerate_video"
 
 
+def test_repair_queue_maps_temporal_visual_resets_to_targeted_motion_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 1,
+            "scene": {"scene_number": 3},
+            "average": 4.1,
+            "technical_metrics": {
+                "technical_score": 4.1,
+                "temporal_jump_ratio": 0.5,
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    reset_items = [item for item in queue if "temporal visual resets" in item["reason"]]
+    assert reset_items
+    assert reset_items[0]["action"] == "lower_motion_and_regenerate_video"
+    assert "repeated scene resets" in reset_items[0]["recommendation"]
+
+
 def test_repair_queue_expands_top_level_episode_style_gate_by_scene():
     report = {
         "status": "needs_review",
