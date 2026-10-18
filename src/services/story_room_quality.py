@@ -224,7 +224,24 @@ class StoryRoomQualityService:
             missing.append("atomic_shots")
 
         score = max(0, 9 - len(missing))
-        status = "passed" if score >= 8 else ("warn" if score >= 5 else "weak")
+        critical_beats = {
+            "early_hook",
+            "character_goal_conflict",
+            "escalation_cadence",
+            "reversal",
+            "payoff",
+            "ending_hook",
+            "beat_order",
+        }
+        critical_missing = sorted(critical_beats.intersection(missing))
+        signals["critical_missing"] = critical_missing
+        status = (
+            "passed"
+            if score >= 8 and not critical_missing
+            else "warn"
+            if score >= 5
+            else "weak"
+        )
         rewrite_actions = self._rewrite_actions(missing, overloaded)
         repair_queue = build_repair_queue({
             "status": status,

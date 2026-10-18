@@ -101,3 +101,24 @@ def test_story_room_quality_requires_reversal_before_final_payoff():
     assert report["signals"]["reversal_scenes"] == [5]
     assert report["signals"]["beat_order_valid"] is False
     assert "beat_order" in report["missing"]
+
+
+def test_story_room_quality_does_not_pass_with_a_missing_critical_beat():
+    project = Project(
+        name="No reversal",
+        theme="都市悬疑女性受众抖音竖屏",
+        outline="秘密证据引发危机，女主最终获得胜利并留下悬念。",
+        description="platform: Douyin, audience: mystery viewers",
+    )
+    scenes = [
+        scene(1, "她握紧秘密文件，震惊。", "我必须保护孩子。"),
+        scene(2, "反派威胁她交出文件，她拒绝。", "我不会交出来。"),
+        scene(3, "她撕掉协议，反派付出代价。", "我赢了。"),
+        scene(4, "电话响起，新的证据出现，未完。", "还有一个人没出现。"),
+    ]
+
+    report = StoryRoomQualityService().evaluate(project, scenes).to_dict()
+
+    assert report["status"] != "passed"
+    assert report["signals"]["critical_missing"]
+    assert "beat_order" in report["signals"]["critical_missing"]
