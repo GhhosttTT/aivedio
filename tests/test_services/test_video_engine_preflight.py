@@ -203,6 +203,21 @@ def test_native_seedance_10_fast_preflight_disables_first_last_frame(monkeypatch
     assert report["capabilities"]["reference_item_limit"] == 1
 
 
+def test_native_seedance_10_fast_blocks_explicit_first_last_frame_mode(monkeypatch):
+    from src.services.video_engine_preflight import settings
+
+    monkeypatch.setattr(settings, "GENERATION_PROVIDER", "seedance_api")
+    monkeypatch.setenv("SEEDANCE_ENDPOINT", "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks")
+    monkeypatch.setenv("SEEDANCE_API_KEY", "secret")
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-1-0-pro-fast-251015")
+
+    report = preflight_video_provider(request_mode_override="first_last_frame")
+
+    assert report["status"] == "blocked"
+    assert report["checks"]["first_last_frame_mode_supported"] is False
+
+
 def test_native_seedance_10_preflight_blocks_edit_mode(monkeypatch):
     from src.services.video_engine_preflight import settings
 

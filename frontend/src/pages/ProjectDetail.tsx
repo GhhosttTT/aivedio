@@ -188,6 +188,7 @@ export function ProjectDetail() {
         ? providerCapabilities.supports_extend
         : !seedance10;
     const supportsFirstFrame = !nativeArk || seedance10 || seedance25;
+    const supportsFirstLastFrame = !nativeArk || providerCapabilities.first_last_frame === true;
     const durationIsAutomatic = ['edit', 'extend'].includes(productionOptions.request_mode);
     const durationChoices = [2, 5, 10, 12, 15, 30];
     const durationIsSupported = (seconds: number) => (
@@ -202,6 +203,8 @@ export function ProjectDetail() {
                 ? `原生自动识别任务类型仅支持 Seedance 2.5，当前模型为 ${selectedModel}`
                 : productionOptions.request_mode === 'first_frame' && !supportsFirstFrame
                     ? `原生显式首帧模式仅支持 Seedance 1.0 或 2.5，当前模型为 ${selectedModel}`
+                    : productionOptions.request_mode === 'first_last_frame' && !supportsFirstLastFrame
+                        ? `当前模型不支持原生首尾帧模式：${selectedModel}`
                     : productionOptions.request_mode === 'first_frame' && seedance25 && !productionOptions.draft
                         ? 'Seedance 2.5 显式首帧模式必须先生成 Draft，再提升正式片'
             : seedance10 && ['edit', 'extend'].includes(productionOptions.request_mode)
@@ -230,11 +233,13 @@ export function ProjectDetail() {
         const nextSupportsEdit = !nextIs10;
         const nextSupportsExtend = !nextIs10;
         const nextSupportsFirstFrame = nextIs10 || nextIs25;
+        const nextSupportsFirstLastFrame = !nativeArk || nextIs25 || nextIs20 || (nextIs10 && !normalized.includes('fast'));
         const nextMode = nativeArk && (
             (productionOptions.request_mode === 'auto' && !nextSupportsAuto)
             || (productionOptions.request_mode === 'edit' && !nextSupportsEdit)
             || (productionOptions.request_mode === 'extend' && !nextSupportsExtend)
             || (productionOptions.request_mode === 'first_frame' && !nextSupportsFirstFrame)
+            || (productionOptions.request_mode === 'first_last_frame' && !nextSupportsFirstLastFrame)
         ) ? 'reference' : productionOptions.request_mode;
         const nextMinimumDuration = nextIs25 && ['edit', 'extend'].includes(nextMode)
             ? 4
@@ -264,7 +269,7 @@ export function ProjectDetail() {
         request_mode,
         duration_seconds: ['edit', 'extend'].includes(request_mode) ? null : current.duration_seconds,
         multi_shot: request_mode === 'multi_shot' ? true : ['edit', 'extend', 'auto', 'first_frame', 'first_last_frame'].includes(request_mode) ? false : current.multi_shot,
-        draft: request_mode === 'first_frame' && seedance25 ? true : current.draft,
+        draft: ['first_frame', 'first_last_frame'].includes(request_mode) && seedance25 ? true : current.draft,
         resolution: (
             nativeArk
             && current.resolution === '4k'
@@ -345,7 +350,7 @@ export function ProjectDetail() {
                     <option value="">环境默认</option><option value="seedance_api">Seedance / Ark</option><option value="http_video_api">兼容视频网关</option><option value="local_comfyui">本地 ComfyUI</option>
                 </select></label>
                 <label>任务模式<select disabled={locked} value={productionOptions.request_mode} onChange={e => setRequestMode(e.target.value)}>
-                    <option value="reference">参考生视频 / Ark</option><option value="first_frame" disabled={nativeArk && !supportsFirstFrame}>显式首帧 Draft{nativeArk && !supportsFirstFrame ? '（当前模型不支持）' : ''}</option><option value="auto" disabled={nativeArk && !supportsAutoMode}>自动识别任务类型 / Ark 2.5</option><option value="reference_to_video">参考生视频 / 兼容网关</option><option value="multi_shot">多镜头 2.5</option><option value="edit" disabled={nativeArk && !supportsEdit}>视频编辑{nativeArk && !supportsEdit ? '（当前模型不支持）' : ''}</option><option value="extend" disabled={nativeArk && !supportsExtend}>视频延长{nativeArk && !supportsExtend ? '（当前模型不支持）' : ''}</option>
+                    <option value="reference">参考生视频 / Ark</option><option value="first_frame" disabled={nativeArk && !supportsFirstFrame}>显式首帧 Draft{nativeArk && !supportsFirstFrame ? '（当前模型不支持）' : ''}</option><option value="first_last_frame" disabled={nativeArk && !supportsFirstLastFrame}>显式首尾帧{nativeArk && !supportsFirstLastFrame ? '（当前模型不支持）' : ''}</option><option value="auto" disabled={nativeArk && !supportsAutoMode}>自动识别任务类型 / Ark 2.5</option><option value="reference_to_video">参考生视频 / 兼容网关</option><option value="multi_shot">多镜头 2.5</option><option value="edit" disabled={nativeArk && !supportsEdit}>视频编辑{nativeArk && !supportsEdit ? '（当前模型不支持）' : ''}</option><option value="extend" disabled={nativeArk && !supportsExtend}>视频延长{nativeArk && !supportsExtend ? '（当前模型不支持）' : ''}</option>
                 </select></label>
                 <label>Seedance 模型<select disabled={locked || productionOptions.provider !== 'seedance_api'} value={productionOptions.model} onChange={e => setModel(e.target.value)}>
                     <option value="">环境默认</option>{modelOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}

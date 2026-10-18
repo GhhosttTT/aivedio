@@ -415,6 +415,15 @@ def preflight_video_provider(
                 )
         elif ark_native:
             checks["first_frame_mode_supported"] = True
+        if ark_native and normalized_mode == "first_last_frame":
+            first_last_frame_supported = _seedance_model_supports_first_last_frame(model_name)
+            checks["first_last_frame_mode_supported"] = first_last_frame_supported
+            report["capabilities"]["first_last_frame"] = first_last_frame_supported
+            if not first_last_frame_supported:
+                configuration_ok = False
+                report.setdefault("action_items", []).append(
+                    f"Native Seedance first_last_frame mode is not supported by model {model_name}."
+                )
         if duration_override is not None:
             try:
                 requested_duration = float(duration_override)
