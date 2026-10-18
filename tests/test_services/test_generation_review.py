@@ -237,6 +237,18 @@ def test_video_performance_gate_quantifies_flat_short_drama_acting(monkeypatch):
     }
 
 
+def test_video_performance_gate_covers_dialogue_in_establishing_shot():
+    gate = video_performance_gate({}, {
+        "scene_number": 1,
+        "dialogue": "你终于来了",
+        "shot_plan": {"shot_role": "establishing"},
+    })
+
+    assert gate is not None
+    assert gate["status"] == "needs_review"
+    assert set(gate["missing"]) == set(VIDEO_PERFORMANCE_FEATURES)
+
+
 def test_episode_continuity_gate_quantifies_final_composition_jump_cuts(monkeypatch):
     monkeypatch.setattr("src.services.generation_review.settings.GENERATION_VIDEO_PERFORMANCE_MIN_SCORE", 4.0)
     review = {

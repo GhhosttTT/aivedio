@@ -319,7 +319,10 @@ def _requires_video_performance(scene: dict) -> bool:
     shot_plan = scene.get("shot_plan") if isinstance(scene, dict) else None
     if isinstance(shot_plan, dict):
         role = str(shot_plan.get("shot_role") or "").strip().lower()
-        if role and role != "establishing":
+        dialogue = str(shot_plan.get("dialogue") or scene.get("dialogue") or "").strip()
+        # An establishing shot can still carry spoken dialogue. In that case
+        # lip/action reaction quality is a production requirement too.
+        if role and (role != "establishing" or dialogue):
             return True
     return False
 
@@ -779,7 +782,7 @@ class GenerationReviewService:
                     "face_geometry_separation, hair_separation, wardrobe_separation, role_readability, no_same_face_casting. "
                     "Score each 0-5 across sampled video frames with concrete visual evidence. Penalize same-face casting, "
                     "copied facial geometry, near-identical hairstyles, swapped wardrobe, merged bodies, or unclear role separation. "
-                    "When scene.shot_plan is present and shot_role is not establishing, also return video_performance_scores with these keys: "
+                    "When scene.shot_plan is present and shot_role is not establishing, or the shot contains dialogue, also return video_performance_scores with these keys: "
                     "emotion_readability, gaze_intent, dialogue_reaction, body_language, action_intent. "
                     "Score whether the acting reads as a premium mobile short drama: facial emotion is clear on a phone, "
                     "eye line/gaze has intent, dialogue reactions match the beat, body language supports the conflict, "
