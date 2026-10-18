@@ -27,6 +27,7 @@ SCORECARD_ACTION_STAGES = {
     "split_scene": "script",
     "rewrite_short_drama_story_rhythm": "script",
     "fix_workflow_profile": "workflow",
+    "fix_video_output_contract": "workflow",
     "refreeze_spatial_plan": "spatial",
     "refine_final_composition_finish": "video",
     "refine_dialogue_audio_delivery": "audio",

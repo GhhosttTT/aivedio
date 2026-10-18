@@ -43,6 +43,7 @@ ACTION_DIMENSIONS = {
     "split_scene": "story_atomicity",
     "rewrite_short_drama_story_rhythm": "story_rhythm",
     "fix_workflow_profile": "workflow_assets",
+    "fix_video_output_contract": "workflow_assets",
     "refreeze_spatial_plan": "spatial_continuity",
     "refine_final_composition_finish": "final_composition_finish",
     "refine_dialogue_audio_delivery": "dialogue_audio",

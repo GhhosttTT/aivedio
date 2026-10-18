@@ -258,6 +258,22 @@ def build_repair_execution_plan(output: str | Path, repair_queue: list[dict[str,
             commands = [
                 f"python -m scripts.validate_local_generation summarize --output {output_path}",
             ]
+        elif action == "fix_video_output_contract":
+            entry["rerun_strategy"] = (
+                "Fix the provider/model output contract before regenerating: verify resolution, format, duration, native audio, and selected model are supported and actually applied."
+            )
+            entry["parameter_hints"] = {
+                "requires_provider_reconfiguration": True,
+                "verify_requested_model": True,
+                "verify_output_resolution": True,
+                "verify_output_format": True,
+                "verify_duration": True,
+                "verify_native_audio": True,
+            }
+            commands = [
+                "python -m scripts.validate_seedance_gateway --dry-run --api-format ark_v3",
+                f"python -m scripts.validate_local_generation summarize --output {output_path}",
+            ]
         else:
             entry["rerun_strategy"] = item.get("recommendation") or "Resolve this repair action and rerun summarize."
             commands = [f"python -m scripts.validate_local_generation summarize --output {output_path}"]

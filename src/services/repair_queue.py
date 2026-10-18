@@ -8,6 +8,15 @@ from typing import Any
 ACTION_RULES = [
     (
         (
+            "video output contract", "output contract failed", "resolution drift", "output_format_drift",
+            "duration drift", "audio_missing", "model drift", "provider output drift",
+        ),
+        "fix_video_output_contract",
+        "Align provider model, resolution, format, duration, and audio settings with the requested video output contract, then regenerate and revalidate.",
+        "workflow",
+    ),
+    (
+        (
             "story_room_quality", "story room quality", "short-drama rhythm", "story rhythm",
             "early_hook", "ending_hook", "escalation_cadence", "dialogue_or_reaction_drive",
             "emotional_progression", "market_brief", "reversal", "weak hook", "weak story",
@@ -464,6 +473,17 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
             "candidate_index": candidate.get("index"),
             "scene_number": _scene_number(candidate),
         }
+    if any(term in text for term in ("video output contract", "output contract failed", "resolution drift", "output_format_drift", "duration drift", "audio_missing", "model drift", "provider output drift")):
+        return {
+            "priority": "high",
+            "stage": "workflow",
+            "action": "fix_video_output_contract",
+            "execution": _execution_mode("fix_video_output_contract"),
+            "reason": evidence[:240],
+            "recommendation": "Align provider output settings with the requested model, resolution, format, duration, and audio contract before regenerating.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
     if text.startswith("video temporal exposure jumps") or text.startswith("video motion cadence is unstable"):
         return {
             "priority": _priority(text),
@@ -607,6 +627,7 @@ def _execution_mode(action: str) -> str:
         "fix_workflow_profile",
         "start_local_reviewer",
         "rewrite_short_drama_story_rhythm",
+        "fix_video_output_contract",
     }:
         return "setup_required"
     return "manual"
