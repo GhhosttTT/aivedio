@@ -1068,6 +1068,12 @@ def _composition_review_error(report: dict) -> str | None:
                 "final composed video has mismatched frame rates across "
                 f"{fps_mismatch_count} shot boundary(s)"
             )
+        pixel_format_mismatch_count = int(boundary.get("pixel_format_mismatch_count") or 0)
+        if pixel_format_mismatch_count > 0:
+            return (
+                "final composed video has mismatched pixel formats across "
+                f"{pixel_format_mismatch_count} shot boundary(s)"
+            )
     technical = report.get("final_technical_metrics")
     if isinstance(technical, dict) and technical.get("status") == "unavailable":
         return (

@@ -142,6 +142,22 @@ def test_repair_queue_maps_sequence_fps_mismatch_to_output_contract_repair():
     assert queue[0]["action"] == "fix_video_output_contract"
 
 
+def test_repair_queue_maps_pixel_format_mismatch_to_output_contract_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 1,
+            "scene": {"scene_number": 5},
+            "average": 3.0,
+            "error": "Sequence boundary quality gate failed: pixel_format_mismatches=1",
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "fix_video_output_contract"
+
+
 def test_repair_queue_expands_top_level_episode_style_gate_by_scene():
     report = {
         "status": "needs_review",

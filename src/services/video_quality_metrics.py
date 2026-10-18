@@ -421,6 +421,11 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
                 and current_fps > 0
                 and abs(previous_fps - current_fps) <= 2.0
             )
+            previous_pixel_format = str(previous_probe.get("pixel_format") or "").lower()
+            current_pixel_format = str(current_probe.get("pixel_format") or "").lower()
+            pixel_format_match = bool(previous_pixel_format and current_pixel_format) and (
+                previous_pixel_format == current_pixel_format
+            )
             boundaries.append({
                 "boundary_index": index,
                 "previous_path": str(previous),
@@ -431,6 +436,9 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
                 "current_fps": round(current_fps, 3),
                 "fps_delta": round(abs(previous_fps - current_fps), 3),
                 "fps_match": fps_match,
+                "previous_pixel_format": previous_pixel_format,
+                "current_pixel_format": current_pixel_format,
+                "pixel_format_match": pixel_format_match,
                 "geometry_match": (
                     previous_probe["width"] == current_probe["width"]
                     and previous_probe["height"] == current_probe["height"]
@@ -447,6 +455,7 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
         severe_style_count = sum(item["severe_style_transition"] for item in boundaries)
         geometry_mismatch_count = sum(not item["geometry_match"] for item in boundaries)
         fps_mismatch_count = sum(not item["fps_match"] for item in boundaries)
+        pixel_format_mismatch_count = sum(not item["pixel_format_match"] for item in boundaries)
         return {
             "status": "available",
             "boundary_count": len(boundaries),
@@ -454,6 +463,7 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
             "severe_style_transition_count": severe_style_count,
             "geometry_mismatch_count": geometry_mismatch_count,
             "fps_mismatch_count": fps_mismatch_count,
+            "pixel_format_mismatch_count": pixel_format_mismatch_count,
             "boundaries": boundaries,
         }
     except Exception as exc:

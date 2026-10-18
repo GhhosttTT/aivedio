@@ -833,6 +833,24 @@ def test_composition_review_blocks_fps_boundary_mismatch():
     )
 
 
+def test_composition_review_blocks_pixel_format_boundary_mismatch():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "technical_boundary_report": {
+            "status": "available",
+            "severe_transition_count": 0,
+            "severe_style_transition_count": 0,
+            "geometry_mismatch_count": 0,
+            "fps_mismatch_count": 0,
+            "pixel_format_mismatch_count": 1,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video has mismatched pixel formats across 1 shot boundary(s)"
+    )
+
+
 def test_composition_review_blocks_unavailable_boundary_metrics():
     report = {
         "status": "passed",
@@ -1462,6 +1480,20 @@ def test_sequence_boundary_gate_rejects_fps_mismatch(tmp_path):
                 "severe_transition_count": 0,
                 "geometry_mismatch_count": 0,
                 "fps_mismatch_count": 1,
+            },
+            tmp_path / "sequence.boundary.json",
+        )
+
+
+def test_sequence_boundary_gate_rejects_pixel_format_mismatch(tmp_path):
+    with pytest.raises(Exception, match="pixel_format_mismatches=1"):
+        video_tasks._validate_sequence_boundary_report(
+            {
+                "status": "available",
+                "severe_transition_count": 0,
+                "geometry_mismatch_count": 0,
+                "fps_mismatch_count": 0,
+                "pixel_format_mismatch_count": 1,
             },
             tmp_path / "sequence.boundary.json",
         )
