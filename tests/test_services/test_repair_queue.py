@@ -82,6 +82,28 @@ def test_repair_queue_maps_style_drift_to_project_style_consistency_repair():
     assert queue[0]["execution"] == "auto"
 
 
+def test_repair_queue_maps_temporal_instability_to_motion_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 1,
+            "scene": {"scene_number": 2},
+            "average": 3.0,
+            "technical_metrics": {
+                "technical_score": 2.8,
+                "brightness_step_p95": 58.0,
+                "motion_jitter_ratio": 1.8,
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    temporal_items = [item for item in queue if "temporal exposure jumps" in item["reason"]]
+    assert temporal_items
+    assert temporal_items[0]["action"] == "lower_motion_and_regenerate_video"
+
+
 def test_repair_queue_expands_top_level_episode_style_gate_by_scene():
     report = {
         "status": "needs_review",
@@ -176,6 +198,28 @@ def test_repair_queue_classifies_video_motion_failures():
     assert queue[0]["stage"] == "video"
     assert queue[0]["priority"] == "high"
     assert queue[0]["execution"] == "auto"
+
+
+def test_repair_queue_maps_keyframe_divergence_to_identity_preserving_video_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 4,
+            "scene": {"scene_number": 9},
+            "technical_metrics": {
+                "technical_score": 4.2,
+                "start_frame_reference": {
+                    "status": "available",
+                    "score": 1.8,
+                },
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "regenerate_video_with_performance_direction"
+    assert "locked scene keyframe" in queue[0]["recommendation"]
 
 
 def test_repair_queue_maps_video_performance_gate_to_performance_repair():
@@ -370,6 +414,39 @@ def test_repair_queue_maps_static_video_technical_metrics_to_increase_motion_rep
     assert queue[0]["action"] == "increase_motion_and_regenerate_video"
     assert queue[0]["execution"] == "auto"
     assert queue[0]["scene_number"] == 9
+
+
+def test_repair_queue_maps_frozen_static_gate_to_motion_repair():
+    report = {
+        "status": "needs_review",
+        "error": "Final normalized video contains a frozen/static run of 2.4s with motion_energy=0.1",
+        "candidates": [{"index": 1, "scene": {"scene_number": 2}}],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "increase_motion_and_regenerate_video"
+    assert queue[0]["execution"] == "auto"
+
+
+def test_repair_queue_maps_near_silent_audio_to_dialogue_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 1,
+            "scene": {"scene_number": 5},
+            "technical_metrics": {
+                "audio_expected": True,
+                "audio_signal_status": "near_silent",
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "refine_dialogue_audio_delivery"
+    assert queue[0]["stage"] == "audio"
+    assert queue[0]["execution"] == "auto"
 
 
 def test_repair_queue_reads_nested_platform_aesthetic_gates():

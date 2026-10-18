@@ -102,7 +102,15 @@ class VideoDirectorService:
         num_frames = max(8, min(int(settings.GENERATION_VIDEO_MAX_FRAMES), math.ceil(duration * fps)))
         motion, noise = self._motion_params(shot_role, action_intensity)
         spatial_plan = self._spatial_plan(prompt or visual, shot_role, visible)
-        director_prompt = self._director_prompt(prompt or visual, shot_role, action_intensity, visible, spatial_plan, visual_style)
+        director_prompt = self._director_prompt(
+            prompt or visual,
+            shot_role,
+            action_intensity,
+            visible,
+            spatial_plan,
+            visual_style,
+            dialogue=dialogue,
+        )
         end_frame_prompt = self._end_frame_prompt(prompt or visual, shot_role, action_intensity, visible, spatial_plan, visual_style)
         negative_prompt = self._negative_prompt(project_id, shot_aesthetic)
         notes = [
@@ -129,7 +137,14 @@ class VideoDirectorService:
             spatial_plan=spatial_plan,
         )
 
-    def normalize_clip(self, input_path: str, output_path: str, target_duration: float | None = None) -> str:
+    def normalize_clip(
+        self,
+        input_path: str,
+        output_path: str,
+        target_duration: float | None = None,
+        preserve_audio: bool = False,
+        preserve_provider_quality: bool = False,
+    ) -> str:
         """Convert generated clips to production preview settings when possible."""
         if not settings.GENERATION_VIDEO_POSTPROCESS:
             return input_path
@@ -146,16 +161,53 @@ class VideoDirectorService:
             return input_path
         if duration <= 0:
             return input_path
+        source_pixel_format = None
+        source_geometry = None
+        if preserve_provider_quality:
+            try:
+                source_pixel_format = self._probe_pixel_format(source)
+            except Exception as exc:
+                logger.debug("Cannot probe generated clip pixel format {}; using compatible encoding: {}", source, exc)
+            try:
+                source_geometry = self._probe_geometry(source)
+            except Exception as exc:
+                logger.debug("Cannot probe generated clip geometry {}; using configured output geometry: {}", source, exc)
+        high_bit_depth = bool(source_pixel_format and re.search(r"(?:p|yuv)\d{2}le$", source_pixel_format.lower()))
+        high_chroma = bool(
+            preserve_provider_quality
+            and source_pixel_format
+            and "yuv444" in source_pixel_format.lower()
+        )
         destination = Path(output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        width = int(settings.GENERATION_WIDTH)
-        height = int(settings.GENERATION_HEIGHT)
-        filters = [
-            f"scale={width}:{height}:force_original_aspect_ratio=decrease",
-            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
-            "setsar=1",
-            f"fps={int(settings.GENERATION_VIDEO_OUTPUT_FPS)}",
-        ]
+        if source_geometry and source_geometry[0] > 0 and source_geometry[1] > 0:
+            width, height = source_geometry[:2]
+        else:
+            width = int(settings.GENERATION_WIDTH)
+            height = int(settings.GENERATION_HEIGHT)
+        if preserve_provider_quality and source_geometry:
+            # A provider's resolution/aspect ratio/fps are part of its output
+            # contract. Do not silently downscale a 1080p/4K Seedance clip to
+            # the local ComfyUI canvas during the normalization pass.
+            filters = ["setsar=1"]
+        else:
+            if str(getattr(settings, "GENERATION_VIDEO_FRAME_FIT_MODE", "cover")).strip().lower() == "contain":
+                filters = [
+                    f"scale={width}:{height}:force_original_aspect_ratio=decrease",
+                    f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
+                    "setsar=1",
+                    f"fps={int(settings.GENERATION_VIDEO_OUTPUT_FPS)}",
+                ]
+            else:
+                # Cover-fill prevents the local SVD landscape fallback from
+                # becoming a portrait video with black bars. The crop is
+                # centered so the keyframe's central actor remains readable.
+                filters = [
+                    f"scale={width}:{height}:force_original_aspect_ratio=increase",
+                    f"crop={width}:{height}:(iw-ow)/2:(ih-oh)/2",
+                    "setsar=1",
+                    f"fps={int(settings.GENERATION_VIDEO_OUTPUT_FPS)}",
+                ]
         minimum = target_duration or settings.GENERATION_VIDEO_TARGET_SECONDS
         if duration < minimum:
             shortage = minimum - duration
@@ -164,19 +216,41 @@ class VideoDirectorService:
                     f"Generated clip is {shortage:.3f}s too short; regenerate a longer clip instead of freezing the last frame"
                 )
             filters.append(f"tpad=stop_mode=clone:stop_duration={shortage:.3f}")
-        filters.append("format=yuv420p")
+        output_pixel_format = (
+            "yuv420p10le" if high_bit_depth
+            else "yuv444p" if high_chroma
+            else "yuv420p"
+        )
+        filters.append(f"format={output_pixel_format}")
         command = [
             "ffmpeg", "-y", "-v", "error", "-i", str(source),
             "-vf", ",".join(filters),
-            "-an", "-c:v", "libx264", "-preset", "slow", "-crf", "18",
-            "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-            str(destination),
+            "-map", "0:v:0",
         ]
+        if preserve_audio:
+            command.extend(["-map", "0:a?", "-c:a", "aac", "-b:a", "192k"])
+        else:
+            command.append("-an")
+        video_codec = "libx265" if high_bit_depth else "libx264"
+        pixel_format = output_pixel_format
+        command.extend([
+            "-c:v", video_codec, "-preset", "slow", "-crf", "18",
+            "-pix_fmt", pixel_format, "-movflags", "+faststart",
+        ])
+        if high_bit_depth:
+            command.extend(["-tag:v", "hvc1"])
+        command.append(str(destination))
         try:
             subprocess.run(command, check=True, capture_output=True, text=True, timeout=300)
             return str(destination)
         except Exception as exc:
             logger.warning("Video postprocess failed for {}; keep original: {}", source, exc)
+            # ffmpeg may leave a truncated file when encoding fails. Never let
+            # that artifact shadow the valid source on retry or recovery.
+            try:
+                destination.unlink(missing_ok=True)
+            except OSError as cleanup_exc:
+                logger.debug("Cannot remove failed normalized clip {}: {}", destination, cleanup_exc)
             return input_path
 
     @staticmethod
@@ -288,7 +362,16 @@ class VideoDirectorService:
                 return term
         return ""
 
-    def _director_prompt(self, prompt: str, shot_role: str, action_intensity: str, visible_characters: list[dict], spatial_plan: dict, visual_style: str = "") -> str:
+    def _director_prompt(
+        self,
+        prompt: str,
+        shot_role: str,
+        action_intensity: str,
+        visible_characters: list[dict],
+        spatial_plan: dict,
+        visual_style: str = "",
+        dialogue: str = "",
+    ) -> str:
         identity = self._identity_prompt(visible_characters)
         role_guidance = {
             "action": "Make the action readable as one continuous movement with clear start, middle, and end.",
@@ -297,10 +380,33 @@ class VideoDirectorService:
             "dialogue_reaction": "Use natural breathing, small eye movement, and restrained reaction timing.",
             "establishing": "Use gentle cinematic camera drift while keeping the location stable.",
         }.get(shot_role, "Use natural short-drama motion.")
+        camera_guidance = {
+            "action": "controlled tracking or pan that follows the action without a cut",
+            "prop_interaction": "stable medium camera with a restrained push-in on the prop",
+            "emotion_reaction": "locked or very slow push-in that preserves the eyeline",
+            "dialogue_reaction": "gentle conversational push-in with stable face framing",
+            "establishing": "slow cinematic drift with stable horizon and room geometry",
+        }.get(shot_role, "subtle cinematic camera movement without a cut")
+        spoken_line = str(dialogue or "").strip()
+        if spoken_line and spoken_line.lower() not in NO_DIALOGUE_MARKERS:
+            dialogue_guidance = (
+                f"Dialogue and lip sync: deliver the exact spoken line \"{spoken_line[:240]}\"; "
+                "mouth movement starts and stops with the line, natural pauses and restrained facial acting, "
+                "keep the speaking character's eyeline readable."
+            )
+        else:
+            dialogue_guidance = "Dialogue and lip sync: no spoken dialogue; keep mouths relaxed and do not invent speech."
         spatial = f" Spatial continuity contract: {spatial_plan.get('continuity_prompt', '')}"
         return (
-            f"{prompt}. {role_guidance} Shot role: {shot_role}. Motion intensity: {action_intensity}."
-            f"{identity}{spatial} {visual_style} Cinematic short-drama clip, one atomic beat, stable identity, stable background."
+            f"Subject and setting: {prompt}. Action and performance: {role_guidance} "
+            f"Shot role: {shot_role}. Motion intensity: {action_intensity}. "
+            f"Camera direction: {camera_guidance}. "
+            f"{dialogue_guidance} "
+            f"Timing: one readable atomic beat with a clear beginning, development, and settled ending; "
+            f"continuous real-time motion, no jump cut, no time-lapse."
+            f"{identity}{spatial} Style and finish: {visual_style} "
+            f"Continuity constraints: cinematic short-drama clip, stable identity, stable background, "
+            f"stable wardrobe and props, no new people."
         )
 
     def _end_frame_prompt(self, prompt: str, shot_role: str, action_intensity: str, visible_characters: list[dict], spatial_plan: dict, visual_style: str = "") -> str:
@@ -404,6 +510,45 @@ class VideoDirectorService:
             timeout=30,
         )
         return float(result.stdout.strip())
+
+    @staticmethod
+    def _probe_pixel_format(path: Path) -> str:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=pix_fmt", "-of", "default=nw=1:nk=1", str(path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return result.stdout.strip()
+
+    @staticmethod
+    def _probe_geometry(path: Path) -> tuple[int, int, float | None]:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=width,height,r_frame_rate",
+                "-of", "csv=p=0:s=,", str(path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        values = [item.strip() for item in result.stdout.strip().split(",")]
+        if len(values) < 2:
+            raise ValueError("ffprobe returned incomplete video geometry")
+        width = int(values[0])
+        height = int(values[1])
+        fps = None
+        if len(values) >= 3 and values[2] and values[2] != "0/0":
+            numerator, denominator = values[2].split("/", 1)
+            if float(denominator):
+                fps = float(numerator) / float(denominator)
+        return width, height, fps
 
 
 _video_director_instance: VideoDirectorService | None = None

@@ -8,6 +8,7 @@ import pytest
 import os
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
+from types import SimpleNamespace
 
 from src.services.video_composer import (
     VideoComposer,
@@ -57,8 +58,8 @@ class TestVideoComposer:
         
         output_path = tmp_path / "output.mp4"
         
-        # Mock subprocess.run
-        with patch('subprocess.run') as mock_run:
+        # Mock duration, stream inspection, and ffmpeg.
+        with patch.object(service, "_get_duration", return_value=10.0), patch('subprocess.run') as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             
             result = service.concat_videos(
@@ -71,8 +72,8 @@ class TestVideoComposer:
         cmd = mock_run.call_args[0][0]
         assert "-filter_complex" in cmd
         filter_complex = cmd[cmd.index("-filter_complex") + 1]
-        assert "scale=768:1344:force_original_aspect_ratio=decrease" in filter_complex
-        assert "pad=768:1344:(ow-iw)/2:(oh-ih)/2" in filter_complex
+        assert "scale=768:1344:force_original_aspect_ratio=increase" in filter_complex
+        assert "crop=768:1344:(iw-ow)/2:(ih-oh)/2" in filter_complex
         assert "fps=24" in filter_complex
         assert "format=yuv420p" in filter_complex
         assert "concat=n=2:v=1:a=0" in filter_complex
@@ -96,11 +97,144 @@ class TestVideoComposer:
         cmd = mock_run.call_args[0][0]
         assert "-vf" in cmd
         vf = cmd[cmd.index("-vf") + 1]
-        assert "scale=768:1344:force_original_aspect_ratio=decrease" in vf
-        assert "pad=768:1344:(ow-iw)/2:(oh-ih)/2" in vf
+        assert "scale=768:1344:force_original_aspect_ratio=increase" in vf
+        assert "crop=768:1344:(iw-ow)/2:(ih-oh)/2" in vf
         assert "fps=24" in vf
         assert "format=yuv420p" in vf
         assert "-an" in cmd
+
+    def test_concat_videos_can_preserve_native_audio(self, service, tmp_path):
+        video1 = tmp_path / "video1.mp4"
+        video2 = tmp_path / "video2.mp4"
+        video1.write_text("fake video 1")
+        video2.write_text("fake video 2")
+        output_path = tmp_path / "output.mp4"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            service.concat_videos([str(video1), str(video2)], str(output_path), preserve_audio=True)
+
+        cmd = mock_run.call_args[0][0]
+        filter_complex = cmd[cmd.index("-filter_complex") + 1]
+        assert "concat=n=2:v=1:a=1[vout][aout]" in filter_complex
+        assert "-map" in cmd
+        assert "[aout]" in cmd
+        assert "-an" not in cmd
+        assert cmd[cmd.index("-c:a") + 1] == "aac"
+
+    def test_concat_videos_fills_missing_audio_with_silence(self, service, tmp_path):
+        video1 = tmp_path / "video1.mp4"
+        video2 = tmp_path / "video2.mp4"
+        output_path = tmp_path / "output.mp4"
+        video1.write_text("fake video 1")
+        video2.write_text("fake video 2")
+
+        service.has_audio_stream = Mock(side_effect=[True, False])
+        service._get_duration = Mock(return_value=2.75)
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            service.concat_videos([str(video1), str(video2)], str(output_path), preserve_audio=True)
+
+        cmd = mock_run.call_args.args[0]
+        filter_complex = cmd[cmd.index("-filter_complex") + 1]
+        assert "[0:a]aresample=48000" in filter_complex
+        assert "anullsrc=channel_layout=stereo:sample_rate=48000" in filter_complex
+        assert "atrim=duration=2.750000" in filter_complex
+        assert "concat=n=2:v=1:a=1[vout][aout]" in filter_complex
+
+    def test_concat_videos_preserves_high_bit_depth_when_requested(self, service, tmp_path):
+        video1 = tmp_path / "video1.mp4"
+        video2 = tmp_path / "video2.mp4"
+        video1.write_text("fake video 1")
+        video2.write_text("fake video 2")
+        output_path = tmp_path / "output.mp4"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            service.concat_videos(
+                [str(video1), str(video2)], str(output_path), preserve_provider_quality=True,
+            )
+
+        cmd = mock_run.call_args.args[0]
+        filter_complex = cmd[cmd.index("-filter_complex") + 1]
+        assert "format=yuv420p10le" in filter_complex
+        assert cmd[cmd.index("-c:v") + 1] == "libx265"
+        assert cmd[cmd.index("-pix_fmt") + 1] == "yuv420p10le"
+        assert cmd[cmd.index("-tag:v") + 1] == "hvc1"
+
+    @pytest.mark.parametrize("pixel_format,expected", [
+        ("yuv420p10le", "yuv420p10le"),
+        ("yuv422p12le", "yuv422p10le"),
+        ("yuv444p14le", "yuv444p10le"),
+    ])
+    def test_provider_high_bit_depth_formats_are_preserved(self, service, pixel_format, expected):
+        geometry = (1920, 1080, 24.0, pixel_format)
+
+        video_filter = service._production_video_filter(True, geometry)
+        encode_args = service._production_video_encode_args(False, True, geometry)
+
+        assert f"format={expected}" in video_filter
+        assert encode_args[encode_args.index("-c:v") + 1] == "libx265"
+        assert encode_args[encode_args.index("-pix_fmt") + 1] == expected
+
+    def test_provider_8_bit_format_stays_8_bit(self, service):
+        geometry = (1920, 1080, 24.0, "yuv420p")
+
+        video_filter = service._production_video_filter(True, geometry)
+        encode_args = service._production_video_encode_args(False, True, geometry)
+
+        assert "format=yuv420p10le" not in video_filter
+        assert encode_args[encode_args.index("-c:v") + 1] == "libx264"
+        assert encode_args[encode_args.index("-pix_fmt") + 1] == "yuv420p"
+
+    @pytest.mark.parametrize("pixel_format,expected", [
+        ("yuv444p", "yuv444p"),
+        ("yuv444p10le", "yuv444p10le"),
+        ("yuv422p10le", "yuv422p10le"),
+    ])
+    def test_provider_chroma_subsampling_is_preserved(self, service, pixel_format, expected):
+        geometry = (1920, 1080, 24.0, pixel_format)
+
+        video_filter = service._production_video_filter(True, geometry)
+        encode_args = service._production_video_encode_args(False, True, geometry)
+
+        assert f"format={expected}" in video_filter
+        assert encode_args[encode_args.index("-pix_fmt") + 1] == expected
+
+    def test_provider_chroma_fidelity_detects_8_bit_yuv444(self, service, monkeypatch):
+        class Result:
+            stdout = "yuv444p\n"
+
+        monkeypatch.setattr("src.services.video_composer.subprocess.run", lambda *args, **kwargs: Result())
+        assert service.has_provider_chroma_fidelity("provider.mov") is True
+
+    def test_seedance_composition_preserves_provider_geometry_and_fps(self, service, tmp_path):
+        video1 = tmp_path / "seedance-landscape.mp4"
+        video2 = tmp_path / "seedance-landscape-2.mp4"
+        output_path = tmp_path / "output.mp4"
+        video1.write_text("fake video 1")
+        video2.write_text("fake video 2")
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                SimpleNamespace(
+                    stdout='{"streams":[{"width":1920,"height":1080,"avg_frame_rate":"24/1","pix_fmt":"yuv420p"}]}'
+                ),
+                MagicMock(returncode=0),
+            ]
+            service.concat_videos(
+                [str(video1), str(video2)], str(output_path),
+                preserve_provider_quality=True,
+            )
+
+        cmd = mock_run.call_args.args[0]
+        filter_complex = cmd[cmd.index("-filter_complex") + 1]
+        assert "scale=1920:1080:force_original_aspect_ratio=increase" in filter_complex
+        assert "crop=1920:1080:(iw-ow)/2:(ih-oh)/2" in filter_complex
+        assert "fps=24" in filter_complex
+        assert "scale=768:1344" not in filter_complex
+        assert cmd[cmd.index("-c:v") + 1] == "libx264"
+        assert cmd[cmd.index("-pix_fmt") + 1] == "yuv420p"
     
     def test_sync_audio_video_video_not_exists(self, service):
         """测试：视频文件不存在时抛出异常"""
@@ -170,8 +304,8 @@ class TestVideoComposer:
         
         output_path = tmp_path / "output.mp4"
         
-        # Mock subprocess.run
-        with patch('subprocess.run') as mock_run:
+        # Mock duration, stream inspection, and ffmpeg.
+        with patch.object(service, "_get_duration", return_value=10.0), patch('subprocess.run') as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             
             result = service.add_bgm(
@@ -182,7 +316,16 @@ class TestVideoComposer:
             )
         
         assert result == str(output_path)
-        mock_run.assert_called_once()
+        assert mock_run.call_count == 2  # ffprobe + ffmpeg
+        command = mock_run.call_args_list[-1].args[0]
+        filter_complex = command[command.index("-filter_complex") + 1]
+        assert "sidechaincompress" in filter_complex
+        assert "amix=inputs=2:duration=longest" in filter_complex
+        assert "alimiter=limit=0.95" in filter_complex
+        assert "loudnorm=I=-16:TP=-1.5:LRA=11:linear=true" in filter_complex
+        assert command[command.index("-stream_loop") + 1] == "-1"
+        assert command[command.index("-t") + 1] == "10.000000"
+        assert "-shortest" not in command
     
     def test_compose_video_empty_list(self, service):
         """测试：空视频列表时抛出异常"""
@@ -222,7 +365,26 @@ class TestVideoComposer:
                 )
         
         assert result == str(output_path)
-    
+
+    def test_compose_video_preserves_native_audio_without_external_dialogue(self, service, tmp_path):
+        video1 = tmp_path / "video1.mp4"
+        video2 = tmp_path / "video2.mp4"
+        output_path = tmp_path / "output.mp4"
+        video1.write_text("fake video 1")
+        video2.write_text("fake video 2")
+
+        with patch.object(service, "has_audio_stream", return_value=True), patch.object(
+            service, "concat_videos", return_value=str(output_path)
+        ) as concat:
+            with patch("shutil.move"):
+                result = service.compose_video(
+                    [str(video1), str(video2)],
+                    output_path=str(output_path),
+                )
+
+        assert result == str(output_path)
+        assert concat.call_args.kwargs["preserve_audio"] is True
+
     def test_compose_video_with_audio(self, service, tmp_path):
         """测试：合成视频和音频"""
         video_file = tmp_path / "video.mp4"

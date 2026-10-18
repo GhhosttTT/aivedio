@@ -1,14 +1,21 @@
-"""Run with python -m scripts.validate_local_generation; never substitutes draft media."""
+"""Validate production media; supports both direct and module execution."""
 
 import argparse
 import json
 import platform
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 import httpx
+
+# Make both documented entry points work from the repository root:
+# ``python scripts/validate_local_generation.py`` and ``python -m ...``.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from src.config import settings
 from src.services.generation_provider import ImageGenerationRequest, LocalComfyUIProvider, _extract_workflow_image_metadata

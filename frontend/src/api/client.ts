@@ -73,7 +73,7 @@ export const projectApi = {
     reviews: (id: number) => apiClient.get<any, GenerationReviewResponse>(`/projects/${id}/generation-review`),
     qualityLoopPlan: (id: number, maxActions = 5) => apiClient.get<any, QualityLoopPlanResponse>(`/projects/${id}/quality-loop/plan`, {params: {max_actions: maxActions}}),
     runAutoRepairQueue: (id: number, data: {max_actions?: number; dry_run?: boolean}) => apiClient.post<any, RepairQueueAutoRunResponse>(`/projects/${id}/repair-queue/auto`, data),
-    productionReadiness: (id: number, includeEnginePreflight = true) => apiClient.get<any, ProductionReadinessReport>(`/projects/${id}/production-readiness`, {params: {include_engine_preflight: includeEnginePreflight}}),
+    productionReadiness: (id: number, includeEnginePreflight = true, providerOverride?: string, modelOverride?: string, requestModeOverride?: string, resolutionOverride?: string, outputFormatOverride?: string, durationOverride?: number | null) => apiClient.get<any, ProductionReadinessReport>(`/projects/${id}/production-readiness`, {params: {include_engine_preflight: includeEnginePreflight, ...(providerOverride ? {provider_override: providerOverride} : {}), ...(modelOverride ? {model_override: modelOverride} : {}), ...(requestModeOverride ? {request_mode_override: requestModeOverride} : {}), ...(resolutionOverride ? {resolution_override: resolutionOverride} : {}), ...(outputFormatOverride ? {output_format_override: outputFormatOverride} : {}), ...(durationOverride !== null && durationOverride !== undefined ? {duration_override: durationOverride} : {})}}),
     compareSeedDanceBaseline: (id: number, data: {baseline_path: string; candidate_path?: string}) => apiClient.post(`/projects/${id}/seed-dance-baseline`, data, {timeout: 300000}),
     uploadSeedDanceBaseline: (id: number, file: File) => {
         const formData = new FormData();
@@ -165,7 +165,22 @@ export const projectApi = {
     /**
      * 开始生产
      */
-    startProduction: async (id: number): Promise<{
+    startProduction: async (id: number, options?: {
+        provider?: string;
+        request_mode?: string;
+        multi_shot?: boolean;
+        sequence_level_multi_shot?: boolean;
+        native_audio?: boolean;
+        draft?: boolean;
+        draft_task_id?: string;
+        model?: string;
+        resolution?: string;
+        output_format?: string;
+        return_last_frame?: boolean;
+        camera_fixed?: boolean;
+        watermark?: boolean;
+        duration_seconds?: number | null;
+    }): Promise<{
         task_id: string;
         project_id: number;
         status: string;
@@ -176,8 +191,19 @@ export const projectApi = {
         updated_at: string;
         error_message?: string;
     }> => {
-        return apiClient.post(`/projects/${id}/produce`);
+        return apiClient.post(`/projects/${id}/produce`, options || {});
     },
+    promoteDrafts: async (id: number): Promise<{
+        task_id: string;
+        project_id: number;
+        status: string;
+        progress: number;
+        current_step: string;
+        total_steps: number;
+        created_at: string;
+        updated_at: string;
+        error_message?: string;
+    }> => apiClient.post(`/projects/${id}/promote-drafts`),
 
     /**
      * 重新生成图像（不重新生成剧本）
@@ -225,6 +251,9 @@ export const taskApi = {
         current_step: string;
         result?: any;
         error?: string;
+        provider_progress?: number;
+        provider_stage?: string;
+        provider_state?: string;
     }> => {
         return apiClient.get(`/tasks/${taskId}/status`);
     },
@@ -281,7 +310,7 @@ export const localizationApi = {
 export default apiClient;
 
 
-export interface ProductionTask { task_id: number; celery_task_id: string; project_id: number; status: string; progress: number; current_step: number; total_steps: number; error_message?: string; live_step?: {stage: string; scene_id?: number}; }
+export interface ProductionTask { task_id: number; celery_task_id: string; project_id: number; status: string; progress: number; current_step: number; total_steps: number; error_message?: string; live_step?: {stage: string; scene_id?: number}; provider_progress?: number; provider_stage?: string; provider_state?: string; }
 
 export interface GenerationReviewSummary {
     status: 'ready' | 'blocked' | string;
@@ -404,6 +433,17 @@ export interface VideoEnginePreflight {
     };
     requirements: string[];
     action_items: string[];
+    provider?: {
+        provider?: string;
+        status?: string;
+        message?: string;
+        configuration?: Record<string, string>;
+        checks?: Record<string, any>;
+        capabilities?: Record<string, boolean | number | string | string[] | Record<string, number>>;
+        action_items?: string[];
+        warnings?: string[];
+    };
+    warnings?: string[];
 }
 
 export interface ProductionReadinessIssue {
@@ -480,7 +520,7 @@ export interface ProductionReadinessReport {
             quality_budget_issues?: string[];
             minimum_quality_budget?: Record<string, unknown>;
             profile?: {
-                capabilities?: Record<string, boolean>;
+                capabilities?: Record<string, boolean | number | string | string[] | Record<string, number>>;
                 capability_evidence?: Record<string, {
                     present?: boolean;
                     matched_nodes?: string[];

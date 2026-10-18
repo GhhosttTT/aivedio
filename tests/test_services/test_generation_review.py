@@ -107,6 +107,35 @@ def test_frame_coverage_and_video_hash(tmp_path, monkeypatch):
     assert result["status"] == "error"
 
 
+def test_temporal_windows_include_boundary_context_without_scoring_it(tmp_path, monkeypatch):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"test video bytes")
+    frames = [
+        {"index": i, "timestamp": float(i), "path": str(tmp_path / f"{i}.jpg")}
+        for i in range(5)
+    ]
+    monkeypatch.setattr(GenerationReviewService, "sample_frames", lambda *args: frames)
+    data = {key: {"score": 4, "evidence": "visible subject remains consistent across frames"} for key in (
+        "story_match", "composition", "aesthetic_quality", "visual_integrity",
+        "facial_identity", "identity_consistency", "temporal_consistency")}
+    reviewer = Mock()
+    reviewer.evaluate.side_effect = [
+        FrameReview(**data, reviewed_frames=[0, 1, 2], issues=[]),
+        FrameReview(**data, reviewed_frames=[3, 4], issues=[]),
+    ]
+
+    result = GenerationReviewService(reviewer).review_video(
+        str(video), {"scene_number": 1}, tmp_path / "frames.json",
+    )
+
+    assert result["status"] == "passed"
+    first_payload = reviewer.evaluate.call_args_list[0].args[1]
+    second_payload = reviewer.evaluate.call_args_list[1].args[1]
+    assert first_payload["temporal_window"]["context_indices"] == [3]
+    assert second_payload["temporal_window"]["context_indices"] == [2]
+    assert second_payload["frames"][-1]["index"] == 4
+
+
 def test_video_aesthetic_gate_quantifies_short_drama_motion_surface(monkeypatch):
     monkeypatch.setattr("src.services.generation_review.settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE", 4.0)
     review = {

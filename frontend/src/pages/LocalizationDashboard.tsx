@@ -26,6 +26,8 @@ export function LocalizationDashboard() {
     const [busy, setBusy] = useState('');
     const [error, setError] = useState('');
     const report = useMediaUrl(projectId, job?.moderation_report_path);
+    const jobId = job?.id;
+    const jobStatus = job?.status;
     useEffect(() => {projectApi.listProjects({page_size: 100}).then(data => {setProjects(data.projects); setProjectId(Number(data.projects[0]?.id) || 0);}).catch(e => setError(errorText(e)));}, []);
     useEffect(() => {
         let active = true;
@@ -37,11 +39,11 @@ export function LocalizationDashboard() {
         return () => {active = false;};
     }, [projectId]);
     useEffect(() => {
-        if (!job || !['queued','running'].includes(job.status)) return;
+        if (!jobId || !['queued','running'].includes(jobStatus || '')) return;
         let active = true;
-        const timer = window.setInterval(() => localizationApi.getJob(job.id).then(data => {if(active) setJob(data);}).catch(e => {if(active) setError(errorText(e));}), 3000);
+        const timer = window.setInterval(() => localizationApi.getJob(jobId).then(data => {if(active) setJob(data);}).catch(e => {if(active) setError(errorText(e));}), 3000);
         return () => {active = false; window.clearInterval(timer);};
-    }, [job?.id, job?.status]);
+    }, [jobId, jobStatus]);
     const run = async (upload: boolean) => {
         setBusy(upload ? '上传中' : '提交中'); setError('');
         try {

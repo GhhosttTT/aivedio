@@ -54,12 +54,60 @@ The same contract can also target a production HTTP video gateway. Set
 - `negative_prompt`
 - `reference_image` as a data URL or original URL
 - `end_image` as a data URL or original URL
+- `references`: labelled image/video/audio references (`Image1`, `Video1`, `Audio1`)
+- `audio`: optional audio reference, `generate_audio`, `multi_shot`, and `shot_plan`
 - `duration_seconds`, `aspect_ratio`, `width`, `height`, `fps`, `seed`
 
 The gateway may return `video_url` or `video_base64` immediately. For async
 providers, it may return `job_id`; then set `HTTP_VIDEO_STATUS_ENDPOINT` with a
 `{job_id}` placeholder and return `video_url` or `video_base64` from the status
 endpoint when complete.
+
+For a Seedance-compatible reference gateway, use
+`GENERATION_PROVIDER=seedance_api`. Configure `SEEDANCE_ENDPOINT`,
+`SEEDANCE_API_KEY`, and optionally `SEEDANCE_STATUS_ENDPOINT`. This adapter sends
+the explicit `image_urls`, `video_urls`, and `audio_urls` arrays, plus
+`generate_audio`, `resolution`, and the continuity-aware structured
+`shot_plan` folded into the prompt.
+Hosted gateways may use different authentication or queue response shapes, so
+their endpoint and status URL remain configurable.
+
+The workbench can override `provider`, `model`, `request_mode`, `multi_shot`, and
+`native_audio` for one run through `POST /api/projects/{project_id}/produce`.
+Blank or omitted provider/model values continue to use the environment defaults.
+The selected model is carried through the Celery task and native Ark payload;
+its 4K, MOV, Draft, and reference-limit capabilities are validated before
+submission.
+
+For the native Volcano Ark task API, set `SEEDANCE_API_FORMAT=ark_v3`. The
+adapter then emits `content[]` with explicit `reference_image`,
+`reference_video`, `reference_audio`, `first_frame`, and `last_frame` roles,
+plus the native model, ratio, resolution, duration, and audio fields. Use the
+2.5 model limits only when the configured model is a confirmed 2.5 endpoint.
+Local images use Base64 data URLs; local video references must be exposed with
+`SEEDANCE_MEDIA_URL_TEMPLATE` or pre-ingested as `asset://` material, because
+the native task API cannot fetch a filesystem path.
+
+Transient submit/status failures (HTTP 408/409/425/429 and 5xx, plus transport
+errors) are retried with exponential backoff. Configure the bounds with
+`SEEDANCE_MAX_RETRIES` and `SEEDANCE_RETRY_BACKOFF_SECONDS` (or the corresponding
+`HTTP_VIDEO_*` settings).
+
+Set `SEEDANCE_CALLBACK_URL` when the Ark account has a reachable callback
+endpoint. The provider includes the documented callback field while retaining
+status polling as a recovery path.
+
+The default Seedance adapter sends only the documented hosted-model fields and
+folds the internal negative prompt and continuity contract into `prompt`. Set
+`SEEDANCE_REQUEST_MODE=multi_shot` for a gateway that explicitly supports the
+Seedance 2.5-style multi-shot contract; this adds `multi_shot` and `shot_plan`.
+`SEEDANCE_INCLUDE_EXPERIMENTAL_FIELDS=true` remains available for gateways that
+also require the extra model/seed/end-frame fields.
+
+For native Seedance 2.5, first/last-frame generation is sent as `adaptive` and
+`1080p`, as required by Ark. Draft promotion is a separate request using the
+returned `draft_task_id`; the adapter sends `1080p` and only the output controls
+that Ark allows to be changed in the second step.
 
 ## Key Settings
 
@@ -99,6 +147,14 @@ them:
 
 Final production readiness requires `GENERATION_REQUIRE_VIDEO_REVIEW=true` and a
 running local llama.cpp VLM reviewer. Keep it false only for draft/debug runs.
+
+By default, final composition uses the separately reviewed dialogue/TTS track.
+When the workbench enables `native_audio` for a run and every accepted provider
+clip records a valid native audio stream, the composer now preserves that
+per-run audio automatically. The global
+`GENERATION_PREFER_NATIVE_VIDEO_AUDIO=true` switch remains available as an
+explicit override; in both cases the composer verifies every scene has an
+audio stream, preserves it during concat, and skips TTS replacement.
 
 ## Seed Dance Replacement Gate
 

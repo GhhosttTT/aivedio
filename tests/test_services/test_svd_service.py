@@ -32,6 +32,7 @@ sys.modules['diffusers.utils'] = mock_diffusers.utils
 from src.services.svd_service import (
     SVDService,
     SVDError,
+    _fit_image_to_svd_canvas,
     get_svd_service,
     cleanup_svd_service
 )
@@ -41,6 +42,26 @@ import src.services.svd_service as svd_module
 svd_module.DIFFUSERS_AVAILABLE = True
 svd_module.torch = mock_torch
 svd_module.StableVideoDiffusionPipeline = mock_diffusers.StableVideoDiffusionPipeline
+
+
+def test_svd_canvas_fit_preserves_portrait_geometry_without_stretching():
+    class FakeImage:
+        size = (800, 1200)
+
+        def resize(self, size):
+            self.resized_size = size
+            return self
+
+        def crop(self, box):
+            self.crop_box = box
+            return self
+
+    image = FakeImage()
+    output = _fit_image_to_svd_canvas(image)
+
+    assert output is image
+    assert image.resized_size == (1024, 1536)
+    assert image.crop_box == (0, 480, 1024, 1056)
 
 
 class TestSVDService:

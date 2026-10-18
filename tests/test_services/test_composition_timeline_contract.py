@@ -9,6 +9,7 @@ import pytest
 from src.services.video_composer import VideoComposer, VideoComposerError
 from src.tasks.composition_tasks import (
     _require_audio_video_duration_alignment,
+    _subtitle_readability_issue,
     _subtitle_matches_dialogue,
 )
 
@@ -101,9 +102,24 @@ def test_short_dialogue_does_not_shorten_the_final_video(monkeypatch, tmp_path):
     cmd = run.call_args.args[0]
     assert "-shortest" not in cmd
     assert cmd[cmd.index("-t") + 1] == "5.000000"
-    assert "apad" in cmd
+    audio_filter = cmd[cmd.index("-af") + 1]
+    assert "apad" in audio_filter
+    assert "loudnorm=I=-16:TP=-1.5:LRA=11:linear=true" in audio_filter
 
 
 def test_incomplete_subtitle_prefix_does_not_pass_full_dialogue_coverage():
     assert not _subtitle_matches_dialogue("1\n00:00:00,000 --> 00:00:01,000\nWait", "Wait. I know the truth.")
     assert _subtitle_matches_dialogue("1\n00:00:00,000 --> 00:00:01,000\nWait!", "Wait.")
+
+
+def test_subtitle_readability_rejects_overlapping_cues():
+    content = (
+        "1\n00:00:00,000 --> 00:00:02,000\nFirst\n\n"
+        "2\n00:00:01,500 --> 00:00:03,000\nSecond\n"
+    )
+    assert _subtitle_readability_issue(content) == "subtitle cues overlap"
+
+
+def test_subtitle_readability_rejects_fast_cjk_dialogue():
+    content = "1\n00:00:00,000 --> 00:00:01,000\n" + ("这" * 20) + "\n"
+    assert _subtitle_readability_issue(content) == "subtitle reading speed is too fast"

@@ -236,6 +236,66 @@ class TestSubtitleGenerator:
         assert "MarginV=64" in filter_expr
         assert "Alignment=2" in filter_expr
         assert "Bold=1" in filter_expr
+
+    def test_burn_subtitle_preserves_high_bit_depth_when_requested(self, service, tmp_path, monkeypatch):
+        video_file = tmp_path / "video.mp4"
+        video_file.write_text("fake video")
+        subtitle_file = tmp_path / "subtitle.srt"
+        subtitle_file.write_text("fake subtitle")
+
+        monkeypatch.setattr(service, "_has_high_bit_depth", lambda _path: True)
+        monkeypatch.setattr(service, "_get_pixel_format", lambda _path: "yuv444p")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            service.burn_subtitle(
+                str(video_file), str(subtitle_file), str(tmp_path / "output.mp4"),
+                preserve_provider_quality=True,
+            )
+
+        cmd = mock_run.call_args.args[0]
+        assert "format=yuv444p10le" in cmd[cmd.index("-vf") + 1]
+        assert cmd[cmd.index("-c:v") + 1] == "libx265"
+        assert cmd[cmd.index("-pix_fmt") + 1] == "yuv444p10le"
+
+    def test_burn_subtitle_preserves_8_bit_yuv444_when_requested(self, service, tmp_path, monkeypatch):
+        video_file = tmp_path / "video.mov"
+        video_file.write_text("fake video")
+        subtitle_file = tmp_path / "subtitle.srt"
+        subtitle_file.write_text("fake subtitle")
+
+        monkeypatch.setattr(service, "_has_high_bit_depth", lambda _path: False)
+        monkeypatch.setattr(service, "_get_pixel_format", lambda _path: "yuv444p")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            service.burn_subtitle(
+                str(video_file), str(subtitle_file), str(tmp_path / "output.mov"),
+                preserve_provider_quality=True,
+            )
+
+        cmd = mock_run.call_args.args[0]
+        assert "format=yuv444p" in cmd[cmd.index("-vf") + 1]
+        assert cmd[cmd.index("-c:v") + 1] == "libx264"
+        assert cmd[cmd.index("-pix_fmt") + 1] == "yuv444p"
+
+    def test_burn_subtitle_preserves_high_bit_yuv444_when_requested(self, service, tmp_path, monkeypatch):
+        video_file = tmp_path / "video.mov"
+        video_file.write_text("fake video")
+        subtitle_file = tmp_path / "subtitle.srt"
+        subtitle_file.write_text("fake subtitle")
+
+        monkeypatch.setattr(service, "_has_high_bit_depth", lambda _path: True)
+        monkeypatch.setattr(service, "_get_pixel_format", lambda _path: "yuv444p10le")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            service.burn_subtitle(
+                str(video_file), str(subtitle_file), str(tmp_path / "output.mov"),
+                preserve_provider_quality=True,
+            )
+
+        cmd = mock_run.call_args.args[0]
+        assert "format=yuv444p10le" in cmd[cmd.index("-vf") + 1]
+        assert cmd[cmd.index("-c:v") + 1] == "libx265"
+        assert cmd[cmd.index("-pix_fmt") + 1] == "yuv444p10le"
     
     def test_burn_subtitle_ffmpeg_error(self, service, tmp_path):
         """测试：FFmpeg 执行失败时抛出异常"""

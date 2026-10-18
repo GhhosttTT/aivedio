@@ -13,7 +13,7 @@ from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _character_sheet_generation_contract, _complexity_report, _composition_constraint, _feedback_repair_directive, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
-from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_video_repair_action, _apply_video_repair_prompt, _aspect_ratio_for_size, _build_video_generator, _generate_quality_video_candidates, _review_final_video_after_postprocess, _scene_review_payload, _select_best_video_candidate, _video_repair_action_from_candidates
+from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_audio_quality_contract, _apply_video_repair_action, _apply_video_repair_prompt, _aspect_ratio_for_size, _build_video_generator, _configured_reference_limit, _continuity_metadata_path, _draft_fallback_allowed, _final_video_acceptance_error, _generate_quality_video_candidates, _multimodal_references_for_scene, _native_audio_enabled, _normalization_duration_for_provider, _preserve_generated_audio, _promote_sequence_sidecar, _provider_metadata_path, _provider_task_state_is_ambiguous, _read_scene_continuity_reference, _review_final_video_after_postprocess, _scene_review_payload, _select_best_video_candidate, _sequence_segment_quality_report, _video_gate_evidence_complete, _video_gate_passes, _video_repair_action_from_candidates, _write_provider_metadata, _write_scene_continuity_metadata
 
 
 def passed_video_aesthetic_scores(score: int = 5) -> dict:
@@ -28,6 +28,363 @@ def passed_video_performance_scores(score: int = 5) -> dict:
         feature: {"score": score, "evidence": "acting reads like a short-drama performance"}
         for feature in VIDEO_PERFORMANCE_FEATURES
     }
+
+
+def test_audio_quality_contract_penalizes_missing_requested_audio():
+    metrics = {"technical_score": 4.8, "audio_present": False}
+
+    _apply_audio_quality_contract(metrics, {"requested_generate_audio": True})
+
+    assert metrics["audio_expected"] is True
+    assert metrics["audio_quality_status"] == "missing"
+    assert metrics["audio_sync_score"] == 0.0
+    assert metrics["technical_score"] == 0.0
+
+
+def test_audio_quality_contract_rejects_unmeasurable_requested_audio():
+    metrics = {
+        "technical_score": 4.8,
+        "audio_present": True,
+        "audio_duration_delta_seconds": None,
+    }
+
+    _apply_audio_quality_contract(metrics, {"requested_generate_audio": True})
+
+    assert metrics["audio_quality_status"] == "unavailable"
+
+
+def test_audio_quality_contract_rejects_near_silent_requested_audio():
+    metrics = {
+        "audio_present": True,
+        "audio_duration_delta_seconds": 0.02,
+        "audio_signal_status": "near_silent",
+        "technical_score": 4.8,
+    }
+
+    _apply_audio_quality_contract(metrics, {"requested_generate_audio": True})
+
+    assert metrics["audio_quality_status"] == "needs_review"
+    assert metrics["audio_sync_score"] == 0.0
+    assert "near-silence" in metrics["audio_signal_error"]
+
+
+def test_audio_quality_contract_rejects_stream_start_offset():
+    metrics = {
+        "audio_present": True,
+        "audio_duration_delta_seconds": 0.02,
+        "audio_video_start_delta_seconds": 0.5,
+        "audio_signal_status": "usable",
+        "technical_score": 4.8,
+    }
+
+    _apply_audio_quality_contract(metrics, {"requested_generate_audio": True})
+
+    assert metrics["audio_quality_status"] == "needs_review"
+    assert metrics["audio_sync_score"] == 0.0
+    assert "start offset" in metrics["audio_sync_error"]
+
+
+def test_audio_quality_contract_treats_reference_audio_as_expected_output():
+    metrics = {
+        "audio_present": False,
+        "audio_duration_delta_seconds": None,
+    }
+
+    _apply_audio_quality_contract(metrics, {"requested_reference_audio": True})
+
+    assert metrics["audio_expected"] is True
+    assert metrics["audio_quality_status"] == "missing"
+
+
+def test_opening_frame_reference_floor_blocks_obvious_keyframe_drift(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.settings.GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE",
+        2.5,
+    )
+
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {
+                "start_frame_reference": {"status": "available", "score": 1.8},
+            },
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+
+    assert error is not None
+    assert "opening frame reference score" in error
+
+
+def test_black_frame_run_floor_blocks_candidate(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.settings.GENERATION_VIDEO_MAX_BLACK_SECONDS",
+        0.2,
+    )
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {"max_black_run_seconds": 0.4},
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+    assert error is not None
+    assert "black-frame run" in error
+
+
+def test_frozen_static_run_floor_blocks_low_motion_candidate(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.settings.GENERATION_VIDEO_MAX_STATIC_RUN_SECONDS",
+        1.8,
+    )
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {
+                "max_static_run_seconds": 2.4,
+                "motion_energy": 0.1,
+            },
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+    assert error is not None
+    assert "frozen/static run" in error
+
+
+def test_temporal_exposure_jumps_are_hard_publish_gate(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.settings.GENERATION_VIDEO_MAX_BRIGHTNESS_STEP_P95",
+        36.0,
+    )
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {"brightness_step_p95": 48.0},
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+    assert error is not None
+    assert error.startswith("video temporal exposure jumps")
+
+
+def test_motion_cadence_instability_is_hard_publish_gate(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.settings.GENERATION_VIDEO_MAX_MOTION_JITTER_RATIO",
+        1.5,
+    )
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {"motion_jitter_ratio": 2.1},
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+    assert error is not None
+    assert error.startswith("video motion cadence is unstable")
+
+
+def test_seedance_high_resolution_rejects_lost_high_bit_depth(monkeypatch):
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "provider_metadata": {
+                "provider_name": "seedance_api",
+                "requested_resolution": "1080p",
+                "video_high_bit_depth": True,
+                "video_pixel_format": "yuv420p10le",
+            },
+            "technical_metrics": {
+                "technical_score": 4.8,
+                "high_bit_depth": False,
+                "pixel_format": "yuv420p",
+            },
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+
+    assert error is not None
+    assert "high-bit-depth" in error
+
+
+def test_seedance_native_8_bit_1080p_is_not_rejected_without_source_downgrade(monkeypatch):
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", False)
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "provider_metadata": {
+                "provider_name": "seedance_api",
+                "requested_resolution": "1080p",
+                "video_high_bit_depth": False,
+                "video_pixel_format": "yuv420p",
+            },
+            "technical_metrics": {
+                "technical_score": 4.8,
+                "high_bit_depth": False,
+                "pixel_format": "yuv420p",
+            },
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+
+    assert error is None
+
+
+def test_seedance_8_bit_444_output_rejects_chroma_downgrade():
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "provider_metadata": {
+                "provider_name": "seedance_api",
+                "requested_resolution": "1080p",
+                "video_high_bit_depth": False,
+                "video_pixel_format": "yuv444p",
+            },
+            "technical_metrics": {
+                "technical_score": 4.8,
+                "high_bit_depth": False,
+                "pixel_format": "yuv420p",
+            },
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+
+    assert error is not None
+    assert "chroma fidelity" in error
+
+
+def test_sequence_segment_quality_report_is_persisted_without_vlm(tmp_path, monkeypatch):
+    segment = tmp_path / "scene_2.mp4"
+    segment.write_bytes(b"segment")
+    scene = Mock(scene_number=2, image_path=None)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", False)
+    monkeypatch.setattr("src.tasks.video_tasks.video_candidate_metrics", lambda _path: {
+        "status": "available",
+        "technical_score": 4.4,
+        "max_black_run_seconds": 0.0,
+    })
+
+    report = _sequence_segment_quality_report(scene, str(segment), 7, Mock(), {})
+
+    assert report["status"] == "passed"
+    persisted = json.loads(segment.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert persisted["status"] == "passed"
+    assert persisted["technical_metrics"]["technical_score"] == 4.4
+
+
+def test_promote_sequence_sidecar_rewrites_staged_paths(tmp_path):
+    staging = tmp_path / ".scene.sequence-1.part.mp4"
+    output = tmp_path / "scene.mp4"
+    staging.write_bytes(b"video")
+    staging.with_suffix(".quality.json").write_text(json.dumps({
+        "path": str(staging),
+        "review_path": str(staging.with_suffix(".final_review.json")),
+    }), encoding="utf-8")
+
+    _promote_sequence_sidecar(staging, output, ".quality.json")
+
+    promoted = json.loads(output.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert promoted["path"] == str(output)
+    assert promoted["review_path"] == str(output.with_suffix(".final_review.json"))
+
+
+@pytest.mark.parametrize(
+    ("metadata", "ambiguous"),
+    [
+        ({"provider_task_id": "task-1", "provider_status": "running"}, True),
+        ({"provider_task_id": "task-1", "provider_status": "queued"}, True),
+        ({"provider_task_id": "task-1", "provider_status": "failed"}, False),
+        ({"provider_task_id": "task-1", "provider_status": "expired"}, False),
+        ({}, False),
+    ],
+)
+def test_provider_task_state_controls_draft_fallback(metadata, ambiguous):
+    generator = Mock(last_result_metadata=metadata)
+    assert _provider_task_state_is_ambiguous(generator) is ambiguous
+
+
+def test_quality_review_failure_never_allows_draft_fallback(monkeypatch):
+    monkeypatch.setenv("ENABLE_DRAFT_MEDIA_FALLBACK", "true")
+    assert _draft_fallback_allowed(ReviewError("low quality"), Mock()) is False
+
+
+def test_required_video_review_rejects_incomplete_identity_gate(monkeypatch):
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    passes, scores = _video_gate_passes({
+        "gate_scores": {"facial_identity": 5.0, "identity_consistency": 5.0},
+    })
+    assert passes is False
+    assert "temporal_consistency" not in scores
+
+
+def test_video_gate_evidence_requires_every_review_batch():
+    complete = {
+        "facial_identity": {"score": 5, "evidence": "identity matches"},
+        "identity_consistency": {"score": 5, "evidence": "identity stable"},
+        "temporal_consistency": {"score": 5, "evidence": "motion stable"},
+    }
+    assert _video_gate_evidence_complete({"batches": [{"review": complete}]}) is True
+    assert _video_gate_evidence_complete({
+        "batches": [
+            {"review": complete},
+            {"review": {"facial_identity": {"score": 5}}},
+        ],
+    }) is False
 
 
 def passed_platform_reference_scores(score: int = 5) -> dict:
@@ -73,6 +430,154 @@ def test_visible_actor_is_distinct_from_speaker(project_data):
     project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": []}]})
     db.commit()
     assert _visual_character(scene, project.id, db) is None
+
+
+def test_multimodal_references_keep_scene_first_and_previous_motion(project_data, tmp_path, monkeypatch):
+    db, project, scene, _character, _ = project_data
+    scene_image = tmp_path / "scene.png"
+    previous_video = tmp_path / "previous.mp4"
+    scene_image.write_bytes(b"scene")
+    previous_video.write_bytes(b"previous")
+    scene.image_path = str(scene_image)
+    previous = Scene(
+        project_id=project.id,
+        scene_number=0,
+        image_path=str(tmp_path / "previous.png"),
+        video_path=str(previous_video),
+        visual_description="previous shot",
+    )
+    db.add(previous)
+    db.commit()
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_MAX_REFERENCE_IMAGES", 9)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_MAX_REFERENCE_VIDEOS", 3)
+    monkeypatch.setenv("SEEDANCE_MEDIA_URL_TEMPLATE", "https://cdn.example/{filename}")
+
+    references = _multimodal_references_for_scene(scene, project.id, db, "seedance_api")
+
+    assert references["images"] == [str(scene_image)]
+    assert references["videos"] == [str(previous_video)]
+    assert references["audios"] == []
+
+
+def test_native_seedance_skips_untransportable_local_previous_video(
+    project_data, tmp_path, monkeypatch,
+):
+    db, project, scene, _character, _ = project_data
+    scene_image = tmp_path / "scene.png"
+    previous_video = tmp_path / "previous.mp4"
+    scene_image.write_bytes(b"scene")
+    previous_video.write_bytes(b"previous")
+    scene.image_path = str(scene_image)
+    previous = Scene(
+        project_id=project.id,
+        scene_number=0,
+        video_path=str(previous_video),
+        visual_description="previous shot",
+    )
+    db.add(previous)
+    db.commit()
+    monkeypatch.delenv("SEEDANCE_MEDIA_URL_TEMPLATE", raising=False)
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_MEDIA_URL_TEMPLATE", "")
+
+    references = _multimodal_references_for_scene(scene, project.id, db, "seedance_api")
+
+    assert references["videos"] == []
+    assert references["continuity_image"] is None
+
+
+def test_seedance_10_uses_single_keyframe_without_omni_references(
+    project_data, tmp_path, monkeypatch,
+):
+    db, project, scene, _character, _ = project_data
+    scene_image = tmp_path / "scene.png"
+    previous_video = tmp_path / "previous.mp4"
+    audio = tmp_path / "dialogue.mp3"
+    scene_image.write_bytes(b"scene")
+    previous_video.write_bytes(b"previous")
+    audio.write_bytes(b"audio")
+    scene.image_path = str(scene_image)
+    scene.audio_path = str(audio)
+    previous = Scene(
+        project_id=project.id,
+        scene_number=0,
+        video_path=str(previous_video),
+        visual_description="previous shot",
+    )
+    db.add(previous)
+    db.commit()
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_MODEL", "doubao-seedance-1-0-pro-250528")
+
+    references = _multimodal_references_for_scene(
+        scene, project.id, db, "seedance_api", "doubao-seedance-1-0-pro-250528",
+    )
+
+    assert references["images"] == [str(scene_image)]
+    assert references["videos"] == []
+    assert references["audios"] == []
+    assert references["continuity_image"] is None
+
+
+def test_multimodal_references_extract_missing_previous_tail_frame(project_data, tmp_path, monkeypatch):
+    db, project, scene, _character, _ = project_data
+    scene_image = tmp_path / "scene.png"
+    previous_video = tmp_path / "previous.mp4"
+    extracted = tmp_path / "previous.last_frame.png"
+    scene_image.write_bytes(b"scene")
+    previous_video.write_bytes(b"previous")
+    extracted.write_bytes(b"png")
+    scene.image_path = str(scene_image)
+    previous = Scene(
+        project_id=project.id,
+        scene_number=0,
+        video_path=str(previous_video),
+        visual_description="previous shot",
+    )
+    db.add(previous)
+    db.commit()
+    monkeypatch.setattr("src.tasks.video_tasks._extract_video_last_frame", lambda _path: str(extracted))
+
+    references = _multimodal_references_for_scene(scene, project.id, db, "seedance_api")
+
+    assert references["continuity_image"] == str(extracted)
+    assert _read_scene_continuity_reference(previous_video) == str(extracted)
+
+
+def test_seedance_25_uses_native_reference_limits_by_default(monkeypatch):
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_MAX_REFERENCE_IMAGES", 9)
+    monkeypatch.delenv("SEEDANCE_MAX_REFERENCE_IMAGES", raising=False)
+
+    assert _configured_reference_limit("seedance_api", "MAX_REFERENCE_IMAGES", 9) == 30
+    assert _configured_reference_limit("seedance_api", "MAX_REFERENCE_VIDEOS", 3) == 10
+    assert _configured_reference_limit("seedance_api", "MAX_REFERENCE_AUDIOS", 3) == 10
+
+
+def test_seedance_per_run_model_controls_reference_limits(monkeypatch):
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_MODEL", "doubao-seedance-2-0-260128")
+    monkeypatch.delenv("SEEDANCE_MODEL", raising=False)
+
+    assert _configured_reference_limit(
+        "seedance_api", "MAX_REFERENCE_IMAGES", 9, "doubao-seedance-2-5-260628",
+    ) == 30
+    assert _configured_reference_limit(
+        "seedance_api", "MAX_REFERENCE_VIDEOS", 3, "doubao-seedance-2-5-260628",
+    ) == 10
+
+
+def test_seedance_reference_limit_environment_override_wins(monkeypatch):
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
+    monkeypatch.setenv("SEEDANCE_MAX_REFERENCE_IMAGES", "4")
+
+    assert _configured_reference_limit("seedance_api", "MAX_REFERENCE_IMAGES", 9) == 4
+
+
+def test_seedance_20_model_keeps_legacy_reference_limits(monkeypatch):
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
+    monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-0-260528")
+    monkeypatch.delenv("SEEDANCE_MAX_REFERENCE_IMAGES", raising=False)
+
+    assert _configured_reference_limit("seedance_api", "MAX_REFERENCE_IMAGES", 9) == 9
 
 
 def test_multiple_visible_characters_are_preserved_in_prompt(project_data):
@@ -316,6 +821,11 @@ def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_dat
     assert "Visible character identity anchors" in plan.director_prompt
     assert "Spatial continuity contract" in plan.director_prompt
     assert "Shot aesthetic profile prop_interaction" in plan.director_prompt
+    assert "Subject and setting:" in plan.director_prompt
+    assert "Camera direction:" in plan.director_prompt
+    assert "Dialogue and lip sync:" in plan.director_prompt
+    assert "你把那封信递给我" in plan.director_prompt
+    assert "continuous real-time motion" in plan.director_prompt
     assert "Shot aesthetic profile prop_interaction" in plan.end_frame_prompt
     assert plan.spatial_plan["shot_scale"] in {"medium shot", "medium two-shot", "wide establishing shot", "close-up"}
     assert plan.spatial_plan["character_positions"]["Alice"] == "center foreground"
@@ -351,8 +861,8 @@ def test_video_director_normalize_clip_uses_production_frame_contract(tmp_path, 
     assert result == str(output)
     command = commands[0]
     vf = command[command.index("-vf") + 1]
-    assert "scale=768:1344:force_original_aspect_ratio=decrease" in vf
-    assert "pad=768:1344:(ow-iw)/2:(oh-ih)/2" in vf
+    assert "scale=768:1344:force_original_aspect_ratio=increase" in vf
+    assert "crop=768:1344:(iw-ow)/2:(ih-oh)/2" in vf
     assert "setsar=1" in vf
     assert "fps=24" in vf
     assert "tpad=stop_mode=clone:stop_duration=0.100" in vf
@@ -361,6 +871,49 @@ def test_video_director_normalize_clip_uses_production_frame_contract(tmp_path, 
     assert command[command.index("-preset") + 1] == "slow"
     assert command[command.index("-crf") + 1] == "18"
     assert command[command.index("-movflags") + 1] == "+faststart"
+
+
+def test_video_director_normalize_clip_preserves_native_audio_when_requested(tmp_path, monkeypatch):
+    source = tmp_path / "source_with_audio.mp4"
+    output = tmp_path / "normalized_with_audio.mp4"
+    source.write_bytes(b"video")
+    director = get_video_director_service()
+    commands = []
+
+    monkeypatch.setattr("src.services.video_director_service.shutil.which", lambda _name: "ffmpeg")
+    monkeypatch.setattr(director, "_probe_duration", lambda _path: 3.6)
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        output.write_bytes(b"normalized video with audio")
+        return Mock(returncode=0)
+
+    monkeypatch.setattr("src.services.video_director_service.subprocess.run", fake_run)
+
+    assert director.normalize_clip(str(source), str(output), 3.6, preserve_audio=True) == str(output)
+    command = commands[0]
+    assert "-an" not in command
+    assert command[command.index("-map") + 1] == "0:v:0"
+    assert "0:a?" in command
+    assert command[command.index("-c:a") + 1] == "aac"
+
+
+def test_native_audio_per_run_override_wins_over_global_setting(monkeypatch):
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_NATIVE_AUDIO", False)
+
+    assert _native_audio_enabled("seedance_api", True) is True
+    assert _native_audio_enabled("seedance_api", False) is False
+    assert _native_audio_enabled("seedance_api", None) is False
+    assert _native_audio_enabled("local_comfyui", True) is False
+
+
+def test_reference_audio_is_preserved_during_video_normalization():
+    assert _preserve_generated_audio(
+        "seedance_api", False, {"audios": ["dialogue.wav"]}
+    ) is True
+    assert _preserve_generated_audio(
+        "seedance_api", False, {"audios": []}
+    ) is False
 
 
 def test_video_director_prompt_uses_turnaround_reference_contract(project_data):
@@ -1061,6 +1614,9 @@ def test_video_generation_selects_best_reviewed_candidate(project_data, tmp_path
                 "average": 4.7,
                 "batches": [{
                     "review": {
+                        "facial_identity": {"score": 5, "evidence": "identity matches reference"},
+                        "identity_consistency": {"score": 5, "evidence": "identity remains stable"},
+                        "temporal_consistency": {"score": 5, "evidence": "motion remains temporally stable"},
                         "video_aesthetic_scores": passed_video_aesthetic_scores(),
                         "platform_reference_scores": passed_platform_reference_scores(),
                         "video_performance_scores": passed_video_performance_scores(),
@@ -1454,6 +2010,37 @@ def test_video_selection_uses_technical_score_when_review_scores_tie(tmp_path, m
     assert report["selected_selection_score"] > report["candidates"][1]["selection_score"]
 
 
+def test_video_selection_rejects_candidate_below_technical_floor(tmp_path, monkeypatch):
+    candidate_path = tmp_path / "static.mp4"
+    candidate_path.write_bytes(b"static")
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.video_candidate_metrics",
+        lambda _path: {"status": "available", "technical_score": 2.1, "motion_energy": 0.1},
+    )
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_TECHNICAL_MIN_SCORE", 3.0)
+
+    with pytest.raises(ReviewError, match="technical score"):
+        _select_best_video_candidate(
+            [{
+                "index": 1,
+                "path": str(candidate_path),
+                "status": "passed",
+                "average": 4.8,
+                "platform_score": 4.8,
+                "gate_scores": {
+                    "facial_identity": 5.0,
+                    "identity_consistency": 5.0,
+                    "temporal_consistency": 5.0,
+                },
+            }],
+            str(tmp_path / "final.mp4"),
+            tmp_path / "quality.json",
+        )
+
+
 def test_required_video_review_blocks_low_scoring_candidates(project_data, tmp_path, monkeypatch):
     db, project, scene, _, _ = project_data
     scene.image_path = str(tmp_path / "source.png")
@@ -1546,6 +2133,9 @@ def test_video_refinement_pass_reduces_motion_after_low_score(project_data, tmp_
                 "average": 4.5,
                 "batches": [{
                     "review": {
+                        "facial_identity": {"score": 5, "evidence": "identity matches reference"},
+                        "identity_consistency": {"score": 5, "evidence": "identity remains stable"},
+                        "temporal_consistency": {"score": 5, "evidence": "motion remains temporally stable"},
                         "video_aesthetic_scores": passed_video_aesthetic_scores(),
                         "platform_reference_scores": passed_platform_reference_scores(),
                     }
@@ -1676,6 +2266,9 @@ def test_video_refinement_converts_motion_failure_into_repair_action(project_dat
                 "average": 4.5,
                 "batches": [{
                     "review": {
+                        "facial_identity": {"score": 5, "evidence": "identity matches reference"},
+                        "identity_consistency": {"score": 5, "evidence": "identity remains stable"},
+                        "temporal_consistency": {"score": 5, "evidence": "motion remains temporally stable"},
                         "video_aesthetic_scores": passed_video_aesthetic_scores(),
                         "platform_reference_scores": passed_platform_reference_scores(),
                     }
@@ -2049,6 +2642,9 @@ def test_video_candidate_report_records_character_sheet_reference(project_data, 
                 "average": 4.6,
                 "batches": [{
                     "review": {
+                        "facial_identity": {"score": 5, "evidence": "identity matches reference"},
+                        "identity_consistency": {"score": 5, "evidence": "identity remains stable"},
+                        "temporal_consistency": {"score": 5, "evidence": "motion remains temporally stable"},
                         "video_aesthetic_scores": passed_video_aesthetic_scores(),
                         "platform_reference_scores": passed_platform_reference_scores(),
                     }
@@ -2112,6 +2708,45 @@ def test_final_normalized_video_is_reviewed_before_acceptance(project_data, tmp_
     assert report["final_video_review"]["status"] == "passed"
     assert report["final_video_review"]["video_aesthetic_gate"]["status"] == "passed"
     assert json.loads(video.with_suffix(".quality.json").read_text(encoding="utf-8"))["final_video_review"]["status"] == "passed"
+
+
+def test_final_normalized_video_blocks_low_technical_score(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    video = tmp_path / "scene.mp4"
+    Path(scene.image_path).write_bytes(b"image")
+    video.write_bytes(b"video")
+    db.commit()
+
+    class FakeReviewService:
+        def review_video(self, _video, _payload, _report_path, _reference=None):
+            return {
+                "status": "passed",
+                "average": 4.8,
+                "batches": [{"review": {
+                    "facial_identity": {"score": 5, "evidence": "face matches"},
+                    "identity_consistency": {"score": 5, "evidence": "identity stable"},
+                    "temporal_consistency": {"score": 5, "evidence": "motion stable"},
+                    "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                    "platform_reference_scores": passed_platform_reference_scores(),
+                }}],
+            }
+
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.video_candidate_metrics", lambda _path: {
+        "status": "available", "technical_score": 2.4,
+    })
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_TECHNICAL_MIN_SCORE", 3.0)
+
+    with pytest.raises(ReviewError, match="technical score"):
+        _review_final_video_after_postprocess(
+            str(video), scene, project.id, db,
+            quality_report={"kind": "video_candidate_selection", "status": "passed"},
+        )
+
+    report = json.loads(video.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert report["final_video_review"]["technical_score"] == 2.4
 
 
 def test_final_normalized_video_blocks_missing_platform_reference_review(project_data, tmp_path, monkeypatch):
@@ -2336,6 +2971,268 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
     assert provider.request.quality_mode
     assert provider.request.quality_pipeline["shot_profile_id"] == "emotion_reaction"
     assert "micro_expression_pass" in provider.request.quality_pipeline["stages"]
+
+
+def test_seedance_multi_shot_generator_emits_bounded_plan_and_long_duration(project_data, tmp_path, monkeypatch):
+    _, _, scene, _, _ = project_data
+
+    class FakeProvider:
+        name = GenerationProviderName.SEEDANCE_API
+
+        def __init__(self):
+            self.request = None
+
+        def generate_video(self, request):
+            self.request = request
+            Path(request.output_path).write_bytes(b"seedance-video")
+            return GenerationResult("seedance_api", request.output_path, "video", {})
+
+    provider = FakeProvider()
+    monkeypatch.setenv("SEEDANCE_REQUEST_MODE", "multi_shot")
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_REQUEST_MODE", "multi_shot")
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_MULTI_SHOT", True)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_SEQUENCE_LEVEL_MULTI_SHOT", True)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.SEEDANCE_MULTI_SHOT_DURATION_SECONDS", 15)
+    context = {
+        "sequence_id": "project-1",
+        "previous": {"scene_number": 1, "role": "establishing", "visual_summary": "door opens"},
+        "current": {"scene_number": 2, "role": "dialogue_reaction", "character_name": "Alice", "visual_summary": "Alice looks up", "dialogue": "Who is there?"},
+        "next": {"scene_number": 3, "role": "action", "visual_summary": "Alice steps back"},
+        "continuity_contract": ["preserve screen direction"],
+    }
+    shot_plan = VideoShotPlan(
+        shot_role="dialogue_reaction", action_intensity="low", target_duration_seconds=4.0,
+        fps=8, num_frames=32, motion_bucket_id=92, noise_aug_strength=0.012,
+        director_prompt="dialogue reaction", end_frame_prompt="end frame",
+        negative_prompt="identity drift", notes=[],
+    )
+
+    generator = _ComfyVideoGenerator(
+        scene,
+        provider,
+        shot_plan,
+        provider_options={
+            "SEQUENCE_TIMELINE": [
+                {"scene_number": 1, "start_seconds": 0.0, "end_seconds": 4.25, "duration_seconds": 4.25},
+                {"scene_number": 2, "start_seconds": 4.25, "end_seconds": 8.5, "duration_seconds": 4.25},
+                {"scene_number": 3, "start_seconds": 8.5, "end_seconds": 12.0, "duration_seconds": 3.5},
+            ],
+        },
+    ).with_sequence_context(context)
+    generator.generate_video(
+        image_path=str(tmp_path / "source.png"), output_path=str(tmp_path / "scene.mp4"),
+        num_frames=32, fps=8, motion_bucket_id=92, noise_aug_strength=0.012,
+    )
+
+    assert provider.request.multi_shot is True
+    assert provider.request.duration_seconds == 15
+    assert [shot["scene_number"] for shot in provider.request.shot_plan["shots"]] == [1, 2, 3]
+    assert provider.request.shot_plan["shots"][1]["character"] == "Alice"
+    assert provider.request.shot_plan["sequence_timeline"][1] == {
+        "scene_number": 2,
+        "start_seconds": 4.25,
+        "end_seconds": 8.5,
+        "duration_seconds": 4.25,
+    }
+    assert "scene 2 4.250-8.500s" in provider.request.prompt
+
+
+def test_video_generator_applies_per_run_seedance_controls(project_data, tmp_path):
+    _, _, scene, _, _ = project_data
+
+    class FakeProvider:
+        name = GenerationProviderName.SEEDANCE_API
+
+        def __init__(self):
+            self.request = None
+
+        def generate_video(self, request):
+            self.request = request
+            Path(request.output_path).write_bytes(b"seedance-video")
+            return GenerationResult("seedance_api", request.output_path, "video", {})
+
+    provider = FakeProvider()
+    generator = _ComfyVideoGenerator(
+        scene,
+        provider,
+        provider_options={
+            "REQUEST_MODE": "reference",
+            "RESOLUTION": "1080p",
+            "OUTPUT_FORMAT": "mov",
+            "RETURN_LAST_FRAME": False,
+            "CAMERA_FIXED": True,
+            "WATERMARK": True,
+            "DURATION_SECONDS": 10,
+        },
+    )
+    generator.generate_video(
+        image_path=str(tmp_path / "source.png"),
+        output_path=str(tmp_path / "scene.mov"),
+        num_frames=32,
+        fps=8,
+        motion_bucket_id=92,
+        noise_aug_strength=0.012,
+    )
+
+    assert provider.request.resolution == "1080p"
+    assert provider.request.output_format == "mov"
+    assert provider.request.return_last_frame is False
+    assert provider.request.camera_fixed is True
+    assert provider.request.watermark is True
+    assert provider.request.duration_seconds == 10
+
+
+def test_video_generator_explicit_multi_shot_override_wins_over_reference_mode(project_data, tmp_path):
+    _, _, scene, _, _ = project_data
+
+    class FakeProvider:
+        name = GenerationProviderName.SEEDANCE_API
+
+        def __init__(self):
+            self.request = None
+
+        def generate_video(self, request):
+            self.request = request
+            Path(request.output_path).write_bytes(b"seedance-video")
+            return GenerationResult("seedance_api", request.output_path, "video", {})
+
+    provider = FakeProvider()
+    _ComfyVideoGenerator(
+        scene,
+        provider,
+        provider_options={"REQUEST_MODE": "reference", "MULTI_SHOT": True, "DURATION_SECONDS": 10},
+    ).with_sequence_context({
+        "previous": {"scene_number": 1},
+        "current": {"scene_number": 2},
+        "next": {"scene_number": 3},
+    }).generate_video(
+        image_path=str(tmp_path / "source.png"),
+        output_path=str(tmp_path / "scene.mp4"),
+        num_frames=32,
+        fps=8,
+        motion_bucket_id=92,
+        noise_aug_strength=0.012,
+    )
+
+    assert provider.request.multi_shot is True
+    assert provider.request.request_mode == "multi_shot"
+    assert provider.request.duration_seconds == 10
+
+
+def test_video_generator_preserves_auto_mode_with_multi_shot_context(project_data, tmp_path):
+    _, _, scene, _, _ = project_data
+
+    class FakeProvider:
+        name = GenerationProviderName.SEEDANCE_API
+
+        def __init__(self):
+            self.request = None
+
+        def generate_video(self, request):
+            self.request = request
+            Path(request.output_path).write_bytes(b"seedance-video")
+            return GenerationResult("seedance_api", request.output_path, "video", {})
+
+    provider = FakeProvider()
+    _ComfyVideoGenerator(
+        scene,
+        provider,
+        provider_options={"REQUEST_MODE": "auto", "MULTI_SHOT": True, "DURATION_SECONDS": 10},
+    ).with_sequence_context({
+        "previous": {"scene_number": 1},
+        "current": {"scene_number": 2},
+        "next": {"scene_number": 3},
+    }).generate_video(
+        image_path=str(tmp_path / "source.png"),
+        output_path=str(tmp_path / "scene.mp4"),
+        num_frames=32,
+        fps=8,
+        motion_bucket_id=92,
+        noise_aug_strength=0.012,
+    )
+
+    assert provider.request.multi_shot is True
+    assert provider.request.request_mode == "auto"
+
+
+def test_continuity_metadata_round_trips_last_frame_anchor(tmp_path):
+    video = tmp_path / "scene_001.mp4"
+    path = _write_scene_continuity_metadata(video, {
+        "last_frame_url": "https://cdn.example/scene-001-last.png",
+        "endpoint": "https://ark.example/tasks",
+    })
+
+    assert path == str(_continuity_metadata_path(video))
+    assert _read_scene_continuity_reference(video) == "https://cdn.example/scene-001-last.png"
+
+
+def test_continuity_metadata_prefers_local_extracted_frame(tmp_path):
+    video = tmp_path / "scene_001.mp4"
+    local_frame = tmp_path / "scene_001.last_frame.png"
+    local_frame.write_bytes(b"png")
+    _write_scene_continuity_metadata(video, {
+        "last_frame_url": "https://cdn.example/remote-last.png",
+        "last_frame_path": str(local_frame),
+    })
+
+    assert _read_scene_continuity_reference(video) == str(local_frame)
+
+
+def test_provider_metadata_persists_draft_task_and_duration(tmp_path):
+    video = tmp_path / "scene_001.mp4"
+    path = _write_provider_metadata(video, {
+        "provider_task_id": "draft-123",
+        "provider_duration_seconds": 8.0,
+        "provider_status": "succeeded",
+    })
+
+    assert path == str(_provider_metadata_path(video))
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    assert data["provider_task_id"] == "draft-123"
+    assert data["provider_duration_seconds"] == 8.0
+
+
+def test_seedance_multishot_normalization_preserves_provider_duration():
+    plan = VideoShotPlan(
+        shot_role="dialogue_reaction", action_intensity="low", target_duration_seconds=4.0,
+        fps=24, num_frames=96, motion_bucket_id=90, noise_aug_strength=0.01,
+        director_prompt="reaction", end_frame_prompt="end", negative_prompt="", notes=[],
+    )
+
+    assert _normalization_duration_for_provider(
+        "seedance_api", "multi_shot", True, plan,
+        {"selected_provider_metadata": {"provider_duration_seconds": 30}},
+    ) == 30
+    assert _normalization_duration_for_provider(
+        "seedance_api", "reference", False, plan, {},
+    ) == 4.0
+    assert _normalization_duration_for_provider(
+        "seedance_api", "multi_shot", True, plan,
+        {"selected_provider_metadata": {"requested_duration_seconds": 30}},
+    ) == 30
+    assert _normalization_duration_for_provider(
+        "seedance_api", "multi_shot", True, plan, {}, sequence_level_multi_shot=True,
+    ) == 30
+
+
+def test_seedance_normalization_prefers_downloaded_media_duration(monkeypatch, tmp_path):
+    plan = VideoShotPlan(
+        shot_role="dialogue_reaction", action_intensity="low", target_duration_seconds=4.0,
+        fps=24, num_frames=96, motion_bucket_id=90, noise_aug_strength=0.01,
+        director_prompt="reaction", end_frame_prompt="end", negative_prompt="", notes=[],
+    )
+    source = tmp_path / "provider.mp4"
+    source.write_bytes(b"video")
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.video_candidate_metrics",
+        lambda _path: {"duration_seconds": 5.54, "status": "available"},
+    )
+
+    assert _normalization_duration_for_provider(
+        "seedance_api", "multi_shot", True, plan,
+        {"selected_provider_metadata": {"provider_duration_seconds": 5}},
+        source_path=source,
+    ) == 5.54
 
 
 def test_comfy_video_generator_applies_performance_repair_prompt(project_data, tmp_path):

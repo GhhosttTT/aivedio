@@ -31,6 +31,7 @@ export function ProductionProgress({project, task, onReload}: {project: Project;
     const progress = Math.max(0, Math.min(100, task?.progress || 0));
     const stageNames: Record<string,string> = {prepare_generation: '情节复审与提示词准备', generate_image: '图像生成', generate_video: '视频生成', generate_audio: '配音生成', generate_subtitle: '字幕生成', review_generation: '抽帧评分', compose_final_video: '最终合成'};
     const liveScene = project.scenes?.find(scene => scene.id === task?.live_step?.scene_id);
+    const providerStageNames: Record<string,string> = {provider_queued: 'Seedance 排队中', provider_running: 'Seedance 任务已启动', provider_processing: 'Seedance 生成中', provider_succeeded: 'Seedance 已生成，正在下载', provider_completed: 'Seedance 已生成，正在下载', provider_downloaded: 'Seedance 视频已下载', provider_failed: 'Seedance 生成失败', provider_timeout: 'Seedance 请求超时'};
     const statusLabel = !task ? '未提交' : ({running: '制作中', pending: '排队中', completed: '已完成', failed: '失败', cancelled: '已请求取消'}[task.status] || task.status);
     return <section aria-label="制作进度">
         <div className="wb-row wb-between"><h2>{statusLabel}</h2><div className="wb-row">
@@ -40,6 +41,7 @@ export function ProductionProgress({project, task, onReload}: {project: Project;
         <progress value={progress} max={100} aria-label="总体进度"/>
         <p className="wb-muted">{Math.round(progress)}% · {task ? `${current} / ${task.total_steps} 步` : `${steps.length} 步`}</p>
         {running && task?.live_step && <p role="status">{liveScene ? `分镜 ${liveScene.scene_number} · ` : ''}{stageNames[task.live_step.stage] || task.live_step.stage}</p>}
+        {running && task?.provider_stage && <p role="status" className="wb-muted">{providerStageNames[task.provider_stage] || task.provider_stage}{typeof task.provider_progress === 'number' ? ' · ' + Math.round(task.provider_progress) + '%' : ''}</p>}
         {(error || task?.error_message) && <p role="alert" className="wb-alert">{error || task?.error_message}</p>}
         <ol>{steps.map((label, index) => {
             const done = task?.status === 'completed' || index < current;

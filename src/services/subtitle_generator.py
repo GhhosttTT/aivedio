@@ -20,7 +20,7 @@ class SubtitleError(Exception):
 
 class SubtitleGenerator:
     """字幕生成服务"""
-    
+
     def __init__(
         self,
         max_chars_per_line: int = 20,
@@ -280,7 +280,8 @@ class SubtitleGenerator:
         self,
         video_path: str,
         subtitle_path: str,
-        output_path: Optional[str] = None
+        output_path: Optional[str] = None,
+        preserve_provider_quality: bool = False,
     ) -> str:
         """
         烧录字幕到视频（使用 FFmpeg）
@@ -323,12 +324,33 @@ class SubtitleGenerator:
                 f"subtitles=filename='{escaped_subtitle_path}':"
                 f"force_style='{self._subtitle_force_style()}'"
             )
-            
+            high_bit_depth = preserve_provider_quality and self._has_high_bit_depth(video_path)
+            provider_pixel_format = (
+                self._get_pixel_format(video_path)
+                if preserve_provider_quality else ""
+            )
+            if "444" in provider_pixel_format:
+                output_pixel_format = "yuv444p10le" if high_bit_depth else "yuv444p"
+            elif "422" in provider_pixel_format:
+                output_pixel_format = "yuv422p10le" if high_bit_depth else "yuv422p"
+            else:
+                output_pixel_format = "yuv420p10le" if high_bit_depth else ""
+            if output_pixel_format:
+                subtitle_filter = f"{subtitle_filter},format={output_pixel_format}"
+
             cmd = [
                 "ffmpeg",
                 "-i", video_path,
                 "-vf", subtitle_filter,
                 "-c:a", "copy",  # 音频直接复制
+                *(
+                    [
+                        "-c:v", "libx265" if high_bit_depth else "libx264",
+                        "-pix_fmt", output_pixel_format,
+                        *( ["-tag:v", "hvc1"] if high_bit_depth else [] ),
+                    ]
+                    if output_pixel_format else []
+                ),
                 "-y",  # 覆盖输出文件
                 output_path
             ]
@@ -351,12 +373,50 @@ class SubtitleGenerator:
             error_msg = f"FFmpeg 执行失败: {e.stderr}"
             logger.error(error_msg)
             raise SubtitleError(error_msg) from e
-            
+
         except Exception as e:
             error_msg = f"烧录字幕失败: {e}"
             logger.error(error_msg)
             raise SubtitleError(error_msg) from e
-    
+
+    @staticmethod
+    def _has_high_bit_depth(video_path: str) -> bool:
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "error", "-select_streams", "v:0",
+                    "-show_entries", "stream=pix_fmt", "-of", "default=noprint_wrappers=1:nokey=1",
+                    video_path,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            pixel_format = result.stdout.strip().lower()
+            return any(token in pixel_format for token in ("p10", "p12", "10le", "12le"))
+        except Exception as exc:
+            logger.debug("无法检测视频位深，使用兼容编码: {}", exc)
+            return False
+
+    @staticmethod
+    def _get_pixel_format(video_path: str) -> str:
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "error", "-select_streams", "v:0",
+                    "-show_entries", "stream=pix_fmt", "-of", "default=noprint_wrappers=1:nokey=1",
+                    video_path,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return str(result.stdout).strip().lower()
+        except Exception as exc:
+            logger.debug("无法检测视频色度格式，使用兼容编码: {}", exc)
+            return ""
+
+
     def _color_to_ass(self, color: str) -> str:
         """
         将颜色名称转换为 ASS 格式

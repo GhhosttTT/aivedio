@@ -27,6 +27,13 @@ class VideoStats:
     sharpness: float
     brightness: float
     brightness_variance: float
+    audio_present: bool = False
+    audio_duration_seconds: float | None = None
+    audio_codec: str | None = None
+    max_static_run_seconds: float = 0.0
+    max_black_run_seconds: float = 0.0
+    brightness_step_p95: float = 0.0
+    motion_jitter_ratio: float = 0.0
 
 
 def _probe(path: Path) -> dict:
@@ -38,7 +45,7 @@ def _probe(path: Path) -> dict:
             "-select_streams",
             "v:0",
             "-show_entries",
-            "stream=width,height,r_frame_rate:format=duration",
+            "stream=codec_type,width,height,r_frame_rate,duration:format=duration",
             "-of",
             "json",
             str(path),
@@ -49,7 +56,9 @@ def _probe(path: Path) -> dict:
         timeout=60,
     )
     data = json.loads(result.stdout)
-    stream = (data.get("streams") or [{}])[0]
+    streams = data.get("streams") or []
+    stream = next((item for item in streams if item.get("codec_type") == "video"), {})
+    audio_stream = next((item for item in streams if item.get("codec_type") == "audio"), None)
     duration = float((data.get("format") or {}).get("duration") or 0)
     fps = _parse_fps(str(stream.get("r_frame_rate") or "0/1"))
     return {
@@ -57,6 +66,13 @@ def _probe(path: Path) -> dict:
         "width": int(stream.get("width") or 0),
         "height": int(stream.get("height") or 0),
         "fps": fps,
+        "audio_present": audio_stream is not None,
+        "audio_duration_seconds": (
+            float(audio_stream.get("duration"))
+            if audio_stream and audio_stream.get("duration") not in (None, "N/A")
+            else None
+        ),
+        "audio_codec": audio_stream.get("codec_name") if audio_stream else None,
     }
 
 
@@ -102,6 +118,14 @@ def video_stats(path: Path, max_samples: int = 16) -> VideoStats:
     ]
     sharpness_values = [float(cv2.Laplacian(gray, cv2.CV_64F).var()) for gray in gray_frames]
     brightness_values = [float(np.mean(gray)) for gray in gray_frames]
+    static_flags = [value < 0.5 for value in diffs]
+    black_flags = [float(np.mean(gray < 12.0)) >= 0.98 for gray in gray_frames]
+    brightness_steps = [
+        abs(brightness_values[index] - brightness_values[index - 1])
+        for index in range(1, len(brightness_values))
+    ]
+    motion_median = float(np.median(diffs)) if diffs else 0.0
+    sample_interval = probe["duration_seconds"] / max(len(frames) - 1, 1)
     return VideoStats(
         path=str(path),
         duration_seconds=round(probe["duration_seconds"], 3),
@@ -113,6 +137,28 @@ def video_stats(path: Path, max_samples: int = 16) -> VideoStats:
         sharpness=round(float(np.mean(sharpness_values)), 3),
         brightness=round(float(np.mean(brightness_values)), 3),
         brightness_variance=round(float(np.var(brightness_values)), 3),
+        audio_present=bool(probe["audio_present"]),
+        audio_duration_seconds=(
+            round(float(probe["audio_duration_seconds"]), 3)
+            if probe["audio_duration_seconds"] is not None else None
+        ),
+        audio_codec=probe["audio_codec"],
+        max_static_run_seconds=round(
+            _max_consecutive_true(static_flags) * sample_interval, 3
+        ),
+        max_black_run_seconds=round(
+            _max_consecutive_true(black_flags) * sample_interval, 3
+        ),
+        brightness_step_p95=round(
+            float(np.percentile(brightness_steps, 95)) if brightness_steps else 0.0,
+            3,
+        ),
+        motion_jitter_ratio=round(
+            float(np.mean(np.abs(np.asarray(diffs) - motion_median)))
+            / max(motion_median, 1.0)
+            if diffs else 0.0,
+            3,
+        ),
     )
 
 
@@ -134,7 +180,25 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
         "sharpness_ratio": _safe_ratio(candidate_stats.sharpness, baseline_stats.sharpness),
         "brightness_delta": round(candidate_stats.brightness - baseline_stats.brightness, 3),
         "brightness_variance_ratio": _safe_ratio(candidate_stats.brightness_variance, baseline_stats.brightness_variance),
+        "max_static_run_delta_seconds": round(
+            candidate_stats.max_static_run_seconds - baseline_stats.max_static_run_seconds, 3
+        ),
+        "max_black_run_delta_seconds": round(
+            candidate_stats.max_black_run_seconds - baseline_stats.max_black_run_seconds, 3
+        ),
+        "brightness_step_p95_delta": round(
+            candidate_stats.brightness_step_p95 - baseline_stats.brightness_step_p95, 3
+        ),
+        "motion_jitter_ratio_delta": round(
+            candidate_stats.motion_jitter_ratio - baseline_stats.motion_jitter_ratio, 3
+        ),
+        "audio_duration_delta_seconds": (
+            round(candidate_stats.audio_duration_seconds - baseline_stats.audio_duration_seconds, 3)
+            if candidate_stats.audio_duration_seconds is not None
+            and baseline_stats.audio_duration_seconds is not None else None
+        ),
     }
+    audio_duration_delta = differences["audio_duration_delta_seconds"]
     gates = {
         "duration_close": abs(differences["duration_delta_seconds"]) <= 0.5,
         "resolution_not_lower": (
@@ -145,6 +209,19 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
         "sharpness_not_collapsed": candidate_stats.sharpness >= max(8.0, baseline_stats.sharpness * 0.45),
         "exposure_close": abs(differences["brightness_delta"]) <= 45.0,
         "brightness_stable": candidate_stats.brightness_variance <= max(900.0, baseline_stats.brightness_variance * 3.0),
+        "no_prolonged_static_run": candidate_stats.max_static_run_seconds <= 1.8,
+        "no_prolonged_black_run": candidate_stats.max_black_run_seconds <= 0.2,
+        "no_temporal_exposure_jumps": candidate_stats.brightness_step_p95 <= 36.0,
+        "stable_motion_cadence": candidate_stats.motion_jitter_ratio <= 1.5,
+        "audio_presence_matches": candidate_stats.audio_present == baseline_stats.audio_present,
+        "audio_duration_close": (
+            not baseline_stats.audio_present
+            or (
+                candidate_stats.audio_present
+                and audio_duration_delta is not None
+                and abs(audio_duration_delta) <= 0.5
+            )
+        ),
     }
     score = _technical_similarity_score(differences, gates)
     status = "passed" if all(gates.values()) and score >= 4.0 else "needs_review"
@@ -227,6 +304,17 @@ def _safe_ratio(value: float, baseline: float) -> float | None:
     return round(value / baseline, 3)
 
 
+def _max_consecutive_true(values: list[bool]) -> int:
+    longest = current = 0
+    for value in values:
+        if value:
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 0
+    return longest
+
+
 def _aspect_ratio(width: int, height: int) -> float:
     return width / height if height else 0.0
 
@@ -252,9 +340,18 @@ def _technical_similarity_score(differences: dict, gates: dict[str, bool]) -> fl
         _ratio_score(differences.get("sharpness_ratio"), tolerance=0.75),
         _delta_score(float(differences["brightness_delta"]), 60.0),
         _ratio_score(differences.get("brightness_variance_ratio"), tolerance=2.0),
+        _delta_score(float(differences["audio_duration_delta_seconds"] or 0.0), 1.0),
     ]
     metric_score = sum(component_scores) / len(component_scores)
-    return round(max(0.0, min(5.0, gate_score * 0.45 + metric_score * 0.55)), 2)
+    score = gate_score * 0.45 + metric_score * 0.55
+
+    # A static candidate can still look deceptively similar on duration,
+    # exposure, and sharpness. Motion is therefore a hard quality signal,
+    # rather than just one more independent metric in the average.
+    if not gates.get("motion_not_static", True):
+        score -= 0.5
+
+    return round(max(0.0, min(5.0, score)), 2)
 
 
 def main() -> int:

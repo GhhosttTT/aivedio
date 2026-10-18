@@ -6,6 +6,7 @@ export function VideoEngineStatus() {
     const [report, setReport] = useState<VideoEnginePreflight | null>(null);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const provider = report?.provider;
     const ready = report?.status === 'ready_for_production_video_test';
     const load = async () => {
         setLoading(true);
@@ -37,7 +38,24 @@ export function VideoEngineStatus() {
         {report?.workflow && <p className="wb-muted">
             workflow: {report.workflow.workflow_path || '未配置'} · {report.workflow.status}
         </p>}
+        {provider && provider.provider !== 'local_comfyui' && <p className="wb-muted">
+            provider: {provider.provider || 'unknown'} · {provider.configuration?.api_format || 'legacy'} · {provider.configuration?.model || 'default'} · {provider.configuration?.resolution || '720p'} · 模式 {provider.configuration?.request_mode || 'reference'}
+        </p>}
+        {provider?.capabilities && <p className="wb-muted">
+            多模态参考 {provider.capabilities.multimodal_references ? '✓' : '—'} ·
+            连续镜头末帧 {provider.capabilities.continuity_last_frame ? '✓' : '—'} ·
+            首尾帧 {provider.capabilities.first_last_frame ? '✓' : '—'} ·
+            参考音频 {provider.capabilities.reference_audio_supported ? '✓' : '—'} ·
+            编辑/延长 {provider.capabilities.edit_and_extend ? '✓' : '—'} ·
+            原生音频 {provider.capabilities.native_audio ? '✓' : '—'} ·
+            多镜头 {provider.capabilities.multi_shot ? '✓' : '—'}
+        </p>}
+        {provider?.capabilities?.output_artifact_validation !== undefined && <p className="wb-muted">
+            Ark 输出文件校验 {provider.capabilities.output_artifact_validation ? '✓ 已启用' : '— 未启用'}
+        </p>}
         {report?.action_items?.map((item) => <p key={item} className="wb-muted">{item}</p>)}
+        {provider?.warnings?.map((item) => <p key={`provider-warning-${item}`} className="wb-muted">{item}</p>)}
+        {provider?.action_items?.map((item) => <p key={`provider-action-${item}`} className="wb-muted">{item}</p>)}
         {error && <p role="alert" className="wb-alert">{error}</p>}
     </section>;
 }

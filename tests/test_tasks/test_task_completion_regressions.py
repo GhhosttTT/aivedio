@@ -9,10 +9,16 @@ from sqlalchemy.orm import sessionmaker
 from src.database.models import Base, Project, ProjectStatus, Task, TaskStatus, User
 from src.services.comfyui_service import ComfyUIWaitTimeout
 from src.services.generation_review import ReviewError
+from src.services.generation_provider import GenerationProviderError
 from src.tasks.celery_app import BaseTask
 
 
-@pytest.mark.parametrize("error", [ComfyUIWaitTimeout("job may still be active"), ReviewError("face identity failed"), ValueError("split this shot")])
+@pytest.mark.parametrize("error", [
+    ComfyUIWaitTimeout("job may still be active"),
+    ReviewError("face identity failed"),
+    GenerationProviderError("provider task failed after bounded retries"),
+    ValueError("split this shot"),
+])
 def test_nonretryable_generation_failures_do_not_resubmit_gpu_work(error):
     class ProbeTask(BaseTask):
         name = "retry_probe"

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { errorText, projectApi } from '../api/client';
 import type { GenerationReviewSummary, QualityLoopPlan } from '../api/client';
@@ -259,7 +259,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
     const [baselineFile, setBaselineFile] = useState<File | null>(null);
     const [busy, setBusy] = useState(false);
 
-    const load = async () => {
+    const load = useCallback(async () => {
         try {
             const [reviewData, planData] = await Promise.all([
                 projectApi.reviews(projectId),
@@ -272,7 +272,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
         } catch (e) {
             setError(errorText(e));
         }
-    };
+    }, [projectId]);
 
     const compareBaseline = async () => {
         const baseline = baselinePath.trim();
@@ -324,7 +324,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
         }
     };
 
-    useEffect(() => { load(); }, [projectId, updatedAt]);
+    useEffect(() => { load(); }, [load, updatedAt]);
 
     return <section aria-label="质量审核">
         <div className="wb-row wb-between">

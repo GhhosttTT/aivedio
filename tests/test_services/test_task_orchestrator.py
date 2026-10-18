@@ -138,6 +138,25 @@ class TestCreateProductionTask:
         with pytest.raises(ValueError, match="项目没有分镜"):
             orchestrator.create_production_task(project_id=sample_project.id)
 
+    @patch('src.services.task_orchestrator.chain')
+    @patch('src.services.task_orchestrator.generate_sequence_video_task')
+    def test_sequence_level_multi_shot_uses_one_sequence_task(
+        self, mock_sequence_task, mock_chain, orchestrator, sample_project, sample_scenes, monkeypatch
+    ):
+        monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", True)
+        mock_result = Mock(id="sequence-celery-task-id")
+        mock_chain.return_value.freeze.return_value = mock_result
+        mock_sequence_task.si.return_value = Mock(name="sequence-task")
+
+        celery_task_id = orchestrator.create_production_task(
+            project_id=sample_project.id,
+            sequence_level_multi_shot=True,
+        )
+
+        assert celery_task_id == "sequence-celery-task-id"
+        mock_sequence_task.si.assert_called_once()
+        assert mock_sequence_task.si.call_args.args[0] == [scene.id for scene in sample_scenes]
+
     def test_create_production_task_blocks_failed_readiness(
         self, orchestrator, sample_project, sample_scenes, monkeypatch
     ):
@@ -157,6 +176,45 @@ class TestCreateProductionTask:
 
         with pytest.raises(ValueError, match="Production readiness is not ready"):
             orchestrator.create_production_task(project_id=sample_project.id)
+
+    @patch('src.services.task_orchestrator.chain')
+    def test_per_run_provider_is_used_by_readiness_and_engine_preflight(
+        self, mock_chain, orchestrator, sample_project, sample_scenes, monkeypatch
+    ):
+        monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)
+        monkeypatch.setattr("src.services.task_orchestrator.MIN_PRODUCTION_SCENES", 3)
+        monkeypatch.setenv("GENERATION_PROVIDER", "local_comfyui")
+        mock_result = Mock(id="per-run-provider-task-id")
+        mock_chain.return_value.freeze.return_value = mock_result
+
+        readiness_calls = []
+
+        class FakeReadiness:
+            def __init__(self, _db):
+                pass
+
+            def build_report(self, project_id, **kwargs):
+                readiness_calls.append((project_id, kwargs))
+                return {"status": "ready", "action_items": []}
+
+        preflight_calls = []
+
+        def fake_preflight(**kwargs):
+            preflight_calls.append(kwargs)
+            return {"status": "ready_for_production_video_test", "action_items": []}
+
+        monkeypatch.setattr("src.services.task_orchestrator.ProductionReadinessService", FakeReadiness)
+        monkeypatch.setattr("src.services.task_orchestrator.preflight_production_video_engine", fake_preflight)
+
+        assert orchestrator.create_production_task(
+            project_id=sample_project.id,
+            provider="seedance_api",
+        ) == "per-run-provider-task-id"
+        assert readiness_calls == [(
+            sample_project.id,
+            {"include_engine_preflight": False, "provider_override": "seedance_api"},
+        )]
+        assert preflight_calls == [{"provider_override": "seedance_api"}]
 
     def test_create_scene_repair_task_handles_dialogue_audio_repair(
         self, orchestrator, sample_project, sample_scenes, monkeypatch
@@ -315,7 +373,8 @@ class TestGetTaskStatus:
         
         # Mock AsyncResult
         mock_result = Mock()
-        mock_result.state = "STARTED"
+        mock_result.state = "PROGRESS"
+        mock_result.info = {"current": 42, "step": "provider_processing"}
         mock_async_result.return_value = mock_result
         
         # 获取任务状态
@@ -325,6 +384,8 @@ class TestGetTaskStatus:
         assert status["task_id"] == task.id
         assert status["status"] == TaskStatus.RUNNING.value
         assert status["progress"] == 50
+        assert status["provider_progress"] == 42
+        assert status["provider_stage"] == "provider_processing"
     
     def test_get_task_status_not_found(self, orchestrator):
         """测试任务不存在"""
@@ -408,6 +469,44 @@ class TestRetryFailedTask:
         
         result = orchestrator.retry_failed_task("failed-task-id")
         assert result is None
+
+    @patch('src.services.task_orchestrator.load_pending_video_options')
+    @patch('src.services.task_orchestrator.TaskOrchestrator.create_production_task')
+    def test_retry_pending_provider_task_reuses_options_and_video_stage(
+        self, mock_create, mock_pending, orchestrator, sample_project, sample_scenes
+    ):
+        task = TaskModel(
+            project_id=sample_project.id,
+            status=TaskStatus.FAILED,
+            celery_task_id="pending-provider-task-id",
+            retry_count=0,
+            total_steps=10,
+        )
+        orchestrator.db.add(task)
+        orchestrator.db.commit()
+        mock_pending.return_value = {
+            "provider": "seedance_api",
+            "request_mode": "reference",
+            "model": "doubao-seedance-2-5-260628",
+            "resolution": "1080p",
+            "output_format": "mp4",
+            "duration_seconds": 2,
+            "native_audio": True,
+            "sequence_level_multi_shot": True,
+            "sequence_output_path": "/tmp/sequence_42.mp4",
+        }
+        mock_create.return_value = "resumed-task-id"
+
+        assert orchestrator.retry_failed_task(task.celery_task_id) == "resumed-task-id"
+        kwargs = mock_create.call_args.kwargs
+        assert kwargs["provider"] == "seedance_api"
+        assert kwargs["model"] == "doubao-seedance-2-5-260628"
+        assert kwargs["generate_images"] is False
+        assert kwargs["generate_audios"] is False
+        assert kwargs["generate_subtitles"] is False
+        assert kwargs["generate_videos"] is True
+        assert kwargs["sequence_level_multi_shot"] is True
+        assert kwargs["sequence_output_path"] == "/tmp/sequence_42.mp4"
 
 
 class TestUpdateTaskProgress:

@@ -10,6 +10,13 @@ from sqlalchemy.orm import Session
 
 from src.services.task_orchestrator import TaskOrchestrator
 from src.database.models import Project, Scene, TaskStatus
+from src.tasks.celery_app import celery_app
+
+
+def test_video_generation_uses_dedicated_video_queue():
+    routes = celery_app.conf.task_routes
+
+    assert routes["generate_video"]["queue"] == "video"
 
 
 class TestTaskChain:

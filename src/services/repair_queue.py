@@ -45,6 +45,7 @@ ACTION_RULES = [
             "tts_emotion_match", "speech_pacing", "speech timing", "audio duration",
             "audio_duration", "audio missing", "missing audio", "flat tts", "monotone tts",
             "voice delivery", "dialogue delivery", "subtitle timing", "subtitle_sync",
+            "near-silent", "near silent", "audio signal", "subtitle reading speed", "subtitle cues overlap",
         ),
         "refine_dialogue_audio_delivery",
         "Regenerate dialogue audio with short-drama emotion, pacing, and subtitle timing constraints.",
@@ -331,9 +332,19 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
 
     video_metrics = candidate.get("technical_metrics") if isinstance(candidate.get("technical_metrics"), dict) else {}
     video_score = video_metrics.get("technical_score")
+    if video_metrics.get("audio_signal_status") == "near_silent":
+        evidence.append("audio signal is near-silent despite an expected output track")
+    elif video_metrics.get("audio_signal_status") == "unavailable" and video_metrics.get("audio_expected") is True:
+        evidence.append("audio signal measurement is unavailable for an expected output track")
+    start_frame_reference = video_metrics.get("start_frame_reference")
+    if isinstance(start_frame_reference, dict) and start_frame_reference.get("status") == "available":
+        if float(start_frame_reference.get("score") or 0) < 2.5:
+            evidence.append("video opening frame diverges from the locked scene keyframe")
     if video_metrics and isinstance(video_score, (int, float)) and video_score < 3:
         if video_metrics.get("motion_energy", 99) < 2:
             evidence.append("video motion too static or frozen")
+        if video_metrics.get("static_transition_ratio", 0) >= 0.75:
+            evidence.append("video contains a prolonged frozen-frame run")
         if video_metrics.get("sharpness", 99) < 8:
             evidence.append("video sharpness collapsed and blurry frames")
         brightness = video_metrics.get("brightness")
@@ -341,6 +352,10 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
             evidence.append("video exposure is outside usable range")
         if video_metrics.get("brightness_variance", 0) > 500:
             evidence.append("video brightness flicker and unstable exposure")
+        if video_metrics.get("brightness_step_p95", 0) > 36:
+            evidence.append("video temporal exposure jumps between sampled frames")
+        if video_metrics.get("motion_jitter_ratio", 0) > 1.5:
+            evidence.append("video motion cadence is unstable between sampled frames")
         evidence.append("low technical video score: motion sharpness exposure stability")
     return evidence
 
@@ -413,6 +428,53 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
             "candidate_index": candidate.get("index"),
             "scene_number": _scene_number(candidate),
         }
+    if "frozen/static run" in text or "prolonged frozen-frame run" in text or "video contains a prolonged frozen" in text:
+        return {
+            "priority": _priority(text),
+            "stage": "video",
+            "action": "increase_motion_and_regenerate_video",
+            "execution": _execution_mode("increase_motion_and_regenerate_video"),
+            "reason": evidence[:240],
+            "recommendation": "Regenerate the clip with a higher motion floor so it does not read as a frozen still.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
+    if any(term in text for term in ("near-silent", "near silent", "audio signal", "subtitle reading speed", "subtitle cues overlap")):
+        return {
+            "priority": _priority(text),
+            "stage": "audio",
+            "action": "refine_dialogue_audio_delivery",
+            "execution": _execution_mode("refine_dialogue_audio_delivery"),
+            "reason": evidence[:240],
+            "recommendation": "Regenerate dialogue audio and retime subtitles, then rerun audio and composition quality gates.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
+    if text.startswith("video opening frame diverges"):
+        return {
+            "priority": _priority(text),
+            "stage": "video",
+            "action": "regenerate_video_with_performance_direction",
+            "execution": _execution_mode("regenerate_video_with_performance_direction"),
+            "reason": evidence[:240],
+            "recommendation": (
+                "Regenerate with the locked scene keyframe as the exact opening composition; "
+                "preserve face, wardrobe, framing and lighting before adding motion."
+            ),
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
+    if text.startswith("video temporal exposure jumps") or text.startswith("video motion cadence is unstable"):
+        return {
+            "priority": _priority(text),
+            "stage": "video",
+            "action": "lower_motion_and_regenerate_video",
+            "execution": _execution_mode("lower_motion_and_regenerate_video"),
+            "reason": evidence[:240],
+            "recommendation": "Regenerate with lower motion/noise and stricter exposure continuity to suppress frame-to-frame instability.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
     if text.startswith("low technical video score") or text.startswith("video sharpness collapsed") or text.startswith("video exposure") or text.startswith("video brightness flicker"):
         return {
             "priority": _priority(text),
@@ -449,6 +511,7 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
             "skin_tone_uniformity", "color_grade_uniformity", "sharpness_uniformity",
             "subtitle_visual_integration", "overall_finish_polish", "finishing pass",
             "mixed generated clips", "exposure jumps", "skin tone jumps",
+            "severe exposure/black transitions", "severe shot boundary",
         )
     ):
         return {

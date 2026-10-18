@@ -3,6 +3,7 @@
 负责创建、管理和调度短剧生产任务链
 """
 
+import os
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from uuid import uuid4
@@ -16,10 +17,11 @@ from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.production_readiness import ProductionReadinessService
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
 from src.services.video_engine_preflight import preflight_production_video_engine
+from src.services.task_recovery import load_pending_video_options
 from src.tasks.celery_app import celery_app
 from src.tasks.image_tasks import generate_image_task, prepare_generation_task
 from src.tasks.review_tasks import review_generation_task
-from src.tasks.video_tasks import generate_video_task
+from src.tasks.video_tasks import generate_video_task, generate_sequence_video_task
 from src.tasks.audio_tasks import generate_audio_task
 from src.tasks.subtitle_tasks import generate_subtitle_task
 from src.tasks.composition_tasks import compose_final_video_task
@@ -51,7 +53,23 @@ class TaskOrchestrator:
         generate_audios: bool = True,
         generate_subtitles: bool = True,
         add_bgm: bool = False,
-        bgm_path: Optional[str] = None
+        bgm_path: Optional[str] = None,
+        provider: Optional[str] = None,
+        request_mode: Optional[str] = None,
+        multi_shot: Optional[bool] = None,
+        sequence_level_multi_shot: Optional[bool] = None,
+        native_audio: Optional[bool] = None,
+        draft: Optional[bool] = None,
+        draft_task_id: Optional[str] = None,
+        draft_task_ids: Optional[dict[int, str]] = None,
+        model: Optional[str] = None,
+        resolution: Optional[str] = None,
+        output_format: Optional[str] = None,
+        return_last_frame: Optional[bool] = None,
+        camera_fixed: Optional[bool] = None,
+        watermark: Optional[bool] = None,
+        duration_seconds: Optional[float] = None,
+        sequence_output_path: Optional[str] = None,
     ) -> str:
         """
         创建生产任务链
@@ -83,15 +101,41 @@ class TaskOrchestrator:
         
         if not scenes:
             raise ValueError(f"项目没有分镜: {project_id}")
-        
+
         logger.info(f"创建生产任务链: project_id={project_id}, scenes={len(scenes)}")
         
         if project.status == ProjectStatus.IN_PRODUCTION:
             raise ValueError("项目正在制作，请等待当前任务结束")
         if generate_videos and not settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK:
+            configured_provider = str(
+                os.getenv("GENERATION_PROVIDER") or settings.GENERATION_PROVIDER or ""
+            ).strip().lower()
+            effective_provider = str(provider or configured_provider).strip().lower()
+            per_run_provider = bool(provider and effective_provider != configured_provider)
+            per_run_model = bool(model and str(model).strip())
+            per_run_request_mode = bool(request_mode and str(request_mode).strip())
+            per_run_resolution = bool(resolution and str(resolution).strip())
+            per_run_output_format = bool(output_format and str(output_format).strip())
+            per_run_duration = duration_seconds is not None
+            per_run_engine = per_run_provider or per_run_model or per_run_request_mode or per_run_resolution or per_run_output_format or per_run_duration
+            readiness_kwargs = {
+                "include_engine_preflight": not per_run_engine,
+            }
+            if per_run_provider:
+                readiness_kwargs["provider_override"] = effective_provider
+            if per_run_model:
+                readiness_kwargs["model_override"] = str(model).strip()
+            if per_run_request_mode:
+                readiness_kwargs["request_mode_override"] = str(request_mode).strip().lower()
+            if per_run_resolution:
+                readiness_kwargs["resolution_override"] = str(resolution).strip().lower()
+            if per_run_output_format:
+                readiness_kwargs["output_format_override"] = str(output_format).strip().lower()
+            if per_run_duration:
+                readiness_kwargs["duration_override"] = duration_seconds
             readiness = ProductionReadinessService(self.db).build_report(
                 project_id,
-                include_engine_preflight=True,
+                **readiness_kwargs,
             )
             if readiness.get("status") != "ready":
                 details = "; ".join(readiness.get("action_items") or [])
@@ -99,7 +143,23 @@ class TaskOrchestrator:
                     "Production readiness is not ready. Resolve blockers and warnings before final generation. "
                     f"{details}"
                 )
-            video_engine = preflight_production_video_engine()
+            if per_run_engine:
+                preflight_kwargs = {}
+                if per_run_provider:
+                    preflight_kwargs["provider_override"] = effective_provider
+                if per_run_model:
+                    preflight_kwargs["model_override"] = str(model).strip()
+                if per_run_request_mode:
+                    preflight_kwargs["request_mode_override"] = str(request_mode).strip().lower()
+                if per_run_resolution:
+                    preflight_kwargs["resolution_override"] = str(resolution).strip().lower()
+                if per_run_output_format:
+                    preflight_kwargs["output_format_override"] = str(output_format).strip().lower()
+                if per_run_duration:
+                    preflight_kwargs["duration_override"] = duration_seconds
+                video_engine = preflight_production_video_engine(**preflight_kwargs)
+            else:
+                video_engine = preflight_production_video_engine()
             if video_engine.get("status") != "ready_for_production_video_test":
                 detail = "; ".join(video_engine.get("action_items") or [])
                 raise ValueError(
@@ -122,6 +182,7 @@ class TaskOrchestrator:
             total_steps=self._calculate_total_steps(
                 len(scenes), generate_images, generate_videos,
                 generate_audios, generate_subtitles,
+                sequence_level_multi_shot=bool(sequence_level_multi_shot),
             ),
         )
         self.db.add(task_model)
@@ -129,6 +190,16 @@ class TaskOrchestrator:
         task_chain = self._build_task_chain(
             project_id, task_model.id, scenes, generate_images, generate_videos,
             generate_audios, generate_subtitles, add_bgm, bgm_path,
+            provider=provider, request_mode=request_mode,
+            multi_shot=multi_shot, native_audio=native_audio,
+            sequence_level_multi_shot=sequence_level_multi_shot,
+            draft=draft, draft_task_id=draft_task_id,
+            draft_task_ids=draft_task_ids,
+            model=model,
+            resolution=resolution, output_format=output_format,
+            return_last_frame=return_last_frame, camera_fixed=camera_fixed,
+            watermark=watermark, duration_seconds=duration_seconds,
+            sequence_output_path=sequence_output_path,
         )
         result = task_chain.freeze()
         task_model.celery_task_id = result.id
@@ -317,7 +388,8 @@ class TaskOrchestrator:
         generate_images: bool,
         generate_videos: bool,
         generate_audios: bool,
-        generate_subtitles: bool
+        generate_subtitles: bool,
+        sequence_level_multi_shot: bool = False,
     ) -> int:
         """
         计算总步骤数
@@ -336,7 +408,7 @@ class TaskOrchestrator:
         if generate_images:
             steps += scene_count
         if generate_videos:
-            steps += scene_count
+            steps += 1 if sequence_level_multi_shot and scene_count > 1 else scene_count
         if generate_audios:
             steps += scene_count
         if generate_subtitles:
@@ -354,7 +426,23 @@ class TaskOrchestrator:
         generate_audios: bool,
         generate_subtitles: bool,
         add_bgm: bool,
-        bgm_path: Optional[str]
+        bgm_path: Optional[str],
+        provider: Optional[str] = None,
+        request_mode: Optional[str] = None,
+        multi_shot: Optional[bool] = None,
+        sequence_level_multi_shot: Optional[bool] = None,
+        native_audio: Optional[bool] = None,
+        draft: Optional[bool] = None,
+        draft_task_id: Optional[str] = None,
+        draft_task_ids: Optional[dict[int, str]] = None,
+        model: Optional[str] = None,
+        resolution: Optional[str] = None,
+        output_format: Optional[str] = None,
+        return_last_frame: Optional[bool] = None,
+        camera_fixed: Optional[bool] = None,
+        watermark: Optional[bool] = None,
+        duration_seconds: Optional[float] = None,
+        sequence_output_path: Optional[str] = None,
     ) -> chain:
         """
         构建任务链
@@ -381,6 +469,26 @@ class TaskOrchestrator:
             chain: Celery 任务链
         """
         tasks = [prepare_generation_task.si(project_id, task_id, generate_images)]
+        video_options = {
+            key: value for key, value in {
+                "provider": provider,
+                "request_mode": request_mode,
+                "multi_shot": multi_shot,
+                "sequence_level_multi_shot": sequence_level_multi_shot,
+                "SEQUENCE_LEVEL_MULTI_SHOT": sequence_level_multi_shot,
+                "native_audio": native_audio,
+                "draft": draft,
+                "draft_task_id": draft_task_id,
+                "MODEL": model,
+                "RESOLUTION": resolution,
+                "OUTPUT_FORMAT": output_format,
+                "RETURN_LAST_FRAME": return_last_frame,
+                "CAMERA_FIXED": camera_fixed,
+                "WATERMARK": watermark,
+                "DURATION_SECONDS": duration_seconds,
+                "SEQUENCE_OUTPUT_PATH": sequence_output_path,
+            }.items() if value is not None
+        }
         
         # 1. 图像生成任务（并行）
         if generate_images:
@@ -411,14 +519,26 @@ class TaskOrchestrator:
 
         # GPU video generation remains serialized after keyframes and dialogue audio.
         if generate_videos:
-            video_tasks = chain(*[
-                generate_video_task.si(
-                    scene.id,
+            if sequence_level_multi_shot and len(scenes) > 1:
+                video_tasks = generate_sequence_video_task.si(
+                    [scene.id for scene in scenes],
                     project_id,
-                    task_id
+                    task_id,
+                    **video_options,
                 )
-                for scene in scenes
-            ])
+            else:
+                video_tasks = chain(*[
+                    generate_video_task.si(
+                        scene.id,
+                        project_id,
+                        task_id,
+                        **{
+                            **video_options,
+                            **({"draft_task_id": draft_task_ids[scene.id]} if draft_task_ids and scene.id in draft_task_ids else {}),
+                        },
+                    )
+                    for scene in scenes
+                ])
             tasks.append(video_tasks)
         
         # 4. 字幕生成任务（并行，依赖音频）
@@ -461,7 +581,7 @@ class TaskOrchestrator:
         ).first()
         if not task_model:
             return {"status": "unknown", "message": "任务不存在"}
-        return {
+        result = {
             "task_id": task_model.id, "celery_task_id": celery_task_id,
             "project_id": task_model.project_id,
             "status": task_model.status.value,
@@ -473,6 +593,23 @@ class TaskOrchestrator:
             "created_at": task_model.created_at.isoformat() if task_model.created_at else None,
             "updated_at": task_model.updated_at.isoformat() if task_model.updated_at else None,
         }
+        # Provider polling progress lives in Celery metadata while the
+        # production task counters live in the database. Expose both so the
+        # workbench can show a live Seedance stage without corrupting the
+        # overall completed-step counter.
+        try:
+            async_result = AsyncResult(celery_task_id, app=celery_app)
+            info = async_result.info
+            if async_result.state == "PROGRESS" and isinstance(info, dict):
+                if isinstance(info.get("current"), (int, float)):
+                    result["provider_progress"] = max(0, min(99, float(info["current"])))
+                stage = info.get("step") or info.get("stage")
+                if stage:
+                    result["provider_stage"] = str(stage)
+                result["provider_state"] = async_result.state
+        except Exception as exc:
+            logger.debug("Could not read live provider progress for {}: {}", celery_task_id, exc)
+        return result
 
     def cancel_task(self, celery_task_id: str) -> bool:
         """
@@ -546,8 +683,39 @@ class TaskOrchestrator:
         
         # 创建新的生产任务
         try:
+            scenes = self.db.query(Scene).filter(
+                Scene.project_id == task_model.project_id,
+            ).order_by(Scene.scene_number).all()
+            pending_options = load_pending_video_options(
+                task_model.project_id,
+                [scene.id for scene in scenes],
+                task_model.id,
+            )
+            retry_options = {}
+            if pending_options:
+                # The remote task is already paid/accepted. Re-run only the
+                # video stage so the original image/audio mtimes and request
+                # fingerprint remain intact; the provider adapter will resume
+                # the existing task instead of submitting a duplicate.
+                retry_options = {
+                    key: value for key, value in pending_options.items()
+                    if value is not None and key in {
+                        "provider", "request_mode", "multi_shot", "native_audio",
+                        "draft", "draft_task_id", "model", "resolution",
+                        "output_format", "return_last_frame", "camera_fixed",
+                        "watermark", "duration_seconds", "sequence_level_multi_shot",
+                        "sequence_output_path",
+                    }
+                }
+                retry_options.update({
+                    "generate_images": False,
+                    "generate_audios": False,
+                    "generate_subtitles": False,
+                    "generate_videos": True,
+                })
             new_task_id = self.create_production_task(
-                project_id=task_model.project_id
+                project_id=task_model.project_id,
+                **retry_options,
             )
             
             # 更新原任务的重试次数

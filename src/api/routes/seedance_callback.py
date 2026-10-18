@@ -1,0 +1,125 @@
+"""Public callback receiver for native Volcano Ark video tasks."""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import os
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import APIRouter, HTTPException, Request, status
+
+from src.config import settings
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
+_TERMINAL_STATES = {"succeeded", "failed", "expired"}
+_KNOWN_STATES = {"queued", "running", *_TERMINAL_STATES}
+
+
+def _callback_secret() -> str:
+    return str(
+        os.getenv("SEEDANCE_CALLBACK_SECRET")
+        or getattr(settings, "SEEDANCE_CALLBACK_SECRET", "")
+        or ""
+    ).strip()
+
+
+def _secret_is_valid(request: Request, token: str | None) -> bool:
+    expected = _callback_secret()
+    if not expected:
+        # Ark does not provide a universal signing header. The endpoint is
+        # still usable without a secret for backward compatibility, but the
+        # response exposes the insecure configuration to operators.
+        return True
+    provided = request.headers.get("x-seedance-callback-secret") or token or ""
+    return hmac.compare_digest(provided, expected)
+
+
+def _pending_sidecars() -> list[Path]:
+    root = Path(
+        os.getenv("STORAGE_PATH")
+        or getattr(settings, "STORAGE_PATH", "./storage")
+        or "./storage"
+    )
+    if not root.exists():
+        return []
+    return [path for path in root.glob("projects/*/**/*.provider.pending.json") if path.is_file()]
+
+
+def _callback_path(sidecar: Path) -> Path:
+    return sidecar.with_name(sidecar.name.replace(
+        ".provider.pending.json", ".provider.callback.json",
+    ))
+
+
+def _persist_callback(sidecar: Path, payload: dict) -> None:
+    target = _callback_path(sidecar)
+    incoming_state = str(payload.get("status") or payload.get("state") or "").strip().lower()
+    if target.is_file():
+        try:
+            existing = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            existing = None
+        existing_state = (
+            str(existing.get("status") or existing.get("state") or "").strip().lower()
+            if isinstance(existing, dict) else ""
+        )
+        # Provider callbacks can arrive out of order. Never let a delayed
+        # queued/running event erase a terminal result already consumed by
+        # the polling worker.
+        if existing_state in _TERMINAL_STATES and incoming_state not in _TERMINAL_STATES:
+            return
+    temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+    temporary.replace(target)
+
+
+@router.post("/seedance", status_code=status.HTTP_200_OK)
+async def receive_seedance_callback(request: Request, token: str | None = None):
+    if not _secret_is_valid(request, token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Seedance callback secret")
+    try:
+        payload = await request.json()
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Seedance callback must be JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Seedance callback body must be an object")
+    task_id = str(payload.get("id") or payload.get("task_id") or payload.get("job_id") or "").strip()
+    state = str(payload.get("status") or payload.get("state") or "").strip().lower()
+    if not task_id or state not in _KNOWN_STATES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Seedance callback requires id and a supported status",
+        )
+
+    stored = 0
+    for sidecar in _pending_sidecars():
+        try:
+            pending = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            continue
+        if not isinstance(pending, dict) or str(pending.get("provider_task_id") or "") != task_id:
+            continue
+        if pending.get("provider") not in {None, "seedance_api"}:
+            continue
+        try:
+            _persist_callback(sidecar, payload)
+            stored += 1
+        except OSError as exc:
+            logger.warning("Could not persist Seedance callback for {}: {}", sidecar, exc)
+
+    return {
+        "accepted": True,
+        "task_id": task_id,
+        "status": state,
+        "matched_pending_tasks": stored,
+        "callback_secret_configured": bool(_callback_secret()),
+    }

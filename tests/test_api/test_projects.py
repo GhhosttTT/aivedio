@@ -5,6 +5,8 @@
 """
 
 import pytest
+import json
+from pathlib import Path
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, patch
 from datetime import datetime
@@ -13,6 +15,7 @@ from src.api.app import create_app
 from src.api.dependencies import get_current_user, require_project_access
 from src.database.session import get_db_session
 from src.database.models import Project, Character, Scene, User, TaskStatus
+from src.api.routes.projects import ProductionOptions, _normalized_production_options
 
 
 @pytest.fixture
@@ -487,3 +490,185 @@ def test_produce_video_no_scenes(client, mock_project):
         response = client.post("/api/projects/1/produce")
         
         assert response.status_code == 400
+
+
+def test_promote_drafts_reuses_requested_model(client, tmp_path):
+    project = Mock(spec=Project)
+    project.id = 1
+    scene = Mock(spec=Scene)
+    scene.id = 11
+    scene.scene_number = 1
+    scene.video_path = str(tmp_path / "scene-01.mp4")
+    project.scenes = [scene]
+    provider_path = tmp_path / "scene-01.provider.json"
+    provider_path.write_text(json.dumps({
+        "provider_task_id": "draft-task-1",
+        "requested_draft": True,
+        "requested_model": "doubao-seedance-2-5-260628",
+    }), encoding="utf-8")
+
+    task_record = Mock()
+    task_record.celery_task_id = "promote-task"
+    task_record.project_id = 1
+    task_record.status = TaskStatus.PENDING
+    task_record.progress = 0.0
+    task_record.current_step = "初始化"
+    task_record.total_steps = 1
+    task_record.created_at = datetime.now()
+    task_record.updated_at = datetime.now()
+    task_record.error_message = None
+    db = Mock()
+    db.query.return_value.filter.return_value.first.side_effect = [project, task_record]
+
+    with patch("src.api.routes.projects.TaskOrchestrator") as mock_orchestrator:
+        mock_orchestrator.return_value.create_production_task.return_value = "promote-task"
+        client.app.dependency_overrides[get_db_session] = lambda: db
+        response = client.post("/api/projects/1/promote-drafts")
+
+    assert response.status_code == 200
+    kwargs = mock_orchestrator.return_value.create_production_task.call_args.kwargs
+    assert kwargs["model"] == "doubao-seedance-2-5-260628"
+
+
+def test_promote_drafts_rejects_mixed_models(client, tmp_path):
+    project = Mock(spec=Project)
+    project.id = 1
+    project.scenes = []
+    for index, model in enumerate(("doubao-seedance-2-5-260628", "doubao-seedance-2-0-260128"), start=1):
+        scene = Mock(spec=Scene)
+        scene.id = index
+        scene.scene_number = index
+        scene.video_path = str(tmp_path / f"scene-{index:02d}.mp4")
+        Path(scene.video_path).with_suffix(".provider.json").write_text(json.dumps({
+            "provider_task_id": f"draft-task-{index}",
+            "requested_draft": True,
+            "requested_model": model,
+        }), encoding="utf-8")
+        project.scenes.append(scene)
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = project
+
+    with patch("src.api.routes.projects.TaskOrchestrator") as mock_orchestrator:
+        client.app.dependency_overrides[get_db_session] = lambda: db
+        response = client.post("/api/projects/1/promote-drafts")
+
+    assert response.status_code == 400
+    assert "多个 Seedance 模型" in response.json()["detail"]
+    mock_orchestrator.assert_not_called()
+
+
+def test_normalized_production_options_accepts_and_normalizes_controls():
+    normalized = _normalized_production_options(ProductionOptions(
+        resolution=" 1080P ", output_format=" MOV ", duration_seconds=15,
+        return_last_frame=False, camera_fixed=True, watermark=True,
+    ))
+
+    assert normalized == {
+        "resolution": "1080p",
+        "output_format": "mov",
+        "duration_seconds": 15,
+        "return_last_frame": False,
+        "camera_fixed": True,
+        "watermark": True,
+        "sequence_level_multi_shot": None,
+    }
+
+
+def test_normalized_production_options_rejects_4k_for_native_seedance_25(monkeypatch):
+    monkeypatch.setattr("src.api.routes.projects.settings.GENERATION_PROVIDER", "seedance_api")
+    monkeypatch.setattr("src.api.routes.projects.settings.SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
+    monkeypatch.setattr("src.api.routes.projects.settings.SEEDANCE_ENDPOINT", "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks")
+    monkeypatch.delenv("SEEDANCE_MODEL", raising=False)
+
+    with pytest.raises(Exception) as error:
+        _normalized_production_options(ProductionOptions(provider="seedance_api", resolution="4k"))
+
+    assert error.value.status_code == 422
+    assert "up to 1080p" in str(error.value.detail)
+
+
+def test_normalized_production_options_uses_per_run_model_capability(monkeypatch):
+    monkeypatch.setattr("src.api.routes.projects.settings.GENERATION_PROVIDER", "seedance_api")
+    monkeypatch.setattr("src.api.routes.projects.settings.SEEDANCE_MODEL", "doubao-seedance-2-0-260128")
+    monkeypatch.setattr("src.api.routes.projects.settings.SEEDANCE_ENDPOINT", "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks")
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.delenv("SEEDANCE_MODEL", raising=False)
+
+    with pytest.raises(Exception) as error:
+        _normalized_production_options(ProductionOptions(
+            provider="seedance_api",
+            model="doubao-seedance-2-5-260628",
+            resolution="4k",
+        ))
+
+    assert error.value.status_code == 422
+    assert "up to 1080p" in str(error.value.detail)
+
+
+def test_normalized_production_options_allows_4k_for_legacy_seedance_gateway(monkeypatch):
+    monkeypatch.setattr("src.api.routes.projects.settings.GENERATION_PROVIDER", "seedance_api")
+    monkeypatch.setattr("src.api.routes.projects.settings.SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
+    monkeypatch.setattr("src.api.routes.projects.settings.SEEDANCE_ENDPOINT", "https://gateway.example/v1/video")
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "legacy")
+
+    normalized = _normalized_production_options(ProductionOptions(
+        provider="seedance_api", resolution="4k",
+    ))
+
+    assert normalized["resolution"] == "4k"
+
+
+def test_normalized_production_options_rejects_mov_for_native_non_25_seedance(monkeypatch):
+    monkeypatch.setattr("src.api.routes.projects.settings.GENERATION_PROVIDER", "seedance_api")
+    monkeypatch.setattr("src.api.routes.projects.settings.SEEDANCE_MODEL", "doubao-seedance-2-0-260128")
+    monkeypatch.setattr("src.api.routes.projects.settings.SEEDANCE_ENDPOINT", "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks")
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.delenv("SEEDANCE_MODEL", raising=False)
+
+    with pytest.raises(Exception) as error:
+        _normalized_production_options(ProductionOptions(provider="seedance_api", output_format="mov"))
+
+    assert error.value.status_code == 422
+    assert "requires Seedance 2.5" in str(error.value.detail)
+
+
+def test_normalized_production_options_rejects_draft_for_native_non_25_per_run_model(monkeypatch):
+    monkeypatch.setattr("src.api.routes.projects.settings.GENERATION_PROVIDER", "seedance_api")
+    monkeypatch.setattr("src.api.routes.projects.settings.SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
+    monkeypatch.setattr("src.api.routes.projects.settings.SEEDANCE_ENDPOINT", "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks")
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.delenv("SEEDANCE_MODEL", raising=False)
+
+    with pytest.raises(Exception) as error:
+        _normalized_production_options(ProductionOptions(
+            provider="seedance_api",
+            model="doubao-seedance-2-0-260128",
+            draft=True,
+        ))
+
+    assert error.value.status_code == 422
+    assert "Draft" in str(error.value.detail)
+
+
+@pytest.mark.parametrize("payload", [
+    {"resolution": "1440p"},
+    {"output_format": "avi"},
+    {"duration_seconds": 0},
+    {"duration_seconds": 31},
+    {"request_mode": "unknown"},
+])
+def test_normalized_production_options_rejects_invalid_controls(payload):
+    with pytest.raises(Exception) as error:
+        _normalized_production_options(ProductionOptions(**payload))
+    assert error.value.status_code == 422
+
+
+@pytest.mark.parametrize("payload", [
+    {"multi_shot": True, "request_mode": "edit"},
+    {"multi_shot": True, "request_mode": "extend"},
+    {"draft": True, "draft_task_id": "draft-123"},
+])
+def test_normalized_production_options_rejects_conflicting_controls(payload):
+    with pytest.raises(Exception) as error:
+        _normalized_production_options(ProductionOptions(**payload))
+    assert error.value.status_code == 422

@@ -10,6 +10,8 @@ from pathlib import Path
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import shutil
+import json
+import os
 
 from src.api.schemas import (
     ProjectCreate,
@@ -42,8 +44,17 @@ from src.services.quality_loop import build_quality_loop_plan
 from src.services.repair_plan import build_repair_execution_plan
 from src.services.generation_quality_scorecard import build_generation_quality_scorecard
 from src.database.session import get_db_session
-from src.database.models import Character, ProjectStatus, Scene
+from src.database.models import Character, Project, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
+from src.config import settings
+from src.services.generation_provider import (
+    _seedance_api_format,
+    _seedance_duration_bounds,
+    _seedance_model,
+    _seedance_model_is_10,
+    _seedance_model_is_25,
+    _seedance_supported_resolutions,
+)
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -53,6 +64,154 @@ router = APIRouter(prefix="/api/projects", tags=["项目管理"], dependencies=[
 class SeedDanceBaselineRequest(BaseModel):
     baseline_path: str
     candidate_path: Optional[str] = None
+
+
+class ProductionOptions(BaseModel):
+    """Per-run video engine overrides; omitted fields keep environment defaults."""
+    provider: Optional[str] = None
+    request_mode: Optional[str] = None
+    multi_shot: Optional[bool] = None
+    sequence_level_multi_shot: Optional[bool] = None
+    native_audio: Optional[bool] = None
+    draft: Optional[bool] = None
+    draft_task_id: Optional[str] = None
+    model: Optional[str] = None
+    resolution: Optional[str] = None
+    output_format: Optional[str] = None
+    return_last_frame: Optional[bool] = None
+    camera_fixed: Optional[bool] = None
+    watermark: Optional[bool] = None
+    duration_seconds: Optional[float] = None
+
+
+def _normalized_production_options(options: ProductionOptions) -> dict:
+    """Validate and normalize per-run controls before reserving a task."""
+    request_mode = options.request_mode.strip().lower() if isinstance(options.request_mode, str) else options.request_mode
+    resolution = options.resolution.strip().lower() if isinstance(options.resolution, str) else options.resolution
+    output_format = options.output_format.strip().lower() if isinstance(options.output_format, str) else options.output_format
+    valid_modes = {
+        "reference", "reference_to_video", "auto", "multi_shot", "seedance_2_5", "2.5", "edit", "extend",
+    }
+    if request_mode is not None and request_mode not in valid_modes:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "request_mode must be one of reference, reference_to_video, auto, multi_shot, "
+                "seedance_2_5, 2.5, edit, or extend"
+            ),
+        )
+    if resolution is not None and resolution not in {"480p", "720p", "1080p", "4k"}:
+        raise HTTPException(status_code=422, detail="resolution must be one of 480p, 720p, 1080p, or 4k")
+    configured_provider = (
+        options.provider.strip().lower()
+        if isinstance(options.provider, str) and options.provider.strip()
+        else str(os.getenv("GENERATION_PROVIDER") or getattr(settings, "GENERATION_PROVIDER", "") or "").strip().lower()
+    )
+    configured_model = _seedance_model(model=options.model).strip().lower()
+    configured_endpoint = str(
+        os.getenv("SEEDANCE_ENDPOINT")
+        or getattr(settings, "SEEDANCE_ENDPOINT", "")
+        or ""
+    ).strip()
+    native_ark = _seedance_api_format(configured_endpoint) in {
+        "ark", "ark_v3", "volcengine", "volcengine_v3",
+    }
+    if configured_provider == "seedance_api" and native_ark:
+        supported_resolutions = _seedance_supported_resolutions(configured_model)
+        if resolution is not None and resolution not in supported_resolutions:
+            limit_hint = " Native Seedance 2.5 supports up to 1080p." if _seedance_model_is_25(configured_model) else ""
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"{configured_model} does not support {resolution}; use one of "
+                    f"{', '.join(sorted(supported_resolutions))}.{limit_hint}"
+                ),
+            )
+        if (
+            request_mode in {"edit", "extend"}
+            and _seedance_model_is_10(configured_model)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Native Seedance model {configured_model} does not support "
+                    f"{request_mode} tasks; use Seedance 2.0 or 2.5."
+                ),
+            )
+        if request_mode == "auto" and not _seedance_model_is_25(configured_model):
+            raise HTTPException(
+                status_code=422,
+                detail="Native Seedance omni_reference_task_type=auto requires Seedance 2.5.",
+            )
+        if options.duration_seconds is not None:
+            minimum_duration, maximum_duration = _seedance_duration_bounds(configured_model, request_mode)
+            if not minimum_duration <= options.duration_seconds <= maximum_duration:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"{configured_model} duration must be between "
+                        f"{minimum_duration} and {maximum_duration} seconds."
+                    ),
+                    )
+            if (
+                _seedance_model_is_25(configured_model)
+                and request_mode in {"edit", "extend"}
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Native Seedance 2.5 edit/extend tasks require automatic duration (-1); clear duration_seconds.",
+                )
+    if (
+        resolution == "4k"
+        and configured_provider == "seedance_api"
+        and native_ark
+        and _seedance_model_is_25(configured_model)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Seedance 2.5 native Ark supports up to 1080p; use 1080p or configure a 2.0/compatible 4K provider.",
+        )
+    if (
+        output_format == "mov"
+        and configured_provider == "seedance_api"
+        and native_ark
+        and not _seedance_model_is_25(configured_model)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Native Ark MOV output requires Seedance 2.5; use MP4 for Seedance 2.0/1.0.",
+        )
+    if (
+        (options.draft or options.draft_task_id)
+        and configured_provider == "seedance_api"
+        and native_ark
+        and not _seedance_model_is_25(configured_model)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Native Ark Draft generation and promotion require Seedance 2.5; choose a 2.5 model.",
+        )
+    if output_format is not None and output_format not in {"mp4", "mov"}:
+        raise HTTPException(status_code=422, detail="output_format must be mp4 or mov")
+    if options.duration_seconds is not None and not 1 <= options.duration_seconds <= 30:
+        raise HTTPException(status_code=422, detail="duration_seconds must be between 1 and 30")
+    if options.multi_shot and request_mode in {"edit", "extend"}:
+        raise HTTPException(status_code=422, detail="multi_shot cannot be combined with edit or extend mode")
+    if options.sequence_level_multi_shot and not (options.multi_shot or request_mode in {"multi_shot", "seedance_2_5", "2.5"}):
+        raise HTTPException(status_code=422, detail="sequence_level_multi_shot requires multi_shot mode")
+    if options.sequence_level_multi_shot and request_mode in {"edit", "extend"}:
+        raise HTTPException(status_code=422, detail="sequence_level_multi_shot cannot be combined with edit or extend mode")
+    if options.draft and options.draft_task_id:
+        raise HTTPException(status_code=422, detail="draft and draft_task_id cannot be used together")
+    return {
+        "resolution": resolution,
+        "output_format": output_format,
+        "return_last_frame": options.return_last_frame,
+        "camera_fixed": options.camera_fixed,
+        "watermark": options.watermark,
+        "duration_seconds": options.duration_seconds,
+        "sequence_level_multi_shot": options.sequence_level_multi_shot,
+    }
 
 
 @router.post("/workflow-profile/freeze", response_model=WorkflowProfileResponse)
@@ -218,6 +377,12 @@ async def get_generation_review(
 async def get_production_readiness(
     project_id: int,
     include_engine_preflight: bool = Query(True, description="是否执行视频引擎预检"),
+    provider_override: Optional[str] = Query(None, description="本次生产使用的视频 provider 覆盖"),
+    model_override: Optional[str] = Query(None, description="本次生产使用的 Seedance 模型覆盖"),
+    request_mode_override: Optional[str] = Query(None, description="本次生产使用的视频任务模式覆盖"),
+    resolution_override: Optional[str] = Query(None, description="本次生产使用的输出分辨率覆盖"),
+    output_format_override: Optional[str] = Query(None, description="本次生产使用的输出格式覆盖"),
+    duration_override: Optional[float] = Query(None, description="本次生产使用的时长覆盖"),
     current_user=Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
 ):
@@ -226,10 +391,20 @@ async def get_production_readiness(
     project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    return ProductionReadinessService(db_session).build_report(
-        project_id,
-        include_engine_preflight=include_engine_preflight,
-    )
+    readiness_kwargs = {"include_engine_preflight": include_engine_preflight}
+    if provider_override and provider_override.strip():
+        readiness_kwargs["provider_override"] = provider_override.strip().lower()
+    if model_override and model_override.strip():
+        readiness_kwargs["model_override"] = model_override.strip()
+    if request_mode_override and request_mode_override.strip():
+        readiness_kwargs["request_mode_override"] = request_mode_override.strip().lower()
+    if resolution_override and resolution_override.strip():
+        readiness_kwargs["resolution_override"] = resolution_override.strip().lower()
+    if output_format_override and output_format_override.strip():
+        readiness_kwargs["output_format_override"] = output_format_override.strip().lower()
+    if duration_override is not None:
+        readiness_kwargs["duration_override"] = duration_override
+    return ProductionReadinessService(db_session).build_report(project_id, **readiness_kwargs)
 
 
 @router.post("/{project_id}/freeze-spatial-plan", response_model=SpatialAssetPackResponse)
@@ -766,6 +941,7 @@ def regenerate_scene(project_id: int, request: RegenerateSceneRequest, db_sessio
 @router.post("/{project_id}/produce", response_model=ProductionTaskResponse)
 async def produce_video(
     project_id: int,
+    request: ProductionOptions | None = None,
     db_session: Session = Depends(get_db_session)
 ):
     """
@@ -804,7 +980,21 @@ async def produce_video(
             )
 
         # 创建生产任务
-        celery_task_id = task_orchestrator.create_production_task(project_id)
+        options = request or ProductionOptions()
+        normalized_options = _normalized_production_options(options)
+        provider = options.provider.strip() or None if isinstance(options.provider, str) else options.provider
+        request_mode = options.request_mode.strip() or None if isinstance(options.request_mode, str) else options.request_mode
+        celery_task_id = task_orchestrator.create_production_task(
+            project_id,
+            provider=provider,
+            request_mode=request_mode,
+            multi_shot=options.multi_shot,
+            native_audio=options.native_audio,
+            draft=options.draft,
+            draft_task_id=options.draft_task_id,
+            model=options.model,
+            **normalized_options,
+        )
 
         # 更新项目状态
 
@@ -849,6 +1039,81 @@ async def produce_video(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="提交生产任务时发生错误"
         )
+
+
+@router.post("/{project_id}/promote-drafts", response_model=ProductionTaskResponse)
+async def promote_seedance_drafts(
+    project_id: int,
+    db_session: Session = Depends(get_db_session),
+):
+    """Promote every saved Seedance Draft task to a final video task."""
+    project = db_session.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.scenes:
+        raise HTTPException(status_code=404, detail="项目不存在或没有分镜")
+    draft_ids: dict[int, str] = {}
+    draft_models: set[str] = set()
+    missing = []
+    for scene in sorted(project.scenes, key=lambda item: item.scene_number):
+        provider_path = Path(scene.video_path).with_suffix(".provider.json") if scene.video_path else None
+        data = None
+        if provider_path and provider_path.is_file():
+            try:
+                data = json.loads(provider_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                data = None
+        task_id = data.get("provider_task_id") if isinstance(data, dict) else None
+        is_draft = bool(data.get("requested_draft")) if isinstance(data, dict) else False
+        if isinstance(task_id, str) and task_id.strip() and is_draft:
+            draft_ids[scene.id] = task_id.strip()
+            requested_model = data.get("requested_model") if isinstance(data, dict) else None
+            if isinstance(requested_model, str) and requested_model.strip():
+                draft_models.add(requested_model.strip())
+        else:
+            missing.append(scene.scene_number)
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"以下分镜没有可提升的 Draft 任务 ID: {', '.join(map(str, missing))}",
+        )
+    if len(draft_models) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Draft 分镜使用了多个 Seedance 模型，不能在同一个提升任务中混合提升",
+        )
+    draft_model = next(iter(draft_models), None)
+    try:
+        orchestrator = TaskOrchestrator(db_session)
+        celery_task_id = orchestrator.create_production_task(
+            project_id,
+            generate_images=False,
+            generate_videos=True,
+            generate_audios=False,
+            generate_subtitles=False,
+            provider="seedance_api",
+            request_mode="reference",
+            draft=False,
+            draft_task_ids=draft_ids,
+            model=draft_model,
+        )
+        from src.database.models import Task as TaskModel
+        task_record = db_session.query(TaskModel).filter(TaskModel.celery_task_id == celery_task_id).first()
+        if not task_record:
+            raise HTTPException(status_code=500, detail="Draft 提升任务记录创建失败")
+        return ProductionTaskResponse(
+            task_id=task_record.celery_task_id,
+            project_id=task_record.project_id,
+            status=task_record.status.value,
+            progress=task_record.progress,
+            current_step=str(task_record.current_step),
+            total_steps=task_record.total_steps,
+            created_at=task_record.created_at,
+            updated_at=task_record.updated_at,
+            error_message=task_record.error_message,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=_production_error_status(str(exc)), detail=str(exc))
 
 
 @router.post("/{project_id}/regenerate-images", response_model=ProductionTaskResponse)

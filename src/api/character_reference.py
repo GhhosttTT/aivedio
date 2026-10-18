@@ -1,12 +1,15 @@
 """
 角色参考图生成 API
 """
-from fastapi import APIRouter, HTTPException, Depends
+import asyncio
+
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict
 from loguru import logger
 
 from src.services.character_reference_generator import CharacterReferenceGenerator
+from src.services.character_reference_auto import CharacterReferenceAutoGenerator
 from src.services.llm_service import get_llm_service
 
 
@@ -19,6 +22,8 @@ class CharacterRequest(BaseModel):
     role: Optional[str] = "主角"
     personality: Optional[str] = "自信、专业"
     generate_images: Optional[bool] = False  # 是否立即生成参考图
+    count: Optional[int] = 3  # 生成候选参考图数量
+    save_dir: Optional[str] = "./storage/characters"
 
 
 class CharacterResponse(BaseModel):
@@ -76,9 +81,10 @@ async def generate_character_description(request: CharacterRequest):
 @router.post("/generate-reference-images", response_model=Dict)
 async def generate_reference_images(request: CharacterRequest):
     """
-    生成角色参考图（需要集成图像生成服务）
-    
-    TODO: 实现实际的图像生成逻辑
+    生成角色参考图提示词，或调用生产级服务生成并筛选参考图。
+
+    ``generate_images=false`` 保持旧行为，只生成提示词；开启后复用
+    CharacterReferenceAutoGenerator 的候选图、质量评分和最佳图选择流程。
     """
     try:
         logger.info(f"开始生成角色参考图: {request.name}")
@@ -96,22 +102,29 @@ async def generate_reference_images(request: CharacterRequest):
         # 2. 生成提示词
         prompts = generator.generate_reference_prompts(character_data)
         
-        # 3. TODO: 调用图像生成服务
-        # 这里需要集成现有的图像生成服务
-        # image_service = ImageGenerationService()
-        # images = await image_service.generate_multiple(prompts)
-        
+        if not request.generate_images:
+            return {
+                "success": True,
+                "character_data": character_data,
+                "prompts": prompts,
+                "message": "角色描述和参考图提示词生成成功",
+                "reference_images": [],
+            }
+
+        count = max(1, min(int(request.count or 3), 8))
+        generator = CharacterReferenceAutoGenerator(generator=generator)
+        result = await asyncio.to_thread(
+            generator.generate_multiple_references,
+            character_name=request.name,
+            role=request.role or "主角",
+            personality=request.personality or "自信、专业",
+            count=count,
+            save_dir=request.save_dir or "./storage/characters",
+        )
+
         return {
-            "success": True,
-            "character_data": character_data,
-            "prompts": prompts,
-            "message": "提示词已生成，待实现图像生成功能",
-            "next_steps": [
-                "1. 使用正面特写提示词生成面部参考图",
-                "2. 使用半身照提示词生成服装参考图",
-                "3. 使用全身照提示词生成整体形象参考图",
-                "4. 将生成的图片保存为角色参考图"
-            ]
+            **result,
+            "prompts": result.get("reference_prompts", prompts),
         }
         
     except Exception as e:

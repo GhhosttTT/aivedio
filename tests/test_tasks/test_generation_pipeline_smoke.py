@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import pytest
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from sqlalchemy import create_engine
@@ -392,12 +393,217 @@ def test_final_composed_video_review_payload_tracks_episode_context(tmp_path, mo
     assert captured["report_path"] == final_video.with_suffix(".composition_review.json")
     assert captured["payload"]["scene_number"] == "final_composition"
     assert captured["payload"]["shot_plan"]["shot_role"] == "final_composed_short_drama"
+    assert captured["payload"]["technical_boundary_report"]["status"] == "not_applicable"
+    assert captured["payload"]["final_technical_metrics"]["status"] == "unavailable"
     assert captured["payload"]["platform_aesthetic_contract"]["video_features"]
     assert "final_composition_finishing_scores" not in captured["payload"]
     assert captured["payload"]["composition_contract"]["finishing_features"]
     assert captured["payload"]["scenes"][0]["has_audio"] is True
     assert captured["payload"]["scenes"][0]["has_subtitle"] is True
     assert {item["name"] for item in captured["payload"]["visible_characters"]} == {"Alice", "Bob"}
+
+
+def test_composition_review_blocks_missing_expected_audio_stream():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_audio_expected": True,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "audio_present": False,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video is missing the expected audio stream"
+    )
+
+
+def test_composition_review_blocks_near_silent_expected_audio():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_audio_expected": True,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "audio_present": True,
+            "audio_signal_status": "near_silent",
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video audio signal is near-silent despite the expected audio track"
+    )
+
+
+def test_composition_review_blocks_unmeasurable_expected_audio_signal():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_audio_expected": True,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "audio_present": True,
+            "audio_signal_status": "unavailable",
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video audio signal is not measurable for the expected audio track"
+    )
+
+
+def test_composition_review_blocks_unmeasurable_expected_audio():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_audio_expected": True,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "audio_present": True,
+            "audio_duration_delta_seconds": None,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video audio duration is not measurable"
+    )
+
+
+def test_composition_review_blocks_audio_duration_drift():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_audio_expected": True,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "audio_present": True,
+            "audio_duration_delta_seconds": 0.8,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video audio duration is out of sync by 0.800s"
+    )
+
+
+def test_composition_review_blocks_mismatched_shot_geometry():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "technical_boundary_report": {
+            "status": "available",
+            "geometry_mismatch_count": 1,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video has mismatched geometry across 1 shot boundary(s)"
+    )
+
+
+def test_composition_review_blocks_severe_boundary_transition():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "technical_boundary_report": {
+            "status": "available",
+            "severe_transition_count": 1,
+            "geometry_mismatch_count": 0,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video has severe exposure/black transitions across 1 shot boundary(s)"
+    )
+
+
+def test_composition_review_requires_identity_and_temporal_evidence():
+    report = passed_composition_review()
+    del report["batches"][0]["review"]["temporal_consistency"]
+
+    assert composition_tasks._composition_review_error(report) == (
+        "composition review batch 1 temporal_consistency evidence is missing"
+    )
+
+
+def test_composition_review_blocks_black_frame_run():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "max_black_run_seconds": 0.4,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video contains a black-frame run of 0.400s, above 0.2s"
+    )
+
+
+def test_composition_review_blocks_final_frozen_run():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "max_static_run_seconds": 2.2,
+            "motion_energy": 0.1,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video contains a frozen/static run of 2.200s with motion_energy=0.100"
+    )
+
+
+def test_composition_review_blocks_final_motion_cadence_instability():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "motion_jitter_ratio": 2.0,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video has unstable motion cadence: motion_jitter_ratio=2.000, limit=1.500"
+    )
+
+
+def test_scene_audio_expected_reads_native_provider_intent(tmp_path):
+    video_path = tmp_path / "scene.mp4"
+    video_path.write_bytes(b"video")
+    video_path.with_suffix(".provider.json").write_text(
+        json.dumps({"native_audio_requested": True}), encoding="utf-8",
+    )
+    scene = Mock(audio_path=None, video_path=str(video_path))
+    assert composition_tasks._scene_audio_expected(scene) is True
+
+
+def test_native_audio_composition_requires_measurable_sync(tmp_path, monkeypatch):
+    video = tmp_path / "scene.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".provider.json").write_text(
+        json.dumps({"native_audio_requested": True}), encoding="utf-8",
+    )
+    composer = Mock()
+    composer.has_audio_stream.return_value = True
+    monkeypatch.setattr(composition_tasks, "video_candidate_metrics", lambda _path: {
+        "status": "available",
+        "audio_present": True,
+        "audio_duration_delta_seconds": 0.5,
+    })
+
+    assert composition_tasks._native_audio_is_ready_for_video_paths([str(video)], composer) is False
 
 
 def test_final_composed_video_review_blocks_failed_episode_gate(tmp_path, monkeypatch):
@@ -696,3 +902,103 @@ def test_draft_tasks_cannot_publish_an_unreviewed_final_video(tmp_path, monkeypa
         assert project.final_video_path is None
         assert session.get(Task, task_id).status == TaskStatus.FAILED
     engine.dispose()
+
+
+def test_sequence_task_forwards_explicit_output_path_before_provider_generation(tmp_path, monkeypatch):
+    """A sequence request must resolve its output path before invoking the provider task."""
+    image_paths = []
+    scenes = []
+    for scene_id in (1, 2):
+        image_path = tmp_path / f"scene-{scene_id}.png"
+        image_path.write_bytes(b"image")
+        image_paths.append(image_path)
+        scenes.append(SimpleNamespace(
+            id=scene_id,
+            project_id=7,
+            scene_number=scene_id,
+            image_path=str(image_path),
+            video_path=None,
+            audio_duration=2.0,
+            visual_description=f"shot {scene_id}",
+            image_prompt=f"shot {scene_id}",
+            dialogue="",
+        ))
+
+    class FakeQuery:
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def order_by(self, *_args, **_kwargs):
+            return self
+
+        def all(self):
+            return scenes
+
+    class FakeDb:
+        def query(self, *_args, **_kwargs):
+            return FakeQuery()
+
+        def commit(self):
+            return None
+
+        def rollback(self):
+            return None
+
+        def close(self):
+            return None
+
+    db = FakeDb()
+    monkeypatch.setattr(video_tasks, "get_db", lambda: iter((db,)))
+    monkeypatch.setattr(
+        video_tasks,
+        "build_sequence_timeline",
+        lambda *_args, **_kwargs: [SimpleNamespace(as_dict=lambda: {"scene_number": 1})],
+    )
+    output_path = tmp_path / "explicit-sequence.mp4"
+    provider_source = tmp_path / "provider-sequence.mp4"
+    provider_source.write_bytes(b"provider-video")
+    captured = {}
+
+    def fake_generate(*args, **kwargs):
+        captured.update(kwargs)
+        return {"video_path": str(provider_source)}
+
+    monkeypatch.setattr(video_tasks.generate_video_task, "run", fake_generate)
+    monkeypatch.setattr(video_tasks.generate_sequence_video_task, "update_state", Mock())
+    monkeypatch.setattr(
+        video_tasks,
+        "get_scene_video_path",
+        lambda _project_id, scene_id: str(tmp_path / f"scene-{scene_id}.mp4"),
+    )
+
+    def fake_split(_source, _segments, staging_paths):
+        for path in staging_paths:
+            Path(path).write_bytes(b"scene-video")
+
+    monkeypatch.setattr(video_tasks, "split_sequence_video", fake_split)
+    monkeypatch.setattr(
+        video_tasks,
+        "video_boundary_continuity",
+        lambda _paths: {"status": "available", "severe_transition_count": 0, "geometry_mismatch_count": 0},
+    )
+    monkeypatch.setattr(
+        video_tasks,
+        "_sequence_segment_quality_report",
+        lambda *_args, **_kwargs: {"status": "passed"},
+    )
+    monkeypatch.setattr(video_tasks, "_provider_metadata_path", lambda _path: tmp_path / "missing.json")
+    monkeypatch.setattr(video_tasks, "_promote_sequence_sidecar", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(video_tasks, "_write_scene_continuity_metadata", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(video_tasks, "_write_provider_metadata", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(video_tasks, "_extract_video_last_frame", lambda _path: None)
+
+    video_tasks.generate_sequence_video_task.run(
+        [scene.id for scene in scenes],
+        7,
+        42,
+        sequence_output_path=str(output_path),
+    )
+
+    assert captured["sequence_output_path"] == str(output_path)
+    assert captured["sequence_level_multi_shot"] is True
+    assert captured["multi_shot"] is True

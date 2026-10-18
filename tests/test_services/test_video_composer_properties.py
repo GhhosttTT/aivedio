@@ -190,8 +190,8 @@ class TestVideoComposerProperties:
         cmd = mock_run.call_args[0][0]
         assert "-filter_complex" in cmd
         filter_complex = cmd[cmd.index("-filter_complex") + 1]
-        assert "scale=768:1344:force_original_aspect_ratio=decrease" in filter_complex
-        assert "pad=768:1344:(ow-iw)/2:(oh-ih)/2" in filter_complex
+        assert "scale=768:1344:force_original_aspect_ratio=increase" in filter_complex
+        assert "crop=768:1344:(iw-ow)/2:(ih-oh)/2" in filter_complex
         assert "setsar=1" in filter_complex
         assert "fps=24" in filter_complex
         assert "format=yuv420p" in filter_complex

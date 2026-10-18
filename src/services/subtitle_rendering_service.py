@@ -132,8 +132,10 @@ class SubtitleRenderingService:
             "PrimaryColour=&H00FFFFFF",
             "OutlineColour=&H00000000",
             "BorderStyle=1",
-            "Outline=2",
-            "Shadow=0",
+            f"Outline={settings.SUBTITLE_RENDER_OUTLINE}",
+            f"Shadow={settings.SUBTITLE_RENDER_SHADOW}",
+            f"Bold={1 if settings.SUBTITLE_RENDER_BOLD else 0}",
+            "WrapStyle=2",
             "Alignment=2",
             f"MarginV={settings.SUBTITLE_RENDER_MARGIN_V}",
         ]

@@ -44,3 +44,14 @@ def test_subtitle_filter_escapes_windows_drive_path():
 
     assert "C\\:" in filter_expr
     assert "force_style=" in filter_expr
+
+
+def test_subtitle_filter_uses_mobile_short_drama_readability_style():
+    filter_expr = SubtitleRenderingService()._build_subtitle_filter("/tmp/subtitles/en.srt", "en")
+
+    assert "FontSize=38" in filter_expr
+    assert "Outline=3" in filter_expr
+    assert "Shadow=1" in filter_expr
+    assert "Bold=1" in filter_expr
+    assert "MarginV=64" in filter_expr
+    assert "WrapStyle=2" in filter_expr

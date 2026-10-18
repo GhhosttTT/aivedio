@@ -49,7 +49,17 @@ class ProductionReadinessService:
     def __init__(self, db_session: Session):
         self.db = db_session
 
-    def build_report(self, project_id: int, include_engine_preflight: bool = True) -> dict:
+    def build_report(
+        self,
+        project_id: int,
+        include_engine_preflight: bool = True,
+        provider_override: str | None = None,
+        model_override: str | None = None,
+        request_mode_override: str | None = None,
+        resolution_override: str | None = None,
+        output_format_override: str | None = None,
+        duration_override: float | None = None,
+    ) -> dict:
         project = self.db.query(Project).filter(Project.id == project_id).first()
         if not project:
             return {
@@ -91,7 +101,15 @@ class ProductionReadinessService:
             "sample_validation": self._sample_validation_check(warnings),
         }
         if include_engine_preflight:
-            checks["video_engine"] = self._video_engine_check(blockers)
+            checks["video_engine"] = self._video_engine_check(
+                blockers,
+                provider_override,
+                model_override,
+                request_mode_override,
+                resolution_override,
+                output_format_override,
+                duration_override,
+            )
 
         action_items = [issue.message for issue in blockers + warnings]
         status = "blocked" if blockers else ("needs_review" if warnings else "ready")
@@ -636,8 +654,33 @@ class ProductionReadinessService:
             "style_prompt": (report.get("manifest") or report.get("current") or {}).get("style_prompt", ""),
         }
 
-    def _video_engine_check(self, blockers: list[ReadinessIssue]) -> dict:
-        report = preflight_production_video_engine()
+    def _video_engine_check(
+        self,
+        blockers: list[ReadinessIssue],
+        provider_override: str | None = None,
+        model_override: str | None = None,
+        request_mode_override: str | None = None,
+        resolution_override: str | None = None,
+        output_format_override: str | None = None,
+        duration_override: float | None = None,
+    ) -> dict:
+        if provider_override or model_override or request_mode_override or resolution_override or output_format_override or duration_override is not None:
+            preflight_kwargs = {}
+            if provider_override:
+                preflight_kwargs["provider_override"] = provider_override
+            if model_override:
+                preflight_kwargs["model_override"] = model_override
+            if request_mode_override:
+                preflight_kwargs["request_mode_override"] = request_mode_override
+            if resolution_override:
+                preflight_kwargs["resolution_override"] = resolution_override
+            if output_format_override:
+                preflight_kwargs["output_format_override"] = output_format_override
+            if duration_override is not None:
+                preflight_kwargs["duration_override"] = duration_override
+            report = preflight_production_video_engine(**preflight_kwargs)
+        else:
+            report = preflight_production_video_engine()
         if report.get("status") != "ready_for_production_video_test":
             detail = "; ".join(report.get("action_items") or ["Configure a production video engine."])
             blockers.append(ReadinessIssue("video_engine_not_ready", detail))

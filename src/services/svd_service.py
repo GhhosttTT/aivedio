@@ -34,6 +34,28 @@ class SVDError(Exception):
     pass
 
 
+def _fit_image_to_svd_canvas(image, canvas_size: tuple[int, int] = (1024, 576)):
+    """Cover-fit an input image without stretching faces or wardrobe.
+
+    SVD's native checkpoint canvas is landscape.  A direct ``resize`` of a
+    mobile portrait keyframe changes the actor's geometry; cover-fitting keeps
+    proportions and makes the unavoidable crop explicit for this draft
+    fallback.  Production Seedance/ComfyUI paths still receive the full
+    configured portrait canvas.
+    """
+    target_width, target_height = canvas_size
+    source_width, source_height = image.size
+    if source_width <= 0 or source_height <= 0:
+        raise ValueError("SVD input image must have positive dimensions")
+    scale = max(target_width / source_width, target_height / source_height)
+    resized_width = max(target_width, round(source_width * scale))
+    resized_height = max(target_height, round(source_height * scale))
+    resized = image.resize((resized_width, resized_height))
+    left = max(0, (resized_width - target_width) // 2)
+    top = max(0, (resized_height - target_height) // 2)
+    return resized.crop((left, top, left + target_width, top + target_height))
+
+
 class SVDService:
     """SVD 服务（Stable Video Diffusion 图生视频）"""
     
@@ -286,7 +308,7 @@ class SVDService:
                 
                 # 加载输入图像
                 image = load_image(image_path)
-                image = image.resize((1024, 576))  # SVD 推荐分辨率
+                image = _fit_image_to_svd_canvas(image)
                 
                 logger.info("开始推理...")
                 start_time = time.time()

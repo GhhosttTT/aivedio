@@ -4,6 +4,7 @@
 负责视频拼接、音视频同步、背景音乐添加、视频合成
 """
 
+import json
 import os
 import math
 import subprocess
@@ -20,6 +21,23 @@ class VideoComposerError(Exception):
     pass
 
 
+def _is_high_bit_depth_pixel_format(pixel_format: str) -> bool:
+    """识别 FFmpeg 常见的 10/12/14-bit 像素格式。"""
+    normalized = str(pixel_format or "").strip().lower()
+    return any(token in normalized for token in ("p10", "p12", "p14", "10le", "12le", "14le"))
+
+
+def _provider_output_pixel_format(pixel_format: str, *, high_bit_depth: bool) -> str:
+    """Keep provider chroma fidelity while normalizing to a playable format."""
+    normalized = str(pixel_format or "").strip().lower()
+    depth = "10le" if high_bit_depth else ""
+    if "444" in normalized:
+        return f"yuv444p{depth}"
+    if "422" in normalized:
+        return f"yuv422p{depth}"
+    return f"yuv420p{depth}"
+
+
 class VideoComposer:
     """视频合成服务"""
     
@@ -32,7 +50,9 @@ class VideoComposer:
     def concat_videos(
         self,
         video_files: List[str],
-        output_path: Optional[str] = None
+        output_path: Optional[str] = None,
+        preserve_audio: bool = False,
+        preserve_provider_quality: bool = False,
     ) -> str:
         """
         拼接多个视频
@@ -67,11 +87,22 @@ class VideoComposer:
                 output_dir = Path("./storage/temp")
                 output_dir.mkdir(parents=True, exist_ok=True)
                 output_path = str(output_dir / "concatenated.mp4")
-            
+
+            provider_geometry = (
+                self._probe_provider_geometry(video_files[0])
+                if preserve_provider_quality else None
+            )
+
             if len(video_files) == 1:
-                cmd = self._build_single_video_normalize_cmd(video_files[0], output_path)
+                cmd = self._build_single_video_normalize_cmd(
+                    video_files[0], output_path, preserve_audio, preserve_provider_quality,
+                    provider_geometry,
+                )
             else:
-                cmd = self._build_video_concat_cmd(video_files, output_path)
+                cmd = self._build_video_concat_cmd(
+                    video_files, output_path, preserve_audio, preserve_provider_quality,
+                    provider_geometry,
+                )
             
             logger.debug(f"FFmpeg 命令: {' '.join(cmd)}")
             
@@ -153,7 +184,7 @@ class VideoComposer:
                 "-c:a", "aac",   # 音频重新编码为 AAC
                 "-map", "0:v:0", # 使用第一个输入的视频流
                 "-map", "1:a:0", # 使用第二个输入的音频流
-                "-af", "apad",
+                "-af", "apad,loudnorm=I=-16:TP=-1.5:LRA=11:linear=true",
                 "-t", f"{video_duration:.6f}",
                 "-y",
                 output_path
@@ -221,19 +252,43 @@ class VideoComposer:
                 video_dir = Path(video_path).parent
                 video_name = Path(video_path).stem
                 output_path = str(video_dir / f"{video_name}_with_bgm.mp4")
-            
-            # 使用 FFmpeg 混合音频
-            # amix 滤镜混合原音频和背景音乐
+
+            video_duration = self._get_duration(video_path)
+            if not math.isfinite(video_duration) or video_duration <= 0:
+                raise ValueError("Cannot add background music to a video with unreadable duration")
+
+            # Duck the music under dialogue/effects instead of relying on a
+            # fixed mix ratio. This keeps speech intelligible when the
+            # provider returns native audio and avoids clipping on loud cuts.
+            bgm_volume = max(0.0, min(1.0, float(bgm_volume)))
+            source_has_audio = self.has_audio_stream(video_path)
+            if source_has_audio:
+                audio_filter = (
+                    f"[0:a]aresample=48000,volume=1.0[dialogue];"
+                    f"[1:a]aresample=48000,volume={bgm_volume}[music];"
+                    "[music][dialogue]sidechaincompress=threshold=0.08:ratio=8:"
+                    "attack=20:release=250:makeup=1[ducked];"
+                    "[dialogue][ducked]amix=inputs=2:duration=longest:"
+                    "dropout_transition=2:normalize=0,alimiter=limit=0.95,"
+                    "loudnorm=I=-16:TP=-1.5:LRA=11:linear=true[aout]"
+                )
+            else:
+                audio_filter = (
+                    f"[1:a]aresample=48000,volume={bgm_volume},"
+                    "alimiter=limit=0.95,loudnorm=I=-16:TP=-1.5:LRA=11:linear=true[aout]"
+                )
             cmd = [
                 "ffmpeg",
                 "-i", video_path,
+                "-stream_loop", "-1",
                 "-i", bgm_path,
                 "-filter_complex",
-                f"[0:a]volume=1.0[a1];[1:a]volume={bgm_volume}[a2];[a1][a2]amix=inputs=2:duration=first[aout]",
+                audio_filter,
                 "-map", "0:v",
                 "-map", "[aout]",
                 "-c:v", "copy",
                 "-c:a", "aac",
+                "-t", f"{video_duration:.6f}",
                 "-y",
                 output_path
             ]
@@ -306,9 +361,17 @@ class VideoComposer:
             # 步骤 1：拼接视频
             if len(video_files) > 1:
                 logger.info("步骤 1/3: 拼接视频")
+                # Native Seedance audio is the authoritative track when no
+                # separate dialogue timeline was supplied.  Do not silently
+                # strip it during concat; if a later scene lacks audio,
+                # concat_videos will synthesize a matching silent segment.
+                preserve_native_audio = not audio_files and any(
+                    self.has_audio_stream(video_file) for video_file in video_files
+                )
                 current_video = self.concat_videos(
                     video_files,
-                    str(Path(output_path).parent / "temp_concat.mp4")
+                    str(Path(output_path).parent / "temp_concat.mp4"),
+                    preserve_audio=preserve_native_audio,
                 )
             else:
                 current_video = video_files[0]
@@ -391,17 +454,48 @@ class VideoComposer:
             logger.warning(f"获取文件时长失败: {e}")
             return 0.0
 
-    def _build_single_video_normalize_cmd(self, video_path: str, output_path: str) -> list[str]:
-        return [
+    def has_audio_stream(self, video_path: str) -> bool:
+        try:
+            result = subprocess.run(
+                ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=index", "-of", "csv=p=0", video_path],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return bool(result.stdout.strip())
+        except Exception as exc:
+            logger.warning("Cannot inspect audio stream for %s: %s", video_path, exc)
+            return False
+
+    def _build_single_video_normalize_cmd(
+        self,
+        video_path: str,
+        output_path: str,
+        preserve_audio: bool = False,
+        preserve_provider_quality: bool = False,
+        target_geometry: tuple[int, int, float, str] | None = None,
+    ) -> list[str]:
+        command = [
             "ffmpeg",
             "-i", os.path.abspath(video_path),
-            "-vf", self._production_video_filter(),
-            *self._production_video_encode_args(),
+            "-vf", self._production_video_filter(preserve_provider_quality, target_geometry),
+            "-map", "0:v:0",
+            *self._production_video_encode_args(preserve_audio, preserve_provider_quality, target_geometry),
             "-y",
             output_path,
         ]
+        if preserve_audio:
+            command[command.index("-y"):command.index("-y")] = ["-map", "0:a:0"]
+        return command
 
-    def _build_video_concat_cmd(self, video_files: List[str], output_path: str) -> list[str]:
+    def _build_video_concat_cmd(
+        self,
+        video_files: List[str],
+        output_path: str,
+        preserve_audio: bool = False,
+        preserve_provider_quality: bool = False,
+        target_geometry: tuple[int, int, float, str] | None = None,
+    ) -> list[str]:
         inputs: list[str] = []
         filter_parts: list[str] = []
         labels: list[str] = []
@@ -410,41 +504,182 @@ class VideoComposer:
             inputs.extend(["-i", os.path.abspath(video_file)])
             label = f"v{index}"
             labels.append(f"[{label}]")
-            filter_parts.append(f"[{index}:v]{self._production_video_filter()}[{label}]")
+            if preserve_audio:
+                video_filter = self._production_video_filter(preserve_provider_quality, target_geometry)
+                if self.has_audio_stream(video_file):
+                    audio_filter = (
+                        f"[{index}:a]aresample=48000,aformat=sample_rates=48000:"
+                        f"channel_layouts=stereo,asetpts=PTS-STARTPTS[{label}a]"
+                    )
+                else:
+                    duration = self._get_duration(video_file)
+                    if not math.isfinite(duration) or duration <= 0:
+                        raise ValueError(f"Cannot synthesize silent audio for unreadable video: {video_file}")
+                    audio_filter = (
+                        f"anullsrc=channel_layout=stereo:sample_rate=48000,"
+                        f"atrim=duration={duration:.6f},asetpts=PTS-STARTPTS[{label}a]"
+                    )
+                filter_parts.append(
+                    f"[{index}:v]{video_filter}[{label}v];{audio_filter}"
+                )
+            else:
+                filter_parts.append(f"[{index}:v]{self._production_video_filter(preserve_provider_quality, target_geometry)}[{label}]")
 
-        filter_parts.append("".join(labels) + f"concat=n={len(video_files)}:v=1:a=0[vout]")
+        if preserve_audio:
+            video_labels = "".join(f"[{index}v]" for index in range(len(video_files)))
+            audio_labels = "".join(f"[{index}a]" for index in range(len(video_files)))
+            filter_parts.append(video_labels + audio_labels + f"concat=n={len(video_files)}:v=1:a=1[vout][aout]")
+        else:
+            filter_parts.append("".join(labels) + f"concat=n={len(video_files)}:v=1:a=0[vout]")
 
-        return [
+        command = [
             "ffmpeg",
             *inputs,
             "-filter_complex", ";".join(filter_parts),
             "-map", "[vout]",
-            *self._production_video_encode_args(),
+            *self._production_video_encode_args(preserve_audio, preserve_provider_quality, target_geometry),
             "-y",
             output_path,
         ]
+        if preserve_audio:
+            command[command.index("-y"):command.index("-y")] = ["-map", "[aout]"]
+        return command
 
-    def _production_video_filter(self) -> str:
-        width = int(settings.GENERATION_WIDTH)
-        height = int(settings.GENERATION_HEIGHT)
-        fps = int(settings.GENERATION_VIDEO_OUTPUT_FPS)
+    def _production_video_filter(
+        self,
+        preserve_provider_quality: bool = False,
+        target_geometry: tuple[int, int, float, str] | None = None,
+    ) -> str:
+        if preserve_provider_quality and target_geometry:
+            width, height, source_fps, pixel_format = target_geometry
+            fps = max(1, round(float(source_fps)))
+        else:
+            width = int(settings.GENERATION_WIDTH)
+            height = int(settings.GENERATION_HEIGHT)
+            fps = int(settings.GENERATION_VIDEO_OUTPUT_FPS)
+            pixel_format = "yuv420p10le" if preserve_provider_quality else "yuv420p"
+        high_bit_depth = preserve_provider_quality and (
+            not target_geometry or _is_high_bit_depth_pixel_format(pixel_format)
+        )
+        output_pixel_format = _provider_output_pixel_format(pixel_format, high_bit_depth=high_bit_depth)
+        fit_mode = str(getattr(settings, "GENERATION_VIDEO_FRAME_FIT_MODE", "cover")).strip().lower()
+        if fit_mode == "contain":
+            framing = (
+                f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+            )
+        else:
+            framing = (
+                f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+                f"crop={width}:{height}:(iw-ow)/2:(ih-oh)/2,"
+            )
         return (
-            f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
-            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+            framing +
             "setsar=1,"
             f"fps={fps},"
-            "format=yuv420p"
+            + f"format={output_pixel_format}"
         )
 
-    def _production_video_encode_args(self) -> list[str]:
-        return [
-            "-c:v", "libx264",
+    @staticmethod
+    def _probe_provider_geometry(video_path: str) -> tuple[int, int, float, str] | None:
+        """Use the first provider clip as the final composition contract."""
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "error", "-select_streams", "v:0",
+                    "-show_entries", "stream=width,height,avg_frame_rate,pix_fmt",
+                    "-of", "json", video_path,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,
+            )
+            probe = json.loads(result.stdout)
+            streams = probe.get("streams") or []
+            if not streams:
+                return None
+            stream = streams[0]
+            width = int(stream.get("width") or 0)
+            height = int(stream.get("height") or 0)
+            frame_rate = str(stream.get("avg_frame_rate") or "0/1")
+            numerator, denominator = (frame_rate.split("/", 1) + ["1"])[:2]
+            fps = float(numerator) / max(float(denominator), 1.0)
+            pixel_format = str(stream.get("pix_fmt") or "")
+            if width <= 0 or height <= 0 or fps <= 0 or not pixel_format:
+                return None
+            return width, height, fps, pixel_format
+        except (OSError, ValueError, TypeError, ZeroDivisionError, subprocess.SubprocessError):
+            logger.debug("Cannot probe provider composition geometry for %s", video_path)
+            return None
+
+    def _production_video_encode_args(
+        self,
+        preserve_audio: bool = False,
+        preserve_provider_quality: bool = False,
+        target_geometry: tuple[int, int, float, str] | None = None,
+    ) -> list[str]:
+        high_bit_depth = preserve_provider_quality and (
+            not target_geometry
+            or _is_high_bit_depth_pixel_format(target_geometry[3])
+        )
+        output_pixel_format = _provider_output_pixel_format(
+            target_geometry[3] if target_geometry else "yuv420p10le",
+            high_bit_depth=high_bit_depth,
+        )
+        args = [
+            "-c:v", "libx265" if high_bit_depth else "libx264",
             "-preset", "slow",
             "-crf", "18",
-            "-pix_fmt", "yuv420p",
+            "-pix_fmt", output_pixel_format,
             "-movflags", "+faststart",
-            "-an",
         ]
+        if high_bit_depth:
+            args.extend(["-tag:v", "hvc1"])
+        args.extend(["-c:a", "aac"] if preserve_audio else ["-an"])
+        return args
+
+    def has_high_bit_depth(self, video_path: str) -> bool:
+        """Return whether a video carries a 10/12-bit pixel format."""
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "error", "-select_streams", "v:0",
+                    "-show_entries", "stream=pix_fmt", "-of", "default=noprint_wrappers=1:nokey=1",
+                    video_path,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            pixel_format = result.stdout.strip().lower()
+            return any(token in pixel_format for token in ("p10", "p12", "10le", "12le"))
+        except Exception as exc:
+            logger.debug("Could not inspect pixel depth for {}: {}", video_path, exc)
+            return False
+
+    def has_provider_chroma_fidelity(self, video_path: str) -> bool:
+        """Return whether a provider clip needs 4:2:2/4:4:4 or high-bit preservation."""
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "error", "-select_streams", "v:0",
+                    "-show_entries", "stream=pix_fmt",
+                    "-of", "default=noprint_wrappers=1:nokey=1", video_path,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            pixel_format = result.stdout.strip().lower()
+            return (
+                _is_high_bit_depth_pixel_format(pixel_format)
+                or "422" in pixel_format
+                or "444" in pixel_format
+            )
+        except Exception as exc:
+            logger.debug("Could not inspect provider chroma format for {}: {}", video_path, exc)
+            return False
     
     def compose_scene_audio(
         self,

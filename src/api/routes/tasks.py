@@ -52,7 +52,10 @@ async def get_task_status(task_id: str, db_session: Session = Depends(get_db_ses
             progress=task_info.get("progress", 0.0),
             current_step=str(task_info.get("current_step", 0)),
             result=task_info.get("result"),
-            error=task_info.get("error")
+            error=task_info.get("error"),
+            provider_progress=task_info.get("provider_progress"),
+            provider_stage=task_info.get("provider_stage"),
+            provider_state=task_info.get("provider_state"),
         )
     
     except HTTPException:

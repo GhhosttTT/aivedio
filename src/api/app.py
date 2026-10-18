@@ -172,7 +172,7 @@ def register_routes(app: FastAPI):
     包括健康检查、项目管理、任务管理、WebSocket、认证等路由
     """
     # 导入路由
-    from src.api.routes import projects_router, tasks_router
+    from src.api.routes import projects_router, tasks_router, seedance_callback_router
     from src.api.routes.websocket import router as websocket_router
     from src.api.routes.auth import router as auth_router
     from src.api.routes.characters import router as characters_router
@@ -184,6 +184,7 @@ def register_routes(app: FastAPI):
     app.include_router(auth_router)
     app.include_router(projects_router)
     app.include_router(tasks_router)
+    app.include_router(seedance_callback_router)
     app.include_router(characters_router)
     app.include_router(localization_router)
     app.include_router(character_reference_router)

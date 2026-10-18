@@ -663,20 +663,33 @@ class GenerationReviewService:
     @staticmethod
     def sample_frames(video: Path, output_dir: Path) -> list[dict]:
         probe = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(video)],
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=r_frame_rate", "-of", "json", str(video)],
             capture_output=True, text=True, check=True, timeout=60,
         )
-        duration = float(json.loads(probe.stdout)["format"]["duration"])
+        probe_data = json.loads(probe.stdout)
+        duration = float(probe_data["format"]["duration"])
+        frame_rate = 0.0
+        rate_text = (probe_data.get("streams") or [{}])[0].get("r_frame_rate", "")
+        if "/" in rate_text:
+            numerator, denominator = rate_text.split("/", 1)
+            if float(denominator):
+                frame_rate = float(numerator) / float(denominator)
         if not math.isfinite(duration) or duration <= 0:
             raise ReviewError("Video has no valid duration")
         output_dir.mkdir(parents=True, exist_ok=True)
         frames = []
-        # Uniform sampling includes the ends; longer clips receive more than three samples.
+        # Uniform, time-distributed sampling. Keep a small inset from exact codec
+        # boundaries: the first/last decoded packet can be a transition or duplicate
+        # frame, while 2%/98% still gives evidence from both ends.
         count = max(3, math.ceil(duration / 1.0) + 1)
         if count > 60:
             raise ReviewError("Clip exceeds 59 seconds; split it for complete bounded review")
         for index in range(count):
-            timestamp = duration * (0.05 + 0.90 * index / (count - 1))
+            relative_time = 0.02 + 0.96 * index / (count - 1)
+            # Avoid asking ffmpeg for a packet beyond the last decodable frame on
+            # short VFR/H.264 clips whose container duration is slightly rounded up.
+            decode_margin = (1.0 / frame_rate + 0.01) if frame_rate > 0 else 0.05
+            timestamp = min(duration * relative_time, max(0.01, duration - decode_margin))
             path = output_dir / f"frame_{index:03d}.jpg"
             subprocess.run(
                 ["ffmpeg", "-y", "-v", "error", "-ss", str(timestamp), "-i", str(video),
@@ -686,7 +699,14 @@ class GenerationReviewService:
             from PIL import Image
             with Image.open(path) as image:
                 image.verify()
-            frames.append({"index": index, "timestamp": timestamp, "path": str(path), "sha256": file_hash(path)})
+            frames.append({
+                "index": index,
+                "timestamp": timestamp,
+                "relative_time": round(relative_time, 6),
+                "position": "opening" if index == 0 else "ending" if index == count - 1 else "middle",
+                "path": str(path),
+                "sha256": file_hash(path),
+            })
         return frames
 
     def review_video(self, video: str, scene: dict, report_path: Path, reference: str = None) -> dict:
@@ -697,13 +717,46 @@ class GenerationReviewService:
             path = Path(video)
             report["video_sha256"] = file_hash(path)
             frames = self.sample_frames(path, report_path.with_suffix(""))
+            # Keep compatibility with custom samplers used by integrations/tests while
+            # making the temporal contract explicit for every reviewer request.
+            for index, frame in enumerate(frames):
+                frame.setdefault("relative_time", round(index / max(1, len(frames) - 1), 6))
+                frame.setdefault(
+                    "position",
+                    "opening" if index == 0 else "ending" if index == len(frames) - 1 else "middle",
+                )
             report["frames"] = frames
+            report["sampling_contract"] = {
+                "strategy": "uniform_time_distributed",
+                "duration_seconds": round(
+                    frames[-1]["timestamp"] / frames[-1]["relative_time"], 3
+                ) if frames[-1]["relative_time"] else None,
+                "sample_count": len(frames),
+                "first_relative_time": frames[0]["relative_time"],
+                "last_relative_time": frames[-1]["relative_time"],
+                "complete_clip_evidence": len(frames) >= 3
+                and frames[0]["relative_time"] <= 0.02
+                and frames[-1]["relative_time"] >= 0.98,
+            }
             batches = []
             report["batches"] = batches
             for start in range(0, len(frames), 3):
                 batch = frames[start:start + 3]
                 reference_paths, reference_metadata = review_reference_images(scene, reference)
-                images = reference_paths + [frame["path"] for frame in batch]
+                # Give each VLM window one adjacent frame on either side when
+                # available. The context frames are not scored as part of this
+                # batch, but expose face/wardrobe/camera discontinuities exactly
+                # where independent windows would otherwise hide them.
+                context_frames = []
+                if start > 0:
+                    context_frames.append(frames[start - 1])
+                if start + len(batch) < len(frames):
+                    context_frames.append(frames[start + len(batch)])
+                images = (
+                    reference_paths
+                    + [frame["path"] for frame in context_frames]
+                    + [frame["path"] for frame in batch]
+                )
                 review = self.reviewer.evaluate(
                     RUBRIC + "Review actual images for story match, composition, mobile short-drama aesthetic quality, "
                     "visible anatomy/rendering defects, facial identity, identity consistency between sampled frames and reference when provided, "
@@ -743,10 +796,24 @@ class GenerationReviewService:
                     "Temporal consistency must check whether the same characters keep stable faces, hair, wardrobe, body shape, and relative positions; "
                     "whether motion progresses plausibly without flicker, warping, sudden missing or extra "
                     "people, or unrelated camera jumps; and whether action continuity matches the scene. "
+                    "The supplied frames are chronological evidence from one time window: compare the first, middle, "
+                    "and last frame rather than judging a single still. Use timestamp and position metadata to identify "
+                    "opening, middle, and ending evidence. Adjacent temporal context images may appear before or after "
+                    "the scored frames; use them only to check continuity across this window boundary and do not include "
+                    "their indices in reviewed_frames. "
                     "Animation is valid; judge against requested style. Frame indices are in metadata. "
                     "Character references appear first with zero-based image_position labels in reference_images metadata; "
                     "compare each named character against its own image. References must not count as reviewed video frames.",
-                    {"scene": scene, "frames": batch, "has_reference": bool(reference_paths),
+                    {"scene": scene, "frames": batch,
+                     "temporal_window": {
+                         "start_timestamp": batch[0]["timestamp"],
+                         "end_timestamp": batch[-1]["timestamp"],
+                         "sample_indices": [frame["index"] for frame in batch],
+                         "context_indices": [frame["index"] for frame in context_frames],
+                         "chronological": True,
+                     },
+                     "temporal_context_frames": context_frames,
+                     "has_reference": bool(reference_paths),
                      "reference_images": reference_metadata, "first_frame_image_position": len(reference_paths)}, FrameReview, images,
                 )
                 if sorted(review.reviewed_frames) != [frame["index"] for frame in batch]:

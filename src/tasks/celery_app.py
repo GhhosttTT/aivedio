@@ -11,6 +11,7 @@ from sqlalchemy import case
 from src.services.comfyui_service import ComfyUIWaitTimeout
 from src.services.generation_review import ReviewError
 from src.services.image_postprocess import ImagePostprocessError
+from src.services.generation_provider import GenerationCancelledError, GenerationProviderError
 
 env_path = Path(__file__).parent.parent.parent / ".env"
 if env_path.exists():
@@ -62,7 +63,9 @@ celery_app.conf.update(
     task_routes={
         "prepare_generation": {"queue": "image"},
         "generate_image": {"queue": "image"},
-        "generate_video": {"queue": "image"},
+        # Keep video/API generation isolated from the image queue so worker
+        # concurrency and provider rate limits can be tuned independently.
+        "generate_video": {"queue": "video"},
         "review_generation": {"queue": "image"},
         "src.tasks.image_tasks.*": {"queue": "image"},
         "src.tasks.video_tasks.*": {"queue": "video"},
@@ -94,7 +97,16 @@ class BaseTask(celery_app.Task):
     """Common Celery task behavior."""
 
     autoretry_for = (Exception,)
-    dont_autoretry_for = (ComfyUIWaitTimeout, ReviewError, ImagePostprocessError, ValueError, TypeError, AttributeError)
+    dont_autoretry_for = (
+        ComfyUIWaitTimeout,
+        ReviewError,
+        ImagePostprocessError,
+        GenerationProviderError,
+        GenerationCancelledError,
+        ValueError,
+        TypeError,
+        AttributeError,
+    )
     retry_kwargs = {"max_retries": 3}
     retry_backoff = True
     retry_backoff_max = 600

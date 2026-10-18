@@ -28,11 +28,18 @@ def test_get_task_status_success(client):
         mock_to_instance.get_task_status.return_value = {
             "status": "running",
             "progress": 0.5,
-            "current_step": "生成图像"
+            "current_step": "生成图像",
+            "provider_progress": 42,
+            "provider_stage": "provider_processing",
+            "provider_state": "PROGRESS",
         }
         
         response = client.get("/api/tasks/task-123/status")
         assert response.status_code == 200
+        payload = response.json()
+        assert payload["provider_progress"] == 42
+        assert payload["provider_stage"] == "provider_processing"
+        assert payload["provider_state"] == "PROGRESS"
 
 
 def test_cancel_task_success(client):

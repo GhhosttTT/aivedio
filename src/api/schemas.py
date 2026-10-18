@@ -412,6 +412,12 @@ class TaskStatusResponse(BaseModel):
     current_step: str
     result: Optional[dict] = None
     error: Optional[str] = None
+    # Live external-provider telemetry. These fields are intentionally
+    # separate from the database progress counter: a provider may be polling
+    # one long-running shot while the production task remains on one step.
+    provider_progress: Optional[float] = None
+    provider_stage: Optional[str] = None
+    provider_state: Optional[str] = None
 
 
 # ==================== 通用响应模型 ====================

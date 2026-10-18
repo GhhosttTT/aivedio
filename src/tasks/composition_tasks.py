@@ -20,12 +20,55 @@ from src.services.generation_review import (
 )
 from src.services.repair_queue import attach_repair_queue
 from src.services.video_composer import get_video_composer
+from src.services.video_quality_metrics import video_boundary_continuity, video_candidate_metrics
+from src.services.sequence_plan import build_sequence_context
 from src.services.subtitle_generator import get_subtitle_generator
 from src.tasks.audio_tasks import has_spoken_dialogue
 from src.utils.storage import get_project_final_video_path
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _native_audio_is_ready_for_video_paths(video_paths: list[str], video_composer) -> bool:
+    """Honor per-run native-audio intent without enabling it for old assets."""
+    if not video_paths:
+        return False
+    for video_path in video_paths:
+        metadata_path = Path(video_path).with_suffix(".provider.json")
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        if not isinstance(metadata, dict) or metadata.get("native_audio_requested") is not True:
+            return False
+        if not video_composer.has_audio_stream(video_path):
+            return False
+        metrics = video_candidate_metrics(video_path)
+        audio_delta = metrics.get("audio_duration_delta_seconds")
+        if (
+            metrics.get("status") != "available"
+            or not metrics.get("audio_present")
+            or not isinstance(audio_delta, (int, float))
+            or audio_delta > 0.35
+        ):
+            return False
+    return True
+
+
+def _scene_audio_expected(scene: Scene) -> bool:
+    """Return whether a scene is expected to carry any audio into the edit."""
+    if bool(getattr(scene, "audio_path", None)):
+        return True
+    video_path = getattr(scene, "video_path", None)
+    if not isinstance(video_path, (str, Path)) or not str(video_path).strip():
+        return False
+    metadata_path = Path(video_path).with_suffix(".provider.json")
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(metadata, dict) and metadata.get("native_audio_requested") is True
 
 
 @celery_app.task(bind=True, name="compose_final_video")
@@ -80,9 +123,16 @@ def compose_final_video_task(
         subtitle_generator = get_subtitle_generator()
         
         _require_passed_scene_videos(scenes)
-        _require_passed_scene_audio(scenes)
+        scene_video_candidates = [scene.video_path for scene in scenes if scene.video_path]
+        preserve_native_audio = bool(settings.GENERATION_PREFER_NATIVE_VIDEO_AUDIO) or _native_audio_is_ready_for_video_paths(
+            scene_video_candidates, video_composer,
+        )
+        if preserve_native_audio:
+            _require_native_scene_audio(scenes, video_composer)
+        else:
+            _require_passed_scene_audio(scenes)
         _require_scene_subtitles(scenes)
-        audio_segments = _require_audio_video_duration_alignment(scenes, video_composer)
+        audio_segments = None if preserve_native_audio else _require_audio_video_duration_alignment(scenes, video_composer)
 
         # 收集所有分镜的视频和音频路径
         video_paths = []
@@ -98,6 +148,9 @@ def compose_final_video_task(
             raise ValueError(f"项目没有生成的视频: {project_id}")
         
         logger.info(f"收集到 {len(video_paths)} 个视频片段")
+        preserve_provider_quality = any(
+            video_composer.has_provider_chroma_fidelity(path) for path in video_paths
+        )
         
         # 生成最终视频路径
         final_video_path = get_project_final_video_path(project_id)
@@ -106,20 +159,26 @@ def compose_final_video_task(
         self.update_state(state="PROGRESS", meta={"current": 20, "total": 100, "step": "拼接视频"})
         
         temp_video_path = final_video_path.replace(".mp4", "_temp.mp4")
-        temp_video_path = video_composer.concat_videos(video_paths, temp_video_path)
+        temp_video_path = video_composer.concat_videos(
+            video_paths,
+            temp_video_path,
+            preserve_audio=preserve_native_audio,
+            preserve_provider_quality=preserve_provider_quality,
+        )
         
         # 步骤 2: 同步音频（40%）
         self.update_state(state="PROGRESS", meta={"current": 40, "total": 100, "step": "同步音频"})
         
-        temp_video_with_audio = final_video_path.replace(".mp4", "_with_audio.mp4")
-        merged_audio_path = final_video_path.replace(".mp4", "_merged_audio.wav")
-        audio_path = video_composer.compose_scene_audio(audio_segments, merged_audio_path)
-        video_composer.sync_audio_video(
-            video_path=temp_video_path,
-            audio_path=audio_path,
-            output_path=temp_video_with_audio,
-        )
-        temp_video_path = temp_video_with_audio
+        if not preserve_native_audio:
+            temp_video_with_audio = final_video_path.replace(".mp4", "_with_audio.mp4")
+            merged_audio_path = final_video_path.replace(".mp4", "_merged_audio.wav")
+            audio_path = video_composer.compose_scene_audio(audio_segments, merged_audio_path)
+            video_composer.sync_audio_video(
+                video_path=temp_video_path,
+                audio_path=audio_path,
+                output_path=temp_video_with_audio,
+            )
+            temp_video_path = temp_video_with_audio
         
         # 步骤 3: 添加背景音乐（60%）
         self.update_state(state="PROGRESS", meta={"current": 60, "total": 100, "step": "添加背景音乐"})
@@ -146,7 +205,8 @@ def compose_final_video_task(
             subtitle_generator.burn_subtitle(
                 video_path=temp_video_path,
                 subtitle_path=merged_subtitle_path,
-                output_path=final_video_path
+                output_path=final_video_path,
+                preserve_provider_quality=preserve_provider_quality,
             )
         else:
             # 如果没有字幕，直接重命名为最终视频
@@ -380,6 +440,19 @@ def _require_passed_scene_audio(scenes: list[Scene]) -> None:
         raise ValueError("Scene audio is not production-ready: " + "; ".join(failed))
 
 
+def _require_native_scene_audio(scenes: list[Scene], video_composer) -> None:
+    missing = [
+        str(scene.scene_number)
+        for scene in scenes
+        if not scene.video_path or not video_composer.has_audio_stream(scene.video_path)
+    ]
+    if missing:
+        raise ValueError(
+            "Native audio composition is enabled but these scene videos have no audio stream: "
+            + ", ".join(missing)
+        )
+
+
 def _require_scene_subtitles(scenes: list[Scene]) -> None:
     missing = []
     failed = []
@@ -400,6 +473,10 @@ def _require_scene_subtitles(scenes: list[Scene]) -> None:
             continue
         if not _srt_has_timing(content):
             failed.append(f"{scene.scene_number}: subtitle has no valid SRT timing")
+            continue
+        subtitle_issue = _subtitle_readability_issue(content)
+        if subtitle_issue:
+            failed.append(f"{scene.scene_number}: {subtitle_issue}")
             continue
         if not _subtitle_matches_dialogue(content, scene.dialogue or ""):
             failed.append(f"{scene.scene_number}: subtitle text does not cover spoken dialogue")
@@ -448,6 +525,39 @@ def _require_audio_video_duration_alignment(
 
 def _srt_has_timing(content: str) -> bool:
     return bool(re.search(r"\d{2}:\d{2}:\d{2},\d{3}\s+-->\s+\d{2}:\d{2}:\d{2},\d{3}", content))
+
+
+def _subtitle_readability_issue(content: str) -> str | None:
+    """Reject overlapping or too-fast subtitle cues before final composition."""
+    cues = []
+    timing_pattern = re.compile(
+        r"(?P<start>\d{2}:\d{2}:\d{2},\d{3})\s+-->\s+(?P<end>\d{2}:\d{2}:\d{2},\d{3})"
+    )
+    for block in re.split(r"\n\s*\n", content.strip()):
+        match = timing_pattern.search(block)
+        if not match:
+            continue
+        start = _srt_timestamp_seconds(match.group("start"))
+        end = _srt_timestamp_seconds(match.group("end"))
+        text = " ".join(
+            line.strip() for line in block[match.end():].splitlines() if line.strip()
+        )
+        if end <= start:
+            return "subtitle cue has non-positive duration"
+        units = sum(1.0 if "\u3400" <= char <= "\u9fff" else 0.5 for char in text if not char.isspace())
+        if units / (end - start) > float(settings.SUBTITLE_MAX_READING_UNITS_PER_SECOND):
+            return "subtitle reading speed is too fast"
+        cues.append((start, end))
+    for previous, current in zip(cues, cues[1:]):
+        if current[0] < previous[1] - 1e-3:
+            return "subtitle cues overlap"
+    return None
+
+
+def _srt_timestamp_seconds(value: str) -> float:
+    hours, minutes, remainder = value.split(":", 2)
+    seconds, milliseconds = remainder.split(",", 1)
+    return int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(milliseconds) / 1000
 
 
 def _subtitle_matches_dialogue(content: str, dialogue: str) -> bool:
@@ -528,6 +638,7 @@ def _project_final_review_payload(project: Project, scenes: list[Scene]) -> dict
     seen = set()
     scene_summaries = []
     dialogue_lines = []
+    sequence_contexts = []
     for scene in scenes:
         if scene.character_name and scene.character_name not in seen:
             visible_characters.append({
@@ -539,9 +650,16 @@ def _project_final_review_payload(project: Project, scenes: list[Scene]) -> dict
             "scene_number": scene.scene_number,
             "visual_description": scene.visual_description,
             "dialogue": scene.dialogue,
-            "has_audio": bool(scene.audio_path),
+            "has_audio": _scene_audio_expected(scene),
             "has_subtitle": bool(scene.subtitle_path),
         })
+        sequence_contexts.append(
+            build_sequence_context(
+                scenes,
+                scene.scene_number,
+                sequence_id=f"project-{project.id}",
+            ).as_dict()
+        )
         if scene.dialogue:
             dialogue_lines.append(str(scene.dialogue))
     return {
@@ -551,6 +669,7 @@ def _project_final_review_payload(project: Project, scenes: list[Scene]) -> dict
         "visual_description": "Full composed mobile short-drama episode assembled from reviewed scene clips.",
         "dialogue": "\n".join(dialogue_lines),
         "scenes": scene_summaries,
+        "sequence_contexts": sequence_contexts,
         "visible_characters": visible_characters,
         "shot_plan": {
             "shot_role": "final_composed_short_drama",
@@ -582,6 +701,82 @@ def _project_final_review_payload(project: Project, scenes: list[Scene]) -> dict
 def _composition_review_error(report: dict) -> str | None:
     if not settings.GENERATION_REQUIRE_VIDEO_REVIEW:
         return None
+    boundary = report.get("technical_boundary_report")
+    if isinstance(boundary, dict) and boundary.get("status") == "available":
+        severe_transition_count = int(boundary.get("severe_transition_count") or 0)
+        if severe_transition_count > 0:
+            return (
+                "final composed video has severe exposure/black transitions across "
+                f"{severe_transition_count} shot boundary(s)"
+            )
+        geometry_mismatch_count = int(boundary.get("geometry_mismatch_count") or 0)
+        if geometry_mismatch_count > 0:
+            return (
+                "final composed video has mismatched geometry across "
+                f"{geometry_mismatch_count} shot boundary(s)"
+            )
+    technical = report.get("final_technical_metrics")
+    if isinstance(technical, dict) and technical.get("status") == "available":
+        if int(technical.get("width") or 0) <= 0 or int(technical.get("height") or 0) <= 0:
+            return "final composed video has no readable video geometry"
+        max_black_run_seconds = technical.get("max_black_run_seconds")
+        if (
+            isinstance(max_black_run_seconds, (int, float))
+            and max_black_run_seconds > settings.GENERATION_VIDEO_MAX_BLACK_SECONDS
+        ):
+            return (
+                "final composed video contains a black-frame run of "
+                f"{max_black_run_seconds:.3f}s, above "
+                f"{settings.GENERATION_VIDEO_MAX_BLACK_SECONDS}s"
+            )
+        max_static_run_seconds = technical.get("max_static_run_seconds")
+        motion_energy = technical.get("motion_energy")
+        if (
+            isinstance(max_static_run_seconds, (int, float))
+            and max_static_run_seconds > settings.GENERATION_VIDEO_MAX_STATIC_RUN_SECONDS
+            and isinstance(motion_energy, (int, float))
+            and motion_energy < 0.4
+        ):
+            return (
+                "final composed video contains a frozen/static run of "
+                f"{max_static_run_seconds:.3f}s with motion_energy={motion_energy:.3f}"
+            )
+        brightness_step_p95 = technical.get("brightness_step_p95")
+        if (
+            isinstance(brightness_step_p95, (int, float))
+            and brightness_step_p95 > settings.GENERATION_VIDEO_MAX_BRIGHTNESS_STEP_P95
+        ):
+            return (
+                "final composed video has temporal exposure jumps: "
+                f"brightness_step_p95={brightness_step_p95:.3f}, "
+                f"limit={settings.GENERATION_VIDEO_MAX_BRIGHTNESS_STEP_P95:.3f}"
+            )
+        motion_jitter_ratio = technical.get("motion_jitter_ratio")
+        if (
+            isinstance(motion_jitter_ratio, (int, float))
+            and motion_jitter_ratio > settings.GENERATION_VIDEO_MAX_MOTION_JITTER_RATIO
+        ):
+            return (
+                "final composed video has unstable motion cadence: "
+                f"motion_jitter_ratio={motion_jitter_ratio:.3f}, "
+                f"limit={settings.GENERATION_VIDEO_MAX_MOTION_JITTER_RATIO:.3f}"
+            )
+        if report.get("final_audio_expected") is True:
+            if not technical.get("audio_present"):
+                return "final composed video is missing the expected audio stream"
+            audio_signal_status = technical.get("audio_signal_status")
+            if audio_signal_status == "near_silent":
+                return "final composed video audio signal is near-silent despite the expected audio track"
+            if audio_signal_status == "unavailable":
+                return "final composed video audio signal is not measurable for the expected audio track"
+            audio_delta = technical.get("audio_duration_delta_seconds")
+            if not isinstance(audio_delta, (int, float)):
+                return "final composed video audio duration is not measurable"
+            if audio_delta > 0.35:
+                return (
+                    "final composed video audio duration is out of sync by "
+                    f"{audio_delta:.3f}s"
+                )
     episode_style_gate = report.get("episode_style_consistency_gate")
     if isinstance(episode_style_gate, dict) and episode_style_gate.get("status") != "passed":
         return "final composed episode style consistency gate failed"
@@ -598,10 +793,14 @@ def _composition_review_error(report: dict) -> str | None:
         review = batch.get("review") if isinstance(batch.get("review"), dict) else {}
         for key in ("facial_identity", "identity_consistency"):
             value = review.get(key)
-            if isinstance(value, dict) and float(value.get("score") or 0) < settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE:
+            if not isinstance(value, dict) or not isinstance(value.get("score"), (int, float)):
+                return f"composition review batch {index} {key} evidence is missing"
+            if float(value["score"]) < settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE:
                 return f"composition review batch {index} {key} gate failed"
         value = review.get("temporal_consistency")
-        if isinstance(value, dict) and float(value.get("score") or 0) < settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE:
+        if not isinstance(value, dict) or not isinstance(value.get("score"), (int, float)):
+            return f"composition review batch {index} temporal_consistency evidence is missing"
+        if float(value["score"]) < settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE:
             return f"composition review batch {index} temporal gate failed"
         platform_score = batch.get("platform_score")
         if isinstance(platform_score, (int, float)) and platform_score < settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE:
@@ -625,13 +824,30 @@ def _review_final_composed_video(project: Project, scenes: list[Scene], final_vi
     if not settings.GENERATION_REQUIRE_VIDEO_REVIEW:
         return None
     report_path = Path(final_video_path).with_suffix(".composition_review.json")
+    scene_video_paths = [
+        scene.video_path
+        for scene in scenes
+        if isinstance(scene.video_path, (str, Path)) and str(scene.video_path).strip()
+    ]
+    technical_boundary_report = video_boundary_continuity(scene_video_paths)
+    final_technical_metrics = video_candidate_metrics(final_video_path)
+    audio_expected = any(_scene_audio_expected(scene) for scene in scenes)
+    review_payload = _project_final_review_payload(project, scenes)
+    # Give the VLM concrete media evidence so it can distinguish an intended
+    # dramatic hard cut from an accidental black/exposure/geometry break.
+    review_payload["technical_boundary_report"] = technical_boundary_report
+    review_payload["final_technical_metrics"] = final_technical_metrics
+    review_payload["final_audio_expected"] = audio_expected
     report = GenerationReviewService().review_video(
         final_video_path,
-        _project_final_review_payload(project, scenes),
+        review_payload,
         report_path,
     )
     report["path"] = str(report_path)
     report["stage"] = "final_composition"
+    report["technical_boundary_report"] = technical_boundary_report
+    report["final_technical_metrics"] = final_technical_metrics
+    report["final_audio_expected"] = audio_expected
     style_gate = _episode_style_consistency_gate(scenes)
     if style_gate:
         report["episode_style_consistency_gate"] = style_gate

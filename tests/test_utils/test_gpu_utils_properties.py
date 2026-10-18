@@ -7,6 +7,21 @@ import pytest
 from hypothesis import given, strategies as st, settings, assume
 from unittest.mock import Mock, patch
 
+
+@st.composite
+def valid_memory_pair(draw):
+    total_memory = draw(st.integers(min_value=8000, max_value=24000))
+    used_memory = draw(st.integers(min_value=0, max_value=total_memory))
+    return float(total_memory), float(used_memory)
+
+
+@st.composite
+def valid_cache_clear_pair(draw):
+    """Generate exact MB values with a non-negative post-cleanup allocation."""
+    initial = draw(st.integers(min_value=1000, max_value=20000))
+    freed = draw(st.integers(min_value=100, max_value=min(5000, initial)))
+    return float(initial), float(freed)
+
 # 尝试导入 GPU 工具
 try:
     from src.utils.gpu_utils import (
@@ -27,11 +42,10 @@ class TestGPUUtilsProperties:
     """GPU 工具属性测试"""
     
     @given(
-        initial_memory_used=st.floats(min_value=1000.0, max_value=20000.0),
-        memory_freed=st.floats(min_value=100.0, max_value=5000.0)
+        memory_pair=valid_cache_clear_pair(),
     )
     @settings(max_examples=15, deadline=2000)
-    def test_property_19_gpu_cache_clear_effectiveness(self, initial_memory_used, memory_freed):
+    def test_property_19_gpu_cache_clear_effectiveness(self, memory_pair):
         """
         属性 19：GPU 缓存清理有效性
         
@@ -40,6 +54,7 @@ class TestGPUUtilsProperties:
         2. 清理缓存不会导致显存使用量增加
         3. 清理缓存是幂等的（多次清理结果一致）
         """
+        initial_memory_used, memory_freed = memory_pair
         # Mock torch.cuda 模块
         with patch('src.utils.gpu_utils.TORCH_AVAILABLE', True):
             with patch('src.utils.gpu_utils.torch') as mock_torch:
@@ -74,12 +89,11 @@ class TestGPUUtilsProperties:
                     f"清理缓存后显存使用量应该减少或保持不变：清理前 {used_before} MB，清理后 {used_after} MB"
     
     @given(
-        total_memory=st.floats(min_value=8000.0, max_value=24000.0),
-        used_memory=st.floats(min_value=1000.0, max_value=20000.0),
-        threshold=st.floats(min_value=0.5, max_value=0.95)
+        memory=valid_memory_pair(),
+        threshold=st.integers(min_value=50, max_value=95).map(lambda value: value / 100.0)
     )
     @settings(max_examples=15, deadline=2000)
-    def test_property_gpu_memory_threshold_check_consistency(self, total_memory, used_memory, threshold):
+    def test_property_gpu_memory_threshold_check_consistency(self, memory, threshold):
         """
         属性：GPU 显存阈值检查一致性
         
@@ -88,8 +102,7 @@ class TestGPUUtilsProperties:
         2. 当使用率高于阈值时，返回 False
         3. 阈值检查结果与实际使用率一致
         """
-        # 确保 used_memory 不超过 total_memory
-        assume(used_memory <= total_memory)
+        total_memory, used_memory = memory
         
         # Mock torch.cuda 模块
         with patch('src.utils.gpu_utils.TORCH_AVAILABLE', True):
@@ -113,8 +126,10 @@ class TestGPUUtilsProperties:
                         f"使用率 ({actual_usage_ratio:.2%}) 高于阈值 ({threshold:.2%})，应该返回 False"
     
     @given(
-        total_memory=st.floats(min_value=8000.0, max_value=24000.0),
-        model_size=st.floats(min_value=1000.0, max_value=15000.0)
+        # Integer MB values express the same invariant without Hypothesis
+        # spending excessive time shrinking binary floating-point examples.
+        total_memory=st.integers(min_value=8000, max_value=24000),
+        model_size=st.integers(min_value=1000, max_value=15000),
     )
     @settings(max_examples=15, deadline=2000)
     def test_property_optimal_gpu_layers_calculation(self, total_memory, model_size):

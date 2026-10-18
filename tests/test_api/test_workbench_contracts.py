@@ -134,6 +134,44 @@ def test_production_engine_block_returns_actionable_400(setup, monkeypatch):
     assert "configure ComfyUI video workflow" in response.json()["detail"]
 
 
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        (
+            {"provider": "seedance_api", "model": "doubao-seedance-1-0-pro-250528", "request_mode": "edit"},
+            "does not support edit",
+        ),
+        (
+            {"provider": "seedance_api", "model": "doubao-seedance-2-5-260628", "resolution": "4k"},
+            "does not support 4k",
+        ),
+        (
+            {"provider": "seedance_api", "model": "doubao-seedance-2-0-260128", "duration_seconds": 30},
+            "duration must be between 4 and 15",
+        ),
+        (
+            {
+                "provider": "seedance_api",
+                "model": "doubao-seedance-2-5-260628",
+                "request_mode": "edit",
+                "duration_seconds": 5,
+            },
+            "edit/extend tasks require automatic duration",
+        ),
+    ],
+)
+def test_produce_rejects_incompatible_native_seedance_override(setup, monkeypatch, payload, message):
+    client, _, _ = setup
+    monkeypatch.setenv("GENERATION_PROVIDER", "seedance_api")
+    monkeypatch.setenv("SEEDANCE_ENDPOINT", "https://ark.cn-beijing.volcengine.com/api/v3/contents/generations/tasks")
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+
+    response = client.post("/api/projects/1/produce", json=payload)
+
+    assert response.status_code == 422
+    assert message in response.json()["detail"]
+
+
 def test_short_drama_scene_count_block_returns_actionable_400(setup, monkeypatch):
     client, db, _ = setup
     monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)

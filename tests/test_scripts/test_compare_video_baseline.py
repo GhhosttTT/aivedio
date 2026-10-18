@@ -138,3 +138,40 @@ def test_compare_video_baseline_rejects_large_exposure_shift_without_video_probe
     assert report["gates"]["aspect_ratio_close"] is True
     assert report["gates"]["exposure_close"] is False
     assert report["differences"]["brightness_delta"] == -65
+
+
+def test_compare_video_baseline_blocks_missing_candidate_audio(monkeypatch, tmp_path):
+    def fake_stats(path, max_samples):
+        return VideoStats(
+            path=str(path), duration_seconds=2.0, width=160, height=90, fps=24,
+            sampled_frames=6, motion_energy=8, sharpness=30, brightness=90,
+            brightness_variance=40, audio_present="baseline" in path.name,
+            audio_duration_seconds=2.0 if "baseline" in path.name else None,
+            audio_codec="aac" if "baseline" in path.name else None,
+        )
+
+    monkeypatch.setattr("scripts.compare_video_baseline.video_stats", fake_stats)
+
+    report = compare(tmp_path / "candidate.mp4", tmp_path / "baseline.mp4", max_samples=6)
+
+    assert report["status"] == "needs_review"
+    assert report["gates"]["audio_presence_matches"] is False
+    assert report["gates"]["audio_duration_close"] is False
+
+
+def test_compare_video_baseline_blocks_prolonged_static_run(monkeypatch, tmp_path):
+    def fake_stats(path, max_samples):
+        return VideoStats(
+            path=str(path), duration_seconds=4.0, width=160, height=90, fps=24,
+            sampled_frames=8, motion_energy=8, sharpness=30, brightness=90,
+            brightness_variance=40, max_static_run_seconds=2.1 if "candidate" in path.name else 0.2,
+        )
+
+    monkeypatch.setattr("scripts.compare_video_baseline.video_stats", fake_stats)
+
+    report = compare(tmp_path / "candidate.mp4", tmp_path / "baseline.mp4", max_samples=8)
+
+    assert report["status"] == "needs_review"
+    assert report["gates"]["motion_not_static"] is True
+    assert report["gates"]["no_prolonged_static_run"] is False
+    assert report["differences"]["max_static_run_delta_seconds"] == 1.9

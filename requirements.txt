@@ -21,6 +21,8 @@ llama-cpp-python>=0.3.16,<0.4
 Pillow==10.1.0
 opencv-python==4.8.1.78
 rapidocr-onnxruntime==1.2.3
+# OpenCV/RapidOCR wheels currently require the NumPy 1.x ABI.
+numpy<2
 
 # 视频处理
 ffmpeg-python==0.2.0
@@ -31,7 +33,9 @@ torchvision>=0.17.0
 diffusers==0.24.0
 transformers==4.35.2
 accelerate==0.25.0
-xformers>=0.0.23
+# Optional CUDA/Linux performance optimization. It is not available on all
+# platforms (for example, the default macOS toolchain lacks OpenMP).
+# xformers>=0.0.23
 
 # HTTP 客户端
 httpx==0.25.2
@@ -45,6 +49,7 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
 cryptography==41.0.7
+email-validator==2.1.0.post1
 
 # 监控
 prometheus-client==0.19.0

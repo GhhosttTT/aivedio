@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Edit2, Trash2, ArrowLeft, ArrowRight, X, RefreshCw } from 'lucide-react';
 import { errorText, projectApi } from '../api/client';
@@ -14,13 +14,13 @@ export function ProjectList() {
     const [editing, setEditing] = useState<number | null>(null);
     const [modal, setModal] = useState(false);
     const [form, setForm] = useState({name: '', description: '', theme: '', outline: ''});
-    const load = async () => {
+    const load = useCallback(async () => {
         setLoading(true);
         try { const data = await projectApi.listProjects({page, page_size: 12}); setProjects(data.projects); setTotal(data.total); setError(''); }
         catch(e) { setError(errorText(e)); }
         finally { setLoading(false); }
-    };
-    useEffect(() => {load();}, [page]);
+    }, [page]);
+    useEffect(() => {load();}, [load]);
     const remove = async (p: Project) => {
         if (!window.confirm(`删除项目“${p.name}”及其素材？此操作无法撤销。`)) return;
         setBusy(true);
