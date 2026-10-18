@@ -59,6 +59,7 @@ const repairActionLabels: Record<string, string> = {
     split_scene: '拆分为更简单的原子镜头',
     refreeze_spatial_plan: '重新冻结空间计划',
     fix_workflow_profile: '修复 Workflow Profile',
+    rewrite_short_drama_story_rhythm: '按建议重写短剧节奏',
     complete_topic_brief: '补齐选题定位',
     refine_topic_brief: '细化选题定位',
     start_local_reviewer: '启动 llama.cpp 视觉审核后重跑',
@@ -103,6 +104,7 @@ function executableRepair(action?: string, sceneNumber?: number) {
 function executableSetupRepair(action?: string, sceneNumber?: number) {
     return action === 'refreeze_spatial_plan'
         || action === 'fix_workflow_profile'
+        || action === 'rewrite_short_drama_story_rhythm'
         || (action === 'fix_video_output_contract' && Boolean(sceneNumber));
 }
 
@@ -504,6 +506,8 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
                 await projectApi.freezeSpatialPlan(projectId);
             } else if (item.action === 'fix_workflow_profile') {
                 await projectApi.freezeWorkflowProfile();
+            } else if (item.action === 'rewrite_short_drama_story_rhythm') {
+                await projectApi.repairScript(projectId);
             } else if (item.action === 'fix_video_output_contract' && item.scene_number) {
                 await projectApi.repairScene(projectId, {scene_number: item.scene_number, action: item.action});
             }

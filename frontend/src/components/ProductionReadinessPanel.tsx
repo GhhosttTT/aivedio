@@ -245,5 +245,7 @@ function labelScorecardAction(action: string): string {
 }
 
 function isExecutableRepairAction(action: string): boolean {
-    return action === 'refreeze_spatial_plan' || action === 'fix_workflow_profile';
+    return action === 'refreeze_spatial_plan'
+        || action === 'fix_workflow_profile'
+        || action === 'rewrite_short_drama_story_rhythm';
 }

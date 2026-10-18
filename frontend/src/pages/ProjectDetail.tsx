@@ -110,7 +110,11 @@ export function ProjectDetail() {
                 await projectApi.freezeWorkflowProfile({notes: assetNotes});
                 await reload();
             } catch(e) { setError(errorText(e)); }
-            finally { setBusy(''); }
+                finally { setBusy(''); }
+            return;
+        }
+        if (action === 'rewrite_short_drama_story_rhythm') {
+            await run('按故事房建议重写剧本');
         }
     };
     const uploadBgm = async (file: File) => {
