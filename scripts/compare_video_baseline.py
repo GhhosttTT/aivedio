@@ -274,6 +274,9 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
             round(candidate_stats.audio_video_start_delta_seconds, 3)
             if candidate_stats.audio_video_start_delta_seconds is not None else None
         ),
+        "visual_structure_similarity": _visual_structure_similarity(
+            candidate, baseline, max_samples=max_samples,
+        ),
     }
     audio_duration_delta = differences["audio_duration_delta_seconds"]
     gates = {
@@ -340,6 +343,12 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
                 <= settings.GENERATION_VIDEO_BASELINE_MAX_AUDIO_RMS_DELTA_DB
             )
         ),
+        "visual_structure_reference_available": differences["visual_structure_similarity"] is not None,
+        "visual_structure_not_diverged": (
+            differences["visual_structure_similarity"] is None
+            or differences["visual_structure_similarity"]
+            >= settings.GENERATION_VIDEO_BASELINE_MIN_VISUAL_STRUCTURE_SIMILARITY
+        ),
     }
     score = _technical_similarity_score(differences, gates)
     status = "passed" if all(gates.values()) and score >= 4.0 else "needs_review"
@@ -356,8 +365,39 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
         "limitations": [
             "This is a measurable first-pass comparison, not a final human taste judgment.",
             "Story meaning, acting emotion, and character identity still require VLM/human review.",
+            "Visual structure similarity is a low-cost spatial signal; it does not replace semantic or identity review.",
         ],
     }
+
+
+def _visual_structure_similarity(candidate: Path, baseline: Path, max_samples: int) -> float | None:
+    """Compare normalized low-resolution luminance structure at matching times.
+
+    Per-frame normalization makes the signal less sensitive to exposure and
+    codec differences while preserving coarse composition, subject placement,
+    and large silhouette changes. Missing files or unreadable frames remain a
+    non-blocking evidence gap so mocked/unit-test reports stay deterministic.
+    """
+    if not candidate.is_file() or not baseline.is_file():
+        return None
+    try:
+        cv2, np = _load_cv2_numpy()
+        candidate_frames = _sample_frames(candidate, max_samples)
+        baseline_frames = _sample_frames(baseline, max_samples)
+        count = min(len(candidate_frames), len(baseline_frames))
+        if count < 2:
+            return None
+        similarities = []
+        for candidate_frame, baseline_frame in zip(candidate_frames[:count], baseline_frames[:count]):
+            candidate_gray = cv2.cvtColor(candidate_frame, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+            baseline_gray = cv2.cvtColor(baseline_frame, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+            candidate_gray = (candidate_gray - float(candidate_gray.mean())) / max(float(candidate_gray.std()), 0.05)
+            baseline_gray = (baseline_gray - float(baseline_gray.mean())) / max(float(baseline_gray.std()), 0.05)
+            mean_absolute_error = float(np.mean(np.abs(candidate_gray - baseline_gray)))
+            similarities.append(max(0.0, min(1.0, 1.0 - mean_absolute_error / 2.0)))
+        return round(float(np.mean(similarities)), 3)
+    except (OSError, RuntimeError, ValueError):
+        return None
 
 
 def _write_contact_sheet(candidate: Path, baseline: Path, artifact_dir: Path, max_samples: int = 6) -> Path:

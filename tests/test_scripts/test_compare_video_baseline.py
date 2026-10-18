@@ -96,6 +96,8 @@ def test_compare_video_baseline_reports_measurable_gates(tmp_path):
     assert report["candidate"]["sampled_frames"] >= 4
     assert report["gates"]["duration_close"] is True
     assert report["gates"]["motion_not_static"] is True
+    assert report["gates"]["visual_structure_reference_available"] is True
+    assert report["gates"]["visual_structure_not_diverged"] is True
     assert Path(report["contact_sheet_path"]).is_file()
     assert Path(report["contact_sheet_path"]).name == "seed_dance_contact_sheet.png"
 
