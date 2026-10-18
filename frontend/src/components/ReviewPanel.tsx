@@ -202,6 +202,29 @@ function OutputContractEvidence({report}: {report: any}) {
     </div>;
 }
 
+function GenerationRunEvidence({report}: {report: any}) {
+    const evidence = report?.generation_run_evidence || report?.final_video_review?.generation_run_evidence;
+    const attempts = evidence?.attempts;
+    if (!evidence || !attempts) return null;
+    const failed = evidence.status !== 'passed';
+    return <div className="wb-summary-actions" aria-label="视频生成运行证据">
+        <h4>视频生成运行证据</h4>
+        <p className={failed ? 'wb-alert' : 'wb-muted'}>
+            {failed ? '候选生成尚未形成可接受结果。' : '候选生成与提升结果已记录。'}
+        </p>
+        <div className="wb-grid compact">
+            <div className="wb-kv"><span>候选尝试</span><strong>{attempts.candidate_count ?? '-'}</strong></div>
+            <div className="wb-kv"><span>生成成功</span><strong>{attempts.generated_count ?? '-'}</strong></div>
+            <div className="wb-kv"><span>质量通过</span><strong>{attempts.passed_count ?? '-'}</strong></div>
+            <div className="wb-kv"><span>通过率</span><strong>{typeof attempts.pass_rate === 'number' ? `${Math.round(attempts.pass_rate * 100)}%` : '-'}</strong></div>
+            <div className="wb-kv"><span>总耗时</span><strong>{attempts.elapsed_seconds_sum ?? '-'} 秒</strong></div>
+            <div className="wb-kv"><span>最长单次</span><strong>{attempts.elapsed_seconds_max ?? '-'} 秒</strong></div>
+        </div>
+        {evidence.providers?.length ? <p className="wb-muted">Provider：{evidence.providers.join('、')}</p> : null}
+        {evidence.provider_task_ids?.length ? <p className="wb-muted">任务：{evidence.provider_task_ids.join('、')}</p> : null}
+    </div>;
+}
+
 function FinalCompositionEvidence({projectId, report}: {projectId: number; report: any}) {
     if (report?.stage !== 'final_composition') return null;
     const metrics = report.final_technical_metrics || {};
@@ -455,6 +478,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             {report.error && <p className="wb-alert">{String(report.error)}</p>}
             <ProviderTrace report={report}/>
             <OutputContractEvidence report={report}/>
+            <GenerationRunEvidence report={report}/>
             <FinalCompositionEvidence projectId={projectId} report={report}/>
             <SeedDanceComparison projectId={projectId} report={report}/>
             <Scores review={report.review}/>
