@@ -1580,6 +1580,20 @@ class SeedanceApiProvider(ApiVideoProvider):
         audio_paths = _unique_media_paths(request.reference_audios or [])
         if not audio_paths and request.audio_path:
             audio_paths = [request.audio_path]
+        request_mode = str(
+            request.request_mode or _provider_setting("SEEDANCE_REQUEST_MODE", "reference")
+        ).strip().lower()
+        if request_mode in {"seedance_2_5", "2.5"}:
+            request_mode = "multi_shot"
+        if request_mode not in {
+            "reference", "reference_to_video", "auto", "multi_shot",
+            "first_frame", "first_last_frame", "edit", "extend",
+        }:
+            raise GenerationProviderError(
+                f"Unsupported native Seedance request mode: {request_mode}; "
+                "choose reference, reference_to_video, auto, multi_shot, first_frame, "
+                "first_last_frame, edit, or extend"
+            )
         audio_public = _validate_native_ark_audio_references(
             audio_paths,
             maximum_duration=30.0 if is_25 else 15.0,
@@ -1612,18 +1626,22 @@ class SeedanceApiProvider(ApiVideoProvider):
         # First/last-frame mode is mutually exclusive with omni reference
         # mode. Use it only for a true two-frame shot.
         first_last_frame = bool(
-            request.end_image
+            (request.end_image or request_mode == "first_last_frame")
             and len(image_paths) == 1
             and not video_paths
             and not audio_paths
             and not request.extend_video
         )
+        if request_mode == "first_last_frame" and not request.end_image:
+            raise GenerationProviderError(
+                "Native Seedance first_last_frame mode requires end_image"
+            )
         if first_last_frame and not _seedance_model_supports_first_last_frame(model):
             raise GenerationProviderError(
                 f"Native Seedance model {model} does not support first/last-frame generation"
             )
         single_first_frame = bool(
-            is_10
+            (is_10 or (is_25 and request_mode == "first_frame"))
             and len(image_paths) == 1
             and not request.end_image
             and not video_paths
@@ -1657,16 +1675,6 @@ class SeedanceApiProvider(ApiVideoProvider):
             )
             ratio = request.aspect_ratio
 
-        request_mode = str(
-            request.request_mode or _provider_setting("SEEDANCE_REQUEST_MODE", "reference")
-        ).strip().lower()
-        if request_mode in {"seedance_2_5", "2.5"}:
-            request_mode = "multi_shot"
-        if request_mode not in {"reference", "reference_to_video", "auto", "multi_shot", "edit", "extend"}:
-            raise GenerationProviderError(
-                f"Unsupported native Seedance request mode: {request_mode}; "
-                "choose reference, reference_to_video, auto, multi_shot, edit, or extend"
-            )
         if request_mode == "auto" and not is_25:
             raise GenerationProviderError(
                 f"Native Seedance model {model} does not support omni_reference_task_type=auto; use Seedance 2.5"
@@ -1748,6 +1756,11 @@ class SeedanceApiProvider(ApiVideoProvider):
         if first_last_frame and is_25 and not draft_requested:
             raise GenerationProviderError(
                 "Seedance 2.5 first/last-frame generation requires Draft=true; "
+                "promote the returned draft task for the final video"
+            )
+        if request_mode == "first_frame" and is_25 and not draft_requested:
+            raise GenerationProviderError(
+                "Seedance 2.5 first-frame generation requires Draft=true; "
                 "promote the returned draft task for the final video"
             )
         resolution = (

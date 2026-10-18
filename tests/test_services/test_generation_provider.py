@@ -1585,6 +1585,28 @@ def test_seedance_native_ark_25_requires_draft_for_first_last_frame(tmp_path, mo
         ))
 
 
+def test_seedance_native_ark_25_explicit_first_frame_uses_draft_contract(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
+    first = tmp_path / "first.png"
+    first.write_bytes(b"first")
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    payload = provider._video_payload(VideoGenerationRequest(
+        prompt="A person turns toward camera",
+        output_path=str(tmp_path / "out.mp4"),
+        reference_image=str(first),
+        request_mode="first_frame",
+        duration_seconds=6,
+        draft=True,
+    ))
+
+    assert payload["resolution"] == "480p"
+    assert payload["draft"] is True
+    assert "omni_reference_task_type" not in payload
+    assert [item["role"] for item in payload["content"][1:]] == ["first_frame"]
+
+
 @pytest.mark.parametrize(
     "template",
     ["http://cdn.example/{filename}", "https://localhost/{filename}", "https://10.0.0.8/{filename}"],
