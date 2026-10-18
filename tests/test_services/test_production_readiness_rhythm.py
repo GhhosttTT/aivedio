@@ -112,6 +112,20 @@ def test_production_readiness_maps_warning_findings_to_typed_repair_actions():
     ]
 
 
+def test_production_readiness_exposes_real_sample_validation_action():
+    service = ProductionReadinessService(None)
+    actions = service._readiness_repair_actions([
+        ReadinessIssue("missing_sample_validation", "Run real GPU samples."),
+        ReadinessIssue("sample_validation_not_production_ready", "Samples are not ready."),
+    ])
+
+    assert [item["action"] for item in actions] == [
+        "run_real_gpu_sample_validation",
+    ]
+    assert actions[0]["stage"] == "validation"
+    assert actions[0]["execution"] == "manual"
+
+
 def test_production_readiness_maps_video_sample_failures_to_targeted_repairs():
     service = ProductionReadinessService(None)
     actions = service._readiness_repair_actions([

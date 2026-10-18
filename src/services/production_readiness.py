@@ -67,6 +67,8 @@ class ProductionReadinessService:
         "episode_rhythm_warning": ("rewrite_short_drama_story_rhythm", "script", "setup_required"),
         "complex_shot_warnings": ("split_scene", "script", "manual"),
         "weak_spatial_continuity": ("refreeze_spatial_plan", "spatial", "setup_required"),
+        "missing_sample_validation": ("run_real_gpu_sample_validation", "validation", "manual"),
+        "sample_validation_not_production_ready": ("run_real_gpu_sample_validation", "validation", "manual"),
         "sample_validation_video_temporal_gate_not_passed": (
             "lower_motion_and_regenerate_video", "video", "auto",
         ),
