@@ -180,7 +180,16 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
     root = Path(project_root).resolve()
     final_path = Path(getattr(project, "final_video_path", None) or "").resolve()
     final_composition = reports.get("final_composition") if isinstance(reports, dict) else None
-    if not isinstance(final_composition, dict) or final_composition.get("status") != "passed":
+    manual_approval = (
+        isinstance(final_composition, dict)
+        and final_composition.get("status") in {"needs_review", "review_unavailable"}
+        and isinstance(final_composition.get("human_decision"), dict)
+        and final_composition["human_decision"].get("decision") == "approved"
+    )
+    if (
+        not isinstance(final_composition, dict)
+        or (final_composition.get("status") != "passed" and not manual_approval)
+    ):
         raise DeliveryPackageError("Final composition review is not passed; delivery is blocked")
     if Path(str(final_composition.get("video_path") or "")).resolve() != final_path:
         raise DeliveryPackageError("Final composition review points to a different video")

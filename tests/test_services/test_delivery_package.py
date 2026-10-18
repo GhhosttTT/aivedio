@@ -47,6 +47,27 @@ def test_delivery_package_requires_final_composition_evidence(tmp_path):
         build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}}, {"status": "ready"})
 
 
+def test_delivery_package_accepts_approved_manual_final_review(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+    report = {
+        "status": "needs_review",
+        "video_path": str(final),
+        "video_sha256": _sha256(final),
+        "human_decision": {"decision": "approved", "note": "人工确认"},
+    }
+
+    manifest = build_delivery_package(
+        project,
+        tmp_path,
+        {"generation": {"status": "passed"}, "final_composition": report},
+        {"status": "ready"},
+    )
+
+    assert manifest["status"] == "ready"
+
+
 def test_delivery_package_persists_dynamic_audit_evidence(tmp_path):
     final = tmp_path / "final.mp4"
     final.write_bytes(b"final-video")
