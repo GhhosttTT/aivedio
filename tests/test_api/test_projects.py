@@ -23,7 +23,11 @@ def _write_draft_evidence(scene, payload: dict) -> None:
     video_path = Path(scene.video_path)
     video_path.write_bytes(b"draft-video")
     Path(scene.video_path).with_suffix(".provider.json").write_text(
-        json.dumps({**payload, "video_sha256": file_hash(video_path)}),
+        json.dumps({
+            "provider_name": "seedance_api",
+            **payload,
+            "video_sha256": file_hash(video_path),
+        }),
         encoding="utf-8",
     )
 
@@ -560,6 +564,33 @@ def test_promote_drafts_rejects_stale_provider_evidence(client, tmp_path):
         "requested_draft": True,
         "video_sha256": "stale-hash",
     }), encoding="utf-8")
+    project.scenes = [scene]
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = project
+
+    with patch("src.api.routes.projects.TaskOrchestrator") as mock_orchestrator:
+        client.app.dependency_overrides[get_db_session] = lambda: db
+        response = client.post("/api/projects/1/promote-drafts")
+
+    assert response.status_code == 400
+    assert "没有可提升的 Draft" in response.json()["detail"]
+    mock_orchestrator.assert_not_called()
+
+
+def test_promote_drafts_rejects_non_seedance_provider_evidence(client, tmp_path):
+    project = Mock(spec=Project)
+    project.id = 1
+    project.status = ProjectStatus.SCRIPT_GENERATED
+    project.final_video_path = None
+    scene = Mock(spec=Scene)
+    scene.id = 11
+    scene.scene_number = 1
+    scene.video_path = str(tmp_path / "scene-01.mp4")
+    _write_draft_evidence(scene, {
+        "provider_name": "jimeng_api",
+        "provider_task_id": "other-provider-task",
+        "requested_draft": True,
+    })
     project.scenes = [scene]
     db = Mock()
     db.query.return_value.filter.return_value.first.return_value = project

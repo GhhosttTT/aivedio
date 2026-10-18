@@ -1601,6 +1601,9 @@ async def promote_seedance_drafts(
         task_id = data.get("provider_task_id") if isinstance(data, dict) else None
         is_draft = bool(data.get("requested_draft")) if isinstance(data, dict) else False
         if isinstance(task_id, str) and task_id.strip() and is_draft:
+            if data.get("provider_name") != "seedance_api":
+                missing.append(scene.scene_number)
+                continue
             current_video_hash = (
                 file_hash(scene_video_path)
                 if scene_video_path and scene_video_path.is_file()
