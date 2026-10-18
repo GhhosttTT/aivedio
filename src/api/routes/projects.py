@@ -453,6 +453,7 @@ async def get_generation_review(
         validate_story_review_coverage,
     )
     from src.tasks.composition_tasks import composition_input_signature
+    from src.services.task_recovery import load_production_video_options
     from src.services.generation_review import fingerprint, write_report
     continuity_report = ContinuityAuditService().audit(project, getattr(project, "scenes", []) or []).to_dict()
     if continuity_report.get("status") != "not_applicable":
@@ -546,7 +547,14 @@ async def get_generation_review(
     if isinstance(final_composition, dict) and final_composition.get("status") == "passed":
         active_final_path = Path(getattr(project, "final_video_path", None) or "")
         reviewed_final_path = Path(final_composition.get("video_path") or "")
-        expected_composition_input = composition_input_signature(project, audit_scenes)
+        production_options = load_production_video_options(project_id) or {}
+        expected_composition_input = composition_input_signature(
+            project,
+            audit_scenes,
+            add_bgm=bool(production_options.get("add_bgm")),
+            bgm_path=production_options.get("bgm_path"),
+            bgm_volume=float(production_options.get("bgm_volume", 0.3)),
+        )
         if (
             not active_final_path.is_file()
             or not final_composition.get("video_signature")

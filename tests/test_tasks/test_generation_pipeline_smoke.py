@@ -138,6 +138,22 @@ def test_composition_accepts_passed_audio_quality_report_for_dialogue(tmp_path):
     composition_tasks._require_passed_scene_audio([scene])
 
 
+def test_composition_input_signature_changes_when_bgm_mix_changes(tmp_path):
+    project = Mock(id=1, script='{}', outline='outline')
+    video = tmp_path / "scene.mp4"
+    audio = tmp_path / "scene.mp3"
+    subtitle = tmp_path / "scene.srt"
+    bgm = tmp_path / "bgm.mp3"
+    for path in (video, audio, subtitle, bgm):
+        path.write_bytes(b"asset")
+    scene = Mock(scene_number=1, dialogue="hello", image_path=None, video_path=str(video), audio_path=str(audio), subtitle_path=str(subtitle))
+
+    without_bgm = composition_tasks.composition_input_signature(project, [scene])
+    with_bgm = composition_tasks.composition_input_signature(project, [scene], add_bgm=True, bgm_path=str(bgm), bgm_volume=0.25)
+
+    assert without_bgm != with_bgm
+
+
 def test_composition_rejects_audio_bound_to_the_wrong_character(tmp_path):
     audio = tmp_path / "scene_001.mp3"
     audio.write_bytes(b"fake audio")

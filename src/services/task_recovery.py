@@ -26,6 +26,9 @@ _PRODUCTION_OPTION_KEYS = (
     "watermark",
     "duration_seconds",
     "sequence_output_path",
+    "add_bgm",
+    "bgm_path",
+    "bgm_volume",
 )
 
 _PRODUCTION_OPTION_ALIASES = {

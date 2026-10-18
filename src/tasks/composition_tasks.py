@@ -42,12 +42,24 @@ def _video_version_signature(path: str | Path) -> str | None:
     return f"{media_path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
 
 
-def composition_input_signature(project: Project, scenes: list[Scene]) -> str:
+def composition_input_signature(
+    project: Project,
+    scenes: list[Scene],
+    *,
+    add_bgm: bool = False,
+    bgm_path: str | Path | None = None,
+    bgm_volume: float = 0.3,
+) -> str:
     """Fingerprint every source asset and story field used by final composition."""
     payload = {
         "project_id": getattr(project, "id", None),
         "script": getattr(project, "script", None),
         "outline": getattr(project, "outline", None),
+        "audio_mix": {
+            "add_bgm": bool(add_bgm),
+            "bgm_path": _video_version_signature(bgm_path) if bgm_path else None,
+            "bgm_volume": round(float(bgm_volume), 4),
+        },
         "scenes": [
             {
                 "scene_number": getattr(scene, "scene_number", None),
@@ -328,7 +340,12 @@ def compose_final_video_task(
                 shutil.copy2(temp_video_path, composition_candidate_path)
 
         composition_review = _review_final_composed_video(
-            project, scenes, str(composition_candidate_path)
+            project,
+            scenes,
+            str(composition_candidate_path),
+            add_bgm=add_bgm,
+            bgm_path=bgm_path,
+            bgm_volume=bgm_volume,
         )
         composition_review = _publish_composition_candidate(
             composition_candidate_path,
@@ -976,7 +993,15 @@ def _composition_review_error(report: dict) -> str | None:
     return None
 
 
-def _review_final_composed_video(project: Project, scenes: list[Scene], final_video_path: str) -> dict | None:
+def _review_final_composed_video(
+    project: Project,
+    scenes: list[Scene],
+    final_video_path: str,
+    *,
+    add_bgm: bool = False,
+    bgm_path: str | Path | None = None,
+    bgm_volume: float = 0.3,
+) -> dict | None:
     if not settings.GENERATION_REQUIRE_VIDEO_REVIEW:
         return None
     report_path = Path(final_video_path).with_suffix(".composition_review.json")
@@ -1002,7 +1027,19 @@ def _review_final_composed_video(project: Project, scenes: list[Scene], final_vi
     report["path"] = str(report_path)
     report["video_path"] = str(final_video_path)
     report["video_signature"] = _video_version_signature(final_video_path)
-    report["composition_input_signature"] = composition_input_signature(project, scenes)
+    report["composition_input_signature"] = composition_input_signature(
+        project,
+        scenes,
+        add_bgm=add_bgm,
+        bgm_path=bgm_path,
+        bgm_volume=bgm_volume,
+    )
+    report["audio_mix"] = {
+        "add_bgm": bool(add_bgm),
+        "bgm_path": str(bgm_path) if bgm_path else None,
+        "bgm_volume": round(float(bgm_volume), 4),
+        "dialogue_ducking": bool(add_bgm),
+    }
     report["stage"] = "final_composition"
     report["technical_boundary_report"] = technical_boundary_report
     report["final_technical_metrics"] = final_technical_metrics
