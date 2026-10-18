@@ -6,6 +6,7 @@ import json
 import subprocess
 from math import gcd
 from pathlib import Path
+from uuid import uuid4
 
 from src.config import settings
 from src.database.database import get_db
@@ -178,12 +179,25 @@ def _provider_metadata_path(video_path: str | Path) -> Path:
     return Path(video_path).with_suffix(".provider.json")
 
 
+def _write_json_sidecar(path: Path, data: dict) -> None:
+    """Publish a JSON sidecar atomically so recovery never reads half a file."""
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def _write_provider_metadata(video_path: str | Path, metadata: dict | None) -> str | None:
     if not isinstance(metadata, dict) or not metadata:
         return None
     path = _provider_metadata_path(video_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    _write_json_sidecar(path, metadata)
     return str(path)
 
 
@@ -239,11 +253,11 @@ def _write_scene_continuity_metadata(video_path: str | Path, metadata: dict | No
         return None
     path = _continuity_metadata_path(video_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
+    _write_json_sidecar(path, {
         "last_frame_url": last_frame.strip() if isinstance(last_frame, str) and last_frame.strip() else None,
         "last_frame_path": last_frame_path if isinstance(last_frame_path, str) and Path(last_frame_path).is_file() else None,
         "source": metadata.get("endpoint"),
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    })
     return str(path)
 
 

@@ -3192,6 +3192,18 @@ def test_provider_metadata_persists_draft_task_and_duration(tmp_path):
     assert data["provider_duration_seconds"] == 8.0
 
 
+def test_sidecar_metadata_is_published_without_temporary_files(tmp_path):
+    video = tmp_path / "scene.mp4"
+    path = _write_provider_metadata(video, {
+        "provider_task_id": "task-1",
+        "requested_output_format": "mp4",
+    })
+
+    assert path == str(_provider_metadata_path(video))
+    assert json.loads(Path(path).read_text(encoding="utf-8"))["provider_task_id"] == "task-1"
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
 def test_seedance_multishot_normalization_preserves_provider_duration():
     plan = VideoShotPlan(
         shot_role="dialogue_reaction", action_intensity="low", target_duration_seconds=4.0,
