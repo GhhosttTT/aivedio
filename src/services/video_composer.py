@@ -884,6 +884,7 @@ class VideoComposer:
                 ]
                 try:
                     subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    self._require_output_file(aligned, "场景音频对齐")
                 except subprocess.CalledProcessError as exc:
                     raise VideoComposerError(f"Scene audio alignment failed: {exc.stderr}") from exc
                 aligned_paths.append(aligned)
@@ -975,6 +976,7 @@ class VideoComposer:
                 ]
             
             subprocess.run(cmd, capture_output=True, text=True, check=True)
+            self._require_output_file(output_path, "音频拼接")
             
             return output_path
             

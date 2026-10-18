@@ -611,6 +611,18 @@ class TestVideoComposer:
         assert result == str(output_path)
         mock_run.assert_called_once()
 
+    def test_concat_audio_rejects_missing_output(self, service, tmp_path):
+        audio1 = tmp_path / "audio1.mp3"
+        audio2 = tmp_path / "audio2.mp3"
+        audio1.write_text("fake audio 1")
+        audio2.write_text("fake audio 2")
+        output_path = tmp_path / "missing.mp3"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            with pytest.raises(VideoComposerError, match="音频拼接失败"):
+                service._concat_audio([str(audio1), str(audio2)], str(output_path))
+
 
 class TestGlobalVideoComposer:
     """全局视频合成服务测试类"""
