@@ -221,3 +221,21 @@ def test_compare_video_baseline_blocks_temporal_visual_resets(monkeypatch, tmp_p
     assert report["status"] == "needs_review"
     assert report["gates"]["no_temporal_visual_resets"] is False
     assert report["differences"]["temporal_jump_ratio_delta"] == 0.7
+
+
+def test_compare_video_baseline_blocks_large_fps_mismatch(monkeypatch, tmp_path):
+    def fake_stats(path, max_samples):
+        return VideoStats(
+            path=str(path), duration_seconds=2.0, width=160, height=90,
+            fps=12 if "candidate" in path.name else 24,
+            sampled_frames=6, motion_energy=8, sharpness=30, brightness=90,
+            brightness_variance=40,
+        )
+
+    monkeypatch.setattr("scripts.compare_video_baseline.video_stats", fake_stats)
+
+    report = compare(tmp_path / "candidate.mp4", tmp_path / "baseline.mp4", max_samples=6)
+
+    assert report["status"] == "needs_review"
+    assert report["gates"]["fps_close"] is False
+    assert report["differences"]["fps_delta"] == -12

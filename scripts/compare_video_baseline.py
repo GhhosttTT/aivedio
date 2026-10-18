@@ -219,6 +219,7 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
     audio_duration_delta = differences["audio_duration_delta_seconds"]
     gates = {
         "duration_close": abs(differences["duration_delta_seconds"]) <= 0.5,
+        "fps_close": abs(differences["fps_delta"]) <= 2.0,
         "resolution_not_lower": (
             candidate_stats.width * candidate_stats.height >= baseline_stats.width * baseline_stats.height
         ),
