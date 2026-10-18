@@ -763,8 +763,13 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
                 max_actions: 5,
                 ...(actionFilter ? {action: actionFilter} : {}),
             });
-            setError(`已提交 ${result.submitted.length} 个自动返工动作，跳过 ${result.skipped.length} 个。`);
             await load();
+            const message = result.status === 'no_auto_actions'
+                ? '当前项目没有匹配该动作的可执行分镜返修。'
+                : result.status === 'manual_review_required'
+                    ? '自动返修预算已耗尽，请先完成人工审核。'
+                    : `已提交 ${result.submitted.length} 个自动返工动作，跳过 ${result.skipped.length} 个。`;
+            setError(message);
         } catch (e) {
             setError(errorText(e));
         } finally {
