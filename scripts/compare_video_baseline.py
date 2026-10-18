@@ -15,6 +15,8 @@ import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from src.config import settings
+
 
 @dataclass
 class VideoStats:
@@ -37,6 +39,7 @@ class VideoStats:
     brightness_step_p95: float = 0.0
     motion_jitter_ratio: float = 0.0
     temporal_jump_ratio: float = 0.0
+    temporal_jump_p95: float = 0.0
     audio_signal_status: str | None = None
     audio_clipping_status: str | None = None
     audio_peak_db: float | None = None
@@ -195,6 +198,10 @@ def video_stats(path: Path, max_samples: int = 16) -> VideoStats:
             if histogram_jumps else 0.0,
             3,
         ),
+        temporal_jump_p95=round(
+            float(np.percentile(histogram_jumps, 95)) if histogram_jumps else 0.0,
+            3,
+        ),
         audio_signal_status=audio_metrics.get("audio_signal_status"),
         audio_clipping_status=audio_metrics.get("audio_clipping_status"),
         audio_peak_db=audio_metrics.get("audio_peak_db"),
@@ -237,6 +244,9 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
         "temporal_jump_ratio_delta": round(
             candidate_stats.temporal_jump_ratio - baseline_stats.temporal_jump_ratio, 3
         ),
+        "temporal_jump_p95_delta": round(
+            candidate_stats.temporal_jump_p95 - baseline_stats.temporal_jump_p95, 3
+        ),
         "audio_duration_delta_seconds": (
             round(candidate_stats.audio_duration_seconds - baseline_stats.audio_duration_seconds, 3)
             if candidate_stats.audio_duration_seconds is not None
@@ -269,7 +279,8 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
         "no_prolonged_black_run": candidate_stats.max_black_run_seconds <= 0.2,
         "no_temporal_exposure_jumps": candidate_stats.brightness_step_p95 <= 36.0,
         "stable_motion_cadence": candidate_stats.motion_jitter_ratio <= 1.5,
-        "no_temporal_visual_resets": candidate_stats.temporal_jump_ratio <= 0.35,
+        "no_temporal_visual_resets": candidate_stats.temporal_jump_ratio <= settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO,
+        "no_extreme_temporal_visual_reset": candidate_stats.temporal_jump_p95 <= settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95,
         "audio_presence_matches": candidate_stats.audio_present == baseline_stats.audio_present,
         "audio_duration_close": (
             not baseline_stats.audio_present
@@ -291,7 +302,7 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
             not baseline_stats.audio_present
             or (
                 candidate_stats.audio_video_start_delta_seconds is not None
-                and candidate_stats.audio_video_start_delta_seconds <= 0.35
+                and candidate_stats.audio_video_start_delta_seconds <= settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS
             )
         ),
         "audio_level_close": (
