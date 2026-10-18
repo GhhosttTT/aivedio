@@ -8,6 +8,19 @@ from dataclasses import dataclass
 from src.config import settings
 
 
+# Single source of truth shared by the repair planner, image generation task,
+# and validation CLI. Keeping this contract centralized prevents a repair plan
+# from emitting a command that the CLI rejects.
+IMAGE_REPAIR_ACTIONS = (
+    "regenerate_keyframe_with_identity_lock",
+    "regenerate_keyframe_with_role_separation",
+    "refine_prompt_composition",
+    "refine_project_style_consistency",
+    "refine_face_aesthetic_detail",
+    "regenerate_keyframe_with_prop_constraints",
+)
+
+
 @dataclass(frozen=True)
 class QualityBudget:
     candidate_count: int

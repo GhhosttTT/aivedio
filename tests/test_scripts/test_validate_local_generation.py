@@ -3,6 +3,7 @@ import sys
 
 from scripts import validate_local_generation as validator
 from src.services import video_engine_preflight
+from src.services.generation_quality_policy import IMAGE_REPAIR_ACTIONS
 
 PRODUCTION_CASE_IDS = ("establishing", "discovery", "prop", "reaction", "reverse_shot", "stylized", "two_character_confrontation")
 
@@ -18,7 +19,7 @@ CASE_CATEGORIES = {
 
 
 def test_cli_repair_actions_cover_every_image_repair_profile():
-    assert set(validator.IMAGE_REPAIR_ACTIONS) == {
+    assert set(validator.IMAGE_REPAIR_ACTIONS) == set(IMAGE_REPAIR_ACTIONS) == {
         "regenerate_keyframe_with_identity_lock",
         "regenerate_keyframe_with_role_separation",
         "refine_prompt_composition",

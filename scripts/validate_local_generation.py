@@ -35,6 +35,7 @@ from src.services.generation_quality_scorecard import (
     build_generation_quality_scorecard,
     production_score_meets_candidate_threshold,
 )
+from src.services.generation_quality_policy import IMAGE_REPAIR_ACTIONS
 from src.services.shot_prompt_service import ShotPromptService
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.repair_queue import attach_repair_queue, build_repair_queue
@@ -2085,11 +2086,3 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
-IMAGE_REPAIR_ACTIONS = (
-    "regenerate_keyframe_with_identity_lock",
-    "regenerate_keyframe_with_role_separation",
-    "refine_prompt_composition",
-    "refine_project_style_consistency",
-    "refine_face_aesthetic_detail",
-    "regenerate_keyframe_with_prop_constraints",
-)
