@@ -89,6 +89,44 @@ class SpatialControlAssetService:
         except (OSError, ValueError):
             return {"status": "invalid", "path": str(path)}
 
+    def get_scene_contract(self, project_id: int, scene_number: int) -> dict | None:
+        """Return the frozen, provider-facing contract for one scene.
+
+        Generation must use the exact scene contract that was approved by the
+        spatial freeze step.  Returning only a compact envelope keeps provider
+        metadata auditable without requiring the task to rebuild the project
+        manifest on every retry.
+        """
+        pack = self.get_project_pack(project_id)
+        if not isinstance(pack, dict) or pack.get("status") != "frozen":
+            return None
+        scene = next(
+            (
+                item for item in pack.get("scenes", [])
+                if isinstance(item, dict) and item.get("scene_number") == scene_number
+            ),
+            None,
+        )
+        if not scene:
+            return None
+        contract_payload = {
+            "scene_number": scene_number,
+            "spatial_plan": scene.get("spatial_plan") or {},
+            "control_references": scene.get("control_references") or {},
+            "character_turnaround_controls": scene.get("character_turnaround_controls") or {},
+            "source_hash": scene.get("source_hash"),
+            "spatial_plan_hash": scene.get("spatial_plan_hash"),
+            "control_references_hash": scene.get("control_references_hash"),
+            "turnaround_controls_hash": scene.get("turnaround_controls_hash"),
+        }
+        return {
+            "planner_contract_version": pack.get("planner_contract_version"),
+            "required_control_types": list(pack.get("required_control_types") or []),
+            "project_signature": pack.get("project_signature"),
+            "scene_contract_hash": self._hash(contract_payload),
+            **contract_payload,
+        }
+
     def build_current_manifest(
         self,
         project: Project,

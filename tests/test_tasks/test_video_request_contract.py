@@ -94,3 +94,21 @@ def test_video_request_contract_records_multicharacter_reference_bindings():
         {"image_index": 2, "character_name": "Alice", "view": "front"},
         {"image_index": 3, "character_name": "Bob", "view": "profile"},
     ]
+
+
+def test_video_request_contract_binds_frozen_spatial_asset_pack():
+    request = VideoGenerationRequest(
+        prompt="shot",
+        output_path="/tmp/shot.mp4",
+        shot_plan={
+            "spatial_asset_pack": {
+                "planner_contract_version": "spatial-director-v2",
+                "project_signature": "project-hash",
+                "scene_contract_hash": "scene-hash",
+            },
+        },
+    )
+
+    contract = _video_request_contract(request, request_mode="reference", sequence_level=False)
+
+    assert contract["spatial_asset_pack"]["scene_contract_hash"] == "scene-hash"

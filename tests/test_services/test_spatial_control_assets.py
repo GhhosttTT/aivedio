@@ -37,6 +37,12 @@ def test_spatial_control_pack_freezes_pose_depth_camera_contracts(tmp_path, monk
     assert "camera_reference_prompt" in controls
     assert service.validate_project_pack(project, scenes, characters)["status"] == "valid"
 
+    contract = service.get_scene_contract(1, 1)
+    assert contract["project_signature"] == pack["project_signature"]
+    assert contract["scene_contract_hash"]
+    assert contract["spatial_plan"] == pack["scenes"][0]["spatial_plan"]
+    assert service.get_scene_contract(1, 99) is None
+
     service.PLANNER_CONTRACT_VERSION = "spatial-director-v3"
     assert service.validate_project_pack(project, scenes, characters)["status"] == "stale"
 

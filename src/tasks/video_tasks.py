@@ -6,6 +6,7 @@ import json
 import hashlib
 import subprocess
 import time
+from dataclasses import replace
 from math import gcd
 from pathlib import Path
 from uuid import uuid4
@@ -45,6 +46,7 @@ from src.services.video_quality_metrics import (
 )
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
+from src.services.spatial_control_assets import SpatialControlAssetService
 from src.services.video_output_contract import audit_video_output_contract
 from src.services.sequence_plan import build_sequence_context, build_sequence_timeline
 from src.services.sequence_video_service import split_sequence_video
@@ -97,6 +99,7 @@ def _reference_asset_evidence(role: str, value: str | None, index: int | None = 
 def _video_request_contract(request: VideoGenerationRequest, *, request_mode: str, sequence_level: bool) -> dict:
     """Capture the exact controls handed to a video provider."""
     shot_plan = request.shot_plan if isinstance(request.shot_plan, dict) else {}
+    spatial_contract = shot_plan.get("spatial_asset_pack") if isinstance(shot_plan.get("spatial_asset_pack"), dict) else {}
     raw_bindings = shot_plan.get("character_reference_bindings")
     character_bindings = [
         {
@@ -160,6 +163,7 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         "reference_assets": reference_assets,
         "character_reference_binding_count": len(character_bindings),
         "character_reference_bindings": character_bindings,
+        "spatial_asset_pack": spatial_contract,
     }
     encoded = json.dumps(contract, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     contract["contract_hash"] = hashlib.sha256(encoded).hexdigest()
@@ -693,6 +697,21 @@ class _ComfyVideoGenerator:
         )
         self.last_seed = seed
         shot_plan_payload = self.shot_plan.as_dict() if self.shot_plan else None
+        spatial_contract = self.provider_options.get("SPATIAL_ASSET_PACK")
+        if shot_plan_payload is not None and isinstance(spatial_contract, dict):
+            shot_plan_payload = {
+                **shot_plan_payload,
+                "spatial_asset_pack": {
+                    "planner_contract_version": spatial_contract.get("planner_contract_version"),
+                    "required_control_types": spatial_contract.get("required_control_types") or [],
+                    "project_signature": spatial_contract.get("project_signature"),
+                    "scene_contract_hash": spatial_contract.get("scene_contract_hash"),
+                    "source_hash": spatial_contract.get("source_hash"),
+                    "spatial_plan_hash": spatial_contract.get("spatial_plan_hash"),
+                    "control_references_hash": spatial_contract.get("control_references_hash"),
+                    "turnaround_controls_hash": spatial_contract.get("turnaround_controls_hash"),
+                },
+            }
         if shot_plan_payload is not None and self.sequence_context:
             shot_plan_payload = {**shot_plan_payload, "sequence_context": self.sequence_context}
         if shot_plan_payload is not None and self.character_reference_bindings:
@@ -2422,6 +2441,16 @@ def generate_video_task(
                 logger.warning("Could not ask ComfyUI to free memory before video generation; continuing: {}", exc)
             visible_characters = _visible_characters_for_scene(scene, project_id, db)
             shot_plan = get_video_director_service().plan_scene(scene, project_id, visible_characters)
+            spatial_contract = SpatialControlAssetService().get_scene_contract(
+                project_id, scene.scene_number,
+            )
+            if spatial_contract:
+                # VideoShotPlan is frozen: replace the generated spatial plan
+                # with the exact plan approved in the project's asset pack.
+                shot_plan = replace(
+                    shot_plan,
+                    spatial_plan=spatial_contract.get("spatial_plan") or {},
+                )
             num_frames = max(kwargs.get("num_frames", settings.SVD_NUM_FRAMES), shot_plan.num_frames)
             fps = kwargs.get("fps", shot_plan.fps)
             motion_bucket_id = kwargs.get("motion_bucket_id", shot_plan.motion_bucket_id)
@@ -2465,6 +2494,7 @@ def generate_video_task(
                     "LOCAL_TASK_ID": task_id,
                 "DURATION_SECONDS": option("DURATION_SECONDS"),
                 "SEQUENCE_TIMELINE": option("SEQUENCE_TIMELINE"),
+                "SPATIAL_ASSET_PACK": spatial_contract,
                 }.items() if value is not None
             }
             if repair_action == "fix_video_output_contract":
