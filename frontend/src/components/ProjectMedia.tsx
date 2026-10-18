@@ -17,3 +17,10 @@ export function ProjectImage({projectId, path, alt}: {projectId: number; path: s
     const {url, error} = useMediaUrl(projectId, path);
     return url ? <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={alt} loading="lazy" /></a> : <span role={error ? 'alert' : 'status'}>{error || '图像加载中'}</span>;
 }
+
+export function ProjectVideo({projectId, path, label}: {projectId: number; path: string; label: string}) {
+    const {url, error} = useMediaUrl(projectId, path);
+    if (error) return <span role="alert">{label}加载失败</span>;
+    if (!url) return <span role="status">{label}加载中</span>;
+    return <video className="wb-video" controls preload="metadata" src={url} aria-label={label}/>;
+}

@@ -1,13 +1,34 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Edit2, RefreshCw, Save, X } from 'lucide-react';
 import { errorText, projectApi } from '../api/client';
 import type { Project, Scene } from '../types';
-import { ProjectImage } from './ProjectMedia';
+import { ProjectImage, ProjectVideo } from './ProjectMedia';
 
 export function ScriptPreview({project, onReload, locked = false}: {project: Project; onReload: () => void; locked?: boolean}) {
     const [editing, setEditing] = useState<Scene | null>(null);
     const [busy, setBusy] = useState<number | null>(null);
     const [error, setError] = useState('');
+    const [reports, setReports] = useState<Record<string, any>>({});
+    const [reviewLoading, setReviewLoading] = useState(false);
+    useEffect(() => {
+        let active = true;
+        setReviewLoading(true);
+        projectApi.reviews(Number(project.id))
+            .then(value => { if (active) setReports(value.reports || {}); })
+            .catch(() => { if (active) setReports({}); })
+            .finally(() => { if (active) setReviewLoading(false); });
+        return () => { active = false; };
+    }, [project.id, project.updated_at]);
+
+    const sceneReview = (sceneNumber: number) => {
+        const matches = Object.entries(reports).filter(([key, report]) => (
+            key.includes(`scene_${sceneNumber}`) || report?.scene_number === sceneNumber
+        ));
+        const failed = matches.find(([, report]) => ['needs_review', 'error', 'stale'].includes(report?.status));
+        const passed = matches.find(([, report]) => report?.status === 'passed');
+        return failed?.[1] || passed?.[1] || null;
+    };
+    const reviewStatus = (sceneNumber: number) => sceneReview(sceneNumber)?.status || (reviewLoading ? 'loading' : '未审核');
     const save = async (scene: Scene, regenerate = false) => {
         setBusy(scene.scene_number); setError('');
         try {
@@ -33,7 +54,12 @@ export function ScriptPreview({project, onReload, locked = false}: {project: Pro
                 {editing?.id === scene.id ? <><button className="wb-icon" aria-label="保存分镜" title="保存分镜" disabled={locked || busy !== null || !editing.visual_description.trim()} onClick={() => save(editing)}><Save size={17}/></button><button className="wb-icon" aria-label="取消编辑" title="取消编辑" disabled={busy !== null} onClick={() => setEditing(null)}><X size={17}/></button></> : <button className="wb-icon" aria-label={`编辑分镜 ${scene.scene_number}`} title="编辑分镜" disabled={locked || busy !== null} onClick={() => setEditing({...scene})}><Edit2 size={17}/></button>}
                 <button className="wb-icon" aria-label={`重新生成分镜 ${scene.scene_number}`} title="重新生成分镜" disabled={locked || busy !== null} onClick={() => save(scene, true)}><RefreshCw size={17} className={busy === scene.scene_number ? 'animate-spin' : ''}/></button>
             </div></div>
-            <div>{scene.image_path ? <ProjectImage projectId={Number(project.id)} path={scene.image_path} alt={`分镜 ${scene.scene_number} 关键帧`}/> : <span className="wb-muted">尚无关键帧</span>}</div>
+            <div>
+                {scene.image_path ? <ProjectImage projectId={Number(project.id)} path={scene.image_path} alt={`分镜 ${scene.scene_number} 关键帧`}/> : <span className="wb-muted">尚无关键帧</span>}
+                {scene.video_path && <ProjectVideo projectId={Number(project.id)} path={scene.video_path} label={`分镜 ${scene.scene_number} 视频`}/>}
+                <div className="wb-kv" style={{marginTop: 10}}><span>质检状态</span><strong className={`wb-score ${reviewStatus(scene.scene_number)}`}>{reviewStatus(scene.scene_number)}</strong></div>
+                {sceneReview(scene.scene_number)?.technical_score !== undefined && <div className="wb-muted">技术分：{sceneReview(scene.scene_number).technical_score}</div>}
+            </div>
         </article>)}
     </section>;
 }
