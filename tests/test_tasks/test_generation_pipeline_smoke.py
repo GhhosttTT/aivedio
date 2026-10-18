@@ -454,6 +454,7 @@ def test_final_composed_video_review_payload_tracks_episode_context(tmp_path, mo
     report = composition_tasks._review_final_composed_video(project, scenes, str(final_video))
 
     assert report["path"].endswith(".composition_review.json")
+    assert len(report["composition_input_signature"]) == 64
     assert captured["video"] == str(final_video)
     assert captured["report_path"] == final_video.with_suffix(".composition_review.json")
     assert captured["payload"]["scene_number"] == "final_composition"

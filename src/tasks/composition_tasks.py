@@ -34,12 +34,35 @@ logger = get_logger(__name__)
 
 def _video_version_signature(path: str | Path) -> str | None:
     """Return a cheap version marker for invalidating media-based reviews."""
-    media_path = Path(path)
     try:
+        media_path = Path(path)
         stat = media_path.stat()
-    except OSError:
+    except (OSError, TypeError, ValueError):
         return None
     return f"{media_path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
+
+
+def composition_input_signature(project: Project, scenes: list[Scene]) -> str:
+    """Fingerprint every source asset and story field used by final composition."""
+    payload = {
+        "project_id": getattr(project, "id", None),
+        "script": getattr(project, "script", None),
+        "outline": getattr(project, "outline", None),
+        "scenes": [
+            {
+                "scene_number": getattr(scene, "scene_number", None),
+                "dialogue": getattr(scene, "dialogue", None),
+                "image": _video_version_signature(getattr(scene, "image_path", "")) if isinstance(getattr(scene, "image_path", None), (str, Path)) else None,
+                "video": _video_version_signature(getattr(scene, "video_path", "")) if isinstance(getattr(scene, "video_path", None), (str, Path)) else None,
+                "audio": _video_version_signature(getattr(scene, "audio_path", "")) if isinstance(getattr(scene, "audio_path", None), (str, Path)) else None,
+                "subtitle": _video_version_signature(getattr(scene, "subtitle_path", "")) if isinstance(getattr(scene, "subtitle_path", None), (str, Path)) else None,
+            }
+            for scene in sorted(scenes, key=lambda item: int(getattr(item, "scene_number", 0) or 0))
+        ],
+    }
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
 
 
 def _native_audio_is_ready_for_video_paths(video_paths: list[str], video_composer) -> bool:
@@ -966,6 +989,7 @@ def _review_final_composed_video(project: Project, scenes: list[Scene], final_vi
     report["path"] = str(report_path)
     report["video_path"] = str(final_video_path)
     report["video_signature"] = _video_version_signature(final_video_path)
+    report["composition_input_signature"] = composition_input_signature(project, scenes)
     report["stage"] = "final_composition"
     report["technical_boundary_report"] = technical_boundary_report
     report["final_technical_metrics"] = final_technical_metrics
