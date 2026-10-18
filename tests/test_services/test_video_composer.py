@@ -128,6 +128,7 @@ class TestVideoComposer:
         video1.write_text("fake video 1")
         video2.write_text("fake video 2")
         output_path = tmp_path / "output.mp4"
+        output_path.write_text("fake output")
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
@@ -147,6 +148,7 @@ class TestVideoComposer:
         output_path = tmp_path / "output.mp4"
         video1.write_text("fake video 1")
         video2.write_text("fake video 2")
+        output_path.write_text("fake output")
 
         service.has_audio_stream = Mock(side_effect=[True, False])
         service._get_duration = Mock(return_value=2.75)
@@ -429,6 +431,7 @@ class TestVideoComposer:
         video1.write_text("fake video 1")
         video2.write_text("fake video 2")
         output_path = tmp_path / "output.mp4"
+        output_path.write_text("fake output")
         
         # Mock concat_videos
         with patch.object(service, 'concat_videos', return_value=str(output_path)):
@@ -481,6 +484,7 @@ class TestVideoComposer:
         output_path = tmp_path / "output.mp4"
         video1.write_text("fake video 1")
         video2.write_text("fake video 2")
+        output_path.write_text("fake output")
 
         with patch.object(service, "has_audio_stream", return_value=True), patch.object(
             service, "concat_videos", return_value=str(output_path)
@@ -501,6 +505,7 @@ class TestVideoComposer:
         video_file.write_text("fake video")
         audio_file.write_text("fake audio")
         output_path = tmp_path / "output.mp4"
+        output_path.write_text("fake output")
         
         # Mock sync_audio_video
         with patch.object(service, 'sync_audio_video', return_value=str(output_path)):
@@ -520,6 +525,7 @@ class TestVideoComposer:
         video_file.write_text("fake video")
         bgm_file.write_text("fake bgm")
         output_path = tmp_path / "output.mp4"
+        output_path.write_text("fake output")
         
         # Mock add_bgm
         with patch.object(service, 'add_bgm', return_value=str(output_path)):
@@ -530,6 +536,21 @@ class TestVideoComposer:
             )
         
         assert result == str(output_path)
+
+    def test_compose_video_rejects_missing_final_output(self, service, tmp_path):
+        video_file = tmp_path / "video.mp4"
+        bgm_file = tmp_path / "bgm.mp3"
+        output_path = tmp_path / "missing-output.mp4"
+        video_file.write_text("fake video")
+        bgm_file.write_text("fake bgm")
+
+        with patch.object(service, "add_bgm", return_value=str(output_path)):
+            with pytest.raises(VideoComposerError, match="did not produce an output file"):
+                service.compose_video(
+                    [str(video_file)],
+                    bgm_path=str(bgm_file),
+                    output_path=str(output_path),
+                )
     
     def test_get_duration_success(self, service, tmp_path):
         """测试：成功获取时长"""

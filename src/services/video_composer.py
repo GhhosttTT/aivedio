@@ -47,6 +47,21 @@ class VideoComposer:
         初始化视频合成服务
         """
         logger.info("视频合成服务初始化完成")
+
+    @staticmethod
+    def _require_output_file(output_path: str | Path, operation: str) -> None:
+        """Fail closed when an external media command did not publish output."""
+        path = Path(output_path)
+        try:
+            size = path.stat().st_size
+        except OSError as exc:
+            raise VideoComposerError(
+                f"{operation} did not produce an output file: {path}"
+            ) from exc
+        if not path.is_file() or size <= 0:
+            raise VideoComposerError(
+                f"{operation} produced an empty output file: {path}"
+            )
     
     def concat_videos(
         self,
@@ -440,6 +455,8 @@ class VideoComposer:
                         os.replace(finalization_path, output_path)
                     finally:
                         finalization_path.unlink(missing_ok=True)
+
+            self._require_output_file(output_path, "视频合成")
             
             logger.info(f"视频合成成功: {output_path}")
             
