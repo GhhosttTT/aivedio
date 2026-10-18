@@ -3257,6 +3257,7 @@ def test_video_generator_preserves_auto_mode_with_multi_shot_context(project_dat
 
 def test_continuity_metadata_round_trips_last_frame_anchor(tmp_path):
     video = tmp_path / "scene_001.mp4"
+    video.write_bytes(b"current video")
     path = _write_scene_continuity_metadata(video, {
         "last_frame_url": "https://cdn.example/scene-001-last.png",
         "endpoint": "https://ark.example/tasks",
@@ -3268,6 +3269,7 @@ def test_continuity_metadata_round_trips_last_frame_anchor(tmp_path):
 
 def test_continuity_metadata_prefers_local_extracted_frame(tmp_path):
     video = tmp_path / "scene_001.mp4"
+    video.write_bytes(b"current video")
     local_frame = tmp_path / "scene_001.last_frame.png"
     local_frame.write_bytes(b"png")
     _write_scene_continuity_metadata(video, {
@@ -3276,6 +3278,18 @@ def test_continuity_metadata_prefers_local_extracted_frame(tmp_path):
     })
 
     assert _read_scene_continuity_reference(video) == str(local_frame)
+
+
+def test_continuity_metadata_rejects_anchor_from_replaced_video(tmp_path):
+    video = tmp_path / "scene_001.mp4"
+    video.write_bytes(b"original video")
+    local_frame = tmp_path / "scene_001.last_frame.png"
+    local_frame.write_bytes(b"png")
+    _write_scene_continuity_metadata(video, {"last_frame_path": str(local_frame)})
+
+    video.write_bytes(b"replacement video")
+
+    assert _read_scene_continuity_reference(video) is None
 
 
 def test_provider_metadata_persists_draft_task_and_duration(tmp_path):

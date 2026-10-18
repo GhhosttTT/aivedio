@@ -384,10 +384,15 @@ def _write_scene_continuity_metadata(video_path: str | Path, metadata: dict | No
         return None
     path = _continuity_metadata_path(video_path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        source_video_sha256 = file_hash(Path(video_path)) if Path(video_path).is_file() else None
+    except (OSError, ValueError):
+        source_video_sha256 = None
     _write_json_sidecar(path, {
         "last_frame_url": last_frame.strip() if isinstance(last_frame, str) and last_frame.strip() else None,
         "last_frame_path": last_frame_path if isinstance(last_frame_path, str) and Path(last_frame_path).is_file() else None,
         "source": metadata.get("endpoint"),
+        "source_video_sha256": source_video_sha256,
     })
     return str(path)
 
@@ -401,6 +406,12 @@ def _read_scene_continuity_reference(video_path: str | Path) -> str | None:
     except (OSError, ValueError):
         return None
     if not isinstance(data, dict):
+        return None
+    try:
+        current_video_sha256 = file_hash(Path(video_path))
+    except (OSError, ValueError):
+        return None
+    if data.get("source_video_sha256") != current_video_sha256:
         return None
     local_path = data.get("last_frame_path")
     if isinstance(local_path, str) and Path(local_path).is_file():
