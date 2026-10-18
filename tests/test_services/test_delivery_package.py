@@ -106,18 +106,55 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path, monkeypat
         assert {"media/final_video.mp4", "reviews/generation.json", "metadata/project.json", "metadata/delivery_manifest.json"}.issubset(names)
         assert "metadata/review_index.json" in names
         review_index = json.loads(archive.read("metadata/review_index.json").decode())
-        assert review_index["final_video_sha256"] == manifest["files"][0]["sha256"]
-        assert review_index["critical_reports"]["final_composition"]["status"] == "passed"
+    assert review_index["final_video_sha256"] == manifest["files"][0]["sha256"]
+    assert review_index["critical_reports"]["final_composition"]["status"] == "passed"
     assert "metadata/cover.json" in names
     assert {"exports/douyin.mp4", "exports/douyin.json"}.issubset(names)
     with zipfile.ZipFile(package) as archive:
         metadata = json.loads(archive.read("metadata/project.json").decode("utf-8"))
     assert metadata["topic_brief"]["platform"] == "抖音"
     assert metadata["market_signals"]["comparables"][0]["title"] == "对照剧 A"
-    assert metadata["generation_evidence"][0]["spatial_scene_contract_hashes"] == ["scene-hash"]
+    assert manifest["generation_evidence"][0]["spatial_scene_contract_hashes"] == ["scene-hash"]
     assert manifest["generation_evidence"][0]["request_contract_hashes"] == ["request-hash"]
     assert manifest["generation_evidence"][0]["accepted_video_sha256"] == "b" * 64
     assert "metadata/platform_covers.json" in names
+
+
+def test_delivery_package_includes_mov_platform_exports(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "src.services.video_quality_metrics.video_candidate_metrics",
+        lambda path, max_samples=8: {
+            "status": "available",
+            "temporal_sample_evidence": "sufficient",
+        },
+    )
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    final.with_suffix(".composition_review.json").write_text(
+        json.dumps(_passed_final_composition(final)), encoding="utf-8"
+    )
+    exports = tmp_path / "exports"
+    exports.mkdir()
+    mov = exports / "cinematic.mov"
+    mov.write_bytes(b"platform-mov")
+    (exports / "cinematic.json").write_text(json.dumps({
+        "status": "ready",
+        "preset": "cinematic",
+        "output_sha256": _sha256(mov),
+        "technical_metrics": {"status": "available", "temporal_sample_evidence": "sufficient"},
+    }), encoding="utf-8")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+
+    manifest = build_delivery_package(
+        project,
+        tmp_path,
+        {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)},
+        {"status": "ready"},
+    )
+
+    assert any(item["path"] == "exports/cinematic.mov" for item in manifest["files"])
+    with zipfile.ZipFile(tmp_path / "delivery" / "delivery_package.zip") as archive:
+        assert "exports/cinematic.mov" in archive.namelist()
 
 
 def test_delivery_package_requires_ready_review(tmp_path):

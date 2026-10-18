@@ -500,7 +500,9 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
     platform_cover_reports = {}
     export_root = root / "exports"
     if export_root.is_dir():
-        for export_path in sorted(export_root.glob("*.mp4")):
+        for export_path in sorted(export_root.iterdir()):
+            if not export_path.is_file() or export_path.suffix.lower() not in {".mp4", ".mov"}:
+                continue
             preset = export_path.stem
             width, height = 768, 1344
             manifest_path_for_export = export_root / f"{preset}.json"
