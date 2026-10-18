@@ -29,6 +29,7 @@ from src.services.image_postprocess import ImagePostprocessor
 from src.services.repair_queue import build_repair_queue
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.shot_complexity_service import ShotComplexityService
+from src.services.spatial_control_assets import SpatialControlAssetService
 from src.tasks.celery_app import celery_app
 from src.utils.logger import get_logger
 from src.utils.storage import get_scene_image_path
@@ -194,6 +195,47 @@ def _character_sheet_generation_contract(visible_characters: list[dict]) -> dict
         "references": references,
         "identity_contrast_matrix": contrast_matrix,
     }
+
+
+def _frozen_spatial_contract_for_image(db, project_id: int, scene_number: int) -> dict | None:
+    """Load the approved spatial contract for a keyframe when one exists."""
+    service = SpatialControlAssetService()
+    if service.get_project_pack(project_id) is None:
+        return None
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise ValueError(f"Project not found: {project_id}")
+    scenes = db.query(Scene).filter(Scene.project_id == project_id).order_by(Scene.scene_number).all()
+    characters = db.query(Character).filter(Character.project_id == project_id).all()
+    validation = service.validate_project_pack(project, scenes, characters)
+    if validation.get("status") != "valid":
+        reasons = ", ".join(validation.get("stale") or [validation.get("status", "invalid")])
+        raise ValueError(
+            f"Frozen spatial asset pack is not current for project {project_id}: {reasons}. "
+            "Re-freeze the spatial plan before generating keyframes."
+        )
+    return service.get_scene_contract(project_id, scene_number)
+
+
+def _spatial_image_directive(contract: dict | None) -> str:
+    """Turn the frozen blocking contract into an image-generation constraint."""
+    if not isinstance(contract, dict):
+        return ""
+    plan = contract.get("spatial_plan") if isinstance(contract.get("spatial_plan"), dict) else {}
+    positions = plan.get("character_positions") if isinstance(plan.get("character_positions"), dict) else {}
+    parts = [
+        f"shot scale: {plan.get('shot_scale')}" if plan.get("shot_scale") else "",
+        f"camera angle: {plan.get('camera_angle')}" if plan.get("camera_angle") else "",
+        f"camera axis: {plan.get('camera_axis')}" if plan.get("camera_axis") else "",
+        f"character blocking: {', '.join(f'{name}={position}' for name, position in positions.items())}" if positions else "",
+        f"prop focus: {plan.get('prop_focus')}" if plan.get("prop_focus") else "",
+    ]
+    directive = "; ".join(item for item in parts if item)
+    return (
+        f"Locked spatial composition for the approved shot: {directive}. "
+        "Preserve screen direction and relative positions."
+        if directive else ""
+    )
 
 
 def _appearance_anchor(characters: list[Character], db, compiler) -> str | None:
@@ -932,6 +974,9 @@ def _generate_quality_candidates(
                 "repair_action": current_repair_action,
                 "visible_characters": scene_payload.get("visible_characters", []),
                 "identity_contrast_matrix": scene_payload.get("identity_contrast_matrix", {}),
+                "spatial_plan": scene_payload.get("spatial_plan", {}),
+                "spatial_asset_pack": scene_payload.get("spatial_asset_pack", {}),
+                "spatial_directive": scene_payload.get("spatial_directive", ""),
                 "platform_aesthetic_contract": scene_payload.get("platform_aesthetic_contract", {}),
                 "shot_aesthetic_profile": scene_payload.get("shot_aesthetic_profile", {}),
                 "quality_pipeline": quality_pipeline.as_dict(),
@@ -949,6 +994,8 @@ def _generate_quality_candidates(
                 "character_sheet_references": scene_payload.get("character_sheet_references", []),
                 "character_references": candidate_request.character_references,
                 "identity_contrast_matrix": scene_payload.get("identity_contrast_matrix", {}),
+                "spatial_plan": scene_payload.get("spatial_plan", {}),
+                "spatial_scene_contract_hash": (scene_payload.get("spatial_asset_pack") or {}).get("scene_contract_hash"),
                 "platform_aesthetic_contract": scene_payload.get("platform_aesthetic_contract", {}),
                 "shot_aesthetic_profile": scene_payload.get("shot_aesthetic_profile", {}),
                 "quality_pipeline": quality_pipeline.as_dict(),
@@ -1090,6 +1137,8 @@ def generate_image_task(
             cleanup_llm_service()
         reference_image = _get_reference_image(character, project_id, scene)
         visible_characters = _visible_character_payload(scene, project_id, db)
+        spatial_contract = _frozen_spatial_contract_for_image(db, project_id, scene.scene_number)
+        spatial_directive = _spatial_image_directive(spatial_contract)
         character_sheet_contract = _character_sheet_generation_contract(visible_characters)
         if len(visible_characters) > 1 and len(character_sheet_contract["references"]) != len(visible_characters):
             raise ReviewError("Every visible character needs a frozen reference before multi-character generation")
@@ -1098,6 +1147,7 @@ def generate_image_task(
         shot_aesthetic_profile = style_service.shot_aesthetic_profile(scene, visible_count=len(visible_characters))
         quality_pipeline = image_quality_pipeline(shot_aesthetic_profile, kwargs.get("repair_action"))
         enhanced_prompt = compiled.prompt
+        enhanced_prompt = _append_sentence_once(enhanced_prompt, spatial_directive)
         if character_sheet_contract["prompt"]:
             enhanced_prompt = f"{enhanced_prompt}. {character_sheet_contract['prompt']}."
         enhanced_prompt = _append_sentence_once(enhanced_prompt, shot_aesthetic_profile["prompt"])
@@ -1141,6 +1191,9 @@ def generate_image_task(
                 "visible_characters": visible_characters,
                 "character_sheet_contract": character_sheet_contract["prompt"],
                 "character_sheet_references": character_sheet_contract["references"],
+                "spatial_asset_pack": spatial_contract or {},
+                "spatial_plan": (spatial_contract or {}).get("spatial_plan", {}),
+                "spatial_directive": spatial_directive,
                 "identity_contrast_matrix": character_sheet_contract["identity_contrast_matrix"],
                 "platform_aesthetic_contract": platform_aesthetic_contract,
                 "shot_aesthetic_profile": shot_aesthetic_profile,
