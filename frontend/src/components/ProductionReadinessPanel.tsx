@@ -69,6 +69,7 @@ export function ProductionReadinessPanel({
                 <Metric label="成片画幅" value={visualFormat ? `${visualFormat.width}x${visualFormat.height}` : '未检查'}/>
                 <Metric label="角色身份" value={characters ? `${characters.characters.filter(item => item.has_identity_spec && !item.missing_identity_fields.length).length}/${characters.visible_character_names.length}` : '未检查'}/>
                 <Metric label="角色参考" value={characters ? `${characters.visible_character_names.length - characters.missing_references.length}/${characters.visible_character_names.length}` : '未检查'}/>
+                <Metric label="角色声线" value={characters ? `${characters.visible_character_names.length - characters.missing_voice_profiles.length}/${characters.visible_character_names.length}` : '未检查'}/>
                 <Metric label="复杂镜头" value={complexity ? `${complexity.summary.needs_split} 阻断 / ${complexity.summary.warn} 警告` : '未检查'}/>
                 <Metric label="空间计划" value={spatial ? `${spatial.summary.total - spatial.summary.weak}/${spatial.summary.total}` : '未检查'}/>
                 <Metric label="审核门槛" value={reviewer ? `${reviewer.image_review_required && reviewer.video_review_required ? '已开启' : '未完全开启'}` : '未检查'}/>
@@ -77,6 +78,21 @@ export function ProductionReadinessPanel({
                 <Metric label="样片质量分" value={qualityScorecard ? formatScore(qualityScorecard.production_score) : '未检查'}/>
                 <Metric label="视频引擎" value={report?.checks.video_engine?.status || '未预检'}/>
             </div>
+            {characters?.missing_voice_profiles?.length ? (
+                <div className="wb-summary-actions">
+                    <div className="wb-row wb-between">
+                        <div>
+                            <h3>角色声线绑定缺口</h3>
+                            <p className="wb-muted">为对白角色冻结 voice ID，避免跨分镜或跨机器生成时声线漂移。</p>
+                        </div>
+                        <span className="wb-badge">{characters.missing_voice_profiles.length} 个角色</span>
+                    </div>
+                    <div className="wb-issue warning">
+                        <span>待绑定</span>
+                        <p>{characters.missing_voice_profiles.join(' / ')}</p>
+                    </div>
+                </div>
+            ) : null}
             {storyRoom?.status === 'passed' && storyApproval && (
                 <div className="wb-summary-actions" aria-label="故事房审批">
                     <div className="wb-row wb-between">

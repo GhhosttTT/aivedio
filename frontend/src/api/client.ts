@@ -622,8 +622,9 @@ export interface ProductionReadinessReport {
             incomplete_identity_specs: Array<{name: string; missing_fields: string[]}>;
             missing_references: string[];
             missing_appearance: string[];
+            missing_voice_profiles: string[];
             distinctiveness?: Record<string, any>;
-            characters: Array<{id: number; name: string; has_appearance: boolean; has_identity_spec: boolean; missing_identity_fields: string[]; reference_count: number}>;
+            characters: Array<{id: number; name: string; has_appearance: boolean; has_identity_spec: boolean; missing_identity_fields: string[]; reference_count: number; voice_binding?: string}>;
         };
         shot_complexity?: {
             status: string;
