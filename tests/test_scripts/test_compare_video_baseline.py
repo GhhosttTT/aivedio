@@ -207,6 +207,24 @@ def test_compare_video_baseline_blocks_unusable_candidate_audio(monkeypatch, tmp
     assert report["gates"]["audio_signal_usable"] is False
 
 
+def test_compare_video_baseline_blocks_audio_start_drift(monkeypatch, tmp_path):
+    def fake_stats(path, max_samples):
+        return VideoStats(
+            path=str(path), duration_seconds=2.0, width=160, height=90, fps=24,
+            sampled_frames=6, motion_energy=8, sharpness=30, brightness=90,
+            brightness_variance=40, audio_present=True, audio_duration_seconds=2.0,
+            audio_signal_status="usable", audio_clipping_status="ok",
+            audio_video_start_delta_seconds=0.5 if "candidate" in path.name else 0.02,
+        )
+
+    monkeypatch.setattr("scripts.compare_video_baseline.video_stats", fake_stats)
+
+    report = compare(tmp_path / "candidate.mp4", tmp_path / "baseline.mp4", max_samples=6)
+
+    assert report["status"] == "needs_review"
+    assert report["gates"]["audio_start_aligned"] is False
+
+
 def test_compare_video_baseline_blocks_prolonged_static_run(monkeypatch, tmp_path):
     def fake_stats(path, max_samples):
         return VideoStats(

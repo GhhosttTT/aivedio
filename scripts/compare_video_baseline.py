@@ -40,6 +40,7 @@ class VideoStats:
     audio_signal_status: str | None = None
     audio_clipping_status: str | None = None
     audio_peak_db: float | None = None
+    audio_video_start_delta_seconds: float | None = None
 
 
 def _probe(path: Path) -> dict:
@@ -49,7 +50,7 @@ def _probe(path: Path) -> dict:
             "-v",
             "error",
             "-show_entries",
-            "stream=codec_type,width,height,r_frame_rate,duration,codec_name,pix_fmt:format=duration",
+            "stream=codec_type,width,height,r_frame_rate,duration,codec_name,pix_fmt,start_time:format=duration",
             "-of",
             "json",
             str(path),
@@ -78,6 +79,7 @@ def _probe(path: Path) -> dict:
             else None
         ),
         "audio_codec": audio_stream.get("codec_name") if audio_stream else None,
+        "audio_video_start_delta_seconds": _stream_start_delta(stream, audio_stream),
     }
 
 
@@ -87,6 +89,17 @@ def _parse_fps(value: str) -> float:
     numerator, denominator = value.split("/", 1)
     denominator_value = float(denominator or 1)
     return float(numerator or 0) / denominator_value if denominator_value else 0.0
+
+
+def _stream_start_delta(video_stream: dict, audio_stream: dict | None) -> float | None:
+    if not isinstance(audio_stream, dict):
+        return None
+    try:
+        video_start = float(video_stream.get("start_time") or 0.0)
+        audio_start = float(audio_stream.get("start_time") or 0.0)
+    except (TypeError, ValueError):
+        return None
+    return round(abs(audio_start - video_start), 3)
 
 
 def _sample_frames(path: Path, max_samples: int) -> list[np.ndarray]:
@@ -185,6 +198,7 @@ def video_stats(path: Path, max_samples: int = 16) -> VideoStats:
         audio_signal_status=audio_metrics.get("audio_signal_status"),
         audio_clipping_status=audio_metrics.get("audio_clipping_status"),
         audio_peak_db=audio_metrics.get("audio_peak_db"),
+        audio_video_start_delta_seconds=probe.get("audio_video_start_delta_seconds"),
     )
 
 
@@ -233,6 +247,10 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
             if candidate_stats.audio_peak_db is not None
             and baseline_stats.audio_peak_db is not None else None
         ),
+        "audio_video_start_delta_seconds": (
+            round(candidate_stats.audio_video_start_delta_seconds, 3)
+            if candidate_stats.audio_video_start_delta_seconds is not None else None
+        ),
     }
     audio_duration_delta = differences["audio_duration_delta_seconds"]
     gates = {
@@ -268,6 +286,13 @@ def compare(candidate: Path, baseline: Path, max_samples: int = 16, artifact_dir
         "audio_not_clipped": (
             not baseline_stats.audio_present
             or candidate_stats.audio_clipping_status != "clipped"
+        ),
+        "audio_start_aligned": (
+            not baseline_stats.audio_present
+            or (
+                candidate_stats.audio_video_start_delta_seconds is not None
+                and candidate_stats.audio_video_start_delta_seconds <= 0.35
+            )
         ),
     }
     score = _technical_similarity_score(differences, gates)
