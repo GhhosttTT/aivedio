@@ -925,6 +925,25 @@ def test_composition_review_blocks_pixel_format_boundary_mismatch():
     )
 
 
+def test_composition_review_blocks_audio_format_boundary_mismatch():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "technical_boundary_report": {
+            "status": "available",
+            "severe_transition_count": 0,
+            "severe_style_transition_count": 0,
+            "geometry_mismatch_count": 0,
+            "fps_mismatch_count": 0,
+            "pixel_format_mismatch_count": 0,
+            "audio_format_mismatch_count": 1,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video has mismatched audio formats across 1 shot boundary(s)"
+    )
+
+
 def test_composition_review_blocks_unavailable_boundary_metrics():
     report = {
         "status": "passed",

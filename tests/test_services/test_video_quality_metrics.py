@@ -261,7 +261,7 @@ def test_probe_reports_audio_stream_and_duration(monkeypatch, tmp_path):
                     "width": 1920, "height": 1080, "r_frame_rate": "24/1",
                     "start_time": "0.000",
                 },
-                {"codec_type": "audio", "codec_name": "aac", "channels": 2, "duration": "5.02", "start_time": "0.420"},
+                {"codec_type": "audio", "codec_name": "aac", "channels": 2, "sample_rate": "48000", "duration": "5.02", "start_time": "0.420"},
             ],
             "format": {"duration": "5.00"},
         })
@@ -274,6 +274,7 @@ def test_probe_reports_audio_stream_and_duration(monkeypatch, tmp_path):
     assert metrics["audio_duration_seconds"] == 5.02
     assert metrics["audio_codec"] == "aac"
     assert metrics["audio_channels"] == 2
+    assert metrics["audio_sample_rate"] == 48000
     assert metrics["video_codec"] == "hevc"
     assert metrics["pixel_format"] == "yuv420p10le"
     assert metrics["high_bit_depth"] is True

@@ -263,7 +263,7 @@ def _probe(path: Path) -> dict[str, Any]:
             "-v",
             "error",
             "-show_entries",
-            "stream=codec_type,codec_name,pix_fmt,width,height,r_frame_rate,channels,duration,start_time:format=duration",
+            "stream=codec_type,codec_name,pix_fmt,width,height,r_frame_rate,channels,sample_rate,duration,start_time:format=duration",
             "-of",
             "json",
             str(path),
@@ -320,6 +320,7 @@ def _probe(path: Path) -> dict[str, Any]:
         ),
         "audio_codec": audio_stream.get("codec_name") if isinstance(audio_stream, dict) else None,
         "audio_channels": int(audio_stream.get("channels") or 0) if isinstance(audio_stream, dict) else None,
+        "audio_sample_rate": int(audio_stream.get("sample_rate") or 0) if isinstance(audio_stream, dict) else None,
     }
 
 
@@ -456,6 +457,16 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
             pixel_format_match = bool(previous_pixel_format and current_pixel_format) and (
                 previous_pixel_format == current_pixel_format
             )
+            previous_audio_present = bool(previous_probe.get("audio_present"))
+            current_audio_present = bool(current_probe.get("audio_present"))
+            audio_format_match = True
+            if previous_audio_present and current_audio_present:
+                audio_format_match = all(
+                    previous_probe.get(key)
+                    and current_probe.get(key)
+                    and previous_probe.get(key) == current_probe.get(key)
+                    for key in ("audio_codec", "audio_channels", "audio_sample_rate")
+                )
             boundaries.append({
                 "boundary_index": index,
                 "previous_path": str(previous),
@@ -469,6 +480,15 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
                 "previous_pixel_format": previous_pixel_format,
                 "current_pixel_format": current_pixel_format,
                 "pixel_format_match": pixel_format_match,
+                "previous_audio_present": previous_audio_present,
+                "current_audio_present": current_audio_present,
+                "previous_audio_codec": previous_probe.get("audio_codec"),
+                "current_audio_codec": current_probe.get("audio_codec"),
+                "previous_audio_channels": previous_probe.get("audio_channels"),
+                "current_audio_channels": current_probe.get("audio_channels"),
+                "previous_audio_sample_rate": previous_probe.get("audio_sample_rate"),
+                "current_audio_sample_rate": current_probe.get("audio_sample_rate"),
+                "audio_format_match": audio_format_match,
                 "geometry_match": (
                     previous_probe["width"] == current_probe["width"]
                     and previous_probe["height"] == current_probe["height"]
@@ -486,6 +506,7 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
         geometry_mismatch_count = sum(not item["geometry_match"] for item in boundaries)
         fps_mismatch_count = sum(not item["fps_match"] for item in boundaries)
         pixel_format_mismatch_count = sum(not item["pixel_format_match"] for item in boundaries)
+        audio_format_mismatch_count = sum(not item["audio_format_match"] for item in boundaries)
         return {
             "status": "available",
             "boundary_count": len(boundaries),
@@ -494,6 +515,7 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
             "geometry_mismatch_count": geometry_mismatch_count,
             "fps_mismatch_count": fps_mismatch_count,
             "pixel_format_mismatch_count": pixel_format_mismatch_count,
+            "audio_format_mismatch_count": audio_format_mismatch_count,
             "boundaries": boundaries,
         }
     except Exception as exc:

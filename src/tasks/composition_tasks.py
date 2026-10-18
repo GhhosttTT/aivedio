@@ -1081,6 +1081,12 @@ def _composition_review_error(report: dict) -> str | None:
                 "final composed video has mismatched pixel formats across "
                 f"{pixel_format_mismatch_count} shot boundary(s)"
             )
+        audio_format_mismatch_count = int(boundary.get("audio_format_mismatch_count") or 0)
+        if audio_format_mismatch_count > 0:
+            return (
+                "final composed video has mismatched audio formats across "
+                f"{audio_format_mismatch_count} shot boundary(s)"
+            )
     technical = report.get("final_technical_metrics")
     temporal_error = temporal_sample_evidence_error(technical, context="final composed video")
     if temporal_error:

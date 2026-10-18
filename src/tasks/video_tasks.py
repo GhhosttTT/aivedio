@@ -1343,11 +1343,13 @@ def _validate_sequence_boundary_report(boundary_report: dict, report_path: Path)
     geometry_count = int(boundary_report.get("geometry_mismatch_count") or 0)
     fps_count = int(boundary_report.get("fps_mismatch_count") or 0)
     pixel_format_count = int(boundary_report.get("pixel_format_mismatch_count") or 0)
-    if severe_count or geometry_count or fps_count or pixel_format_count:
+    audio_format_count = int(boundary_report.get("audio_format_mismatch_count") or 0)
+    if severe_count or geometry_count or fps_count or pixel_format_count or audio_format_count:
         raise ReviewError(
             "Sequence boundary quality gate failed: "
             f"severe_transitions={severe_count}, geometry_mismatches={geometry_count}, "
-            f"fps_mismatches={fps_count}, pixel_format_mismatches={pixel_format_count}; "
+            f"fps_mismatches={fps_count}, pixel_format_mismatches={pixel_format_count}, "
+            f"audio_format_mismatches={audio_format_count}; "
             f"report={report_path}"
         )
 

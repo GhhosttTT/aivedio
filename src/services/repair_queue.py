@@ -14,6 +14,7 @@ ACTION_RULES = [
             "duration drift", "audio_missing", "model drift", "provider output drift",
             "fps mismatch", "fps_mismatches", "frame rate mismatch",
             "pixel format mismatch", "pixel_format_mismatches", "chroma mismatch",
+            "audio format mismatch", "audio_format_mismatches",
         ),
         "fix_video_output_contract",
         "Align provider model, resolution, format, duration, and audio settings with the requested video output contract, then regenerate and revalidate.",
