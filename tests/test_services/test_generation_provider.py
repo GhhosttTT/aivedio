@@ -1660,6 +1660,48 @@ def test_seedance_native_ark_20_rejects_explicit_first_frame(tmp_path, monkeypat
         ))
 
 
+def test_seedance_native_ark_rejects_extra_references_in_explicit_first_frame_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
+    first = tmp_path / "first.png"
+    extra = tmp_path / "extra.png"
+    first.write_bytes(b"first")
+    extra.write_bytes(b"extra")
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    with pytest.raises(GenerationProviderError, match="exactly one first-frame image"):
+        provider._video_payload(VideoGenerationRequest(
+            prompt="A person turns toward camera",
+            output_path=str(tmp_path / "out.mp4"),
+            reference_images=[str(first), str(extra)],
+            request_mode="first_frame",
+            duration_seconds=6,
+            draft=True,
+        ))
+
+
+def test_seedance_native_ark_rejects_mixed_media_in_explicit_first_last_frame_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
+    first = tmp_path / "first.png"
+    last = tmp_path / "last.png"
+    first.write_bytes(b"first")
+    last.write_bytes(b"last")
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    with pytest.raises(GenerationProviderError, match="no reference video"):
+        provider._video_payload(VideoGenerationRequest(
+            prompt="A person turns toward camera",
+            output_path=str(tmp_path / "out.mp4"),
+            reference_image=str(first),
+            end_image=str(last),
+            reference_videos=["https://cdn.example/source.mp4"],
+            request_mode="first_last_frame",
+            duration_seconds=6,
+            draft=True,
+        ))
+
+
 @pytest.mark.parametrize(
     "template",
     ["http://cdn.example/{filename}", "https://localhost/{filename}", "https://10.0.0.8/{filename}"],

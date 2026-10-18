@@ -1621,6 +1621,18 @@ class SeedanceApiProvider(ApiVideoProvider):
                 "choose reference, reference_to_video, auto, multi_shot, first_frame, "
                 "first_last_frame, edit, or extend"
             )
+        if request_mode == "first_frame":
+            if len(image_paths) != 1 or request.end_image or video_paths or audio_paths or request.extend_video:
+                raise GenerationProviderError(
+                    "Native Seedance first_frame mode requires exactly one first-frame image "
+                    "and no end frame, reference video, or reference audio"
+                )
+        if request_mode == "first_last_frame":
+            if len(image_paths) != 1 or not request.end_image or video_paths or audio_paths or request.extend_video:
+                raise GenerationProviderError(
+                    "Native Seedance first_last_frame mode requires exactly one first-frame image, "
+                    "one end frame, and no reference video or reference audio"
+                )
         if request_mode == "first_frame" and not (is_10 or is_25):
             raise GenerationProviderError(
                 f"Native Seedance model {model} does not support explicit first_frame mode"
