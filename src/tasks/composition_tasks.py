@@ -947,6 +947,20 @@ def _project_final_review_payload(project: Project, scenes: list[Scene]) -> dict
                 "cuts follow the provided editorial intent and audio strategy",
             ],
             "finishing_features": list(FINAL_COMPOSITION_FINISHING_FEATURES),
+            "editing_plan_contract": {
+                "required": True,
+                "rule": (
+                    "Apply the per-boundary transition contract from rhythm_audit; "
+                    "dialogue and action cuts must remain hard cuts, and any visual "
+                    "crossfade must stay within its declared duration."
+                ),
+                "protected_audio_strategies": [
+                    "start_at_zero",
+                    "hold_room_tone_then_dialogue",
+                    "cut_on_action",
+                    "dialogue_pre_lap",
+                ],
+            },
         },
     }
 

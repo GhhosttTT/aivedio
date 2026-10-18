@@ -146,6 +146,9 @@ class RhythmAuditService:
                 cut_type = "motivated_hard_cut"
                 reason = "Use a direct cut at the next settled story beat."
                 audio_strategy = "short_crossfade"
+            transition = RhythmAuditService._transition_contract(
+                cut_type, audio_strategy, index == 0
+            )
             plan.append({
                 "scene_number": item.get("scene_number"),
                 "start_seconds": item.get("start_seconds"),
@@ -153,10 +156,33 @@ class RhythmAuditService:
                 "cut_type": cut_type,
                 "reason": reason,
                 "audio_strategy": audio_strategy,
+                "transition": transition,
                 "shot_role": role,
             })
             previous_role = role
         return plan
+
+    @staticmethod
+    def _transition_contract(cut_type: str, audio_strategy: str, is_opening: bool) -> dict:
+        """Describe the safe transition a renderer must apply at a cut.
+
+        The contract deliberately defaults to hard cuts. Short-drama dialogue
+        should not be softened with arbitrary dissolves, while action and
+        location changes may use a tightly bounded visual blend. Keeping this
+        decision explicit lets the final reviewer detect a renderer that
+        ignored the editorial intent instead of treating all boundaries alike.
+        """
+        if is_opening:
+            return {"video": "none", "duration_seconds": 0.0, "dialogue_protected": True}
+        if cut_type in {"reaction_cut", "hard_cut_action", "eyeline_cut", "match_cut_prop"}:
+            return {"video": "hard_cut", "duration_seconds": 0.0, "dialogue_protected": True}
+        if cut_type == "location_cut":
+            return {"video": "crossfade", "duration_seconds": 0.12, "dialogue_protected": True}
+        return {
+            "video": "hard_cut" if audio_strategy == "dialogue_pre_lap" else "crossfade",
+            "duration_seconds": 0.08 if audio_strategy != "dialogue_pre_lap" else 0.0,
+            "dialogue_protected": audio_strategy != "start_at_zero",
+        }
 
     def _duration(self, scene, plan) -> float:
         audio_duration = self._positive_number(getattr(scene, "audio_duration", None))

@@ -67,4 +67,19 @@ def test_rhythm_audit_builds_motivated_cut_and_audio_plan(monkeypatch):
         "opening_hold", "motivated_hard_cut", "reaction_cut", "match_cut_prop"
     ]
     assert report.editing_plan[1]["audio_strategy"] == "short_crossfade"
+    assert report.editing_plan[0]["transition"] == {
+        "video": "none", "duration_seconds": 0.0, "dialogue_protected": True
+    }
+    assert report.editing_plan[1]["transition"]["video"] == "crossfade"
+    assert report.editing_plan[2]["transition"]["video"] == "hard_cut"
+    assert report.editing_plan[3]["transition"]["dialogue_protected"] is True
     assert report.editing_plan[2]["audio_strategy"] == "hold_room_tone_then_dialogue"
+
+
+def test_rhythm_audit_protects_dialogue_and_action_boundaries():
+    assert RhythmAuditService._transition_contract("eyeline_cut", "dialogue_pre_lap", False) == {
+        "video": "hard_cut", "duration_seconds": 0.0, "dialogue_protected": True
+    }
+    assert RhythmAuditService._transition_contract("location_cut", "room_tone_bridge", False)[
+        "duration_seconds"
+    ] <= 0.12
