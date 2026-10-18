@@ -512,6 +512,37 @@ class TestRetryFailedTask:
         assert kwargs["sequence_level_multi_shot"] is True
         assert kwargs["sequence_output_path"] == "/tmp/sequence_42.mp4"
 
+    @patch('src.services.task_orchestrator.load_production_video_options')
+    @patch('src.services.task_orchestrator.TaskOrchestrator.create_production_task')
+    def test_retry_without_pending_sidecar_preserves_last_video_options(
+        self, mock_create, mock_saved, orchestrator, sample_project, sample_scenes
+    ):
+        task = TaskModel(
+            project_id=sample_project.id,
+            status=TaskStatus.FAILED,
+            celery_task_id="failed-after-submit-task-id",
+            retry_count=0,
+            total_steps=10,
+        )
+        orchestrator.db.add(task)
+        orchestrator.db.commit()
+        mock_saved.return_value = {
+            "provider": "seedance_api",
+            "model": "doubao-seedance-2-0-260128",
+            "resolution": "1080p",
+            "output_format": "mp4",
+            "sequence_level_multi_shot": False,
+        }
+        mock_create.return_value = "retry-with-options-task-id"
+
+        assert orchestrator.retry_failed_task(task.celery_task_id) == "retry-with-options-task-id"
+        kwargs = mock_create.call_args.kwargs
+        assert kwargs["provider"] == "seedance_api"
+        assert kwargs["model"] == "doubao-seedance-2-0-260128"
+        assert kwargs["resolution"] == "1080p"
+        assert kwargs.get("generate_images", True) is True
+        assert kwargs.get("generate_videos", True) is True
+
 
 class TestUpdateTaskProgress:
     """测试更新任务进度"""

@@ -68,6 +68,7 @@ def test_production_video_options_round_trip(tmp_path, monkeypatch):
         "provider": "seedance_api",
         "model": "doubao-seedance-2-5-260628",
         "resolution": "1080p",
+        "sequence_level_multi_shot": True,
         "duration_seconds": None,
         "draft": True,
     })
@@ -76,4 +77,5 @@ def test_production_video_options_round_trip(tmp_path, monkeypatch):
         "provider": "seedance_api",
         "model": "doubao-seedance-2-5-260628",
         "resolution": "1080p",
+        "sequence_level_multi_shot": True,
     }

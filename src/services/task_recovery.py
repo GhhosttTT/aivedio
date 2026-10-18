@@ -14,6 +14,7 @@ _PRODUCTION_OPTION_KEYS = (
     "provider",
     "request_mode",
     "multi_shot",
+    "sequence_level_multi_shot",
     "native_audio",
     "model",
     "resolution",
