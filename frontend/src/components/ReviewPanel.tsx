@@ -174,17 +174,26 @@ function SeedDanceComparison({projectId, report}: {projectId: number; report: an
     const differences = report.differences || {};
     const candidate = report.candidate || {};
     const baseline = report.baseline || {};
+    const gateLabels: Record<string, string> = {
+        visual_structure_reference_available: '画面结构证据可用',
+        visual_structure_not_diverged: '画面结构未明显偏离',
+        motion_not_static: '运动量未塌陷',
+        sharpness_not_collapsed: '清晰度未塌陷',
+        no_temporal_visual_resets: '无重复视觉跳变',
+        no_extreme_temporal_visual_reset: '无极端视觉跳变',
+    };
     return <div>
         <div className="wb-fields">
             <div><h3>时长差</h3><p className="wb-muted">{differences.duration_delta_seconds ?? '-'} 秒</p></div>
             <div><h3>运动量比例</h3><p className="wb-muted">{differences.motion_energy_ratio ?? '-'}</p></div>
             <div><h3>清晰度比例</h3><p className="wb-muted">{differences.sharpness_ratio ?? '-'}</p></div>
+            <div><h3>画面结构相似度</h3><p className="wb-muted">{differences.visual_structure_similarity ?? '未生成'}{typeof differences.visual_structure_similarity === 'number' ? ' / 1' : ''}</p></div>
             <div><h3>候选规格</h3><p className="wb-muted">{candidate.width || '-'}x{candidate.height || '-'} · {candidate.fps || '-'} fps</p></div>
             <div><h3>基线规格</h3><p className="wb-muted">{baseline.width || '-'}x{baseline.height || '-'} · {baseline.fps || '-'} fps</p></div>
         </div>
         {gates.length > 0 && <div className="wb-grid compact">
             {gates.map(([key, passed]) => <div className="wb-kv" key={key}>
-                <span>{key}</span>
+                <span>{gateLabels[key] || key}</span>
                 <strong>{passed ? '通过' : '未通过'}</strong>
             </div>)}
         </div>}

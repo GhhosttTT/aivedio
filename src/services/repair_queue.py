@@ -208,6 +208,14 @@ def build_repair_queue(report: dict[str, Any], media_type: str) -> list[dict[str
         if report.get("stage") and not candidate.get("stage"):
             candidate["stage"] = report["stage"]
         actions.extend(_actions_for_candidate(candidate, media_type))
+    # Baseline and final-composition reports keep technical evidence at the
+    # report root instead of under a candidate list. Scan that shape too so a
+    # measurable visual divergence cannot silently collapse to manual_review.
+    if any(
+        key in report
+        for key in ("differences", "technical_metrics", "metrics")
+    ):
+        actions.extend(_actions_for_candidate(report, media_type))
     for candidate in _top_level_gate_candidates(report):
         actions.extend(_actions_for_candidate(candidate, media_type))
     if report.get("error"):
@@ -368,6 +376,13 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
         evidence.append("video temporal visual resets between sampled frames")
     if video_metrics.get("temporal_jump_p95", 0) > settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95:
         evidence.append("video extreme temporal visual reset in the worst sampled transitions")
+    differences = candidate.get("differences") if isinstance(candidate.get("differences"), dict) else {}
+    visual_structure_similarity = differences.get("visual_structure_similarity")
+    if (
+        isinstance(visual_structure_similarity, (int, float))
+        and visual_structure_similarity < settings.GENERATION_VIDEO_BASELINE_MIN_VISUAL_STRUCTURE_SIMILARITY
+    ):
+        evidence.append("video visual structure diverged from the Seed Dance baseline")
     if video_metrics and isinstance(video_score, (int, float)) and video_score < 3:
         if video_metrics.get("motion_energy", 99) < 2:
             evidence.append("video motion too static or frozen")
@@ -415,6 +430,17 @@ def _gate_evidence(gate: dict[str, Any], gate_name: str) -> list[str]:
 
 def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]) -> dict[str, Any] | None:
     text = evidence.lower()
+    if "visual structure diverged from the seed dance baseline" in text:
+        return {
+            "priority": _priority(text),
+            "stage": "video",
+            "action": "refine_video_commercial_aesthetic",
+            "execution": _execution_mode("refine_video_commercial_aesthetic"),
+            "reason": evidence[:240],
+            "recommendation": "Regenerate the clip with stronger baseline-matched composition, subject placement, lighting, and commercial visual direction.",
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
     if any(
         term in text
         for term in (

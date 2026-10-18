@@ -792,3 +792,18 @@ def test_repair_queue_classifies_asset_and_workflow_setup_failures():
         "fix_workflow_profile",
     }
     assert all(item["execution"] == "setup_required" for item in queue)
+
+
+def test_repair_queue_maps_baseline_structure_divergence_to_video_aesthetic_repair():
+    report = {
+        "status": "needs_review",
+        "scene": {"scene_number": 9},
+        "differences": {"visual_structure_similarity": 0.12},
+        "candidate": {"index": 1},
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "refine_video_commercial_aesthetic"
+    assert queue[0]["scene_number"] == 9
+    assert queue[0]["execution"] == "auto"
