@@ -516,6 +516,8 @@ function FinalCompositionEvidence({projectId, report}: {projectId: number; repor
 function ReviewSummary({
     summary,
     qualityPlan,
+    actionFilter,
+    onActionFilterChange,
     busy,
     onRepair,
     onAutoRepair,
@@ -523,6 +525,8 @@ function ReviewSummary({
 }: {
     summary?: GenerationReviewSummary;
     qualityPlan?: QualityLoopPlan;
+    actionFilter: string;
+    onActionFilterChange: (action: string) => void;
     busy: boolean;
     onRepair: (sceneNumber: number, action: string) => void;
     onAutoRepair: () => void;
@@ -533,6 +537,7 @@ function ReviewSummary({
     const isReady = summary.status === 'ready';
     const repairPlan = summary.repair_execution_plan;
     const plannedActions = repairPlanCount(summary);
+    const repairActionOptions = Object.keys(summary.repair_queue?.actions || {}).filter(action => action !== 'manual_review');
     return <section className={`wb-panel wb-review-summary ${isReady ? 'ready' : 'blocked'}`} aria-label="审核摘要">
         <div className="wb-row wb-between">
             <div className="wb-row">
@@ -564,9 +569,17 @@ function ReviewSummary({
                     <h3>质量闭环计划</h3>
                     <p className="wb-muted">{loopStatusLabels[qualityPlan.status] || qualityPlan.status} · {qualityPlan.next_step}</p>
                 </div>
-                <button className="wb-button primary" disabled={busy || !qualityPlan.selected?.length} onClick={onAutoRepair}>
+                <div className="wb-row">
+                    <label className="wb-inline-field">动作
+                        <select value={actionFilter} disabled={busy} onChange={event => onActionFilterChange(event.target.value)}>
+                            <option value="">全部自动动作</option>
+                            {repairActionOptions.map(action => <option value={action} key={action}>{labelRepairAction(action)}</option>)}
+                        </select>
+                    </label>
+                    <button className="wb-button primary" disabled={busy || !qualityPlan.selected?.length} onClick={onAutoRepair}>
                     <RefreshCw size={16} className={busy ? 'animate-spin' : ''}/>批量自动返工
-                </button>
+                    </button>
+                </div>
             </div>
             {qualityPlan.selected?.slice(0, 5).map((item, index) => <div className="wb-issue warning" key={`quality-loop-${item.action}-${index}`}>
                 <span>{item.scene_number ? `分镜 ${item.scene_number}` : item.stage || '全局'}</span>
@@ -662,6 +675,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
     const [reports, setReports] = useState<Record<string, any>>({});
     const [summary, setSummary] = useState<GenerationReviewSummary | undefined>();
     const [qualityPlan, setQualityPlan] = useState<QualityLoopPlan | undefined>();
+    const [actionFilter, setActionFilter] = useState('');
     const [error, setError] = useState('');
     const [baselinePath, setBaselinePath] = useState('');
     const [baselineFile, setBaselineFile] = useState<File | null>(null);
@@ -671,7 +685,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
         try {
             const [reviewData, planData] = await Promise.all([
                 projectApi.reviews(projectId),
-                projectApi.qualityLoopPlan(projectId),
+                projectApi.qualityLoopPlan(projectId, 5, actionFilter || undefined),
             ]);
             setReports(reviewData.reports);
             setSummary(reviewData.summary);
@@ -680,7 +694,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
         } catch (e) {
             setError(errorText(e));
         }
-    }, [projectId]);
+    }, [actionFilter, projectId]);
 
     const compareBaseline = async () => {
         const baseline = baselinePath.trim();
@@ -744,7 +758,10 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
         setBusy(true);
         setError('');
         try {
-            const result = await projectApi.runAutoRepairQueue(projectId, {max_actions: 5});
+            const result = await projectApi.runAutoRepairQueue(projectId, {
+                max_actions: 5,
+                ...(actionFilter ? {action: actionFilter} : {}),
+            });
             setError(`已提交 ${result.submitted.length} 个自动返工动作，跳过 ${result.skipped.length} 个。`);
             await load();
         } catch (e) {
@@ -776,7 +793,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <button className="wb-icon" aria-label="刷新审核" title="刷新审核" onClick={load}><RefreshCw size={17}/></button>
         </div>
         {error && <p className="wb-alert" role="alert">{error}</p>}
-        <ReviewSummary summary={summary} qualityPlan={qualityPlan} busy={busy} onRepair={runRepair} onAutoRepair={runAutoRepair} onSetupRepair={onSetupRepair}/>
+        <ReviewSummary summary={summary} qualityPlan={qualityPlan} actionFilter={actionFilter} onActionFilterChange={setActionFilter} busy={busy} onRepair={runRepair} onAutoRepair={runAutoRepair} onSetupRepair={onSetupRepair}/>
         <HumanReviewActions reports={reports} onDecision={recordHumanReview} busy={busy}/>
         <section className="wb-panel" aria-label="Seed Dance 基线对比">
             <div className="wb-row wb-between">
