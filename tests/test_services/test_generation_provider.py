@@ -629,6 +629,33 @@ def test_async_provider_fetches_artifact_after_callback_only_completion(tmp_path
     assert output.read_bytes() == b"video"
 
 
+def test_async_provider_preserves_failure_from_callback_artifact_lookup(tmp_path, monkeypatch):
+    output = tmp_path / "scene.mp4"
+    output.with_suffix(".provider.callback.json").write_text(json.dumps({
+        "id": "callback-task",
+        "status": "completed",
+    }), encoding="utf-8")
+    provider = HttpVideoApiProvider(endpoint="https://gateway.example/video", api_key="secret")
+    provider.status_endpoint = "https://gateway.example/status/{job_id}"
+    provider.result_endpoint = ""
+    provider.max_polls = 1
+    provider.poll_interval = 0
+
+    class FakeResponse:
+        def json(self):
+            return {"status": "failed", "error": {"message": "render worker crashed"}}
+
+    monkeypatch.setattr(provider, "_request_with_retry", lambda *_args, **_kwargs: FakeResponse())
+
+    with pytest.raises(GenerationProviderError, match="render worker crashed"):
+        provider._resolve_video_result(
+            object(),
+            {"job_id": "callback-task"},
+            str(output),
+            {},
+        )
+
+
 def test_provider_remembers_draft_creation_time():
     provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
 

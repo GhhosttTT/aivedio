@@ -1331,6 +1331,15 @@ class ApiVideoProvider:
                 )
                 fallback = fallback_response.json()
                 self._remember_result_metadata(fallback)
+                fallback_state = str(
+                    _extract_first(fallback, ("status", "state", "task_status")) or ""
+                ).lower()
+                if fallback_state in {"failed", "error", "cancelled", "canceled", "expired"}:
+                    self._report_progress(progress_callback, 100, "failed")
+                    detail = _format_provider_error(fallback)
+                    raise GenerationProviderError(
+                        f"{self.name.value} job {fallback_state}: {detail}"
+                    )
                 direct = _extract_video_url(fallback)
                 if direct:
                     final_path = self._download_video_with_retry(client, str(direct), output_path, headers)
