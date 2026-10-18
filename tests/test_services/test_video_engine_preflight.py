@@ -95,6 +95,27 @@ def test_native_seedance_preflight_exposes_reference_limits(monkeypatch):
     assert report["capabilities"]["reference_audio_supported"] is True
 
 
+def test_native_seedance_preflight_exposes_complete_model_catalog(monkeypatch):
+    from src.services.video_engine_preflight import settings
+
+    monkeypatch.setattr(settings, "GENERATION_PROVIDER", "seedance_api")
+    monkeypatch.setenv("SEEDANCE_ENDPOINT", "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks")
+    monkeypatch.setenv("SEEDANCE_API_KEY", "secret")
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-0-fast-260128")
+
+    report = preflight_video_provider()
+
+    assert [item["id"] for item in report["capabilities"]["available_models"]] == [
+        "doubao-seedance-2-5-260628",
+        "doubao-seedance-2-0-260128",
+        "doubao-seedance-2-0-fast-260128",
+        "doubao-seedance-2-0-mini-260128",
+        "doubao-seedance-1-0-pro-250528",
+        "doubao-seedance-1-0-pro-fast-251015",
+    ]
+
+
 def test_native_seedance_20_preflight_exposes_reduced_reference_contract(monkeypatch):
     from src.services.video_engine_preflight import settings
 

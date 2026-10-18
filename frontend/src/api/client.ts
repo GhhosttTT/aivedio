@@ -439,7 +439,7 @@ export interface VideoEnginePreflight {
         message?: string;
         configuration?: Record<string, string>;
         checks?: Record<string, any>;
-        capabilities?: Record<string, boolean | number | string | string[] | Record<string, number>>;
+        capabilities?: Record<string, boolean | number | string | string[] | Record<string, number> | Array<Record<string, string>>>;
         action_items?: string[];
         warnings?: string[];
     };
@@ -520,7 +520,7 @@ export interface ProductionReadinessReport {
             quality_budget_issues?: string[];
             minimum_quality_budget?: Record<string, unknown>;
             profile?: {
-                capabilities?: Record<string, boolean | number | string | string[] | Record<string, number>>;
+                capabilities?: Record<string, boolean | number | string | string[] | Record<string, number> | Array<Record<string, string>>>;
                 capability_evidence?: Record<string, {
                     present?: boolean;
                     matched_nodes?: string[];

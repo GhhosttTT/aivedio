@@ -33,6 +33,17 @@ VIDEO_WORKFLOW_PLACEHOLDERS = {
     "quality_pipeline_negative",
 }
 
+# Keep the selectable catalog next to the provider contract so the UI and
+# preflight cannot silently drift apart when a model variant is added.
+SEEDANCE_MODEL_CATALOG = [
+    {"id": "doubao-seedance-2-5-260628", "label": "Seedance 2.5"},
+    {"id": "doubao-seedance-2-0-260128", "label": "Seedance 2.0"},
+    {"id": "doubao-seedance-2-0-fast-260128", "label": "Seedance 2.0 Fast"},
+    {"id": "doubao-seedance-2-0-mini-260128", "label": "Seedance 2.0 Mini"},
+    {"id": "doubao-seedance-1-0-pro-250528", "label": "Seedance 1.0 Pro"},
+    {"id": "doubao-seedance-1-0-pro-fast-251015", "label": "Seedance 1.0 Pro Fast"},
+]
+
 
 def scan_placeholders(value) -> set[str]:
     found = set()
@@ -463,6 +474,7 @@ def preflight_video_provider(
         checks["model_configured"] = bool(report["configuration"]["model"].strip())
         checks["model_is_25"] = model_is_25
         if ark_native:
+            report["capabilities"]["available_models"] = [dict(item) for item in SEEDANCE_MODEL_CATALOG]
             report["capabilities"]["multimodal_references"] = _seedance_model_supports_multimodal_references(model_name)
             report["capabilities"]["first_last_frame"] = _seedance_model_supports_first_last_frame(model_name)
             report["capabilities"]["edit_and_extend"] = not model_is_10

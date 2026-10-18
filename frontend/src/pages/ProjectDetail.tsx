@@ -97,6 +97,22 @@ export function ProjectDetail() {
     const nativeSeedance25 = nativeArk && seedance25;
     const nativeSeedanceNon25 = nativeArk && !seedance25;
     const providerCapabilities = providerPreflight?.capabilities || {};
+    const fallbackModelOptions = [
+        {id: 'doubao-seedance-2-5-260628', label: 'Seedance 2.5'},
+        {id: 'doubao-seedance-2-0-260128', label: 'Seedance 2.0'},
+        {id: 'doubao-seedance-2-0-fast-260128', label: 'Seedance 2.0 Fast'},
+        {id: 'doubao-seedance-2-0-mini-260128', label: 'Seedance 2.0 Mini'},
+        {id: 'doubao-seedance-1-0-pro-250528', label: 'Seedance 1.0 Pro'},
+        {id: 'doubao-seedance-1-0-pro-fast-251015', label: 'Seedance 1.0 Pro Fast'},
+    ];
+    const modelOptions = Array.isArray(providerCapabilities.available_models)
+        ? providerCapabilities.available_models.filter((item): item is {id: string; label: string} => (
+            Boolean(item)
+            && typeof item === 'object'
+            && typeof item.id === 'string'
+            && typeof item.label === 'string'
+        ))
+        : fallbackModelOptions;
     const capabilityResolutions = Array.isArray(providerCapabilities.supported_resolutions)
         ? providerCapabilities.supported_resolutions.map(String)
         : [];
@@ -204,7 +220,7 @@ export function ProjectDetail() {
                     <option value="reference">参考生视频 / Ark</option><option value="auto">自动识别任务类型 / Ark 2.5</option><option value="reference_to_video">参考生视频 / 兼容网关</option><option value="multi_shot">多镜头 2.5</option><option value="edit">视频编辑</option><option value="extend">视频延长</option>
                 </select></label>
                 <label>Seedance 模型<select disabled={locked || productionOptions.provider !== 'seedance_api'} value={productionOptions.model} onChange={e => setModel(e.target.value)}>
-                    <option value="">环境默认</option><option value="doubao-seedance-2-5-260628">Seedance 2.5</option><option value="doubao-seedance-2-0-260128">Seedance 2.0</option><option value="doubao-seedance-1-0-pro-250528">Seedance 1.0 Pro</option>
+                    <option value="">环境默认</option>{modelOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
                 </select></label>
                 <label className="wb-check"><input type="checkbox" disabled={locked} checked={productionOptions.native_audio} onChange={e => setProductionOptions({...productionOptions, native_audio: e.target.checked})}/>原生音频</label>
                 <label className="wb-check"><input type="checkbox" disabled={locked} checked={productionOptions.multi_shot} onChange={e => setProductionOptions({...productionOptions, multi_shot: e.target.checked})}/>启用多镜头</label>
