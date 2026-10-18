@@ -1319,6 +1319,28 @@ class ApiVideoProvider:
                     final_path = _write_base64_video(str(encoded), output_path)
                     self._report_progress(progress_callback, 100, "downloaded")
                     return final_path
+            if state in {"completed", "complete", "succeeded", "success", "done"} and callback_status is not None:
+                # A webhook may only acknowledge completion. Fetch the
+                # terminal artifact from the status resource before declaring
+                # a successful remote task unusable.
+                fallback_response = self._request_with_retry(
+                    client,
+                    "get",
+                    status_url,
+                    headers=headers,
+                )
+                fallback = fallback_response.json()
+                self._remember_result_metadata(fallback)
+                direct = _extract_video_url(fallback)
+                if direct:
+                    final_path = self._download_video_with_retry(client, str(direct), output_path, headers)
+                    self._report_progress(progress_callback, 100, "downloaded")
+                    return final_path
+                encoded = _extract_first(fallback, ("video_base64", "base64", "output_base64"))
+                if encoded:
+                    final_path = _write_base64_video(str(encoded), output_path)
+                    self._report_progress(progress_callback, 100, "downloaded")
+                    return final_path
             if state in {"completed", "complete", "succeeded", "success", "done"}:
                 raise GenerationProviderError(
                     f"{self.name.value} job completed without a video result"

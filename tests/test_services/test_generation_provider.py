@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -586,6 +587,46 @@ def test_provider_reads_terminal_seedance_callback(tmp_path):
 
     assert result["status"] == "succeeded"
     assert provider._load_provider_callback(str(output), "other-task") is None
+
+
+def test_async_provider_fetches_artifact_after_callback_only_completion(tmp_path, monkeypatch):
+    output = tmp_path / "scene.mp4"
+    output.with_suffix(".provider.callback.json").write_text(json.dumps({
+        "id": "callback-task",
+        "status": "completed",
+    }), encoding="utf-8")
+    provider = HttpVideoApiProvider(endpoint="https://gateway.example/video", api_key="secret")
+    provider.status_endpoint = "https://gateway.example/status/{job_id}"
+    provider.result_endpoint = ""
+    provider.max_polls = 1
+    provider.poll_interval = 0
+    calls = []
+
+    class FakeResponse:
+        def json(self):
+            return {"status": "completed", "video_url": "https://media.example/scene.mp4"}
+
+    def fake_request(_client, method, url, **_kwargs):
+        calls.append((method, url))
+        return FakeResponse()
+
+    def fake_download(_client, _url, path, _headers):
+        Path(path).write_bytes(b"video")
+        return str(path)
+
+    monkeypatch.setattr(provider, "_request_with_retry", fake_request)
+    monkeypatch.setattr(provider, "_download_video_with_retry", fake_download)
+
+    result = provider._resolve_video_result(
+        object(),
+        {"job_id": "callback-task"},
+        str(output),
+        {},
+    )
+
+    assert result == str(output)
+    assert calls == [("get", "https://gateway.example/status/callback-task")]
+    assert output.read_bytes() == b"video"
 
 
 def test_provider_remembers_draft_creation_time():
