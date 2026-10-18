@@ -1169,10 +1169,20 @@ def summarize_validation(output: Path):
     )
     checks["baseline_comparison_present"] = bool(baseline_comparison_report)
     checks["baseline_contact_sheet_present"] = _baseline_contact_sheet_present(baseline_comparison_report, output)
+    baseline_gates = baseline_comparison_report.get("gates") if isinstance(baseline_comparison_report, dict) else None
+    # Reports generated before the visual-structure gate did not expose a
+    # gates object in several test/legacy fixtures. Treat those as compatible
+    # evidence, but fail closed for real comparison reports with an older gate
+    # schema so stale validation cannot bypass the new acceptance criterion.
+    checks["baseline_visual_structure_gate_present"] = (
+        not isinstance(baseline_gates, dict)
+        or "visual_structure_not_diverged" in baseline_gates
+    )
     checks["baseline_comparison_passed"] = bool(
         baseline_comparison_report
         and baseline_comparison_report.get("status") == "passed"
         and checks["baseline_contact_sheet_present"]
+        and checks["baseline_visual_structure_gate_present"]
     )
     manual_cases = manual_review.get("cases", []) if isinstance(manual_review, dict) else []
     manual_clip = _manual_clip_review(manual_review)
@@ -1274,6 +1284,8 @@ def summarize_validation(output: Path):
         report["action_items"].append("Run compare-baseline against a Seed Dance reference clip before claiming replacement quality.")
     elif not isinstance(baseline_comparison_report, dict) or baseline_comparison_report.get("status") != "passed":
         report["action_items"].append("Improve video engine/settings until Seed Dance baseline comparison passes measurable gates.")
+    elif not checks["baseline_visual_structure_gate_present"]:
+        report["action_items"].append("Rerun compare-baseline to refresh the visual-structure gate before accepting this validation evidence.")
     elif not checks["baseline_contact_sheet_present"]:
         report["action_items"].append("Rerun compare-baseline with an output path so seed_dance_contact_sheet.png is generated for visual evidence.")
     if not checks["manual_review_present"]:

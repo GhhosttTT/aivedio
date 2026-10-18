@@ -1297,6 +1297,21 @@ def test_validation_summary_requires_seed_dance_baseline_comparison(tmp_path):
 
     assert report["status"] == "partial_needs_review"
     assert report["checks"]["baseline_comparison_present"] is False
+
+
+def test_validation_summary_rejects_legacy_baseline_gate_schema(tmp_path):
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", {
+        "status": "passed",
+        "gates": {"motion_not_static": True},
+        "contact_sheet_path": str(tmp_path / "seed_dance_contact_sheet.png"),
+    })
+    (tmp_path / "seed_dance_contact_sheet.png").write_bytes(b"sheet")
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["checks"]["baseline_visual_structure_gate_present"] is False
+    assert report["checks"]["baseline_comparison_passed"] is False
+    assert any("visual-structure gate" in item for item in report["action_items"])
     assert any("compare-baseline" in item for item in report["action_items"])
 
 
