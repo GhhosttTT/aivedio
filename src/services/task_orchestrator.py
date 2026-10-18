@@ -4,6 +4,8 @@
 """
 
 import os
+import json
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from uuid import uuid4
@@ -32,6 +34,24 @@ from src.tasks.composition_tasks import compose_final_video_task
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _task_result_payload(output_path: str) -> dict:
+    """Expose the final artifact and its composition gate when available."""
+    result = {"output_path": output_path}
+    review_path = Path(output_path).with_suffix(".composition_review.json")
+    try:
+        review = json.loads(review_path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        return result
+    if isinstance(review, dict):
+        result["composition_review"] = {
+            key: review[key]
+            for key in ("status", "average", "technical_score", "error")
+            if key in review
+        }
+        result["composition_review_path"] = str(review_path)
+    return result
 
 
 class TaskOrchestrator:
@@ -623,7 +643,7 @@ class TaskOrchestrator:
             "total_steps": task_model.total_steps,
             "error_message": task_model.error_message,
             "error": task_model.error_message,
-            "result": {"output_path": task_model.result_path} if task_model.result_path else None,
+            "result": _task_result_payload(task_model.result_path) if task_model.result_path else None,
             "created_at": task_model.created_at.isoformat() if task_model.created_at else None,
             "updated_at": task_model.updated_at.isoformat() if task_model.updated_at else None,
         }

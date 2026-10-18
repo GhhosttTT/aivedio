@@ -627,13 +627,18 @@ def test_task_status_exposes_effective_production_options(orchestrator, sample_p
     assert status["production_options"]["model"] == "doubao-seedance-2-5-260628"
 
 
-def test_task_status_exposes_completed_output_path(orchestrator, sample_project):
+def test_task_status_exposes_completed_output_path(orchestrator, sample_project, tmp_path):
+    output_path = tmp_path / "final.mp4"
+    output_path.write_bytes(b"video")
+    output_path.with_suffix(".composition_review.json").write_text(
+        '{"status":"passed","average":4.6,"technical_score":4.8}', encoding="utf-8"
+    )
     task = TaskModel(
         project_id=sample_project.id,
         status=TaskStatus.COMPLETED,
         celery_task_id="completed-output-task-id",
         total_steps=10,
-        result_path="/data/projects/1/final.mp4",
+        result_path=str(output_path),
         progress=100,
     )
     orchestrator.db.add(task)
@@ -641,7 +646,10 @@ def test_task_status_exposes_completed_output_path(orchestrator, sample_project)
 
     status = orchestrator.get_task_status(task.celery_task_id)
 
-    assert status["result"] == {"output_path": "/data/projects/1/final.mp4"}
+    assert status["result"]["output_path"] == str(output_path)
+    assert status["result"]["composition_review"] == {
+        "status": "passed", "average": 4.6, "technical_score": 4.8,
+    }
 
 
 class TestUpdateTaskProgress:

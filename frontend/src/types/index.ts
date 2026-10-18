@@ -86,7 +86,7 @@ export interface TaskStatus {
     status: string;
     progress: number;
     current_step: string;
-    result?: {output_path?: string};
+    result?: {output_path?: string; composition_review?: {status?: string; average?: number; technical_score?: number; error?: string}; composition_review_path?: string};
     error?: string;
     provider_progress?: number;
     provider_stage?: string;
