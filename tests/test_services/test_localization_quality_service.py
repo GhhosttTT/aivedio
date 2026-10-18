@@ -16,6 +16,17 @@ def test_localization_review_is_invalidated_when_report_changes(tmp_path):
     assert decision["report_signature"] != store.report_signature({**report, "score": 0.72})
 
 
+def test_localization_review_keeps_decision_history(tmp_path):
+    store = LocalizationReviewStore(tmp_path / "moderation_report.json")
+    report = {"status": "needs_review", "score": 0.61}
+    store.record("rejected", "字幕过长", report, user_id=3)
+    store.record("approved", "修复后复核通过", report, user_id=4)
+
+    history = store.history()
+    assert [item["decision"] for item in history] == ["rejected", "approved"]
+    assert history[-1]["reviewed_by"] == 4
+
+
 def test_quality_service_flags_timestamp_and_reading_speed_issues(tmp_path, monkeypatch):
     transcript = tmp_path / "transcript.json"
     translated_dir = tmp_path / "translations"

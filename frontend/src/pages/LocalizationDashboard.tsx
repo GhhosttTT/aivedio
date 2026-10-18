@@ -21,7 +21,7 @@ export function LocalizationDashboard() {
     const [sourceId, setSourceId] = useState(0);
     const [jobs, setJobs] = useState<LocalizationJob[]>([]);
     const [job, setJob] = useState<LocalizationJob | null>(null);
-    const [quality, setQuality] = useState<{report: any; human_review: {decision: string; note?: string}} | null>(null);
+    const [quality, setQuality] = useState<{report: any; human_review: {decision: string; note?: string}; review_history?: Array<{decision: string; note?: string; reviewed_by?: number; reviewed_at?: string}>} | null>(null);
     const [reviewNote, setReviewNote] = useState('');
     const [selected, setSelected] = useState(['en']);
     const [file, setFile] = useState<File | null>(null);
@@ -93,6 +93,7 @@ export function LocalizationDashboard() {
                     <div className="wb-row wb-between"><strong>译制质量复核</strong><span className={`wb-score ${quality.report.status}`}>{quality.report.status} · 人审 {quality.human_review.decision}</span></div>
                     <p className="wb-muted">自动评分：{quality.report.score ?? '-'}；报告变化后旧的人审决定会自动失效。</p>
                     {quality.human_review.note && <p className="wb-muted">上次复核备注：{quality.human_review.note}</p>}
+                    {quality.review_history?.length ? <details><summary>复核历史（{quality.review_history.length} 次）</summary>{quality.review_history.slice().reverse().map((item, index) => <p className="wb-muted" key={`${item.reviewed_at || index}-${index}`}>{item.decision} · 操作者 {item.reviewed_by ?? '-'} · {item.note || '无备注'}</p>)}</details> : null}
                     <label>复核备注<textarea value={reviewNote} maxLength={1000} disabled={Boolean(busy)} onChange={e => setReviewNote(e.target.value)} placeholder="记录翻译、时序、字幕可读性或人工判断依据" rows={3}/></label>
                     <div className="wb-row"><button className="wb-button" disabled={Boolean(busy)} onClick={() => reviewQuality('approved')}>人工通过</button><button className="wb-button" disabled={Boolean(busy)} onClick={() => reviewQuality('rejected')}>退回复核</button></div>
                 </section>}

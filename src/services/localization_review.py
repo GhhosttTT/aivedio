@@ -22,8 +22,14 @@ class LocalizationReviewStore:
         try:
             value = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return {"version": 1, "decision": None}
-        return value if isinstance(value, dict) else {"version": 1, "decision": None}
+            return {"version": 1, "decision": None, "history": []}
+        if not isinstance(value, dict):
+            return {"version": 1, "decision": None, "history": []}
+        history = value.get("history") if isinstance(value.get("history"), list) else []
+        # Read legacy single-decision files without losing their audit entry.
+        if not history and isinstance(value.get("decision"), dict):
+            history = [value["decision"]]
+        return {**value, "history": history}
 
     def record(self, decision: str, note: str, report: dict, user_id: int | None = None) -> dict:
         if decision not in {"approved", "rejected"}:
@@ -37,8 +43,11 @@ class LocalizationReviewStore:
             "reviewed_by": user_id,
             "reviewed_at": datetime.now(timezone.utc).isoformat(),
         }
+        payload = self._read()
+        history = [item for item in payload.get("history", []) if isinstance(item, dict)]
+        history.append(entry)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps({"version": 1, "decision": entry}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        self.path.write_text(json.dumps({"version": 1, "decision": entry, "history": history}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return entry
 
     def apply(self, report: dict) -> dict:
@@ -48,3 +57,6 @@ class LocalizationReviewStore:
         if entry.get("report_signature") != self.report_signature(report):
             return {"decision": "stale", "reviewed_at": entry.get("reviewed_at")}
         return dict(entry)
+
+    def history(self) -> list[dict]:
+        return [item for item in self._read().get("history", []) if isinstance(item, dict)]

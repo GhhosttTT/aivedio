@@ -167,7 +167,7 @@ async def get_localization_quality(job_id: int, db_session: Session = Depends(ge
     if not job:
         raise HTTPException(status_code=404, detail="译制任务不存在")
     report, store = _load_quality_report(job)
-    return {"job_id": job_id, "report": report, "human_review": store.apply(report)}
+    return {"job_id": job_id, "report": report, "human_review": store.apply(report), "review_history": store.history()}
 
 
 @router.post("/jobs/{job_id}/quality-review", dependencies=[Depends(require_localization_job_access)])
