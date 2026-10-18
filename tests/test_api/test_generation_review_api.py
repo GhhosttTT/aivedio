@@ -421,6 +421,26 @@ def test_review_api_rejects_mismatched_accepted_video_evidence(tmp_path, monkeyp
     assert _accepted_video_evidence_error(report) == "accepted video evidence does not match the report video hash"
 
 
+def test_review_api_contains_corrupt_report_as_unavailable(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    project_root = storage_manager.get_project_path(1)
+    corrupt = project_root / "reviews" / "generation.json"
+    corrupt.parent.mkdir(parents=True, exist_ok=True)
+    corrupt.write_text("{not-json", encoding="utf-8")
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        id=1, final_video_path=None, scenes=[],
+    )
+
+    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+
+    report = result["reports"]["generation"]
+    assert report["status"] == "review_unavailable"
+    assert report["report_path"] == str(corrupt)
+    assert result["summary"]["status"] == "blocked"
+
+
 def test_review_api_marks_baseline_stale_when_project_has_no_current_candidate(tmp_path, monkeypatch):
     from src.utils.storage import storage_manager
     monkeypatch.setattr(storage_manager, "base_path", tmp_path)

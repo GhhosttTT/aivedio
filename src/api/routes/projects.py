@@ -483,11 +483,18 @@ async def get_generation_review(
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
     root = storage_manager.get_project_path(project_id) / "reviews"
-    reports = {
-        path.stem: json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted(root.glob("*.json"))
-        if path.name != "human_decisions.json"
-    }
+    reports = {}
+    for path in sorted(root.glob("*.json")):
+        if path.name == "human_decisions.json":
+            continue
+        try:
+            reports[path.stem] = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            reports[path.stem] = {
+                "status": "review_unavailable",
+                "error": f"Review report could not be read: {exc}",
+                "report_path": str(path),
+            }
     for report in reports.values():
         if not isinstance(report, dict):
             continue
