@@ -2246,9 +2246,12 @@ def generate_video_task(
                 }.items() if value is not None
             }
             provider_ref = {}
+            external_progress_callback = kwargs.get("PROVIDER_PROGRESS_CALLBACK")
             def report_provider_progress(progress, state):
                 generator = provider_ref.get("generator")
                 metadata = getattr(generator, "last_result_metadata", {}) if generator else {}
+                if callable(external_progress_callback):
+                    external_progress_callback(progress, state, metadata)
                 self.update_state(
                     state="PROGRESS",
                     meta={
@@ -2435,6 +2438,19 @@ def generate_sequence_video_task(
             "output_path": str(sequence_path),
             "sequence_timeline": [segment.as_dict() for segment in segments],
         })
+        def report_sequence_provider_progress(progress, state, metadata=None):
+            metadata = metadata if isinstance(metadata, dict) else {}
+            self.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": progress,
+                    "total": 100,
+                    "step": f"provider_{state}",
+                    "provider_task_id": metadata.get("provider_task_id"),
+                    "provider_status": metadata.get("provider_status") or metadata.get("provider_task_status"),
+                },
+            )
+        provider_kwargs["PROVIDER_PROGRESS_CALLBACK"] = report_sequence_provider_progress
         self.update_state(state="PROGRESS", meta={"current": 10, "total": 100, "step": "sequence_generation"})
         generated = generate_video_task.run(first_scene.id, project_id, task_id, **provider_kwargs)
         source = Path(generated["video_path"])
