@@ -293,6 +293,26 @@ function ReviewSummary({
     </section>;
 }
 
+function HumanReviewActions({
+    reports,
+    onDecision,
+    busy,
+}: {reports: Record<string, any>; onDecision: (reportKey: string, decision: 'approved' | 'rejected') => void; busy: boolean}) {
+    const pending = Object.entries(reports).filter(([, report]) => ['needs_review', 'review_unavailable'].includes(report?.status));
+    if (!pending.length) return null;
+    return <section className="wb-panel" aria-label="人工审核决策">
+        <h3>人工审核决策</h3>
+        <p className="wb-muted">决策绑定当前报告版本；剧情、成片或证据变化后会自动失效。</p>
+        {pending.map(([key, report]) => <div className="wb-row wb-between" key={key}>
+            <span>{reportTitle(key)} · {statuses[report.status] || report.status}</span>
+            <span className="wb-row">
+                <button className="wb-button" disabled={busy} onClick={() => onDecision(key, 'approved')}>人工通过</button>
+                <button className="wb-button" disabled={busy} onClick={() => onDecision(key, 'rejected')}>驳回返工</button>
+            </span>
+        </div>)}
+    </section>;
+}
+
 export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedAt: string}) {
     const [reports, setReports] = useState<Record<string, any>>({});
     const [summary, setSummary] = useState<GenerationReviewSummary | undefined>();
@@ -367,6 +387,20 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
         }
     };
 
+    const recordHumanReview = async (reportKey: string, decision: 'approved' | 'rejected') => {
+        setBusy(true);
+        setError('');
+        try {
+            const note = window.prompt('审核意见（可选）') || '';
+            await projectApi.humanReview(projectId, {report_key: reportKey, decision, note});
+            await load();
+        } catch (e) {
+            setError(errorText(e));
+        } finally {
+            setBusy(false);
+        }
+    };
+
     useEffect(() => { load(); }, [load, updatedAt]);
 
     return <section aria-label="质量审核">
@@ -376,6 +410,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
         </div>
         {error && <p className="wb-alert" role="alert">{error}</p>}
         <ReviewSummary summary={summary} qualityPlan={qualityPlan} busy={busy} onRepair={runRepair} onAutoRepair={runAutoRepair}/>
+        <HumanReviewActions reports={reports} onDecision={recordHumanReview} busy={busy}/>
         <section className="wb-panel" aria-label="Seed Dance 基线对比">
             <div className="wb-row wb-between">
                 <div>

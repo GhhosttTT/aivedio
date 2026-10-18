@@ -11,6 +11,7 @@ from starlette.datastructures import UploadFile
 from src.api.routes.projects import (
     SeedDanceBaselineRequest,
     _generation_review_summary,
+    record_human_review,
     compare_seed_dance_baseline,
     create_delivery_package,
     get_generation_review,
@@ -87,6 +88,42 @@ def test_review_api_marks_final_composition_stale_after_video_changes(tmp_path, 
 
     assert result["reports"]["final_composition"]["status"] == "stale"
     assert any("final composition quality gate" in item for item in result["summary"]["action_items"])
+
+
+def test_human_review_endpoint_records_decision_for_owned_report(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    root = storage_manager.get_project_path(1) / "reviews"
+    write_report(root / "generation.json", {"status": "needs_review", "average": 3.0})
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        id=1, user_id=2, final_video_path=None, scenes=[],
+    )
+
+    result = asyncio.run(record_human_review(
+        1,
+        SimpleNamespace(report_key="generation", decision="approved", note="人工通过"),
+        SimpleNamespace(id=2),
+        db,
+    ))
+
+    assert result["decision"]["decision"] == "approved"
+    review = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    assert review["human_decisions"]["generation"]["note"] == "人工通过"
+
+
+def test_generation_review_summary_honors_current_human_approval():
+    summary = _generation_review_summary({
+        "production_story": {"status": "passed"},
+        "generation": {
+            "status": "needs_review",
+            "human_decision": {"decision": "approved"},
+        },
+        "seed_dance_baseline_comparison": {"status": "passed"},
+    })
+
+    assert summary["status"] == "ready"
+    assert "generation" in summary["human_approved_reports"]
 
 
 def test_delivery_package_endpoint_exports_approved_project(tmp_path, monkeypatch):

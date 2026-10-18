@@ -385,6 +385,12 @@ class RepairQueueAutoRunResponse(BaseModel):
     considered: List[dict] = Field(default_factory=list)
 
 
+class HumanReviewDecisionRequest(BaseModel):
+    report_key: str = Field(..., min_length=1, max_length=200)
+    decision: str = Field(..., pattern="^(approved|rejected)$")
+    note: str = Field("", max_length=1000)
+
+
 # ==================== 任务相关模型 ====================
 
 class ProductionTaskResponse(BaseModel):

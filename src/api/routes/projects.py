@@ -32,6 +32,7 @@ from src.api.schemas import (
     VisualStyleAssetPackResponse,
     WorkflowProfileFreezeRequest,
     WorkflowProfileResponse,
+    HumanReviewDecisionRequest,
 )
 from src.api.dependencies import get_current_user, require_project_access
 from src.services.project_manager import ProjectManager, get_project_manager
@@ -50,6 +51,7 @@ from src.services.delivery_package import DeliveryPackageError, build_delivery_p
 from src.services.topic_brief import TopicBriefService
 from src.services.platform_export import PLATFORM_EXPORT_PRESETS, PlatformExportError, export_platform_video
 from src.services.repair_budget import RepairBudget
+from src.services.human_review import HumanReviewStore
 from src.database.session import get_db_session
 from src.database.models import Character, Project, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
@@ -403,6 +405,7 @@ async def get_generation_review(
     reports = {
         path.stem: json.loads(path.read_text(encoding="utf-8"))
         for path in sorted(root.glob("*.json"))
+        if path.name != "human_decisions.json"
     }
     project_root = storage_manager.get_project_path(project_id)
     for path in sorted(project_root.rglob("*.quality.json")):
@@ -421,6 +424,7 @@ async def get_generation_review(
             logger.warning("Cannot read composition quality report: {}", composition_report_path)
     from src.tasks.review_tasks import current_story, generation_signature
     from src.services.generation_review import fingerprint
+    human_decisions = HumanReviewStore(project_id).apply(reports)
     for name in ("production_story", "generation"):
         report = reports.get(name)
         if report and report.get("status") == "passed":
@@ -461,7 +465,34 @@ async def get_generation_review(
         ):
             final_composition["status"] = "stale"
     summary = _generation_review_summary(reports, repair_output=root)
-    return {"project_id": project_id, "reports": reports, "summary": summary}
+    return {"project_id": project_id, "reports": reports, "summary": summary, "human_decisions": human_decisions}
+
+
+@router.post("/{project_id}/human-review")
+async def record_human_review(
+    project_id: int,
+    request: HumanReviewDecisionRequest,
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    review = await get_generation_review(project_id, current_user, db_session)
+    report = review["reports"].get(request.report_key)
+    if not isinstance(report, dict):
+        raise HTTPException(status_code=404, detail="审核报告不存在")
+    try:
+        decision = HumanReviewStore(project_id).record(
+            request.report_key,
+            request.decision,
+            request.note,
+            report,
+            getattr(current_user, "id", None),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"project_id": project_id, "decision": decision}
 
 
 @router.post("/{project_id}/delivery-package")
@@ -651,7 +682,7 @@ async def freeze_visual_style(
 
 def _generation_review_summary(reports: dict, repair_output: Path | None = None) -> dict:
     action_items = []
-    statuses = {name: report.get("status") for name, report in reports.items() if isinstance(report, dict)}
+    statuses = {name: _effective_review_status(report) for name, report in reports.items() if isinstance(report, dict)}
     stale = sorted(name for name, status_value in statuses.items() if status_value == "stale")
     if stale:
         action_items.append("Story or media changed; rerun the stale reviews before composing.")
@@ -701,7 +732,25 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         "repair_execution_plan": repair_plan,
         "quality_scorecard": scorecard,
         "action_items": action_items,
+        "human_approved_reports": sorted(
+            name for name, report in reports.items()
+            if isinstance(report, dict)
+            and isinstance(report.get("human_decision"), dict)
+            and report["human_decision"].get("decision") == "approved"
+        ),
     }
+
+
+def _effective_review_status(report: dict) -> str | None:
+    status_value = report.get("status")
+    decision = report.get("human_decision")
+    if (
+        status_value in {"needs_review", "review_unavailable"}
+        and isinstance(decision, dict)
+        and decision.get("decision") == "approved"
+    ):
+        return "passed"
+    return status_value
 
 
 def _repair_queue_summary(reports: dict) -> dict:

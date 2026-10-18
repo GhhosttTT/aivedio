@@ -71,6 +71,7 @@ export const projectApi = {
     videoEnginePreflight: () => apiClient.get<any, VideoEnginePreflight>('/projects/video-engine/preflight'),
     latestTask: (id: number) => apiClient.get<any, ProductionTask | null>(`/projects/${id}/production-task`),
     reviews: (id: number) => apiClient.get<any, GenerationReviewResponse>(`/projects/${id}/generation-review`),
+    humanReview: (id: number, data: {report_key: string; decision: 'approved' | 'rejected'; note?: string}) => apiClient.post<any, {decision: Record<string, any>}>(`/projects/${id}/human-review`, data),
     deliveryPackage: (id: number) => apiClient.post<any, {package_path: string; manifest_path: string}>(`/projects/${id}/delivery-package`),
     topicBrief: (id: number) => apiClient.get<any, {status: string; missing: string[]; brief: Record<string, string>}>(`/projects/${id}/topic-brief`),
     updateTopicBrief: (id: number, data: Record<string, string>) => apiClient.put<any, Record<string, string>>(`/projects/${id}/topic-brief`, data),
@@ -353,6 +354,7 @@ export interface GenerationReviewSummary {
         rerun_validation_commands?: string[];
     };
     action_items: string[];
+    human_approved_reports?: string[];
 }
 
 export interface RepairExecutionPlanItem {
@@ -429,6 +431,7 @@ export interface GenerationReviewResponse {
     project_id: number;
     reports: Record<string, any>;
     summary?: GenerationReviewSummary;
+    human_decisions?: Record<string, any>;
 }
 
 export interface VideoEnginePreflight {
