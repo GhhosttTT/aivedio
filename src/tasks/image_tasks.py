@@ -174,6 +174,10 @@ def _character_sheet_generation_contract(visible_characters: list[dict]) -> dict
         contract = (
             f"{name} character-sheet reference view={view}; {prompt}; "
             f"must match reviewed features: {'; '.join(feature_terms)}"
+            + (
+                f"; performance personality: {str(item.get('personality')).strip()}"
+                if str(item.get("personality") or "").strip() else ""
+            )
         ).strip(" ;")
         prompts.append(contract)
         references.append({
@@ -256,7 +260,9 @@ def _appearance_anchor(characters: list[Character], db, compiler) -> str | None:
             db.commit()
         if appearance:
             safe_name = _prompt_safe_name(character.name, "character")
-            anchors.append(f"{safe_name} identity: {appearance}")
+            performance = (character.personality or "").strip()
+            suffix = f"; performance personality: {performance}" if performance else ""
+            anchors.append(f"{safe_name} identity: {appearance}{suffix}")
     if not anchors:
         return None
     specs = [

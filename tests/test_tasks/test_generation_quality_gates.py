@@ -866,6 +866,7 @@ def test_multiple_visible_characters_are_preserved_in_prompt(project_data):
     alice_spec = identity_service.build_identity_spec("Alice", "lead", project_id=project.id)
     bob_spec = identity_service.build_identity_spec("Bob", "rival", project_id=project.id, existing_specs=[alice_spec])
     character.visual_description = json.dumps(alice_spec)
+    character.personality = "restrained but decisive"
     bob = Character(
         project_id=project.id,
         name="Bob",
@@ -886,6 +887,7 @@ def test_multiple_visible_characters_are_preserved_in_prompt(project_data):
     assert [c.name for c in _visual_characters(scene, project.id, db)] == ["Alice", "Bob"]
     assert reference_character is None
     assert "Alice identity: woman, short black hair, green jacket" in compiled.prompt
+    assert "performance personality: restrained but decisive" in compiled.prompt
     assert "Bob identity: man, square jaw, navy coat" in compiled.prompt
     assert "Keep every visible character distinct" in compiled.prompt
     assert "Identity contrast contract" in compiled.prompt
