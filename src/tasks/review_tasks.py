@@ -36,6 +36,42 @@ def _optional_asset_hash(path):
     return file_hash(Path(path)) if isinstance(path, (str, Path)) and path else None
 
 
+def validate_generation_review_coverage(report: dict, scenes) -> dict:
+    """Verify that a passed generation review covers every project scene once."""
+    expected = [int(scene.scene_number) for scene in scenes]
+    entries = report.get("scenes") if isinstance(report, dict) else None
+    if not isinstance(entries, list):
+        return {
+            "passed": False, "expected": expected, "reviewed": [],
+            "missing": expected, "duplicate": [], "unexpected": [],
+            "not_passed": [], "reason": "per-scene review entries are missing",
+        }
+    numbers = [
+        int(item.get("scene_number"))
+        for item in entries
+        if isinstance(item, dict) and str(item.get("scene_number", "")).strip().isdigit()
+    ]
+    expected_set = set(expected)
+    number_set = set(numbers)
+    duplicate = sorted({number for number in numbers if numbers.count(number) > 1})
+    missing = sorted(expected_set - number_set)
+    unexpected = sorted(number_set - expected_set)
+    not_passed = sorted(
+        int(item.get("scene_number"))
+        for item in entries
+        if isinstance(item, dict)
+        and str(item.get("scene_number", "")).strip().isdigit()
+        and int(item.get("scene_number")) in expected_set
+        and item.get("status") != "passed"
+    )
+    passed = not missing and not duplicate and not unexpected and not not_passed and len(numbers) == len(expected)
+    return {
+        "passed": passed, "expected": expected, "reviewed": numbers,
+        "missing": missing, "duplicate": duplicate, "unexpected": unexpected,
+        "not_passed": not_passed, "reason": "ok" if passed else "per-scene review coverage is incomplete",
+    }
+
+
 def require_generation_review(project, scenes):
     require_story_review(project, scenes)
     path = storage_manager.get_project_path(project.id) / "reviews" / "generation.json"
@@ -43,6 +79,13 @@ def require_generation_review(project, scenes):
         raise ReviewError("Missing sampled-frame review; run review_generation before composing")
     report = json.loads(path.read_text(encoding="utf-8"))
     require_passed(report)
+    coverage = validate_generation_review_coverage(report, scenes)
+    if not coverage["passed"]:
+        raise ReviewError(
+            "Generation review does not cover every scene: "
+            f"missing={coverage['missing']}, duplicate={coverage['duplicate']}, "
+            f"unexpected={coverage['unexpected']}, not_passed={coverage['not_passed']}"
+        )
     if report.get("input_hash") != generation_signature(project, scenes):
         raise ReviewError("Story or media changed after review; rerun sampled-frame review")
     return report

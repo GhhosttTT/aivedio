@@ -1158,7 +1158,11 @@ def test_review_becomes_invalid_after_media_or_story_changes(project_data):
     scene.video_path = str(path)
     root = storage_manager.get_project_path(project.id) / "reviews"
     write_report(root / "production_story.json", {"status": "passed", "input_hash": fingerprint(current_story(project, [scene]))})
-    write_report(root / "generation.json", {"status": "passed", "input_hash": generation_signature(project, [scene])})
+    write_report(root / "generation.json", {
+        "status": "passed",
+        "input_hash": generation_signature(project, [scene]),
+        "scenes": [{"scene_id": scene.id, "scene_number": scene.scene_number, "status": "passed"}],
+    })
     assert require_generation_review(project, [scene])["status"] == "passed"
     path.write_bytes(b"changed video")
     with pytest.raises(ReviewError, match="media changed"):
@@ -1246,6 +1250,22 @@ def test_image_failure_is_not_replaced_by_draft_by_default(project_data, monkeyp
 def test_composition_cannot_bypass_missing_review(project_data):
     _, project, scene, _, _ = project_data
     with pytest.raises(ReviewError, match="Missing production story"):
+        require_generation_review(project, [scene])
+
+
+def test_composition_rejects_incomplete_generation_review_coverage(project_data):
+    _, project, scene, _, _ = project_data
+    from src.utils.storage import storage_manager
+    root = storage_manager.get_project_path(project.id) / "reviews"
+    write_report(root / "production_story.json", {
+        "status": "passed", "input_hash": fingerprint(current_story(project, [scene])),
+    })
+    write_report(root / "generation.json", {
+        "status": "passed",
+        "input_hash": "coverage-check-only",
+        "scenes": [],
+    })
+    with pytest.raises(ReviewError, match="does not cover every scene"):
         require_generation_review(project, [scene])
 
 

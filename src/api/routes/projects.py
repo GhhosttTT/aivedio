@@ -441,7 +441,7 @@ async def get_generation_review(
                 "video_path": str(final_video_path),
                 "error": "Final composition review evidence could not be read.",
             }
-    from src.tasks.review_tasks import current_story, generation_signature
+    from src.tasks.review_tasks import current_story, generation_signature, validate_generation_review_coverage
     from src.services.generation_review import fingerprint, write_report
     continuity_report = ContinuityAuditService().audit(project, getattr(project, "scenes", []) or []).to_dict()
     if continuity_report.get("status") != "not_applicable":
@@ -483,6 +483,17 @@ async def get_generation_review(
                     report["status"] = "stale"
             except (OSError, TypeError, ValueError):
                 report["status"] = "stale"
+    generation_report = reports.get("generation")
+    if isinstance(generation_report, dict) and generation_report.get("status") == "passed":
+        coverage = validate_generation_review_coverage(generation_report, audit_scenes)
+        generation_report["scene_coverage"] = coverage
+        if not coverage["passed"]:
+            generation_report["status"] = "needs_review"
+            generation_report["error"] = (
+                "Generation review does not cover every scene: "
+                f"missing={coverage['missing']}, duplicate={coverage['duplicate']}, "
+                f"unexpected={coverage['unexpected']}, not_passed={coverage['not_passed']}"
+            )
     baseline_report = reports.get("seed_dance_baseline_comparison")
     if isinstance(baseline_report, dict) and baseline_report.get("status") == "passed":
         candidate_path = Path(
