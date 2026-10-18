@@ -13,6 +13,7 @@ const names: Record<string, string> = {
     continuity_audit: '相邻分镜连续性',
     rhythm_audit: '整集节奏与对白时序',
     episode_style_consistency: '全集视觉风格一致性',
+    character_identity_consistency: '角色跨镜头身份一致性',
     seed_dance_baseline_comparison: 'Seed Dance 对比验收',
     causal_logic: '因果逻辑',
     character_motivation: '角色动机',
@@ -257,6 +258,28 @@ function EpisodeStyleConsistencyEvidence({report}: {report: any}) {
         </div>}
         {issues.slice(0, 6).map((issue: any, index: number) => <p className="wb-alert" key={`${issue.code}-${issue.scene_number}-${index}`}>
             分镜 {issue.scene_number || '-'} · {issue.code} · {issue.evidence || issue.recommendation}
+        </p>)}
+    </div>;
+}
+
+function CharacterIdentityConsistencyEvidence({report}: {report: any}) {
+    if (report?.kind !== 'character_identity_consistency') return null;
+    const observations = Array.isArray(report.observations) ? report.observations : [];
+    const issues = Array.isArray(report.issues) ? report.issues : [];
+    return <div className="wb-summary-actions" aria-label="角色跨镜头身份一致性证据">
+        <div className="wb-row wb-between">
+            <h4>角色跨镜头身份一致性</h4>
+            <span className="wb-badge">{report.character_count || 0} 个角色 · {report.observation_count || 0} 次观察</span>
+        </div>
+        <p className={issues.length ? 'wb-alert' : 'wb-muted'}>
+            {issues.length ? `发现 ${issues.length} 项身份漂移，需重新绑定角色身份资产。` : '已通过已有角色身份审核证据聚合。'}
+        </p>
+        {observations.slice(0, 10).map((observation: any) => <div className="wb-kv" key={`${observation.character}-${observation.scene_number}`}>
+            <span>{observation.character} · 分镜 {observation.scene_number}</span>
+            <strong>{observation.score}/5</strong>
+        </div>)}
+        {issues.slice(0, 6).map((issue: any, index: number) => <p className="wb-alert" key={`${issue.code}-${issue.character}-${index}`}>
+            {issue.character || '角色'} · {issue.evidence || issue.recommendation}
         </p>)}
     </div>;
 }
@@ -662,6 +685,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <SequenceBoundaryEvidence report={report}/>
             <StoryRoomEvidence report={report}/>
             <EpisodeStyleConsistencyEvidence report={report}/>
+            <CharacterIdentityConsistencyEvidence report={report}/>
             <Scores review={report.review}/>
             {report.batches?.map((batch: any, index: number) => <div key={index}>
                 <p>帧组 {index + 1} · {statuses[batch.status] || batch.status} · {batch.average}/5</p>
