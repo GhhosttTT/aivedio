@@ -89,7 +89,12 @@ def _native_audio_is_ready_for_video_paths(video_paths: list[str], video_compose
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return False
-        if not isinstance(metadata, dict) or metadata.get("native_audio_requested") is not True:
+        if (
+            not isinstance(metadata, dict)
+            or metadata.get("native_audio_requested") is not True
+            or not isinstance(metadata.get("video_sha256"), str)
+            or metadata.get("video_sha256") != file_hash(Path(video_path))
+        ):
             return False
         if not video_composer.has_audio_stream(video_path):
             return False
@@ -117,7 +122,12 @@ def _scene_audio_expected(scene: Scene) -> bool:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
-    return isinstance(metadata, dict) and metadata.get("native_audio_requested") is True
+    return (
+        isinstance(metadata, dict)
+        and metadata.get("native_audio_requested") is True
+        and isinstance(metadata.get("video_sha256"), str)
+        and metadata.get("video_sha256") == file_hash(Path(video_path))
+    )
 
 
 def _dialogue_fingerprint(text: str | None) -> str:
@@ -538,7 +548,12 @@ def _require_passed_scene_videos(scenes: list[Scene]) -> None:
                 provider_metadata = json.loads(provider_metadata_path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 provider_metadata = {}
-            if isinstance(provider_metadata, dict) and provider_metadata.get("requested_draft") is True:
+            provider_metadata_is_current = (
+                isinstance(provider_metadata, dict)
+                and isinstance(provider_metadata.get("video_sha256"), str)
+                and provider_metadata.get("video_sha256") == file_hash(video_path)
+            )
+            if provider_metadata_is_current and provider_metadata.get("requested_draft") is True:
                 failed.append(f"{scene.scene_number}: provider Draft video must be promoted before composition")
                 continue
         quality_path = video_path.with_suffix(".quality.json")

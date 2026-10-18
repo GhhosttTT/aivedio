@@ -53,7 +53,10 @@ def test_composition_requires_passed_video_quality_report(tmp_path):
 def test_composition_rejects_provider_draft_even_with_passed_quality(tmp_path):
     video = tmp_path / "scene_001.mp4"
     video.write_bytes(b"draft video")
-    video.with_suffix(".provider.json").write_text(json.dumps({"requested_draft": True}), encoding="utf-8")
+    video.with_suffix(".provider.json").write_text(json.dumps({
+        "requested_draft": True,
+        "video_sha256": composition_tasks.file_hash(video),
+    }), encoding="utf-8")
     video.with_suffix(".quality.json").write_text(json.dumps({"status": "passed"}), encoding="utf-8")
     scene = Mock(scene_number=1, video_path=str(video))
 
@@ -767,7 +770,10 @@ def test_scene_audio_expected_reads_native_provider_intent(tmp_path):
     video_path = tmp_path / "scene.mp4"
     video_path.write_bytes(b"video")
     video_path.with_suffix(".provider.json").write_text(
-        json.dumps({"native_audio_requested": True}), encoding="utf-8",
+        json.dumps({
+            "native_audio_requested": True,
+            "video_sha256": composition_tasks.file_hash(video_path),
+        }), encoding="utf-8",
     )
     scene = Mock(audio_path=None, video_path=str(video_path))
     assert composition_tasks._scene_audio_expected(scene) is True
@@ -777,7 +783,10 @@ def test_native_audio_composition_requires_measurable_sync(tmp_path, monkeypatch
     video = tmp_path / "scene.mp4"
     video.write_bytes(b"video")
     video.with_suffix(".provider.json").write_text(
-        json.dumps({"native_audio_requested": True}), encoding="utf-8",
+        json.dumps({
+            "native_audio_requested": True,
+            "video_sha256": composition_tasks.file_hash(video),
+        }), encoding="utf-8",
     )
     composer = Mock()
     composer.has_audio_stream.return_value = True

@@ -326,9 +326,16 @@ def _write_json_sidecar(path: Path, data: dict) -> None:
 def _write_provider_metadata(video_path: str | Path, metadata: dict | None) -> str | None:
     if not isinstance(metadata, dict) or not metadata:
         return None
+    payload = dict(metadata)
+    media_path = Path(video_path)
+    if media_path.is_file():
+        try:
+            payload["video_sha256"] = file_hash(media_path)
+        except (OSError, ValueError):
+            return None
     path = _provider_metadata_path(video_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    _write_json_sidecar(path, metadata)
+    _write_json_sidecar(path, payload)
     return str(path)
 
 
