@@ -60,4 +60,6 @@ def test_story_room_quality_accepts_platform_ready_story_shape():
     assert report["signals"]["early_hook"] is True
     assert report["signals"]["character_goal_conflict"] is True
     assert report["signals"]["has_reversal"] is True
+    assert report["signals"]["has_payoff"] is True
     assert report["signals"]["ending_hook"] is True
+    assert report["signals"]["beat_contract"]["payoff"]["detected"] is True

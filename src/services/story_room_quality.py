@@ -58,6 +58,11 @@ class StoryRoomQualityService:
         "下一集", "cliffhanger", "to be continued", "phone rings", "truth",
         "evidence", "appears",
     ]
+    PAYOFF_TERMS = [
+        "承认", "解决", "成功", "赢", "胜利", "救出", "带走", "离开", "撕掉", "签下",
+        "回归", "兑现", "揭开", "付出代价", "payoff", "resolved", "wins", "victory",
+        "rescued", "leaves", "admits", "consequence",
+    ]
     MARKET_TERMS = [
         "受众", "平台", "竖屏", "女性", "男性", "都市", "甜宠", "逆袭", "复仇", "悬疑",
         "目标", "海外", "douyin", "tiktok", "reels", "audience", "platform",
@@ -102,6 +107,7 @@ class StoryRoomQualityService:
         hook_count = self._count_terms(early_text, self.HOOK_TERMS) + len(re.findall(r"[!?！？]", early_text))
         reversal_count = self._count_terms(middle_text, self.REVERSAL_TERMS)
         ending_count = self._count_terms(ending_text, self.ENDING_TERMS) + len(re.findall(r"[!?！？]", ending_text))
+        payoff_count = self._count_terms(ending_text, self.PAYOFF_TERMS)
         escalation_windows = self._escalation_windows(scene_texts)
         goal_count = self._count_terms(full_text, self.GOAL_TERMS)
         stakes_count = self._count_terms(full_text, self.STAKES_TERMS)
@@ -115,10 +121,40 @@ class StoryRoomQualityService:
             "dialogue_density": dialogue_density,
             "escalation_windows": escalation_windows,
             "has_reversal": reversal_count > 0,
+            "has_payoff": payoff_count > 0,
             "ending_hook": ending_count > 0,
             "emotion_signals": emotion_count,
             "overloaded_scene_count": len(overloaded),
         }
+
+        beat_evidence = {
+            "hook": {
+                "scene_range": [1, min(2, len(ordered))],
+                "detected": bool(signals["early_hook"]),
+                "signal_count": hook_count,
+            },
+            "escalation": {
+                "window_count": escalation_windows,
+                "required_windows": max(1, len(ordered) // 4),
+                "detected": escalation_windows >= max(1, len(ordered) // 4),
+            },
+            "reversal": {
+                "scene_range": [max(1, len(ordered) // 3 + 1), max(1, len(ordered) * 2 // 3)],
+                "detected": bool(signals["has_reversal"]),
+                "signal_count": reversal_count,
+            },
+            "payoff": {
+                "scene_range": [max(1, len(ordered) - 1), len(ordered)],
+                "detected": bool(signals["has_payoff"]),
+                "signal_count": payoff_count,
+            },
+            "cliffhanger": {
+                "scene_range": [max(1, len(ordered) - 1), len(ordered)],
+                "detected": bool(signals["ending_hook"]),
+                "signal_count": ending_count,
+            },
+        }
+        signals["beat_contract"] = beat_evidence
 
         missing = []
         if not signals["has_market_brief"]:
@@ -133,6 +169,8 @@ class StoryRoomQualityService:
             missing.append("escalation_cadence")
         if not signals["has_reversal"]:
             missing.append("reversal")
+        if not signals["has_payoff"]:
+            missing.append("payoff")
         if not signals["ending_hook"]:
             missing.append("ending_hook")
         if emotion_count < max(2, len(ordered) // 4):
@@ -219,6 +257,8 @@ class StoryRoomQualityService:
             actions.append("Add confrontation, refusal, exposed evidence, or higher stakes every 3-4 shots.")
         if "reversal" in missing:
             actions.append("Add one clear mid-episode reversal that changes the audience's understanding.")
+        if "payoff" in missing:
+            actions.append("Give the protagonist a visible short-term payoff or consequence before the final hook.")
         if "ending_hook" in missing:
             actions.append("End with a payoff or next-episode hook visible in the final two shots.")
         if "emotional_progression" in missing:
