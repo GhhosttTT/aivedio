@@ -10,6 +10,7 @@ const names: Record<string, string> = {
     generation: '成片质量审核',
     final_composition: '最终合成质量',
     continuity_audit: '相邻分镜连续性',
+    rhythm_audit: '整集节奏与对白时序',
     seed_dance_baseline_comparison: 'Seed Dance 对比验收',
     causal_logic: '因果逻辑',
     character_motivation: '角色动机',

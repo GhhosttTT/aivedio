@@ -53,6 +53,7 @@ from src.services.platform_export import PLATFORM_EXPORT_PRESETS, PlatformExport
 from src.services.repair_budget import RepairBudget
 from src.services.human_review import HumanReviewStore
 from src.services.continuity_audit import ContinuityAuditService
+from src.services.rhythm_audit import RhythmAuditService
 from src.database.session import get_db_session
 from src.database.models import Character, Project, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
@@ -428,6 +429,9 @@ async def get_generation_review(
     continuity_report = ContinuityAuditService().audit(project, getattr(project, "scenes", []) or []).to_dict()
     if continuity_report.get("status") != "not_applicable":
         reports["continuity_audit"] = continuity_report
+    rhythm_report = RhythmAuditService().audit(project, getattr(project, "scenes", []) or []).to_dict()
+    if rhythm_report.get("status") != "not_applicable":
+        reports["rhythm_audit"] = rhythm_report
     human_decisions = HumanReviewStore(project_id).apply(reports)
     for name in ("production_story", "generation"):
         report = reports.get(name)
@@ -717,6 +721,11 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         action_items.append("Resolve hard adjacent-shot continuity conflicts before final composition.")
     elif continuity == "warn":
         action_items.append("Review adjacent-shot continuity warnings before delivery.")
+    rhythm = statuses.get("rhythm_audit")
+    if rhythm == "needs_review":
+        action_items.append("Resolve episode rhythm and dialogue timing conflicts before final composition.")
+    elif rhythm == "warn":
+        action_items.append("Review episode rhythm warnings before delivery.")
 
     repair_queue = _repair_queue_summary(reports)
     repair_plan = build_repair_execution_plan(repair_output or Path("storage/validation"), repair_queue["items"])
@@ -728,6 +737,7 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         stale or needs_split or production_story != "passed" or generation != "passed"
         or baseline != "passed" or (composition is not None and composition != "passed")
         or continuity == "needs_review"
+        or rhythm == "needs_review"
     )
     return {
         "status": "blocked" if blocking else "ready",
