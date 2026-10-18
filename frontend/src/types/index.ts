@@ -55,6 +55,8 @@ export interface Project {
     
     // 注意：final_video_path 不在数据库模型中，可能需要从 Task 中获取
     final_video_path?: string;
+    draft_ready?: boolean;
+    draft_missing_scenes?: number[];
 }
 
 export interface User {
