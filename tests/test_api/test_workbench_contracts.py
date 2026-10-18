@@ -81,8 +81,8 @@ def test_repair_script_uses_story_review_before_visual_generation(setup, monkeyp
     project = db.query(Project).filter(Project.id == 1).one()
     project.script = json.dumps({
         "script": "A weak story",
-        "characters": [{"name": "A", "description": "lead"}],
-        "scenes": [{"scene_number": 1, "description": "A sealed letter", "dialogue": "Hello", "speaker": "A"}],
+        "characters": [],
+        "scenes": [],
     }, ensure_ascii=False)
     db.commit()
     repaired = {
@@ -99,6 +99,8 @@ def test_repair_script_uses_story_review_before_visual_generation(setup, monkeyp
 
     assert response.status_code == 200, response.text
     fake_generator.repair_script_for_review.assert_called_once()
+    parsed = fake_generator.repair_script_for_review.call_args.kwargs["parsed_script"]
+    assert parsed["scenes"][0]["description"] == "A sealed letter on a table"
     fake_generator._save_script_to_db.assert_called_once()
     assert fake_generator._save_script_to_db.call_args.args[0].id == project.id
     assert fake_generator._save_script_to_db.call_args.args[1] == repaired

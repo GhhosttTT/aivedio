@@ -902,19 +902,21 @@ def repair_script(project_id: int, db_session: Session = Depends(get_db_session)
         parsed_script = json.loads(project.script) if project.script else {}
         if not isinstance(parsed_script, dict):
             parsed_script = {}
-        parsed_script.setdefault("characters", [
-            {"name": character.name, "description": character.description}
-            for character in project.characters
-        ])
-        parsed_script.setdefault("scenes", [
-            {
-                "scene_number": scene.scene_number,
-                "description": scene.visual_description,
-                "dialogue": scene.dialogue,
-                "speaker": scene.character_name,
-            }
-            for scene in scenes
-        ])
+        if not parsed_script.get("characters"):
+            parsed_script["characters"] = [
+                {"name": character.name, "description": character.description}
+                for character in project.characters
+            ]
+        if not parsed_script.get("scenes"):
+            parsed_script["scenes"] = [
+                {
+                    "scene_number": scene.scene_number,
+                    "description": scene.visual_description,
+                    "dialogue": scene.dialogue,
+                    "speaker": scene.character_name,
+                }
+                for scene in scenes
+            ]
         if not parsed_script.get("scenes"):
             raise ScriptParseError("当前项目没有结构化剧本分镜")
 
