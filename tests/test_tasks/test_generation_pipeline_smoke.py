@@ -129,6 +129,8 @@ def test_composition_accepts_passed_audio_quality_report_for_dialogue(tmp_path):
     audio.write_bytes(b"fake audio")
     audio.with_suffix(".quality.json").write_text(json.dumps({
         "status": "passed",
+        "audio_path": str(audio),
+        "dialogue_fingerprint": composition_tasks._dialogue_fingerprint("你为什么骗我"),
         "dialogue_audio_quality_gate": {"status": "passed", "low": {}, "missing": []},
     }), encoding="utf-8")
     scene = Mock(scene_number=1, dialogue="你为什么骗我", audio_path=str(audio))
@@ -167,9 +169,25 @@ def test_composition_accepts_matching_dialogue_subtitle(tmp_path):
         "1\n00:00:00,000 --> 00:00:01,500\n你为什么\n骗我\n",
         encoding="utf-8",
     )
+    subtitle.with_suffix(".quality.json").write_text(
+        json.dumps({"status": "passed", "expected_text": "你为什么骗我？！"}),
+        encoding="utf-8",
+    )
     scene = Mock(scene_number=1, dialogue="你为什么骗我？！", subtitle_path=str(subtitle))
 
     composition_tasks._require_scene_subtitles([scene])
+
+
+def test_composition_requires_subtitle_quality_evidence(tmp_path):
+    subtitle = tmp_path / "scene_001.srt"
+    subtitle.write_text(
+        "1\n00:00:00,000 --> 00:00:01,500\n你为什么\n骗我\n",
+        encoding="utf-8",
+    )
+    scene = Mock(scene_number=1, dialogue="你为什么骗我？！", subtitle_path=str(subtitle))
+
+    with pytest.raises(ValueError, match="missing subtitle quality report"):
+        composition_tasks._require_scene_subtitles([scene])
 
 
 def test_composition_blocks_failed_subtitle_quality_report(tmp_path):

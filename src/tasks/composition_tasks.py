@@ -4,6 +4,7 @@
 """
 
 import json
+import hashlib
 import math
 import re
 from pathlib import Path
@@ -80,6 +81,10 @@ def _scene_audio_expected(scene: Scene) -> bool:
     except (OSError, ValueError):
         return False
     return isinstance(metadata, dict) and metadata.get("native_audio_requested") is True
+
+
+def _dialogue_fingerprint(text: str | None) -> str:
+    return hashlib.sha256(" ".join((text or "").split()).encode("utf-8")).hexdigest()
 
 
 def _publish_composition_candidate(
@@ -521,6 +526,12 @@ def _require_passed_scene_audio(scenes: list[Scene]) -> None:
         if report.get("status") != "passed":
             failed.append(f"{scene.scene_number}: audio quality status={report.get('status') or 'unknown'}")
             continue
+        if report.get("audio_path") and Path(str(report["audio_path"])).resolve() != audio_path.resolve():
+            failed.append(f"{scene.scene_number}: audio quality report points to a different file")
+            continue
+        if report.get("dialogue_fingerprint") != _dialogue_fingerprint(scene.dialogue):
+            failed.append(f"{scene.scene_number}: audio quality report is stale for current dialogue")
+            continue
         gate = report.get("dialogue_audio_quality_gate")
         if isinstance(gate, dict) and gate.get("status") != "passed":
             failed.append(f"{scene.scene_number}: dialogue audio quality gate failed")
@@ -572,17 +583,23 @@ def _require_scene_subtitles(scenes: list[Scene]) -> None:
             failed.append(f"{scene.scene_number}: subtitle text does not cover spoken dialogue")
             continue
         quality_path = subtitle_path.with_suffix(".quality.json")
-        if quality_path.is_file():
-            try:
-                quality_report = json.loads(quality_path.read_text(encoding="utf-8"))
-            except (OSError, ValueError) as exc:
-                failed.append(f"{scene.scene_number}: invalid subtitle quality report: {exc}")
-                continue
-            if quality_report.get("status") != "passed":
-                failed.append(
-                    f"{scene.scene_number}: subtitle quality report status="
-                    f"{quality_report.get('status') or 'unknown'}"
-                )
+        if not quality_path.is_file():
+            failed.append(f"{scene.scene_number}: missing subtitle quality report")
+            continue
+        try:
+            quality_report = json.loads(quality_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            failed.append(f"{scene.scene_number}: invalid subtitle quality report: {exc}")
+            continue
+        if quality_report.get("status") != "passed":
+            failed.append(
+                f"{scene.scene_number}: subtitle quality report status="
+                f"{quality_report.get('status') or 'unknown'}"
+            )
+            continue
+        expected_text = quality_report.get("expected_text")
+        if not isinstance(expected_text, str) or not expected_text.strip() or not _subtitle_matches_dialogue(content, expected_text):
+            failed.append(f"{scene.scene_number}: subtitle quality report is stale for current dialogue")
     if missing:
         raise ValueError("Missing subtitle for spoken-dialogue scenes: " + ", ".join(missing))
     if failed:

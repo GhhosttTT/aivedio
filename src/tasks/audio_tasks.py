@@ -1,6 +1,7 @@
 """Audio generation Celery tasks."""
 
 import json
+import hashlib
 from pathlib import Path
 
 from src.database.database import get_db
@@ -121,6 +122,9 @@ def dialogue_audio_quality_report(
         "stage": "audio",
         "scene": {"scene_number": scene.scene_number},
         "audio_path": audio_path,
+        "dialogue_fingerprint": hashlib.sha256(
+            " ".join((text or "").split()).encode("utf-8")
+        ).hexdigest(),
         "duration": duration or 0.0,
         "audio_profile": profile,
         "dialogue_audio_quality_gate": gate,
