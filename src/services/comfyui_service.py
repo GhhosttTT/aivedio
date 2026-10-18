@@ -194,6 +194,9 @@ class ComfyUIService:
         gpu_vram_gb: Optional[int] = None,  # GPU 显存大小（GB）
         optimization_mode: Optional[str] = None,  # 提示词优化模式（quality, realism, artistic, balanced）
         character_references: Optional[List[Dict]] = None,
+        spatial_plan: Optional[Dict] = None,
+        spatial_control_references: Optional[Dict] = None,
+        spatial_asset_pack: Optional[Dict] = None,
     ) -> str:
         """
         生成图像
@@ -379,6 +382,9 @@ class ComfyUIService:
             reference_image=reference_image,
             use_ipadapter=use_ipadapter,
             character_references=character_references,
+            spatial_plan=spatial_plan,
+            spatial_control_references=spatial_control_references,
+            spatial_asset_pack=spatial_asset_pack,
         )
         
         # Only pre-connection failures and artifact downloads are safe to retry.
@@ -410,6 +416,9 @@ class ComfyUIService:
         reference_image: Optional[str] = None,
         use_ipadapter: bool = True,
         character_references: Optional[List[Dict]] = None,
+        spatial_plan: Optional[Dict] = None,
+        spatial_control_references: Optional[Dict] = None,
+        spatial_asset_pack: Optional[Dict] = None,
     ) -> Dict:
         """
         构建 ComfyUI 工作流
@@ -469,7 +478,14 @@ class ComfyUIService:
                 else:
                     workflow_api[node_id]["inputs"][input_key] = input_value
         
-        workflow = workflow_api
+        workflow = self._replace_workflow_placeholders(workflow_api, {
+            "spatial_plan_json": json.dumps(spatial_plan or {}, ensure_ascii=False, sort_keys=True),
+            "spatial_control_references_json": json.dumps(
+                spatial_control_references or {}, ensure_ascii=False, sort_keys=True,
+            ),
+            "spatial_asset_pack_json": json.dumps(spatial_asset_pack or {}, ensure_ascii=False, sort_keys=True),
+            "spatial_scene_contract_hash": str((spatial_asset_pack or {}).get("scene_contract_hash") or ""),
+        })
         
         graph = ImageWorkflowGraph(workflow)
         configured_output = workflow_config.parameters.default.get("output_node")

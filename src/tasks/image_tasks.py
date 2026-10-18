@@ -1177,6 +1177,9 @@ def generate_image_task(
             cfg_scale=kwargs.get("cfg_scale", settings.GENERATION_CFG),
             reference_image=reference_image, use_ipadapter=reference_image is not None,
             character_references=character_sheet_contract["references"] if len(visible_characters) > 1 else None,
+            spatial_plan=(spatial_contract or {}).get("spatial_plan"),
+            spatial_control_references=(spatial_contract or {}).get("control_references"),
+            spatial_asset_pack=spatial_contract,
         )
 
         self.update_state(state="PROGRESS", meta={"current": 50, "total": 100, "step": "generation_provider"})

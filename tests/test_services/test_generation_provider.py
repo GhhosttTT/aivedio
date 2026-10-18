@@ -130,6 +130,23 @@ def test_local_comfyui_provider_delegates_image_generation():
     assert service.last_kwargs["enable_parameter_optimization"] is False
 
 
+def test_local_comfyui_provider_forwards_spatial_control_contract():
+    service = FakeComfyUIService()
+    provider = LocalComfyUIProvider(comfyui_service=service)
+
+    provider.generate_image(ImageGenerationRequest(
+        prompt="locked shot",
+        output_path="storage/project_1/images/scene_1.png",
+        spatial_plan={"camera_angle": "eye level"},
+        spatial_control_references={"pose_reference_prompt": "hands visible"},
+        spatial_asset_pack={"scene_contract_hash": "scene-hash"},
+    ))
+
+    assert service.last_kwargs["spatial_plan"] == {"camera_angle": "eye level"}
+    assert service.last_kwargs["spatial_control_references"] == {"pose_reference_prompt": "hands visible"}
+    assert service.last_kwargs["spatial_asset_pack"]["scene_contract_hash"] == "scene-hash"
+
+
 def test_local_comfyui_provider_enables_optimizers_for_ultra_quality(monkeypatch):
     service = FakeComfyUIService()
     provider = LocalComfyUIProvider(comfyui_service=service)

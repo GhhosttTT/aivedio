@@ -275,6 +275,9 @@ class ImageGenerationRequest:
     quality_mode: Optional[str] = None
     optimization_mode: Optional[str] = None
     character_references: Optional[list[dict]] = None
+    spatial_plan: Optional[dict] = None
+    spatial_control_references: Optional[dict] = None
+    spatial_asset_pack: Optional[dict] = None
 
 
 @dataclass
@@ -389,6 +392,9 @@ class LocalComfyUIProvider:
             enable_realism=False,
             enable_prompt_optimization=enable_prompt_optimization,
             enable_parameter_optimization=enable_parameter_optimization,
+            spatial_plan=request.spatial_plan,
+            spatial_control_references=request.spatial_control_references,
+            spatial_asset_pack=request.spatial_asset_pack,
             **reference_options,
         )
         return GenerationResult(
