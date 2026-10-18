@@ -383,6 +383,7 @@ class RepairQueueAutoRunResponse(BaseModel):
     submitted: List[dict] = Field(default_factory=list)
     skipped: List[dict] = Field(default_factory=list)
     considered: List[dict] = Field(default_factory=list)
+    cycle_id: Optional[str] = None
 
 
 class HumanReviewDecisionRequest(BaseModel):

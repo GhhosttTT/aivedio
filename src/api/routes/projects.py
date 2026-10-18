@@ -51,6 +51,7 @@ from src.services.delivery_package import DeliveryPackageError, build_delivery_p
 from src.services.topic_brief import TopicBriefService
 from src.services.platform_export import PLATFORM_EXPORT_PRESETS, PlatformExportError, export_platform_video
 from src.services.repair_budget import RepairBudget
+from src.services.repair_cycle import RepairCycleStore
 from src.services.human_review import HumanReviewStore
 from src.services.continuity_audit import ContinuityAuditService
 from src.services.rhythm_audit import RhythmAuditService
@@ -564,6 +565,7 @@ async def get_generation_review(
         ):
             final_composition["status"] = "stale"
     summary = _generation_review_summary(reports, repair_output=root)
+    summary["repair_cycles"] = RepairCycleStore(project_id).recent(5)
     return {"project_id": project_id, "reports": reports, "summary": summary, "human_decisions": human_decisions}
 
 
@@ -1863,6 +1865,12 @@ async def run_auto_repair_queue(
         result_status = "manual_review_required"
     else:
         result_status = "no_auto_actions"
+    cycle = RepairCycleStore(project_id).record(
+        status=result_status,
+        submitted=submitted,
+        skipped=skipped,
+        considered=selected,
+    )
     return RepairQueueAutoRunResponse(
         project_id=project_id,
         status=result_status,
@@ -1870,6 +1878,7 @@ async def run_auto_repair_queue(
         submitted=submitted,
         skipped=skipped,
         considered=selected,
+        cycle_id=cycle["cycle_id"],
     )
 
 
@@ -1886,6 +1895,7 @@ async def get_quality_loop_plan(
         "project_id": project_id,
         "summary_status": summary.get("status"),
         "quality_scorecard": summary.get("quality_scorecard", {}),
+        "recent_cycles": RepairCycleStore(project_id).recent(5),
         "plan": build_quality_loop_plan(summary, max_actions),
     }
 

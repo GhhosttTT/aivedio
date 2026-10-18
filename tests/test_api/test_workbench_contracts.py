@@ -472,6 +472,9 @@ def test_repair_queue_auto_submits_batch_repair_tasks(setup, monkeypatch):
         "repair-batch",
         "repair-batch",
     ]
+    assert payload["cycle_id"]
+    history = json.loads((storage_manager.get_project_path(1) / "reviews" / "repair_cycles.json").read_text(encoding="utf-8"))
+    assert history["cycles"][0]["status"] == "submitted"
     assert submitted == [
         (1, "regenerate_keyframe_with_identity_lock"),
         (2, "refine_face_aesthetic_detail"),

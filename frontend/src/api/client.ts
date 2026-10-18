@@ -371,6 +371,7 @@ export interface GenerationReviewSummary {
     human_final_review_required?: boolean;
     human_final_review_status?: string | null;
     human_approved_reports?: string[];
+    repair_cycles?: Array<{cycle_id: string; status: string; created_at: string; submitted_count: number; skipped_count: number}>;
 }
 
 export interface RepairExecutionPlanItem {
@@ -430,6 +431,7 @@ export interface RepairQueueAutoRunResponse {
     submitted: Array<GenerationRepairQueueItem & {task_id?: string; status?: string}>;
     skipped: Array<GenerationRepairQueueItem & {reason?: string}>;
     considered: Array<GenerationRepairQueueItem>;
+    cycle_id?: string;
 }
 
 export interface GenerationRepairQueueItem {

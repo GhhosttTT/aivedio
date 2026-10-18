@@ -334,6 +334,13 @@ function ReviewSummary({
             {qualityPlan.setup_required?.length ? <p className="wb-alert">还有 {qualityPlan.setup_required.length} 项需要先补资产、workflow 或本地审核服务。</p> : null}
             {qualityPlan.manual_actions?.length ? <p className="wb-alert">还有 {qualityPlan.manual_actions.length} 项需要人工复核后再选择动作。</p> : null}
         </div>}
+        {summary.repair_cycles?.length ? <div className="wb-summary-actions">
+            <h3>返工周期记录</h3>
+            {summary.repair_cycles.slice(0, 3).map((cycle) => <div className="wb-kv" key={cycle.cycle_id}>
+                <span>{new Date(cycle.created_at).toLocaleString()} · {cycle.status}</span>
+                <strong>提交 {cycle.submitted_count} · 跳过 {cycle.skipped_count}</strong>
+            </div>)}
+        </div> : null}
         {summary.repair_queue?.total ? <div className="wb-summary-actions">
             <h3>返工队列 · {summary.repair_queue.total}</h3>
             <div className="wb-grid compact">
