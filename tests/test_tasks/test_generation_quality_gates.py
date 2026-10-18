@@ -524,6 +524,26 @@ def test_sequence_segment_quality_report_is_persisted_without_vlm(tmp_path, monk
     assert persisted["technical_metrics"]["technical_score"] == 4.4
 
 
+def test_sequence_segment_quality_report_rejects_insufficient_temporal_evidence(tmp_path, monkeypatch):
+    segment = tmp_path / "scene_2.mp4"
+    segment.write_bytes(b"segment")
+    scene = Mock(scene_number=2, image_path=None)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", False)
+    monkeypatch.setattr("src.tasks.video_tasks.video_candidate_metrics", lambda _path: {
+        "status": "available",
+        "technical_score": 4.4,
+        "temporal_sample_evidence": "insufficient",
+        "sampled_frames": 3,
+        "temporal_sample_minimum": 4,
+        "max_black_run_seconds": 0.0,
+    })
+
+    report = _sequence_segment_quality_report(scene, str(segment), 7, Mock(), {})
+
+    assert report["status"] == "needs_review"
+    assert "insufficient temporal evidence" in report["error"]
+
+
 def test_sequence_segment_contract_uses_segment_duration_and_new_hash():
     metadata = {
         "request_contract": {

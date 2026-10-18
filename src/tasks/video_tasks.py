@@ -1297,6 +1297,8 @@ def _sequence_segment_quality_report(
     error = None
     if metrics.get("status") != "available":
         error = "sequence segment technical metrics are unavailable"
+    elif temporal_sample_evidence_error(metrics, context="sequence segment"):
+        error = temporal_sample_evidence_error(metrics, context="sequence segment")
     elif (
         isinstance(metrics.get("max_black_run_seconds"), (int, float))
         and metrics["max_black_run_seconds"] > settings.GENERATION_VIDEO_MAX_BLACK_SECONDS
