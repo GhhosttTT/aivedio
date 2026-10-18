@@ -198,6 +198,12 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
     delivery_root = root / "delivery"
     package_path = delivery_root / "delivery_package.zip"
     manifest_path = delivery_root / "delivery_manifest.json"
+    from src.services.cover_generator import CoverGenerationError, generate_cover
+    cover_path = delivery_root / "cover.jpg"
+    try:
+        cover_report = generate_cover(final_path, cover_path)
+    except CoverGenerationError as exc:
+        raise DeliveryPackageError(str(exc)) from exc
     # Dynamic project audits are part of the signed delivery evidence. Persist
     # them before collecting review files so a package cannot omit the exact
     # continuity/rhythm evidence used by the approval decision.
@@ -216,6 +222,11 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         "script": getattr(project, "script", None),
     })
     files.append((project_metadata, "metadata/project.json"))
+    if cover_report.get("status") == "ready":
+        files.append((cover_path, "cover/cover.jpg"))
+    cover_metadata = delivery_root / "cover_metadata.json"
+    _write_json_atomic(cover_metadata, cover_report)
+    files.append((cover_metadata, "metadata/cover.json"))
 
     manifest_files = []
     for source, archive_name in files:
@@ -238,6 +249,7 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         "status": "ready",
         "quality_summary": review_summary,
         "report_statuses": report_statuses,
+        "cover": cover_report,
         "files": manifest_files,
         "package_path": str(package_path),
     }

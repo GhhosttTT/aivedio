@@ -29,6 +29,7 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
     with zipfile.ZipFile(package) as archive:
         names = set(archive.namelist())
     assert {"media/final_video.mp4", "reviews/generation.json", "metadata/project.json", "metadata/delivery_manifest.json"}.issubset(names)
+    assert "metadata/cover.json" in names
 
 
 def test_delivery_package_requires_ready_review(tmp_path):
