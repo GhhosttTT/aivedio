@@ -28,6 +28,19 @@ def test_seedance_gateway_accepts_explicit_dry_run(capsys, monkeypatch):
     assert output["live"] is False
 
 
+def test_seedance_gateway_dry_run_supports_native_auto_mode(capsys, monkeypatch):
+    monkeypatch.delenv("SEEDANCE_ENDPOINT", raising=False)
+    monkeypatch.delenv("SEEDANCE_API_KEY", raising=False)
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_MODEL", "doubao-seedance-2-5-260628")
+
+    assert main(["--dry-run", "--api-format", "ark_v3", "--mode", "auto"]) == 0
+    output = json.loads(capsys.readouterr().out)
+
+    assert output["payload"]["omni_reference_task_type"] == "auto"
+    assert output["payload"]["duration"] == 5
+
+
 def test_seedance_gateway_rejects_missing_reference_file(capsys, tmp_path):
     assert main(["--reference-image", str(tmp_path / "missing.png")]) == 2
     assert "do not exist" in capsys.readouterr().err

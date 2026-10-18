@@ -38,7 +38,11 @@ def _parser() -> argparse.ArgumentParser:
         "--aspect-ratio", choices=("9:16", "16:9", "1:1", "adaptive"), default="9:16",
         help="Output framing; the mobile short-drama default is 9:16",
     )
-    parser.add_argument("--mode", choices=("reference", "reference_to_video", "multi_shot", "edit", "extend"))
+    parser.add_argument(
+        "--mode",
+        choices=("reference", "reference_to_video", "auto", "multi_shot", "edit", "extend"),
+        help="Seedance task mode; auto is supported by native Seedance 2.5",
+    )
     parser.add_argument(
         "--model",
         help="Optional per-run Seedance model override, for example doubao-seedance-2-5-260628",
