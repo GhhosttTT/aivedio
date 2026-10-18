@@ -1333,10 +1333,12 @@ def _validate_sequence_boundary_report(boundary_report: dict, report_path: Path)
         )
     severe_count = int(boundary_report.get("severe_transition_count") or 0)
     geometry_count = int(boundary_report.get("geometry_mismatch_count") or 0)
-    if severe_count or geometry_count:
+    fps_count = int(boundary_report.get("fps_mismatch_count") or 0)
+    if severe_count or geometry_count or fps_count:
         raise ReviewError(
             "Sequence boundary quality gate failed: "
-            f"severe_transitions={severe_count}, geometry_mismatches={geometry_count}; "
+            f"severe_transitions={severe_count}, geometry_mismatches={geometry_count}, "
+            f"fps_mismatches={fps_count}; "
             f"report={report_path}"
         )
 
@@ -2913,6 +2915,7 @@ def generate_sequence_video_task(
                 "boundary_status": boundary_report.get("status"),
                 "severe_transition_count": int(boundary_report.get("severe_transition_count") or 0),
                 "geometry_mismatch_count": int(boundary_report.get("geometry_mismatch_count") or 0),
+                "fps_mismatch_count": int(boundary_report.get("fps_mismatch_count") or 0),
                 "segment_count": len(segments),
                 "report_path": str(boundary_report_path),
                 "timeline_report_path": str(timeline_report_path),

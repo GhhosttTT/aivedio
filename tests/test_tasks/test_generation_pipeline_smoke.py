@@ -1435,3 +1435,16 @@ def test_sequence_boundary_gate_rejects_transition_failures(tmp_path):
             {"status": "available", "severe_transition_count": 1, "geometry_mismatch_count": 0},
             tmp_path / "sequence.boundary.json",
         )
+
+
+def test_sequence_boundary_gate_rejects_fps_mismatch(tmp_path):
+    with pytest.raises(Exception, match="fps_mismatches=1"):
+        video_tasks._validate_sequence_boundary_report(
+            {
+                "status": "available",
+                "severe_transition_count": 0,
+                "geometry_mismatch_count": 0,
+                "fps_mismatch_count": 1,
+            },
+            tmp_path / "sequence.boundary.json",
+        )

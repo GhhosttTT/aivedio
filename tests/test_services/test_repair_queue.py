@@ -126,6 +126,22 @@ def test_repair_queue_maps_temporal_visual_resets_to_targeted_motion_repair():
     assert "repeated scene resets" in reset_items[0]["recommendation"]
 
 
+def test_repair_queue_maps_sequence_fps_mismatch_to_output_contract_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 1,
+            "scene": {"scene_number": 4},
+            "average": 3.0,
+            "error": "Sequence boundary quality gate failed: fps_mismatches=1",
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "fix_video_output_contract"
+
+
 def test_repair_queue_expands_top_level_episode_style_gate_by_scene():
     report = {
         "status": "needs_review",
