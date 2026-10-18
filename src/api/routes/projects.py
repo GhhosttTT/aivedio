@@ -58,6 +58,7 @@ from src.services.rhythm_audit import RhythmAuditService
 from src.services.episode_style_consistency import EpisodeStyleConsistencyService
 from src.services.character_identity_consistency import CharacterIdentityConsistencyService
 from src.services.dialogue_delivery_audit import DialogueDeliveryAuditService
+from src.services.generation_context_audit import GenerationContextAuditService
 from src.database.session import get_db_session
 from src.database.models import Character, Project, ProjectStatus, Scene
 from src.services.llm_service import get_llm_service
@@ -530,6 +531,12 @@ async def get_generation_review(
         dialogue_report["evidence_schema_version"] = 1
         reports["dialogue_delivery_audit"] = dialogue_report
         write_report(root / "dialogue_delivery_audit.json", dialogue_report)
+    context_report = GenerationContextAuditService().audit(audit_scenes, reports).to_dict()
+    if context_report.get("status") != "not_applicable":
+        context_report["input_hash"] = audit_input_hash
+        context_report["evidence_schema_version"] = 1
+        reports["generation_context_audit"] = context_report
+        write_report(root / "generation_context_audit.json", context_report)
     story_room_report = StoryRoomQualityService().evaluate(project, audit_scenes).to_dict()
     # The readiness gate owns story-room rewrite actions. Keep the report for
     # reproducibility, but do not enqueue the same actions a second time in the
@@ -545,6 +552,7 @@ async def get_generation_review(
         "episode_style_consistency",
         "character_identity_consistency",
         "dialogue_delivery_audit",
+        "generation_context_audit",
     ):
         audit_report = reports.get(audit_key)
         if isinstance(audit_report, dict):
@@ -943,6 +951,9 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
     dialogue_delivery = statuses.get("dialogue_delivery_audit")
     if dialogue_delivery == "needs_review":
         action_items.append("Resolve dialogue audio and subtitle timing delivery issues before final composition.")
+    generation_context = statuses.get("generation_context_audit")
+    if generation_context == "needs_review":
+        action_items.append("Resolve Provider generation-context drift before final composition.")
 
     boundary_reports = [
         report for report in reports.values()
@@ -981,6 +992,7 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         or style_consistency == "needs_review"
         or identity_consistency == "needs_review"
         or dialogue_delivery == "needs_review"
+        or generation_context == "needs_review"
         or boundary_failed
         or (final_human_review_required and final_human_review_decision != "approved")
     )

@@ -15,6 +15,7 @@ const names: Record<string, string> = {
     episode_style_consistency: '全集视觉风格一致性',
     character_identity_consistency: '角色跨镜头身份一致性',
     dialogue_delivery_audit: '对白音频与字幕交付',
+    generation_context_audit: '生成上下文一致性',
     seed_dance_baseline_comparison: 'Seed Dance 对比验收',
     causal_logic: '因果逻辑',
     character_motivation: '角色动机',
@@ -303,6 +304,28 @@ function DialogueDeliveryEvidence({report}: {report: any}) {
         </div>)}
         {issues.slice(0, 6).map((issue: any, index: number) => <p className="wb-alert" key={`${issue.code}-${issue.scene_number}-${index}`}>
             分镜 {issue.scene_number || '-'} · {issue.code} · {issue.message}
+        </p>)}
+    </div>;
+}
+
+function GenerationContextEvidence({report}: {report: any}) {
+    if (report?.kind !== 'generation_context_audit') return null;
+    const contexts = Array.isArray(report.contexts) ? report.contexts : [];
+    const issues = Array.isArray(report.issues) ? report.issues : [];
+    return <div className="wb-summary-actions" aria-label="生成上下文一致性证据">
+        <div className="wb-row wb-between">
+            <h4>生成上下文一致性</h4>
+            <span className="wb-badge">{report.context_count || 0} 组上下文</span>
+        </div>
+        <p className={issues.length ? 'wb-alert' : 'wb-muted'}>
+            {issues.length ? '发现镜头之间的 Provider、模型或输出契约漂移。' : `已核对 ${report.checked_scene_count || 0} 个镜头的生成上下文。`}
+        </p>
+        {contexts.slice(0, 8).map((context: any) => <div className="wb-kv" key={context.scene_number}>
+            <span>分镜 {context.scene_number}</span>
+            <strong>{context.provider_model || '-'} · {context.resolution || '-'} · {context.request_mode || '-'}</strong>
+        </div>)}
+        {issues.slice(0, 5).map((issue: any, index: number) => <p className="wb-alert" key={`${issue.code}-${index}`}>
+            {issue.code} · {issue.evidence || issue.recommendation}
         </p>)}
     </div>;
 }
@@ -710,6 +733,7 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <EpisodeStyleConsistencyEvidence report={report}/>
             <CharacterIdentityConsistencyEvidence report={report}/>
             <DialogueDeliveryEvidence report={report}/>
+            <GenerationContextEvidence report={report}/>
             <Scores review={report.review}/>
             {report.batches?.map((batch: any, index: number) => <div key={index}>
                 <p>帧组 {index + 1} · {statuses[batch.status] || batch.status} · {batch.average}/5</p>
