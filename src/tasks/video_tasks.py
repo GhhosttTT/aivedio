@@ -1612,6 +1612,11 @@ def _video_character_distinctiveness_gate_passes(candidate: dict) -> bool:
 def _video_performance_gate_passes(candidate: dict) -> bool:
     gate = candidate.get("video_performance_gate")
     if not isinstance(gate, dict):
+        shot_plan = candidate.get("shot_plan")
+        if isinstance(shot_plan, dict):
+            role = str(shot_plan.get("shot_role") or "").strip().lower()
+            if role and role != "establishing":
+                return not settings.GENERATION_REQUIRE_VIDEO_REVIEW
         return True
     return gate.get("status") == "passed"
 
