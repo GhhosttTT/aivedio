@@ -84,7 +84,7 @@ export const projectApi = {
         });
     },
     updateScene: (id: number, scene: number, data: any) => apiClient.put(`/projects/${id}/scenes/${scene}`, data),
-    mediaUrl: async (id: number, path: string) => { const data = await apiClient.get<any, {url: string}>(`/projects/${id}/media-url`, {params: {path}}); return new URL(data.url, apiOrigin).href; },
+    mediaUrl: async (id: number, path: string, download = false) => { const data = await apiClient.get<any, {url: string}>(`/projects/${id}/media-url`, {params: {path}}); const url = new URL(data.url, apiOrigin); if (download) url.searchParams.set('download', 'true'); return url.href; },
     /**
      * 获取项目列表
      */
