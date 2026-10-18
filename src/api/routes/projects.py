@@ -45,7 +45,7 @@ from src.services.production_workflow_profile import ProductionWorkflowProfileSe
 from src.services.quality_loop import build_quality_loop_plan
 from src.services.repair_plan import build_repair_execution_plan
 from src.services.generation_quality_scorecard import build_generation_quality_scorecard
-from src.services.generation_review import require_passed
+from src.services.generation_review import file_hash, require_passed
 from src.services.story_room_quality import StoryRoomQualityService
 from src.services.delivery_package import DeliveryPackageError, build_delivery_package, verify_delivery_package
 from src.services.topic_brief import TopicBriefService
@@ -576,6 +576,8 @@ async def get_generation_review(
         if (
             not active_final_path.is_file()
             or not final_composition.get("video_signature")
+            or not isinstance(final_composition.get("video_sha256"), str)
+            or final_composition.get("video_sha256") != file_hash(active_final_path)
             or final_composition.get("composition_input_signature") != expected_composition_input
             or str(reviewed_final_path.resolve()) != str(active_final_path.resolve())
             or _video_version_signature(active_final_path) != final_composition.get("video_signature")

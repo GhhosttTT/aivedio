@@ -18,6 +18,8 @@ from src.api.routes.projects import (
     upload_seed_dance_baseline,
 )
 from src.services.generation_review import write_report
+from src.api.routes.projects import _video_version_signature
+from src.tasks.composition_tasks import composition_input_signature
 
 
 def test_review_requires_owned_project():
@@ -128,6 +130,7 @@ def test_review_api_marks_final_composition_stale_after_video_changes(tmp_path, 
     project_root = storage_manager.get_project_path(1)
     final_video = project_root / "final.mp4"
     final_video.write_bytes(b"new-final-video")
+    project = SimpleNamespace(id=1, final_video_path=str(final_video), scenes=[])
     final_video.with_suffix(".composition_review.json").write_text(
         json.dumps({
             "status": "passed",
@@ -145,6 +148,33 @@ def test_review_api_marks_final_composition_stale_after_video_changes(tmp_path, 
 
     assert result["reports"]["final_composition"]["status"] == "stale"
     assert any("final composition quality gate" in item for item in result["summary"]["action_items"])
+
+
+def test_review_api_marks_final_composition_stale_when_content_hash_changes(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    project_root = storage_manager.get_project_path(1)
+    final_video = project_root / "final.mp4"
+    final_video.write_bytes(b"current-final-video")
+    project = SimpleNamespace(id=1, final_video_path=str(final_video), scenes=[])
+    final_video.with_suffix(".composition_review.json").write_text(
+        json.dumps({
+            "status": "passed",
+            "video_path": str(final_video),
+            "video_signature": _video_version_signature(final_video),
+            "video_sha256": "0" * 64,
+            "composition_input_signature": composition_input_signature(project, []),
+        }),
+        encoding="utf-8",
+    )
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        id=1, final_video_path=str(final_video), scenes=[],
+    )
+
+    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+
+    assert result["reports"]["final_composition"]["status"] == "stale"
 
 
 def test_human_review_endpoint_records_decision_for_owned_report(tmp_path, monkeypatch):
