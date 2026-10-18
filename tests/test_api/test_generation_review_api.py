@@ -65,6 +65,25 @@ def test_review_api_includes_final_composition_report(tmp_path, monkeypatch):
     assert any("final composition quality gate" in item for item in result["summary"]["action_items"])
 
 
+def test_review_api_blocks_final_video_without_composition_evidence(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    project_root = storage_manager.get_project_path(1)
+    final_video = project_root / "final.mp4"
+    final_video.write_bytes(b"video")
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        id=1, final_video_path=str(final_video), scenes=[],
+    )
+
+    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+
+    assert result["reports"]["final_composition"]["status"] == "needs_review"
+    assert result["summary"]["status"] == "blocked"
+    assert result["summary"]["human_final_review_required"] is True
+    assert any("final composition quality gate" in item for item in result["summary"]["action_items"])
+
+
 def test_review_api_persists_version_bound_project_audits(tmp_path, monkeypatch):
     from src.utils.storage import storage_manager
     monkeypatch.setattr(storage_manager, "base_path", tmp_path)

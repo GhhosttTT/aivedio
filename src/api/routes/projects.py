@@ -422,8 +422,25 @@ async def get_generation_review(
         try:
             if composition_report_path.is_file():
                 reports["final_composition"] = json.loads(composition_report_path.read_text(encoding="utf-8"))
+            else:
+                # A final file without its matching review is not auditable.
+                # Keep this synthetic report in the response so every delivery
+                # surface fails closed instead of treating missing evidence as
+                # an implicit pass.
+                reports["final_composition"] = {
+                    "kind": "final_composition",
+                    "status": "needs_review",
+                    "video_path": str(final_video_path),
+                    "error": "Final composition review evidence is missing.",
+                }
         except (OSError, TypeError, ValueError):
             logger.warning("Cannot read composition quality report: {}", composition_report_path)
+            reports["final_composition"] = {
+                "kind": "final_composition",
+                "status": "needs_review",
+                "video_path": str(final_video_path),
+                "error": "Final composition review evidence could not be read.",
+            }
     from src.tasks.review_tasks import current_story, generation_signature
     from src.services.generation_review import fingerprint, write_report
     continuity_report = ContinuityAuditService().audit(project, getattr(project, "scenes", []) or []).to_dict()
