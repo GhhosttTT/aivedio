@@ -230,6 +230,36 @@ def test_review_api_marks_final_composition_stale_when_content_hash_changes(tmp_
     assert result["reports"]["final_composition"]["status"] == "stale"
 
 
+def test_review_api_revalidates_manually_approved_final_composition(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    project_root = storage_manager.get_project_path(1)
+    final_video = project_root / "final.mp4"
+    final_video.write_bytes(b"current-final-video")
+    project = SimpleNamespace(id=1, final_video_path=str(final_video), scenes=[])
+    final_video.with_suffix(".composition_review.json").write_text(
+        json.dumps({
+            "status": "needs_review",
+            "video_path": str(final_video),
+            "video_sha256": _sha256(final_video),
+            "human_decision": {"decision": "approved"},
+            "final_technical_metrics": {
+                "status": "available",
+                "temporal_sample_evidence": "sufficient",
+            },
+        }),
+        encoding="utf-8",
+    )
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        id=1, final_video_path=str(final_video), scenes=[],
+    )
+
+    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+
+    assert result["reports"]["final_composition"]["status"] == "stale"
+
+
 def test_review_api_marks_old_final_composition_stale_without_temporal_evidence(tmp_path, monkeypatch):
     from src.utils.storage import storage_manager
     monkeypatch.setattr(storage_manager, "base_path", tmp_path)

@@ -677,7 +677,15 @@ async def get_generation_review(
         ):
             baseline_report["status"] = "stale"
     final_composition = reports.get("final_composition")
-    if isinstance(final_composition, dict) and final_composition.get("status") == "passed":
+    manual_final_approval = (
+        isinstance(final_composition, dict)
+        and final_composition.get("status") in {"needs_review", "review_unavailable"}
+        and isinstance(final_composition.get("human_decision"), dict)
+        and final_composition["human_decision"].get("decision") == "approved"
+    )
+    if isinstance(final_composition, dict) and (
+        final_composition.get("status") == "passed" or manual_final_approval
+    ):
         active_final_path = Path(getattr(project, "final_video_path", None) or "")
         reviewed_final_path = Path(final_composition.get("video_path") or "")
         final_technical_metrics = final_composition.get("final_technical_metrics")
