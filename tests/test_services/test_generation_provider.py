@@ -289,6 +289,12 @@ def test_local_comfyui_provider_delegates_video_generation():
             quality_mode="seed_dance_reference",
             repair_action="refine_video_commercial_aesthetic",
             quality_pipeline={"stages": ["platform_reference_gap_repair"]},
+            shot_plan={
+                "spatial_asset_pack": {
+                    "scene_contract_hash": "scene-hash",
+                    "project_signature": "project-hash",
+                },
+            },
         )
     )
 
@@ -309,6 +315,8 @@ def test_local_comfyui_provider_delegates_video_generation():
     assert result.metadata["quality_mode"] == "seed_dance_reference"
     assert result.metadata["repair_action"] == "refine_video_commercial_aesthetic"
     assert result.metadata["quality_pipeline"] == {"stages": ["platform_reference_gap_repair"]}
+    assert result.metadata["spatial_asset_pack"]["scene_contract_hash"] == "scene-hash"
+    assert service.last_kwargs["shot_plan"]["spatial_asset_pack"]["project_signature"] == "project-hash"
 
 
 def test_video_generation_request_defaults_to_mobile_short_drama_canvas():

@@ -442,6 +442,12 @@ class LocalComfyUIProvider:
                 "quality_mode": request.quality_mode,
                 "repair_action": request.repair_action,
                 "quality_pipeline": request.quality_pipeline,
+                "shot_plan": request.shot_plan,
+                "spatial_asset_pack": (
+                    request.shot_plan.get("spatial_asset_pack")
+                    if isinstance(request.shot_plan, dict)
+                    else None
+                ),
             },
         )
 
