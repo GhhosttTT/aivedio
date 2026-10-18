@@ -102,6 +102,26 @@ def _native_audio_enabled(provider_name: str, override=None) -> bool:
     return bool(getattr(settings, f"{prefix}_NATIVE_AUDIO", False))
 
 
+def _apply_video_output_contract_repair(provider_name: str, provider_options: dict) -> dict:
+    """Restore provider controls from the configured production contract."""
+    if provider_name not in {"seedance_api", "http_video_api"}:
+        return provider_options
+    prefix = "SEEDANCE" if provider_name == "seedance_api" else "HTTP_VIDEO"
+    repaired = dict(provider_options)
+    for option, setting_name in (
+        ("REQUEST_MODE", f"{prefix}_REQUEST_MODE"),
+        ("MODEL", f"{prefix}_MODEL"),
+        ("RESOLUTION", f"{prefix}_RESOLUTION"),
+        ("OUTPUT_FORMAT", f"{prefix}_OUTPUT_FORMAT"),
+        ("NATIVE_AUDIO", f"{prefix}_NATIVE_AUDIO"),
+        ("RETURN_LAST_FRAME", f"{prefix}_RETURN_LAST_FRAME"),
+    ):
+        value = getattr(settings, setting_name, None)
+        if value not in (None, ""):
+            repaired[option] = value
+    return repaired
+
+
 def _preserve_generated_audio(
     provider_name: str,
     override=None,
@@ -2303,6 +2323,8 @@ def generate_video_task(
                 "SEQUENCE_TIMELINE": option("SEQUENCE_TIMELINE"),
                 }.items() if value is not None
             }
+            if repair_action == "fix_video_output_contract":
+                provider_options = _apply_video_output_contract_repair(provider_name, provider_options)
             provider_ref = {}
             external_progress_callback = kwargs.get("PROVIDER_PROGRESS_CALLBACK")
             def report_provider_progress(progress, state):
