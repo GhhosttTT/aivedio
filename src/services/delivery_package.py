@@ -270,6 +270,15 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         or (final_composition.get("status") != "passed" and not manual_approval)
     ):
         raise DeliveryPackageError("Final composition review is not passed; delivery is blocked")
+    final_technical_metrics = final_composition.get("final_technical_metrics")
+    if (
+        not isinstance(final_technical_metrics, dict)
+        or final_technical_metrics.get("status") != "available"
+        or final_technical_metrics.get("temporal_sample_evidence") != "sufficient"
+    ):
+        raise DeliveryPackageError(
+            "Final composition technical evidence is missing or insufficient; delivery is blocked"
+        )
     if Path(str(final_composition.get("video_path") or "")).resolve() != final_path:
         raise DeliveryPackageError("Final composition review points to a different video")
     if final_composition.get("video_sha256") != _sha256(final_path):

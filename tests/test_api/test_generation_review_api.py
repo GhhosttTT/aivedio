@@ -315,6 +315,10 @@ def test_delivery_package_endpoint_exports_approved_project(tmp_path, monkeypatc
                     "status": "passed",
                     "video_path": str(final_video),
                     "video_sha256": _sha256(final_video),
+                    "final_technical_metrics": {
+                        "status": "available",
+                        "temporal_sample_evidence": "sufficient",
+                    },
                 },
             },
             "summary": {"status": "ready"},

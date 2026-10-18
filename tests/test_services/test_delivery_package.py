@@ -9,7 +9,15 @@ from src.services.delivery_package import DeliveryPackageError, _sha256, build_d
 
 
 def _passed_final_composition(final):
-    return {"status": "passed", "video_path": str(final), "video_sha256": _sha256(final)}
+    return {
+        "status": "passed",
+        "video_path": str(final),
+        "video_sha256": _sha256(final),
+        "final_technical_metrics": {
+            "status": "available",
+            "temporal_sample_evidence": "sufficient",
+        },
+    }
 
 
 def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
@@ -84,6 +92,20 @@ def test_delivery_package_requires_final_composition_evidence(tmp_path):
         build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}}, {"status": "ready"})
 
 
+def test_delivery_package_rejects_final_review_without_temporal_evidence(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+    report = {
+        "status": "passed",
+        "video_path": str(final),
+        "video_sha256": _sha256(final),
+    }
+
+    with pytest.raises(DeliveryPackageError, match="technical evidence"):
+        build_delivery_package(project, tmp_path, {"final_composition": report}, {"status": "ready"})
+
+
 def test_delivery_package_accepts_approved_manual_final_review(tmp_path):
     final = tmp_path / "final.mp4"
     final.write_bytes(b"final-video")
@@ -93,6 +115,10 @@ def test_delivery_package_accepts_approved_manual_final_review(tmp_path):
         "video_path": str(final),
         "video_sha256": _sha256(final),
         "human_decision": {"decision": "approved", "note": "人工确认"},
+        "final_technical_metrics": {
+            "status": "available",
+            "temporal_sample_evidence": "sufficient",
+        },
     }
 
     manifest = build_delivery_package(
