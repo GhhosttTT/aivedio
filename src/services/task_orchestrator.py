@@ -723,7 +723,10 @@ class TaskOrchestrator:
                 [scene.id for scene in scenes],
                 task_model.id,
             )
-            retry_options = load_production_video_options(task_model.project_id) or {}
+            retry_options = load_production_video_options(
+                task_model.project_id,
+                task_id=task_model.id,
+            ) or {}
             if pending_options:
                 # The remote task is already paid/accepted. Re-run only the
                 # video stage so the original image/audio mtimes and request

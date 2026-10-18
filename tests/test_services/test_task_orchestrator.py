@@ -537,6 +537,7 @@ class TestRetryFailedTask:
         mock_create.return_value = "retry-with-options-task-id"
 
         assert orchestrator.retry_failed_task(task.celery_task_id) == "retry-with-options-task-id"
+        mock_saved.assert_called_once_with(sample_project.id, task_id=task.id)
         kwargs = mock_create.call_args.kwargs
         assert kwargs["provider"] == "seedance_api"
         assert kwargs["model"] == "doubao-seedance-2-0-260128"

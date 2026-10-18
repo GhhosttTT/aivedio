@@ -48,8 +48,16 @@ def save_production_video_options(project_id: int, task_id: int | str, options: 
     temporary.replace(path)
 
 
-def load_production_video_options(project_id: int) -> dict | None:
-    """Load the last successful run's controls, if a valid snapshot exists."""
+def load_production_video_options(
+    project_id: int,
+    task_id: int | str | None = None,
+) -> dict | None:
+    """Load production controls, optionally requiring an exact task snapshot.
+
+    Repair tasks intentionally use the project's most recent controls. A retry
+    of an older failed task must be stricter: using a newer snapshot can mix
+    models or Draft IDs across paid provider requests.
+    """
     path = _production_options_path(project_id)
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -57,6 +65,8 @@ def load_production_video_options(project_id: int) -> dict | None:
         return None
     options = payload.get("options") if isinstance(payload, dict) else None
     if not isinstance(options, dict):
+        return None
+    if task_id is not None and str(payload.get("task_id")) != str(task_id):
         return None
     result = {
         key: options[key]

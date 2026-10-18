@@ -81,3 +81,12 @@ def test_production_video_options_round_trip(tmp_path, monkeypatch):
         "sequence_level_multi_shot": True,
         "draft_task_ids": {1: "draft-1", 2: "draft-2"},
     }
+
+    assert task_recovery.load_production_video_options(7, task_id=42) == {
+        "provider": "seedance_api",
+        "model": "doubao-seedance-2-5-260628",
+        "resolution": "1080p",
+        "sequence_level_multi_shot": True,
+        "draft_task_ids": {1: "draft-1", 2: "draft-2"},
+    }
+    assert task_recovery.load_production_video_options(7, task_id=41) is None
