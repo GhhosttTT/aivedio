@@ -23,6 +23,7 @@ export function ProjectDetail() {
     const [readinessLoading, setReadinessLoading] = useState(false);
     const [reviewSummary, setReviewSummary] = useState<GenerationReviewResponse | null>(null);
     const [deliveryUrl, setDeliveryUrl] = useState('');
+    const [deliveryFiles, setDeliveryFiles] = useState<string[]>([]);
     const [topicBrief, setTopicBrief] = useState({audience: '', platform: '', genre: '', hook_type: '', region: '', policy_notes: ''});
     const [assetNotes, setAssetNotes] = useState('');
     const [platformExports, setPlatformExports] = useState<Record<string, {url: string; width: number; height: number; fps: number; technicalStatus?: string}>>({});
@@ -71,6 +72,7 @@ export function ProjectDetail() {
                 const verification = await projectApi.verifyDeliveryPackage(Number(id));
                 if (verification.status !== 'passed') throw new Error('交付包校验未通过');
                 setDeliveryUrl(await projectApi.mediaUrl(Number(id), exported.package_path, true));
+                setDeliveryFiles((exported.files || []).map(file => file.path));
             } else if (operation === '保存选题定位') {
                 await projectApi.updateTopicBrief(Number(id), topicBrief);
             } else if (operation === '冻结空间计划') {
@@ -314,6 +316,15 @@ export function ProjectDetail() {
                 <button className="wb-button primary" disabled={locked || !project.scenes?.length || productionBlocked || Boolean(productionOptionIssue)} title={productionOptionIssue || (productionBlocked ? productionBlockedTitle : '开始制作')} onClick={() => run('提交制作')}><Play size={17}/>开始制作</button>
             </div>
         </header>
+        {deliveryFiles.length > 0 && <section className="wb-item" aria-label="交付资产清单">
+            <div className="wb-row wb-between"><strong>交付资产已验收</strong><span className="wb-muted">{deliveryFiles.length} 个已签名文件</span></div>
+            <div className="wb-row wb-muted" style={{flexWrap: 'wrap', gap: 8}}>
+                <span>{deliveryFiles.some(file => file === 'cover/cover.jpg') ? '✓ 竖屏封面' : '— 未生成封面'}</span>
+                <span>{deliveryFiles.some(file => file.startsWith('exports/')) ? '✓ 平台版本' : '— 未生成平台版本'}</span>
+                <span>{deliveryFiles.includes('metadata/project.json') ? '✓ 项目与选题元数据' : '— 元数据缺失'}</span>
+                <span>{deliveryFiles.includes('metadata/delivery_manifest.json') ? '✓ SHA-256 manifest' : '— manifest 缺失'}</span>
+            </div>
+        </section>}
         {error && <p role="alert" className="wb-alert">{error}</p>}
         {busy && <p role="status" className="wb-alert"><RefreshCw size={15} className="inline animate-spin"/> {busy}进行中</p>}
         <VideoEngineStatus/>
