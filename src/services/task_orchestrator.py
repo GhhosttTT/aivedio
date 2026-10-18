@@ -296,6 +296,7 @@ class TaskOrchestrator:
             "regenerate_video_with_performance_direction",
             "refine_video_commercial_aesthetic",
             "refine_final_composition_finish",
+            "fix_video_output_contract",
         }
         audio_actions = {
             "refine_dialogue_audio_delivery",

@@ -82,6 +82,18 @@ def test_visual_repair_inherits_last_production_video_options(repair_case, monke
     workflow.apply_async.assert_called_once()
 
 
+def test_output_contract_repair_is_dispatchable_as_a_video_repair(repair_case):
+    orchestrator, project, scenes, workflow, chain = repair_case
+
+    orchestrator.create_scene_repair_task(project.id, scenes[0].scene_number, "fix_video_output_contract")
+
+    video_step = next(step for step in chain.call_args.args if step.task == "generate_video_task")
+    assert video_step.kwargs["repair_action"] == "fix_video_output_contract"
+    assert video_step.kwargs["sequence_level_multi_shot"] is False
+    assert scenes[0].video_path is None
+    workflow.apply_async.assert_called_once()
+
+
 def test_batch_validation_is_complete_before_any_scene_is_invalidated(repair_case):
     orchestrator, project, scenes, workflow, _chain = repair_case
     with pytest.raises(ValueError, match="分镜不存在"):
