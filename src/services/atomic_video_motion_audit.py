@@ -36,11 +36,16 @@ class AtomicVideoMotionAuditReport:
             if action in seen:
                 continue
             seen.add(action)
+            execution = (
+                "setup_required"
+                if issue.get("code") == "technical_evidence_unavailable"
+                else "auto"
+            )
             queue.append({
                 "priority": "high" if issue.get("severity") == "high" else "medium",
                 "stage": "video",
                 "action": action,
-                "execution": "auto",
+                "execution": execution,
                 "scene_number": issue.get("scene_number"),
                 "reason": issue.get("message") or issue.get("code"),
                 "recommendation": "Regenerate the atomic clip and rerun technical motion validation before composition.",
@@ -59,6 +64,10 @@ class AtomicVideoMotionAuditService:
                 continue
             metrics = self._load_metrics(Path(str(video_path)))
             if not metrics:
+                reports.append({
+                    "scene_number": scene.scene_number,
+                    "technical_evidence_status": "unavailable",
+                })
                 continue
             item = {"scene_number": scene.scene_number, **self._selected_metrics(metrics)}
             reports.append(item)
@@ -67,6 +76,21 @@ class AtomicVideoMotionAuditService:
         issues: list[dict[str, Any]] = []
         for item in reports:
             number = item["scene_number"]
+            if item.get("technical_evidence_status") == "unavailable" or item.get("status") == "unavailable":
+                issues.append(self._issue(
+                    number,
+                    "technical_evidence_unavailable",
+                    "technical video evidence is missing or unreadable before composition",
+                    "refine_video_commercial_aesthetic",
+                ))
+                continue
+            if item.get("temporal_sample_evidence") == "insufficient":
+                issues.append(self._issue(
+                    number,
+                    "insufficient_temporal_evidence",
+                    "technical video evidence has too few temporal samples for acceptance",
+                    "lower_motion_and_regenerate_video",
+                ))
             score = item.get("technical_score")
             if isinstance(score, (int, float)) and score < float(settings.GENERATION_VIDEO_TECHNICAL_MIN_SCORE):
                 issues.append(self._issue(number, "technical_score_low", f"technical score {score:.2f} is below the production floor", "refine_video_commercial_aesthetic"))
@@ -97,7 +121,12 @@ class AtomicVideoMotionAuditService:
         return metrics if isinstance(metrics, dict) else None
 
     def _selected_metrics(self, metrics: dict[str, Any]) -> dict[str, Any]:
-        return {
+        selected = {
+            "status": metrics.get("status"),
+            "temporal_sample_evidence": metrics.get("temporal_sample_evidence"),
+            "sampled_frames": metrics.get("sampled_frames"),
+        }
+        selected.update({
             key: metrics.get(key)
             for key in (
                 "technical_score", "motion_energy", "static_transition_ratio",
@@ -106,7 +135,8 @@ class AtomicVideoMotionAuditService:
                 "motion_jitter_ratio", "sharpness", "brightness",
                 "temporal_jump_ratio", "temporal_jump_p95",
             )
-        }
+        })
+        return selected
 
     def _issue(self, scene_number: int, code: str, message: str, action: str) -> dict[str, Any]:
         return {

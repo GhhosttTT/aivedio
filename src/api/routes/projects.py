@@ -2084,7 +2084,12 @@ async def run_auto_repair_queue(
         else:
             budget.record(selected)
 
-    if submitted and skipped:
+    benign_skips = {"duplicate_action", "stage_already_selected", "scene_already_selected"}
+    actionable_skips = [
+        item for item in skipped
+        if item.get("reason") not in benign_skips
+    ]
+    if submitted and actionable_skips:
         result_status = "partial"
     elif submitted:
         result_status = "submitted"
