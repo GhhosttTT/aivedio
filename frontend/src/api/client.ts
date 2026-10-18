@@ -392,6 +392,8 @@ export interface SeedDanceBaselineComparison {
     candidate_video_path?: string;
     baseline_video_path?: string;
     uploaded_baseline_path?: string;
+    candidate_sha256?: string;
+    baseline_sha256?: string;
     contact_sheet_path?: string | null;
     gates?: Record<string, boolean>;
     differences?: Record<string, number | boolean | string | null>;

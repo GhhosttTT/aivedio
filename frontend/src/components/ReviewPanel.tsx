@@ -190,6 +190,8 @@ function SeedDanceComparison({projectId, report}: {projectId: number; report: an
             <div><h3>画面结构相似度</h3><p className="wb-muted">{differences.visual_structure_similarity ?? '未生成'}{typeof differences.visual_structure_similarity === 'number' ? ' / 1' : ''}</p></div>
             <div><h3>候选规格</h3><p className="wb-muted">{candidate.width || '-'}x{candidate.height || '-'} · {candidate.fps || '-'} fps</p></div>
             <div><h3>基线规格</h3><p className="wb-muted">{baseline.width || '-'}x{baseline.height || '-'} · {baseline.fps || '-'} fps</p></div>
+            <div><h3>候选内容指纹</h3><p className="wb-muted" title={report.candidate_sha256 || '未记录'}>{report.candidate_sha256 ? report.candidate_sha256.slice(0, 12) : '未记录'}</p></div>
+            <div><h3>基线内容指纹</h3><p className="wb-muted" title={report.baseline_sha256 || '未记录'}>{report.baseline_sha256 ? report.baseline_sha256.slice(0, 12) : '未记录'}</p></div>
         </div>
         {gates.length > 0 && <div className="wb-grid compact">
             {gates.map(([key, passed]) => <div className="wb-kv" key={key}>
@@ -499,6 +501,8 @@ function GenerationRunEvidence({report}: {report: any}) {
         </div>
         {evidence.providers?.length ? <p className="wb-muted">Provider：{evidence.providers.join('、')}</p> : null}
         {evidence.provider_task_ids?.length ? <p className="wb-muted">任务：{evidence.provider_task_ids.join('、')}</p> : null}
+        {evidence.video_sha256s?.length ? <p className="wb-muted">候选视频指纹：{evidence.video_sha256s.slice(0, 3).map((hash: string) => hash.slice(0, 12)).join('、')}</p> : null}
+        {evidence.accepted_video_sha256 ? <p className="wb-muted" title={evidence.accepted_video_sha256}>最终验收视频指纹：{evidence.accepted_video_sha256.slice(0, 12)}</p> : null}
         {evidence.spatial_scene_contract_hashes?.length ? (
             <p className="wb-muted">空间 scene contract：{evidence.spatial_scene_contract_hashes.slice(0, 3).map((hash: string) => hash.slice(0, 12)).join('、')}</p>
         ) : null}
