@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+import hashlib
+import json
 from pathlib import Path
 
 from src.config import settings
@@ -86,6 +88,34 @@ def audit_video_output_contract(
 
     issues: list[dict] = []
     checked: list[str] = []
+    contract_version = contract.get("provider_request_version")
+    if isinstance(contract_version, int) and contract_version >= 2:
+        checked.append("request_contract_integrity")
+        required_fingerprint_fields = (
+            "prompt_fingerprint",
+            "negative_prompt_fingerprint",
+            "shot_plan_fingerprint",
+        )
+        if any(field not in contract for field in required_fingerprint_fields):
+            issues.append(_issue(
+                "request_contract_fingerprints_missing",
+                "Version 2 request contract is missing one or more control fingerprints.",
+            ))
+        supplied_hash = str(contract.get("contract_hash") or "")
+        canonical_contract = dict(contract)
+        canonical_contract.pop("contract_hash", None)
+        encoded = json.dumps(
+            canonical_contract,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        expected_hash = hashlib.sha256(encoded).hexdigest()
+        if supplied_hash != expected_hash:
+            issues.append(_issue(
+                "request_contract_hash_mismatch",
+                "Request contract hash does not match its recorded controls.",
+            ))
     if metrics.get("status") != "available":
         issues.append(_issue("metrics_unavailable", "Output media metrics are unavailable."))
     else:

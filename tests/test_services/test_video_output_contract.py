@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 import pytest
 
 from src.services.video_output_contract import (
@@ -32,12 +35,50 @@ def _metrics(**overrides):
     return value
 
 
+def _versioned_contract(**overrides):
+    value = _contract(
+        provider_request_version=2,
+        prompt_fingerprint="prompt-hash",
+        negative_prompt_fingerprint=None,
+        shot_plan_fingerprint=None,
+    )
+    value.update(overrides)
+    value.pop("contract_hash", None)
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    value["contract_hash"] = hashlib.sha256(encoded).hexdigest()
+    return value
+
+
 def test_output_contract_passes_matching_media():
     report = audit_video_output_contract(
         _contract(), {"provider_model": "model-a"}, _metrics(), "/tmp/scene.mp4"
     )
     assert report["status"] == "passed"
     assert {"resolution", "output_format", "duration", "audio", "model"}.issubset(report["checked"])
+
+
+def test_output_contract_validates_versioned_request_contract_integrity():
+    report = audit_video_output_contract(
+        _versioned_contract(), {"provider_model": "model-a"}, _metrics(), "/tmp/scene.mp4"
+    )
+    assert report["status"] == "passed"
+    assert "request_contract_integrity" in report["checked"]
+
+
+def test_output_contract_rejects_tampered_versioned_request_contract():
+    contract = _versioned_contract()
+    contract["prompt_fingerprint"] = "changed-after-hash"
+    report = audit_video_output_contract(contract, {"provider_model": "model-a"}, _metrics(), "/tmp/scene.mp4")
+    assert report["status"] == "needs_review"
+    assert "request_contract_hash_mismatch" in {item["code"] for item in report["issues"]}
+
+
+def test_output_contract_rejects_incomplete_versioned_request_contract():
+    contract = _versioned_contract()
+    del contract["shot_plan_fingerprint"]
+    report = audit_video_output_contract(contract, {"provider_model": "model-a"}, _metrics(), "/tmp/scene.mp4")
+    assert report["status"] == "needs_review"
+    assert "request_contract_fingerprints_missing" in {item["code"] for item in report["issues"]}
 
 
 def test_output_contract_blocks_resolution_audio_and_model_drift():

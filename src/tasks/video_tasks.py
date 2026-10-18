@@ -1426,6 +1426,7 @@ def _derive_sequence_segment_provider_metadata(
     if expected_duration_seconds is not None:
         derived_contract["duration_seconds"] = round(float(expected_duration_seconds), 3)
     derived_contract["derived_from_sequence"] = True
+    derived_contract.pop("contract_hash", None)
     encoded = json.dumps(
         derived_contract,
         ensure_ascii=False,
