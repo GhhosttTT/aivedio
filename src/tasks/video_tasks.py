@@ -49,7 +49,7 @@ from src.services.video_quality_metrics import (
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
 from src.services.spatial_control_assets import SpatialControlAssetService
-from src.services.video_output_contract import audit_video_output_contract
+from src.services.video_output_contract import audit_video_output_contract, validate_sequence_request_plan
 from src.services.sequence_plan import build_sequence_context, build_sequence_timeline
 from src.services.sequence_video_service import split_sequence_video
 from src.services.sequence_timeline_audit import SequenceTimelineAuditService
@@ -856,6 +856,10 @@ class _ComfyVideoGenerator:
                 "sequence_level": False,
                 "continuity_mode": "bounded_previous_current_next",
             }
+        validate_sequence_request_plan(
+            shot_plan_payload,
+            sequence_level=sequence_level_multi_shot,
+        )
         request = VideoGenerationRequest(
             prompt=prompt,
             negative_prompt=negative_prompt,

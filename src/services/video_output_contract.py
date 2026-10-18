@@ -11,6 +11,55 @@ from src.config import settings
 RESOLUTION_SHORT_EDGE = {"480p": 480, "720p": 720, "1080p": 1080, "4k": 2160}
 
 
+class VideoRequestPlanError(ValueError):
+    """Raised when a sequence plan cannot be safely submitted to a provider."""
+
+
+def validate_sequence_request_plan(shot_plan: dict | None, *, sequence_level: bool) -> None:
+    """Fail closed on malformed sequence plans before a provider request is sent."""
+    if not sequence_level:
+        return
+    if not isinstance(shot_plan, dict):
+        raise VideoRequestPlanError("Sequence-level generation requires a shot plan")
+    shots = shot_plan.get("shots")
+    if not isinstance(shots, list) or not shots:
+        raise VideoRequestPlanError("Sequence-level generation requires at least one shot")
+
+    scene_numbers: set[int] = set()
+    for index, shot in enumerate(shots, start=1):
+        if not isinstance(shot, dict):
+            raise VideoRequestPlanError(f"Sequence shot {index} must be an object")
+        scene_number = shot.get("scene_number")
+        if isinstance(scene_number, bool) or not isinstance(scene_number, int) or scene_number <= 0:
+            raise VideoRequestPlanError(f"Sequence shot {index} needs a positive integer scene_number")
+        if scene_number in scene_numbers:
+            raise VideoRequestPlanError(f"Sequence plan contains duplicate scene_number={scene_number}")
+        scene_numbers.add(scene_number)
+        if shot.get("duration_seconds") is not None:
+            duration = _positive_number(shot.get("duration_seconds"))
+            if not duration:
+                raise VideoRequestPlanError(f"Sequence shot {scene_number} needs a positive duration_seconds")
+
+    timeline = shot_plan.get("sequence_timeline")
+    if timeline is None:
+        return
+    if not isinstance(timeline, list) or len(timeline) != len(shots):
+        raise VideoRequestPlanError("sequence_timeline must contain exactly one entry per sequence shot")
+    previous_end = 0.0
+    for index, item in enumerate(timeline, start=1):
+        if not isinstance(item, dict):
+            raise VideoRequestPlanError(f"Sequence timeline entry {index} must be an object")
+        if item.get("scene_number") != shots[index - 1].get("scene_number"):
+            raise VideoRequestPlanError(f"Sequence timeline entry {index} does not match its shot scene_number")
+        start = _finite_number(item.get("start_seconds"))
+        end = _finite_number(item.get("end_seconds"))
+        if start < 0 or end <= start:
+            raise VideoRequestPlanError(f"Sequence timeline entry {index} has invalid start/end seconds")
+        if start < previous_end:
+            raise VideoRequestPlanError("Sequence timeline overlaps or moves backwards")
+        previous_end = end
+
+
 def audit_video_output_contract(
     contract: dict | None,
     provider_metadata: dict | None,
@@ -101,3 +150,11 @@ def _positive_number(value) -> float:
     except (TypeError, ValueError):
         return 0.0
     return number if math.isfinite(number) and number > 0 else 0.0
+
+
+def _finite_number(value) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return -1.0
+    return number if math.isfinite(number) else -1.0

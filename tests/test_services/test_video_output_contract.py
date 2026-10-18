@@ -1,4 +1,10 @@
-from src.services.video_output_contract import audit_video_output_contract
+import pytest
+
+from src.services.video_output_contract import (
+    VideoRequestPlanError,
+    audit_video_output_contract,
+    validate_sequence_request_plan,
+)
 
 
 def _contract(**overrides):
@@ -85,3 +91,41 @@ def test_output_contract_accepts_unique_sequence_spatial_contracts():
 
     assert report["status"] == "passed"
     assert "sequence_spatial_contracts" in report["checked"]
+
+
+def test_sequence_request_plan_rejects_duplicate_scene_numbers():
+    with pytest.raises(VideoRequestPlanError, match="duplicate scene_number"):
+        validate_sequence_request_plan(
+            {"shots": [{"scene_number": 1}, {"scene_number": 1}]},
+            sequence_level=True,
+        )
+
+
+def test_sequence_request_plan_rejects_misaligned_timeline():
+    with pytest.raises(VideoRequestPlanError, match="does not match"):
+        validate_sequence_request_plan(
+            {
+                "shots": [{"scene_number": 1}, {"scene_number": 2}],
+                "sequence_timeline": [
+                    {"scene_number": 1, "start_seconds": 0, "end_seconds": 2},
+                    {"scene_number": 3, "start_seconds": 2, "end_seconds": 4},
+                ],
+            },
+            sequence_level=True,
+        )
+
+
+def test_sequence_request_plan_accepts_ordered_timeline():
+    validate_sequence_request_plan(
+        {
+            "shots": [
+                {"scene_number": 1, "duration_seconds": 2},
+                {"scene_number": 2, "duration_seconds": 2},
+            ],
+            "sequence_timeline": [
+                {"scene_number": 1, "start_seconds": 0, "end_seconds": 2},
+                {"scene_number": 2, "start_seconds": 2, "end_seconds": 4},
+            ],
+        },
+        sequence_level=True,
+    )
