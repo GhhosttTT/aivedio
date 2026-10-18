@@ -131,7 +131,11 @@ def verify_delivery_package(package_path: str | Path) -> dict:
                 None,
             )
             final_review_name = "reviews/final_composition.json"
-            if final_review_name in names and isinstance(final_video_entry, dict):
+            if final_review_name not in names:
+                result["errors"].append("Final composition review is missing from delivery package")
+            elif not isinstance(final_video_entry, dict):
+                result["errors"].append("Final video is missing from delivery manifest")
+            else:
                 try:
                     final_review = json.loads(archive.read(final_review_name).decode("utf-8"))
                 except (UnicodeDecodeError, ValueError, TypeError) as exc:
@@ -174,6 +178,13 @@ def verify_delivery_package(package_path: str | Path) -> dict:
                         ):
                             result["errors"].append(
                                 "Final composition media failed technical evidence revalidation"
+                            )
+                    if isinstance(final_review, dict) and final_review.get("final_audio_expected") is True:
+                        audio_status = final_metrics.get("audio_signal_status")
+                        audio_quality = final_metrics.get("audio_quality_status")
+                        if audio_status != "usable" or audio_quality != "passed":
+                            result["errors"].append(
+                                "Final composition native-audio evidence is missing or failed"
                             )
             platform_exports = [
                 (archive_name, item)
@@ -419,6 +430,11 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         audit_report = reports.get(audit_key)
         if isinstance(audit_report, dict):
             _write_json_atomic(root / "reviews" / f"{audit_key}.json", audit_report)
+    # The report supplied to this export call is the approval decision for the
+    # exact final video. Persist it even when the caller did not previously
+    # create the conventional final-video sidecar; otherwise a valid in-memory
+    # approval could produce a package with no final composition evidence.
+    _write_json_atomic(root / "reviews" / "final_composition.json", final_composition)
     files = _collect_files(project, root, reports)
 
     project_metadata = delivery_root / "project_metadata.json"

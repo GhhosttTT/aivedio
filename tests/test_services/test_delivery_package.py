@@ -102,6 +102,41 @@ def test_delivery_package_requires_final_composition_evidence(tmp_path):
         build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}}, {"status": "ready"})
 
 
+def test_delivery_package_persists_in_memory_final_composition_report(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+    report = _passed_final_composition(final)
+
+    manifest = build_delivery_package(
+        project,
+        tmp_path,
+        {"generation": {"status": "passed"}, "final_composition": report},
+        {"status": "ready"},
+    )
+
+    assert manifest["verification"]["status"] == "passed"
+    with zipfile.ZipFile(tmp_path / "delivery" / "delivery_package.zip") as archive:
+        packaged = json.loads(archive.read("reviews/final_composition.json").decode("utf-8"))
+    assert packaged == report
+
+
+def test_delivery_package_rejects_missing_native_audio_evidence(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+    report = _passed_final_composition(final)
+    report["final_audio_expected"] = True
+
+    with pytest.raises(DeliveryPackageError, match="native-audio evidence"):
+        build_delivery_package(
+            project,
+            tmp_path,
+            {"generation": {"status": "passed"}, "final_composition": report},
+            {"status": "ready"},
+        )
+
+
 def test_delivery_package_rejects_final_review_without_temporal_evidence(tmp_path):
     final = tmp_path / "final.mp4"
     final.write_bytes(b"final-video")
