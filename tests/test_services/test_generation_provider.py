@@ -45,6 +45,13 @@ class FakeComfyUIService:
         return kwargs["output_path"]
 
 
+@pytest.fixture(autouse=True)
+def disable_generic_output_validation_for_legacy_doubles(monkeypatch):
+    """Legacy gateway doubles return bytes, not actual playable videos."""
+    for prefix in ("JIMENG", "KLING", "HAILUO", "HTTP_VIDEO"):
+        monkeypatch.setenv(f"{prefix}_VALIDATE_OUTPUT", "false")
+
+
 @pytest.mark.parametrize(
     ("suffix", "mime"),
     [(".bmp", "image/bmp"), (".gif", "image/gif"), (".tiff", "image/tiff"), (".heic", "image/heic"), (".flac", "audio/flac")],
@@ -429,6 +436,23 @@ def test_native_ark_output_validation_rejects_non_video_artifact(tmp_path, monke
         lambda *_args, **_kwargs: SimpleNamespace(stdout="codec_type=audio\nduration=4.0\n"),
     )
     provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    with pytest.raises(GenerationProviderError, match="invalid video artifact"):
+        provider._validate_provider_video(str(output))
+    assert not output.exists()
+
+
+def test_generic_provider_output_validation_rejects_non_video_artifact(tmp_path, monkeypatch):
+    monkeypatch.setenv("HTTP_VIDEO_VALIDATE_OUTPUT", "true")
+    monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")
+    output = tmp_path / "generic-invalid.mp4"
+    output.write_bytes(b"not a video")
+    monkeypatch.setattr(
+        generation_provider.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout="codec_type=audio\nduration=4.0\n"),
+    )
+    provider = HttpVideoApiProvider(endpoint="https://gateway.example/video", api_key="secret")
 
     with pytest.raises(GenerationProviderError, match="invalid video artifact"):
         provider._validate_provider_video(str(output))

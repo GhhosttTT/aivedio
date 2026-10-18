@@ -780,12 +780,14 @@ class ApiVideoProvider:
         expected_duration: float | None = None,
         request: VideoGenerationRequest | None = None,
     ) -> None:
-        """Reject malformed native-Ark output before it enters the project."""
-        if self.name != GenerationProviderName.SEEDANCE_API:
-            return
-        api_format = _seedance_api_format(self.endpoint)
+        """Reject malformed external-provider output before it enters the project."""
+        api_format = (
+            _seedance_api_format(self.endpoint)
+            if self.name == GenerationProviderName.SEEDANCE_API
+            else ""
+        )
         native_ark_contract = api_format in {"ark", "ark_v3", "volcengine", "volcengine_v3"}
-        validation_enabled = _provider_bool("SEEDANCE_VALIDATE_OUTPUT", True)
+        validation_enabled = _provider_bool(f"{self.env_prefix}_VALIDATE_OUTPUT", True)
         if not validation_enabled:
             self.last_result_metadata["output_validation_status"] = "disabled_by_configuration"
             return
@@ -795,8 +797,8 @@ class ApiVideoProvider:
             except OSError:
                 pass
             raise GenerationProviderError(
-                "Seedance output validation requires ffprobe; install ffprobe or explicitly disable "
-                "SEEDANCE_VALIDATE_OUTPUT for a non-production run"
+                f"{self.name.value} output validation requires ffprobe; install ffprobe or explicitly disable "
+                f"{self.env_prefix}_VALIDATE_OUTPUT for a non-production run"
             )
         try:
             result = subprocess.run(
@@ -855,7 +857,8 @@ class ApiVideoProvider:
             if width > 0 and height > 0:
                 self.last_result_metadata["video_width"] = width
                 self.last_result_metadata["video_height"] = height
-                self._validate_native_ark_geometry(width, height, request)
+                if self.name == GenerationProviderName.SEEDANCE_API:
+                    self._validate_native_ark_geometry(width, height, request)
             requested_resolution = str(
                 self.last_result_metadata.get("requested_resolution")
                 or (request.resolution if request else "")
@@ -915,14 +918,15 @@ class ApiVideoProvider:
                     )
             if require_audio and not has_audio:
                 raise ValueError("audio was requested but ffprobe found no audio stream")
-            self._validate_native_ark_temporal_quality(output_path, require_audio=require_audio)
+            if self.name == GenerationProviderName.SEEDANCE_API:
+                self._validate_native_ark_temporal_quality(output_path, require_audio=require_audio)
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
             try:
                 Path(output_path).unlink(missing_ok=True)
             except OSError:
                 pass
             raise GenerationProviderError(
-                f"Seedance returned an invalid video artifact: {output_path} ({exc})"
+                f"{self.name.value} returned an invalid video artifact: {output_path} ({exc})"
             ) from exc
 
     def _validate_native_ark_geometry(
