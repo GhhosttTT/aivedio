@@ -113,6 +113,26 @@ def test_dialogue_audio_quality_report_accepts_measurable_signal(tmp_path, monke
     assert report["audio_signal"]["audio_signal_status"] == "usable"
 
 
+def test_dialogue_audio_quality_report_rejects_clipped_signal(tmp_path, monkeypatch):
+    audio = tmp_path / "scene_010_clip.mp3"
+    audio.write_bytes(b"audio")
+    monkeypatch.setattr(audio_tasks, "_audio_signal_metrics", lambda *_args: {
+        "audio_signal_status": "usable",
+        "audio_peak_db": 0.0,
+        "audio_clipping_status": "clipped",
+    })
+    report = dialogue_audio_quality_report(
+        Mock(scene_number=10),
+        "你好",
+        duration=1.0,
+        audio_path=str(audio),
+        profile={"emotion": "neutral", "speed": 1.0, "source": "tts"},
+    )
+
+    assert report["status"] == "needs_review"
+    assert report["dialogue_audio_quality_gate"]["low"]["audio_clipping"]["score"] == 0
+
+
 def test_dialogue_audio_quality_report_keeps_reported_and_measured_duration(tmp_path, monkeypatch):
     audio = tmp_path / "scene_011.mp3"
     audio.write_bytes(b"audio")

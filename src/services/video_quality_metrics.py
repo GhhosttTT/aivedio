@@ -350,11 +350,13 @@ def _audio_signal_metrics(path: Path, duration_seconds: float) -> dict[str, Any]
             (peak_db is not None and peak_db <= -55.0)
             or silence_ratio >= 0.95
         )
+        clipping = bool(peak_db is not None and peak_db >= -0.1)
         return {
             "audio_silence_ratio": round(silence_ratio, 3),
             "audio_peak_db": round(peak_db, 2) if peak_db is not None else None,
             "audio_rms_db": round(rms_db, 2) if rms_db is not None else None,
             "audio_signal_status": "near_silent" if near_silent else "usable",
+            "audio_clipping_status": "clipped" if clipping else "ok",
         }
     except Exception as exc:
         return {

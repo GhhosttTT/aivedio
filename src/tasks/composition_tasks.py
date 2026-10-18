@@ -1115,6 +1115,8 @@ def _composition_review_error(report: dict) -> str | None:
                 return "final composed video audio signal is near-silent despite the expected audio track"
             if audio_signal_status == "unavailable":
                 return "final composed video audio signal is not measurable for the expected audio track"
+            if technical.get("audio_clipping_status") == "clipped":
+                return "final composed video audio signal is clipped at digital full scale"
             audio_delta = technical.get("audio_duration_delta_seconds")
             if not isinstance(audio_delta, (int, float)):
                 return "final composed video audio duration is not measurable"

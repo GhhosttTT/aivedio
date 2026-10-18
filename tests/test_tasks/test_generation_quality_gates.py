@@ -96,6 +96,20 @@ def test_audio_quality_contract_rejects_near_silent_requested_audio():
     assert "near-silence" in metrics["audio_signal_error"]
 
 
+def test_audio_quality_contract_rejects_clipped_requested_audio():
+    metrics = {
+        "audio_present": True,
+        "audio_duration_delta_seconds": 0.0,
+        "audio_signal_status": "usable",
+        "audio_clipping_status": "clipped",
+        "technical_score": 4.5,
+    }
+    _apply_audio_quality_contract(metrics, {"requested_generate_audio": True})
+
+    assert metrics["audio_quality_status"] == "needs_review"
+    assert metrics["audio_sync_score"] == 0.0
+
+
 def test_audio_quality_contract_rejects_stream_start_offset():
     metrics = {
         "audio_present": True,

@@ -111,6 +111,12 @@ def dialogue_audio_quality_report(
                     }
                 elif signal_status != "usable":
                     missing.append("audio_signal")
+                if audio_signal.get("audio_clipping_status") == "clipped":
+                    low["audio_clipping"] = {
+                        "score": 0,
+                        "evidence": "dialogue audio peak reaches digital full scale and may be audibly clipped",
+                        "scene_number": scene.scene_number,
+                    }
             char_count = max(1, len("".join((text or "").split())))
             chars_per_second = char_count / duration
             if chars_per_second < 1.2 or chars_per_second > 8.5:

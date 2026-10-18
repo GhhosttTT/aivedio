@@ -1680,6 +1680,10 @@ def _apply_audio_quality_contract(metrics: dict, provider_metadata: dict | None)
     elif signal_status == "unavailable":
         metrics["audio_quality_status"] = "unavailable"
         metrics["audio_sync_score"] = 0.0
+    if metrics.get("audio_clipping_status") == "clipped":
+        metrics["audio_quality_status"] = "needs_review"
+        metrics["audio_signal_error"] = "audio signal reaches digital full scale and may be clipped"
+        metrics["audio_sync_score"] = 0.0
     if isinstance(metrics.get("technical_score"), (int, float)):
         metrics["technical_score"] = round(min(
             float(metrics["technical_score"]),
