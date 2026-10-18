@@ -30,6 +30,7 @@ from src.services.generation_review import (
     attach_video_aesthetic_gate,
     attach_video_character_distinctiveness_gate,
     attach_video_performance_gate,
+    file_hash,
     platform_video_score,
     write_report,
 )
@@ -1208,6 +1209,7 @@ def _sequence_segment_quality_report(
     report = {
         **base_report,
         "status": "needs_review" if error else "passed",
+        "video_sha256": file_hash(Path(segment_path)),
         "technical_metrics": metrics,
         "error": error,
     }
@@ -1707,6 +1709,7 @@ def _review_final_video_after_postprocess(
     )
     final_review = {
         "path": video_path,
+        "video_sha256": file_hash(Path(video_path)),
         "status": review.get("status"),
         "average": review.get("average", 0),
         "review_path": str(review_path),
@@ -1742,6 +1745,7 @@ def _review_final_video_after_postprocess(
         final_review["technical_score"] = technical_metrics["technical_score"]
     if review.get("error"):
         final_review["error"] = review["error"]
+    quality_report["video_sha256"] = final_review["video_sha256"]
     quality_report["final_video_review"] = final_review
     gate_ok, gate_scores = _video_gate_passes(final_review)
     aesthetic_ok = _video_aesthetic_gate_passes(final_review)

@@ -350,8 +350,10 @@ def test_sequence_segment_quality_report_is_persisted_without_vlm(tmp_path, monk
     report = _sequence_segment_quality_report(scene, str(segment), 7, Mock(), {})
 
     assert report["status"] == "passed"
+    assert report["video_sha256"] == file_hash(segment)
     persisted = json.loads(segment.with_suffix(".quality.json").read_text(encoding="utf-8"))
     assert persisted["status"] == "passed"
+    assert persisted["video_sha256"] == file_hash(segment)
     assert persisted["technical_metrics"]["technical_score"] == 4.4
 
 

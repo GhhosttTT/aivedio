@@ -96,6 +96,7 @@ def test_composition_accepts_passed_video_quality_report(tmp_path):
     video.write_bytes(b"fake video")
     video.with_suffix(".quality.json").write_text(json.dumps({
         "status": "passed",
+        "video_sha256": composition_tasks.file_hash(video),
         "final_video_review": {
             "status": "passed",
             "average": 4.4,
@@ -114,6 +115,26 @@ def test_composition_accepts_passed_video_quality_report(tmp_path):
     scene = Mock(scene_number=1, video_path=str(video))
 
     composition_tasks._require_passed_scene_videos([scene])
+
+
+def test_composition_rejects_stale_video_quality_hash(tmp_path):
+    video = tmp_path / "scene_001.mp4"
+    video.write_bytes(b"current video")
+    video.with_suffix(".quality.json").write_text(json.dumps({
+        "status": "passed",
+        "video_sha256": "0" * 64,
+        "final_video_review": {
+            "status": "passed",
+            "average": 4.4,
+            "video_aesthetic_gate": {"status": "passed"},
+            "platform_reference_gate": {"status": "passed"},
+            "video_performance_gate": {"status": "passed"},
+        },
+    }), encoding="utf-8")
+    scene = Mock(scene_number=1, video_path=str(video))
+
+    with pytest.raises(ValueError, match="stale for current file"):
+        composition_tasks._require_passed_scene_videos([scene])
 
 
 def test_composition_requires_passed_audio_quality_report_for_dialogue(tmp_path):

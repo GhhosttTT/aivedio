@@ -18,6 +18,7 @@ from src.services.generation_review import (
     FINAL_COMPOSITION_FINISHING_FEATURES,
     GenerationReviewService,
     VIDEO_AESTHETIC_FEATURES,
+    file_hash,
     write_report,
 )
 from src.services.repair_queue import attach_repair_queue
@@ -546,6 +547,18 @@ def _require_passed_scene_videos(scenes: list[Scene]) -> None:
         final_review_error = _final_video_review_error(report)
         if final_review_error:
             failed.append(f"{scene.scene_number}: {final_review_error}")
+            continue
+        reported_hash = report.get("video_sha256")
+        if not isinstance(reported_hash, str) or not reported_hash.strip():
+            failed.append(f"{scene.scene_number}: video quality report is missing video hash evidence")
+            continue
+        try:
+            current_hash = file_hash(video_path)
+        except (OSError, ValueError) as exc:
+            failed.append(f"{scene.scene_number}: cannot hash current video: {exc}")
+            continue
+        if reported_hash.strip().lower() != current_hash:
+            failed.append(f"{scene.scene_number}: video quality report is stale for current file")
     if missing:
         raise ValueError("Missing generated video for scenes: " + ", ".join(missing))
     if failed:
