@@ -15,7 +15,7 @@ from src.api.app import create_app
 from src.api.dependencies import get_current_user, require_project_access
 from src.database.session import get_db_session
 from src.database.models import Project, Character, Scene, User, TaskStatus, ProjectStatus
-from src.api.routes.projects import ProductionOptions, _normalized_production_options
+from src.api.routes.projects import ProductionOptions, _draft_evidence_status, _normalized_production_options
 from src.services.generation_review import file_hash
 
 
@@ -174,6 +174,29 @@ def test_get_project_not_found(client):
         response = client.get("/api/projects/999")
         
         assert response.status_code == 404
+
+
+def test_draft_evidence_status_requires_current_seedance_sidecars(tmp_path):
+    scene = Mock(spec=Scene)
+    scene.scene_number = 2
+    scene.video_path = str(tmp_path / "scene-02.mp4")
+    _write_draft_evidence(scene, {
+        "provider_task_id": "draft-2",
+        "requested_draft": True,
+    })
+    project = Mock()
+    project.scenes = [scene]
+
+    assert _draft_evidence_status(project) == {
+        "draft_ready": True,
+        "draft_missing_scenes": [],
+    }
+
+    Path(scene.video_path).write_bytes(b"changed-video")
+    assert _draft_evidence_status(project) == {
+        "draft_ready": False,
+        "draft_missing_scenes": [2],
+    }
 
 
 def test_update_project_success(client, mock_project):

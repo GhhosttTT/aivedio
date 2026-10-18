@@ -45,6 +45,8 @@ export interface Project {
     scenes?: Scene[];
     final_video_path?: string | null;
     total_scenes?: number;
+    draft_ready?: boolean;
+    draft_missing_scenes?: number[];
 }
 
 export interface SourceVideo {

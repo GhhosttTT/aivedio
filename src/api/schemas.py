@@ -299,6 +299,8 @@ class ProjectResponse(BaseModel):
     updated_at: datetime
     characters: List[CharacterResponse] = []
     scenes: List[SceneResponse] = []
+    draft_ready: bool = False
+    draft_missing_scenes: List[int] = []
 
 
 class ProjectListResponse(BaseModel):

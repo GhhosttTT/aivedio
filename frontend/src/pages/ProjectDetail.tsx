@@ -118,11 +118,14 @@ export function ProjectDetail() {
     const productionBlocked = !readiness || readiness.status !== 'ready';
     const productionBlockedTitle = !readiness ? '生产就绪检查未完成' : readiness.status === 'needs_review' ? '先处理生产复查项' : '先处理生产就绪阻断项';
     const locked = Boolean(busy) || project.status === 'in_production';
-    const draftPromotionBlocked = locked || (project.status === 'completed' && Boolean(project.final_video_path));
+    const draftEvidenceMissing = project.draft_missing_scenes || [];
+    const draftPromotionBlocked = locked || !project.draft_ready || (project.status === 'completed' && Boolean(project.final_video_path));
     const draftPromotionTitle = project.status === 'in_production'
         ? '项目正在制作，请等待当前任务结束'
         : project.status === 'completed' && project.final_video_path
             ? '项目已完成，不能重复提升 Draft'
+            : draftEvidenceMissing.length
+                ? `缺少可提升的 Seedance Draft（分镜：${draftEvidenceMissing.join('、')}）`
             : '将已生成 Draft 提升为正式片';
     const providerPreflight = readiness?.checks?.video_engine?.provider;
     const selectedSeedance = productionOptions.provider === 'seedance_api'

@@ -1004,6 +1004,37 @@ async def create_project(
         )
 
 
+def _draft_evidence_status(project) -> dict:
+    """Expose whether every scene has a current Seedance Draft to promote."""
+    missing: list[int] = []
+    for scene in sorted(project.scenes or [], key=lambda item: item.scene_number):
+        video_path = Path(scene.video_path) if scene.video_path else None
+        provider_path = video_path.with_suffix(".provider.json") if video_path else None
+        metadata = {}
+        if provider_path and provider_path.is_file():
+            try:
+                loaded = json.loads(provider_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    metadata = loaded
+            except (OSError, ValueError):
+                metadata = {}
+        try:
+            current_hash = file_hash(video_path) if video_path and video_path.is_file() else None
+        except (OSError, ValueError):
+            current_hash = None
+        valid = bool(
+            metadata.get("provider_name") == "seedance_api"
+            and metadata.get("requested_draft") is True
+            and isinstance(metadata.get("provider_task_id"), str)
+            and metadata.get("provider_task_id", "").strip()
+            and current_hash
+            and metadata.get("video_sha256") == current_hash
+        )
+        if not valid:
+            missing.append(int(scene.scene_number))
+    return {"draft_ready": bool(project.scenes) and not missing, "draft_missing_scenes": missing}
+
+
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(project_id: int, db_session: Session = Depends(get_db_session)):
     """
@@ -1031,7 +1062,9 @@ async def get_project(project_id: int, db_session: Session = Depends(get_db_sess
                 detail=f"项目不存在: {project_id}"
             )
 
-        return db_project
+        return ProjectResponse.model_validate(db_project).model_copy(
+            update=_draft_evidence_status(db_project)
+        )
 
     except HTTPException:
         raise
