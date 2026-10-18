@@ -123,6 +123,13 @@ def verify_delivery_package(package_path: str | Path) -> dict:
                 ),
                 None,
             )
+            final_archive_name = next(
+                (
+                    archive_name for archive_name in manifest_entries
+                    if archive_name.startswith("media/final_video")
+                ),
+                None,
+            )
             final_review_name = "reviews/final_composition.json"
             if final_review_name in names and isinstance(final_video_entry, dict):
                 try:
@@ -150,6 +157,24 @@ def verify_delivery_package(package_path: str | Path) -> dict:
                         result["errors"].append(
                             "Final composition review technical evidence is missing or insufficient"
                         )
+                    elif any(
+                        key in final_metrics
+                        for key in ("width", "height", "duration_seconds", "sampled_frames")
+                    ):
+                        from src.services.video_quality_metrics import video_candidate_metrics
+
+                        with tempfile.TemporaryDirectory(prefix="delivery-final-verify-") as temporary_root:
+                            final_path = Path(temporary_root) / Path(final_archive_name or "final.mp4").name
+                            final_path.write_bytes(archive.read(final_archive_name))
+                            observed = video_candidate_metrics(final_path, max_samples=8)
+                        if (
+                            not isinstance(observed, dict)
+                            or observed.get("status") != "available"
+                            or observed.get("temporal_sample_evidence") != "sufficient"
+                        ):
+                            result["errors"].append(
+                                "Final composition media failed technical evidence revalidation"
+                            )
             platform_exports = [
                 (archive_name, item)
                 for archive_name, item in manifest_entries.items()

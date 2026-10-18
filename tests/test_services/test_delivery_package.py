@@ -309,6 +309,31 @@ def test_delivery_package_verification_rejects_stale_final_composition_report(tm
     assert any("Final composition review video hash" in error for error in verification["errors"])
 
 
+def test_delivery_package_revalidates_detailed_final_metrics(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "src.services.video_quality_metrics.video_candidate_metrics",
+        lambda path, max_samples=8: {
+            "status": "available",
+            "temporal_sample_evidence": "sufficient",
+        },
+    )
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    report = _passed_final_composition(final)
+    report["final_technical_metrics"].update({"width": 720, "height": 1280, "sampled_frames": 8})
+    final.with_suffix(".composition_review.json").write_text(json.dumps(report), encoding="utf-8")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+
+    manifest = build_delivery_package(
+        project,
+        tmp_path,
+        {"generation": {"status": "passed"}, "final_composition": report},
+        {"status": "ready"},
+    )
+
+    assert manifest["verification"]["status"] == "passed"
+
+
 def test_delivery_package_rejects_stale_platform_export_manifest(tmp_path):
     final = tmp_path / "final.mp4"
     final.write_bytes(b"final-video")
