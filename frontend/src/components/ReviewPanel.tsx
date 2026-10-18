@@ -59,6 +59,8 @@ const repairActionLabels: Record<string, string> = {
     split_scene: '拆分为更简单的原子镜头',
     refreeze_spatial_plan: '重新冻结空间计划',
     fix_workflow_profile: '修复 Workflow Profile',
+    complete_topic_brief: '补齐选题定位',
+    refine_topic_brief: '细化选题定位',
     start_local_reviewer: '启动 llama.cpp 视觉审核后重跑',
     manual_review: '人工复核',
     regenerate_keyframe_with_identity_lock: '按立体画册锁定身份重做关键帧',

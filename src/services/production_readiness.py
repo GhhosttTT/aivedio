@@ -58,6 +58,13 @@ class ProductionReadinessService:
         "missing_character_turnaround_album": ("regenerate_turnaround_album", "character", "setup_required"),
         "missing_character_asset_pack": ("regenerate_character_identity", "character", "setup_required"),
         "missing_character_references": ("regenerate_character_identity", "character", "setup_required"),
+        "topic_brief_incomplete": ("complete_topic_brief", "story", "manual"),
+        "topic_brief_low_specificity": ("refine_topic_brief", "story", "manual"),
+        "weak_story_rhythm": ("rewrite_short_drama_story_rhythm", "script", "setup_required"),
+        "weak_story_room_quality": ("rewrite_short_drama_story_rhythm", "script", "setup_required"),
+        "episode_rhythm_warning": ("rewrite_short_drama_story_rhythm", "script", "setup_required"),
+        "complex_shot_warnings": ("split_scene", "script", "manual"),
+        "weak_spatial_continuity": ("refreeze_spatial_plan", "spatial", "setup_required"),
     }
 
     def __init__(self, db_session: Session):
@@ -128,7 +135,7 @@ class ProductionReadinessService:
             )
 
         action_items = [issue.message for issue in blockers + warnings]
-        repair_actions = self._readiness_repair_actions(blockers)
+        repair_actions = self._readiness_repair_actions([*blockers, *warnings])
         status = "blocked" if blockers else ("needs_review" if warnings else "ready")
         return {
             "project_id": project_id,
@@ -157,7 +164,11 @@ class ProductionReadinessService:
                 "execution": execution,
                 "source_report": "production_readiness",
                 "reason": issue.message,
-                "recommendation": f"Resolve production readiness blocker: {issue.code}.",
+                "severity": issue.severity,
+                "recommendation": (
+                    f"Resolve production readiness {'blocker' if issue.severity == 'blocker' else 'warning'}: "
+                    f"{issue.code}."
+                ),
             })
         return actions
 

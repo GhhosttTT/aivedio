@@ -178,10 +178,10 @@ export function ProductionReadinessPanel({
             ) : null}
             {readinessActions.length > 0 && (
                 <div className="wb-summary-actions">
-                    <h3>阻断修复动作</h3>
+                    <h3>就绪修复动作</h3>
                     {readinessActions.slice(0, 8).map((item) => (
-                        <div className="wb-issue blocker" key={item.action}>
-                            <span>{labelScorecardAction(item.action)}</span>
+                        <div className={`wb-issue ${item.severity === 'warning' ? 'warning' : 'blocker'}`} key={item.action}>
+                            <span>{item.severity === 'warning' ? '建议' : '阻断'} · {labelScorecardAction(item.action)}</span>
                             <p>{item.recommendation} · {item.reason}</p>
                             {isExecutableRepairAction(item.action) && (
                                 <button
@@ -235,6 +235,9 @@ function labelScorecardAction(action: string): string {
         refine_final_composition_finish: '统一最终成片精修',
         refine_dialogue_audio_delivery: '优化对白音频',
         rewrite_short_drama_story_rhythm: '重写短剧节奏',
+        complete_topic_brief: '补齐选题定位',
+        refine_topic_brief: '细化选题定位',
+        split_scene: '拆分复杂分镜',
         refreeze_spatial_plan: '重做空间计划',
         fix_workflow_profile: '修复 Workflow Profile',
     };

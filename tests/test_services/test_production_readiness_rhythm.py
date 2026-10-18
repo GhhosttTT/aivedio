@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from src.services.production_readiness import ProductionReadinessService
+from src.services.production_readiness import ProductionReadinessService, ReadinessIssue
 
 
 def test_production_readiness_promotes_hard_rhythm_conflicts_to_blockers(monkeypatch):
@@ -51,3 +51,35 @@ def test_production_readiness_keeps_soft_rhythm_findings_as_warnings(monkeypatch
     assert result["status"] == "warn"
     assert warnings[0].code == "episode_rhythm_warning"
     assert not blockers
+
+
+def test_production_readiness_maps_warning_findings_to_typed_repair_actions():
+    service = ProductionReadinessService(None)
+    actions = service._readiness_repair_actions([
+        ReadinessIssue(
+            "weak_spatial_continuity", "Review spatial plans", severity="warning"
+        ),
+        ReadinessIssue(
+            "weak_story_rhythm", "Improve rhythm", severity="warning"
+        ),
+    ])
+    assert actions == [
+        {
+            "action": "refreeze_spatial_plan",
+            "stage": "spatial",
+            "execution": "setup_required",
+            "severity": "warning",
+            "source_report": "production_readiness",
+            "reason": "Review spatial plans",
+            "recommendation": "Resolve production readiness warning: weak_spatial_continuity.",
+        },
+        {
+            "action": "rewrite_short_drama_story_rhythm",
+            "stage": "script",
+            "execution": "setup_required",
+            "severity": "warning",
+            "source_report": "production_readiness",
+            "reason": "Improve rhythm",
+            "recommendation": "Resolve production readiness warning: weak_story_rhythm.",
+        },
+    ]
