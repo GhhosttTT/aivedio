@@ -92,10 +92,12 @@ def test_platform_export_rebuilds_when_content_changes_without_signature_change(
     monkeypatch.setattr("src.services.platform_export.video_candidate_metrics", lambda *_args, **_kwargs: {
         "status": "available", "width": 1080, "height": 1920, "fps": 30.0, "duration_seconds": 2.0,
     })
-    export_platform_video(source, tmp_path, "douyin")
+    approval = _approved_report(source)
+    approval["video_signature"] = "stable-signature"
+    export_platform_video(source, tmp_path, "douyin", approval_report=approval)
     (tmp_path / "exports" / "douyin.mp4").write_bytes(b"tampered")
 
-    export_platform_video(source, tmp_path, "douyin")
+    export_platform_video(source, tmp_path, "douyin", approval_report=approval)
 
     assert len(calls) == 2
 
@@ -380,6 +382,7 @@ def _approved_report(source, **updates):
         "status": "passed",
         "video_path": str(source),
         "video_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "video_signature": f"{source.resolve()}:{source.stat().st_size}:{source.stat().st_mtime_ns}",
         "final_technical_metrics": {
             "status": "available",
             "temporal_sample_evidence": "sufficient",

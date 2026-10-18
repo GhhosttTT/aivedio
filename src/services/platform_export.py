@@ -72,6 +72,8 @@ def _validate_source_approval(source: Path, approval_report: dict | None) -> Non
         raise PlatformExportError("Final composition review points to a different source video")
     if approval_report.get("video_sha256") != _sha256(source):
         raise PlatformExportError("Final composition review is stale for the current source video")
+    if approval_report.get("video_signature") != _signature(source):
+        raise PlatformExportError("Final composition review version does not match the current source video")
     technical = approval_report.get("final_technical_metrics")
     if (
         not isinstance(technical, dict)
