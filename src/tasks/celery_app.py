@@ -113,7 +113,7 @@ class BaseTask(celery_app.Task):
     retry_jitter = True
 
     def _production_record(self, args, kwargs, db):
-        if self.name not in {"prepare_generation", "generate_image", "generate_video", "generate_audio", "generate_subtitle", "review_generation", "compose_final_video"}:
+        if self.name not in {"prepare_generation", "generate_image", "generate_video", "generate_audio", "generate_subtitle", "review_generation", "compose_final_video", "finalize_draft_generation"}:
             return None
         from src.database.models import Task as TaskModel
         values = inspect.signature(self.run).bind(*args, **kwargs).arguments

@@ -31,6 +31,7 @@ from src.tasks.video_tasks import generate_video_task, generate_sequence_video_t
 from src.tasks.audio_tasks import generate_audio_task
 from src.tasks.subtitle_tasks import generate_subtitle_task
 from src.tasks.composition_tasks import compose_final_video_task
+from src.tasks.draft_tasks import finalize_draft_generation_task
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -208,6 +209,7 @@ class TaskOrchestrator:
                 len(scenes), generate_images, generate_videos,
                 generate_audios, generate_subtitles,
                 sequence_level_multi_shot=bool(sequence_level_multi_shot),
+                draft_only=bool(draft and generate_videos and not draft_task_id and not draft_task_ids),
             ),
         )
         self.db.add(task_model)
@@ -449,6 +451,7 @@ class TaskOrchestrator:
         generate_audios: bool,
         generate_subtitles: bool,
         sequence_level_multi_shot: bool = False,
+        draft_only: bool = False,
     ) -> int:
         """
         计算总步骤数
@@ -472,7 +475,7 @@ class TaskOrchestrator:
             steps += scene_count
         if generate_subtitles:
             steps += scene_count
-        steps += 3  # Preparation, sampled-frame review, final composition.
+        steps += 1 if draft_only else 3  # Draft finalizer, or review + composition.
         return steps
     
     def _build_task_chain(
@@ -613,7 +616,12 @@ class TaskOrchestrator:
             ])
             tasks.append(subtitle_tasks)
         
-        # 5. 最终合成任务
+        draft_only = bool(draft and generate_videos and not draft_task_id and not draft_task_ids)
+        if draft_only:
+            tasks.append(finalize_draft_generation_task.si(project_id, task_id))
+            return chain(*tasks)
+
+        # 5. Final production review and composition.
         tasks.append(review_generation_task.si(project_id, task_id))
         compose_task = compose_final_video_task.si(
             project_id,
