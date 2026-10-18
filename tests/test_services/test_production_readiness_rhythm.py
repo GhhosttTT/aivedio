@@ -124,6 +124,8 @@ def test_production_readiness_exposes_real_sample_validation_action():
     ]
     assert actions[0]["stage"] == "validation"
     assert actions[0]["execution"] == "manual"
+    assert "preflight" in actions[0]["instructions"]
+    assert "acceptance-package" in actions[0]["instructions"]
 
 
 def test_production_readiness_maps_video_sample_failures_to_targeted_repairs():

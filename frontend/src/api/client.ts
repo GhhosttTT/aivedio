@@ -521,6 +521,7 @@ export interface ProductionReadinessReport {
         source_report: string;
         reason: string;
         recommendation: string;
+        instructions?: string;
     }>;
     checks: {
         script?: {

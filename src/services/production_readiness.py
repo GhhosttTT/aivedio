@@ -204,6 +204,11 @@ class ProductionReadinessService:
             # can target a project's unknown scene.
             if issue.code.startswith("sample_validation_"):
                 action_item["scope"] = "global_sample"
+            if action == "run_real_gpu_sample_validation":
+                action_item["instructions"] = (
+                    "按 docs/local-generation-3060.md 的验收顺序运行：preflight → render-images → "
+                    "review-images → review-video → compare-baseline → summarize → acceptance-package。"
+                )
             actions.append(action_item)
         return actions
 
