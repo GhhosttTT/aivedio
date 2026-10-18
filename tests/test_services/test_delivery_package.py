@@ -39,6 +39,7 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path):
     with zipfile.ZipFile(package) as archive:
         metadata = json.loads(archive.read("metadata/project.json").decode("utf-8"))
     assert metadata["topic_brief"]["platform"] == "抖音"
+    assert "metadata/platform_covers.json" in names
 
 
 def test_delivery_package_requires_ready_review(tmp_path):

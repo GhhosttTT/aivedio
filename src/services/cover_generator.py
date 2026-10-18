@@ -12,11 +12,19 @@ class CoverGenerationError(ValueError):
     """Raised when a readable video cannot produce a cover frame."""
 
 
-def generate_cover(video_path: str | Path, output_path: str | Path) -> dict:
+def generate_cover(
+    video_path: str | Path,
+    output_path: str | Path,
+    *,
+    width: int = 768,
+    height: int = 1344,
+) -> dict:
     source = Path(video_path)
     output = Path(output_path)
     if not source.is_file():
         raise CoverGenerationError(f"Final video is missing: {source}")
+    if width <= 0 or height <= 0:
+        raise CoverGenerationError("Cover dimensions must be positive")
     duration = _duration(source)
     if duration <= 0:
         return {"status": "unavailable", "reason": "video duration is unreadable"}
@@ -25,7 +33,7 @@ def generate_cover(video_path: str | Path, output_path: str | Path) -> dict:
     command = [
         "ffmpeg", "-ss", f"{timestamp:.6f}", "-i", str(source),
         "-frames:v", "1",
-        "-vf", "scale=768:1344:force_original_aspect_ratio=increase,crop=768:1344",
+        "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}",
         "-q:v", "2", "-y", str(output),
     ]
     try:
@@ -39,8 +47,8 @@ def generate_cover(video_path: str | Path, output_path: str | Path) -> dict:
         "path": str(output),
         "source": str(source),
         "timestamp_seconds": round(timestamp, 6),
-        "width": 768,
-        "height": 1344,
+        "width": width,
+        "height": height,
         "selection": "hook_18_percent",
     }
 

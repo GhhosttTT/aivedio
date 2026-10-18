@@ -242,9 +242,30 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
     files.append((project_metadata, "metadata/project.json"))
     if cover_report.get("status") == "ready":
         files.append((cover_path, "cover/cover.jpg"))
+    platform_cover_reports = {}
+    export_root = root / "exports"
+    if export_root.is_dir():
+        for export_path in sorted(export_root.glob("*.mp4")):
+            preset = export_path.stem
+            width, height = 768, 1344
+            manifest_path_for_export = export_root / f"{preset}.json"
+            try:
+                export_manifest = json.loads(manifest_path_for_export.read_text(encoding="utf-8"))
+                width = int(export_manifest.get("width") or width)
+                height = int(export_manifest.get("height") or height)
+            except (OSError, ValueError, TypeError):
+                pass
+            platform_cover_path = delivery_root / "covers" / f"{preset}.jpg"
+            platform_cover = generate_cover(export_path, platform_cover_path, width=width, height=height)
+            platform_cover_reports[preset] = platform_cover
+            if platform_cover.get("status") == "ready":
+                files.append((platform_cover_path, f"covers/{preset}.jpg"))
     cover_metadata = delivery_root / "cover_metadata.json"
     _write_json_atomic(cover_metadata, cover_report)
     files.append((cover_metadata, "metadata/cover.json"))
+    platform_cover_metadata = delivery_root / "platform_cover_metadata.json"
+    _write_json_atomic(platform_cover_metadata, platform_cover_reports)
+    files.append((platform_cover_metadata, "metadata/platform_covers.json"))
 
     manifest_files = []
     for source, archive_name in files:
@@ -268,6 +289,7 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         "quality_summary": review_summary,
         "report_statuses": report_statuses,
         "cover": cover_report,
+        "platform_covers": platform_cover_reports,
         "files": manifest_files,
         "package_path": str(package_path),
     }
