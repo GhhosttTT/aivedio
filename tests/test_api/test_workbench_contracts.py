@@ -731,8 +731,11 @@ def test_production_readiness_reports_video_workflow_quality_contract_gaps(setup
     payload = response.json()
     contract = payload["checks"]["workflow_profile"]["video_quality_contract"]
     assert set(contract["missing_groups"]) >= {"prompt", "quality_pipeline", "quality_profile", "reference", "repair_action"}
+    image_contract = payload["checks"]["workflow_profile"]["image_spatial_contract"]
+    assert set(image_contract["missing_groups"]) == {"spatial_asset_contract", "spatial_control_references", "spatial_plan"}
     blocker = next(item for item in payload["blockers"] if item["code"] == "workflow_profile_not_ready")
     assert "video_placeholders=" in blocker["message"]
+    assert "image_spatial_placeholders=" in blocker["message"]
 
 
 def test_production_readiness_accepts_vertical_mobile_format(setup, monkeypatch):

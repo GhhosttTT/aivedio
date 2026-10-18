@@ -585,6 +585,16 @@ export interface ProductionReadinessReport {
             stale?: string[];
             missing_capabilities?: string[];
             quality_budget_issues?: string[];
+            image_spatial_contract?: {
+                groups?: Record<string, boolean>;
+                missing_groups?: string[];
+                placeholders?: string[];
+            };
+            video_quality_contract?: {
+                groups?: Record<string, boolean>;
+                missing_groups?: string[];
+                placeholders?: string[];
+            };
             minimum_quality_budget?: Record<string, unknown>;
             profile?: {
                 capabilities?: Record<string, boolean | number | string | string[] | Record<string, number> | Array<Record<string, string>>>;
