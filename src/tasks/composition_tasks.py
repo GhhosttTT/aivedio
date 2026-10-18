@@ -952,6 +952,11 @@ def _composition_review_error(report: dict) -> str | None:
     if not settings.GENERATION_REQUIRE_VIDEO_REVIEW:
         return None
     boundary = report.get("technical_boundary_report")
+    if isinstance(boundary, dict) and boundary.get("status") == "unavailable":
+        return (
+            "final composed video shot-boundary metrics are unavailable: "
+            f"{boundary.get('error') or 'OpenCV could not inspect adjacent shot boundaries'}"
+        )
     if isinstance(boundary, dict) and boundary.get("status") == "available":
         severe_transition_count = int(boundary.get("severe_transition_count") or 0)
         if severe_transition_count > 0:

@@ -751,6 +751,25 @@ def test_composition_review_blocks_severe_boundary_transition():
     )
 
 
+def test_composition_review_blocks_unavailable_boundary_metrics():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "technical_boundary_report": {
+            "status": "unavailable",
+            "error": "cannot read adjacent clip",
+        },
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video shot-boundary metrics are unavailable: cannot read adjacent clip"
+    )
+
+
 def test_composition_review_requires_identity_and_temporal_evidence():
     report = passed_composition_review()
     del report["batches"][0]["review"]["temporal_consistency"]
