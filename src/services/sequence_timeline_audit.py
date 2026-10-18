@@ -56,10 +56,23 @@ class SequenceTimelineAuditService:
                 "code": "segment_count_mismatch",
                 "message": f"planned {len(planned_list)} segments but published {len(actual_list)}",
             })
+        self._validate_planned_boundaries(planned_list, issues)
         segments = []
         for index, expected in enumerate(planned_list):
             observed = actual_list[index] if index < len(actual_list) else {}
             scene_number = expected.get("scene_number")
+            if observed and observed.get("scene_number") != scene_number:
+                issues.append({
+                    "severity": "high",
+                    "code": "segment_scene_order_mismatch",
+                    "scene_number": scene_number,
+                    "expected_scene_number": scene_number,
+                    "actual_scene_number": observed.get("scene_number"),
+                    "message": (
+                        f"planned scene {scene_number} was published as "
+                        f"scene {observed.get('scene_number')}"
+                    ),
+                })
             expected_duration = self._number(expected.get("duration_seconds"))
             actual_duration = self._number(observed.get("duration_seconds"))
             item = {
@@ -107,6 +120,53 @@ class SequenceTimelineAuditService:
                 })
         status = "needs_review" if issues else "passed"
         return SequenceTimelineAuditReport(status, len(planned_list), len(actual_list), segments, issues)
+
+    def _validate_planned_boundaries(
+        self,
+        planned: list[dict[str, Any]],
+        issues: list[dict[str, Any]],
+    ) -> None:
+        """Reject gaps, overlaps, and malformed ranges before comparing media."""
+        previous_end = None
+        for index, item in enumerate(planned):
+            start = self._number(item.get("start_seconds"))
+            end = self._number(item.get("end_seconds"))
+            duration = self._number(item.get("duration_seconds"))
+            scene_number = item.get("scene_number")
+            if start is None or end is None or end <= start:
+                issues.append({
+                    "severity": "high",
+                    "code": "invalid_planned_boundary",
+                    "scene_number": scene_number,
+                    "message": f"planned scene {scene_number} has an invalid time range",
+                })
+                continue
+            if duration is None or abs((end - start) - duration) > self.TOLERANCE_SECONDS:
+                issues.append({
+                    "severity": "high",
+                    "code": "planned_boundary_duration_mismatch",
+                    "scene_number": scene_number,
+                    "message": f"planned scene {scene_number} range does not match its duration",
+                })
+            if index == 0 and abs(start) > self.TOLERANCE_SECONDS:
+                issues.append({
+                    "severity": "high",
+                    "code": "planned_timeline_does_not_start_at_zero",
+                    "scene_number": scene_number,
+                    "message": "planned sequence timeline must start at 0 seconds",
+                })
+            if previous_end is not None and abs(start - previous_end) > self.TOLERANCE_SECONDS:
+                code = "planned_timeline_gap" if start > previous_end else "planned_timeline_overlap"
+                issues.append({
+                    "severity": "high",
+                    "code": code,
+                    "scene_number": scene_number,
+                    "message": (
+                        f"planned scene {scene_number} starts at {start:.3f}s, "
+                        f"but the prior boundary ends at {previous_end:.3f}s"
+                    ),
+                })
+            previous_end = end
 
     def _number(self, value) -> float | None:
         try:

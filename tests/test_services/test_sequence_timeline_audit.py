@@ -63,3 +63,29 @@ def test_sequence_timeline_audit_is_not_applicable_without_segments():
     report = SequenceTimelineAuditService().audit([], [])
 
     assert report.status == "not_applicable"
+
+
+def test_sequence_timeline_audit_rejects_gaps_and_overlaps_in_plan():
+    report = SequenceTimelineAuditService().audit(
+        [_planned(1, 2.0), _planned(2, 2.0, 2.4)],
+        [
+            {"scene_number": 1, "duration_seconds": 2.0},
+            {"scene_number": 2, "duration_seconds": 2.0},
+        ],
+    )
+
+    assert report.status == "needs_review"
+    assert "planned_timeline_gap" in {issue["code"] for issue in report.issues}
+
+
+def test_sequence_timeline_audit_rejects_published_scene_reordering():
+    report = SequenceTimelineAuditService().audit(
+        [_planned(1, 2.0), _planned(2, 2.0, 2.0)],
+        [
+            {"scene_number": 2, "duration_seconds": 2.0},
+            {"scene_number": 1, "duration_seconds": 2.0},
+        ],
+    )
+
+    assert report.status == "needs_review"
+    assert sum(issue["code"] == "segment_scene_order_mismatch" for issue in report.issues) == 2
