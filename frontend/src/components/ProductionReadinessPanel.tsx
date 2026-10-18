@@ -18,6 +18,7 @@ export function ProductionReadinessPanel({
     const issues = [...(report?.blockers || []), ...(report?.warnings || [])].slice(0, 5);
     const script = report?.checks.script;
     const storyRhythm = report?.checks.story_rhythm;
+    const storyRoom = report?.checks.story_room;
     const visualFormat = report?.checks.visual_format;
     const characters = report?.checks.characters;
     const complexity = report?.checks.shot_complexity;
@@ -52,6 +53,7 @@ export function ProductionReadinessPanel({
             <div className="wb-grid compact">
                 <Metric label="分镜" value={script ? `${script.scene_count}/${script.minimum_production_scenes}` : '未检查'}/>
                 <Metric label="剧情节奏" value={storyRhythm ? `${storyRhythm.score}/5 ${storyRhythm.status}` : '未检查'}/>
+                <Metric label="故事房质量" value={storyRoom ? `${storyRoom.score}/9 ${storyRoom.status}` : '未检查'}/>
                 <Metric label="成片画幅" value={visualFormat ? `${visualFormat.width}x${visualFormat.height}` : '未检查'}/>
                 <Metric label="角色身份" value={characters ? `${characters.characters.filter(item => item.has_identity_spec && !item.missing_identity_fields.length).length}/${characters.visible_character_names.length}` : '未检查'}/>
                 <Metric label="角色参考" value={characters ? `${characters.visible_character_names.length - characters.missing_references.length}/${characters.visible_character_names.length}` : '未检查'}/>
@@ -63,6 +65,26 @@ export function ProductionReadinessPanel({
                 <Metric label="样片质量分" value={qualityScorecard ? formatScore(qualityScorecard.production_score) : '未检查'}/>
                 <Metric label="视频引擎" value={report?.checks.video_engine?.status || '未预检'}/>
             </div>
+            {storyRoom && storyRoom.missing?.length > 0 && (
+                <div className="wb-summary-actions">
+                    <div className="wb-row wb-between">
+                        <div>
+                            <h3>故事房修复建议</h3>
+                            <p className="wb-muted">正式成片前先补齐结构证据，避免把 GPU 预算花在弱剧本上。</p>
+                        </div>
+                        <span className="wb-badge">{storyRoom.missing.length} 项待修复</span>
+                    </div>
+                    <div className="wb-issue warning">
+                        <span>缺项</span>
+                        <p>{storyRoom.missing.join(' / ')}</p>
+                    </div>
+                    {storyRoom.rewrite_actions?.slice(0, 4).map(action => (
+                        <div className="wb-issue warning" key={action}>
+                            <span>建议</span><p>{action}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
             {qualityScorecard && (
                 <div className="wb-summary-actions">
                     <div className="wb-row wb-between">

@@ -471,6 +471,14 @@ export interface ProductionReadinessReport {
             missing: string[];
             signals?: Record<string, any>;
         };
+        story_room?: {
+            status: string;
+            score: number;
+            missing: string[];
+            rewrite_actions?: string[];
+            signals?: Record<string, any>;
+            scene_notes?: Array<{scene_number: number; reason: string; signals?: string[]}>;
+        };
         visual_format?: {
             status: string;
             width: number;
