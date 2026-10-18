@@ -9,7 +9,7 @@ import { ReviewPanel } from '../components/ReviewPanel';
 import { VideoEngineStatus } from '../components/VideoEngineStatus';
 import { ProductionReadinessPanel } from '../components/ProductionReadinessPanel';
 import CharacterManager from './CharacterManager';
-import type { ProductionReadinessReport } from '../api/client';
+import type { GenerationReviewResponse, ProductionReadinessReport } from '../api/client';
 
 export function ProjectDetail() {
     const {id} = useParams();
@@ -21,6 +21,7 @@ export function ProjectDetail() {
     const [loading, setLoading] = useState(true);
     const [readiness, setReadiness] = useState<ProductionReadinessReport | null>(null);
     const [readinessLoading, setReadinessLoading] = useState(false);
+    const [reviewSummary, setReviewSummary] = useState<GenerationReviewResponse | null>(null);
     const [deliveryUrl, setDeliveryUrl] = useState('');
     const [topicBrief, setTopicBrief] = useState({audience: '', platform: '', genre: '', hook_type: '', region: '', policy_notes: ''});
     const [assetNotes, setAssetNotes] = useState('');
@@ -31,15 +32,16 @@ export function ProjectDetail() {
     const reload = useCallback(async () => {
         try {
             const projectId = Number(id);
-            const [data, latest, ready, brief] = await Promise.all([
+            const [data, latest, ready, brief, review] = await Promise.all([
                 projectApi.getProject(projectId),
                 projectApi.latestTask(projectId),
                 // The production button and model restrictions must use the same
                 // engine preflight that the backend enforces on task creation.
                 projectApi.productionReadiness(projectId, true, productionOptions.provider || undefined, productionOptions.model || undefined, productionOptions.request_mode || undefined, productionOptions.resolution || undefined, productionOptions.output_format || undefined, productionOptions.duration_seconds),
                 projectApi.topicBrief(projectId),
+                projectApi.reviews(projectId),
             ]);
-            setProject(data); setTask(latest); setReadiness(ready); setTopicBrief(current => ({...current, ...(brief.brief || {})})); setError('');
+            setProject(data); setTask(latest); setReadiness(ready); setReviewSummary(review); setTopicBrief(current => ({...current, ...(brief.brief || {})})); setError('');
         } catch(e) { setError(errorText(e)); }
         finally { setLoading(false); }
     }, [id, productionOptions.provider, productionOptions.model, productionOptions.request_mode, productionOptions.resolution, productionOptions.output_format, productionOptions.duration_seconds]);
@@ -123,6 +125,12 @@ export function ProjectDetail() {
     if (!project) return <main className="workbench"><Link to="/projects">返回项目</Link><p role="alert" className="wb-alert">{error || '项目不存在'}</p><button className="wb-button" onClick={reload}>重试</button></main>;
     const productionBlocked = !readiness || readiness.status !== 'ready';
     const productionBlockedTitle = !readiness ? '生产就绪检查未完成' : readiness.status === 'needs_review' ? '先处理生产复查项' : '先处理生产就绪阻断项';
+    const deliveryReady = reviewSummary?.summary?.status === 'ready';
+    const deliveryTitle = !reviewSummary
+        ? '最终审核状态尚未加载'
+        : deliveryReady
+            ? '导出已通过审核的交付包'
+            : '最终审核未 ready：请完成抽帧、基线对比和人工终审';
     const locked = Boolean(busy) || project.status === 'in_production';
     const draftEvidenceMissing = project.draft_missing_scenes || [];
     const draftExpiredScenes = project.draft_expired_scenes || [];
@@ -301,7 +309,7 @@ export function ProjectDetail() {
             <div className="wb-row">
                 <button className="wb-icon" title="刷新项目" aria-label="刷新项目" onClick={reload}><RefreshCw size={17}/></button>
                 {project.final_video_path && <Link className="wb-button" to={`/projects/${id}/video`}><Film size={17}/>查看成片</Link>}
-                {project.final_video_path && <button className="wb-button" disabled={locked} onClick={() => run('导出交付包')}><Download size={17}/>导出交付包</button>}
+                {project.final_video_path && <button className="wb-button" disabled={locked || !deliveryReady} title={deliveryTitle} onClick={() => run('导出交付包')}><Download size={17}/>导出交付包</button>}
                 {deliveryUrl && <a className="wb-button" href={deliveryUrl}><Download size={17}/>下载 ZIP</a>}
                 <button className="wb-button primary" disabled={locked || !project.scenes?.length || productionBlocked || Boolean(productionOptionIssue)} title={productionOptionIssue || (productionBlocked ? productionBlockedTitle : '开始制作')} onClick={() => run('提交制作')}><Play size={17}/>开始制作</button>
             </div>
@@ -344,7 +352,7 @@ export function ProjectDetail() {
                 {[['douyin', '抖音竖屏'], ['shorts', 'Shorts / Reels'], ['landscape', '横屏 16:9'], ['square', '方形 1:1']].map(([preset, label]) => {
                     const exported = platformExports[preset];
                     return <span key={preset} className="wb-row">
-                        <button className="wb-button" disabled={locked || !readiness || readiness.status !== 'ready'} onClick={() => run(`导出平台:${preset}`)}>{label}</button>
+                        <button className="wb-button" disabled={locked || !deliveryReady} title={deliveryTitle} onClick={() => run(`导出平台:${preset}`)}>{label}</button>
                         {exported && <>
                             <span className="wb-muted" title="导出文件技术验收">{exported.width}×{exported.height} · {exported.fps}fps · {exported.technicalStatus === 'available' ? '已验收' : '需复核'}</span>
                             <a className="wb-button" href={exported.url}>下载</a>
