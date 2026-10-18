@@ -54,6 +54,35 @@ REQUIRED_SAMPLE_COVERAGE = {
     "two_character_regional_identity": "two-character frame with independent regional identity references",
 }
 
+REQUIRED_BASELINE_GATES = {
+    "sufficient_temporal_samples",
+    "duration_close",
+    "fps_close",
+    "pixel_format_not_lower",
+    "resolution_not_lower",
+    "aspect_ratio_close",
+    "motion_not_static",
+    "sharpness_not_collapsed",
+    "exposure_close",
+    "brightness_stable",
+    "no_prolonged_static_run",
+    "no_prolonged_black_run",
+    "black_frame_ratio_acceptable",
+    "no_temporal_exposure_jumps",
+    "stable_motion_cadence",
+    "no_temporal_visual_resets",
+    "no_extreme_temporal_visual_reset",
+    "audio_presence_matches",
+    "audio_duration_close",
+    "audio_signal_usable",
+    "audio_not_clipped",
+    "audio_start_aligned",
+    "audio_level_close",
+    "audio_rms_close",
+    "visual_structure_reference_available",
+    "visual_structure_not_diverged",
+}
+
 REQUIRED_MANUAL_CASE_DIMENSIONS = {
     "identity_match": "character identity, wardrobe, and face match the intended role",
     "character_distinctiveness": "different characters remain visually separable with no same-face casting",
@@ -892,6 +921,25 @@ def _baseline_contact_sheet_present(baseline_report: dict | None, output: Path) 
     return path.is_file()
 
 
+def _baseline_comparison_passed(baseline_report: dict | None, output: Path) -> bool:
+    """Require the same objective evidence used by the delivery API gate."""
+    if not isinstance(baseline_report, dict) or baseline_report.get("status") != "passed":
+        return False
+    gates = baseline_report.get("gates")
+    score = baseline_report.get("score")
+    minimum_score = baseline_report.get("min_score")
+    return bool(
+        baseline_report.get("kind") == "seed_dance_baseline_comparison"
+        and isinstance(gates, dict)
+        and REQUIRED_BASELINE_GATES.issubset(gates)
+        and all(gates.get(name) is True for name in REQUIRED_BASELINE_GATES)
+        and isinstance(score, (int, float))
+        and isinstance(minimum_score, (int, float))
+        and score >= minimum_score
+        and _baseline_contact_sheet_present(baseline_report, output)
+    )
+
+
 def _manual_media_reference_exists(output: Path, value) -> bool:
     if not isinstance(value, str) or not value.strip():
         return False
@@ -1178,11 +1226,8 @@ def summarize_validation(output: Path):
         not isinstance(baseline_gates, dict)
         or "visual_structure_not_diverged" in baseline_gates
     )
-    checks["baseline_comparison_passed"] = bool(
-        baseline_comparison_report
-        and baseline_comparison_report.get("status") == "passed"
-        and checks["baseline_contact_sheet_present"]
-        and checks["baseline_visual_structure_gate_present"]
+    checks["baseline_comparison_passed"] = _baseline_comparison_passed(
+        baseline_comparison_report, output
     )
     manual_cases = manual_review.get("cases", []) if isinstance(manual_review, dict) else []
     manual_clip = _manual_clip_review(manual_review)

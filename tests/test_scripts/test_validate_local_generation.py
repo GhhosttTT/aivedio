@@ -105,7 +105,14 @@ def passed_video_review():
 def passed_seed_dance_baseline(tmp_path):
     contact_sheet = tmp_path / "seed_dance_contact_sheet.png"
     contact_sheet.write_bytes(b"visual comparison evidence")
-    return {"status": "passed", "score": 4.2, "contact_sheet_path": str(contact_sheet)}
+    return {
+        "kind": "seed_dance_baseline_comparison",
+        "status": "passed",
+        "score": 4.2,
+        "min_score": 4.0,
+        "contact_sheet_path": str(contact_sheet),
+        "gates": {name: True for name in validator.REQUIRED_BASELINE_GATES},
+    }
 
 
 def passed_image_review(*ids):
