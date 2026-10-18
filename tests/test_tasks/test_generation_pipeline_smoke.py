@@ -827,6 +827,30 @@ def test_composition_review_blocks_clipped_optional_audio():
     )
 
 
+@pytest.mark.parametrize(
+    ("audio_rms_db", "expected"),
+    [(-40.0, "too quiet"), (-6.0, "too loud")],
+)
+def test_composition_review_blocks_extreme_final_audio_mix_levels(audio_rms_db, expected):
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_audio_expected": True,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "audio_present": True,
+            "audio_signal_status": "usable",
+            "audio_rms_db": audio_rms_db,
+            "audio_duration_delta_seconds": 0.0,
+        },
+    }
+    error = composition_tasks._composition_review_error(report)
+    assert error is not None
+    assert expected in error
+
+
 def test_composition_review_blocks_optional_audio_start_drift():
     report = {
         "status": "passed",

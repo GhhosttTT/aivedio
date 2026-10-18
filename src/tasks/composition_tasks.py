@@ -1172,6 +1172,21 @@ def _composition_review_error(report: dict) -> str | None:
                 f"limit={settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95:.3f}"
             )
         audio_present = technical.get("audio_present") is True
+        if audio_present:
+            audio_rms_db = technical.get("audio_rms_db")
+            if isinstance(audio_rms_db, (int, float)) and math.isfinite(float(audio_rms_db)):
+                if audio_rms_db < settings.GENERATION_VIDEO_AUDIO_RMS_MIN_DB:
+                    return (
+                        "final composed video audio mix is too quiet: "
+                        f"audio_rms_db={audio_rms_db:.2f}, minimum="
+                        f"{settings.GENERATION_VIDEO_AUDIO_RMS_MIN_DB:.2f}"
+                    )
+                if audio_rms_db > settings.GENERATION_VIDEO_AUDIO_RMS_MAX_DB:
+                    return (
+                        "final composed video audio mix is too loud: "
+                        f"audio_rms_db={audio_rms_db:.2f}, maximum="
+                        f"{settings.GENERATION_VIDEO_AUDIO_RMS_MAX_DB:.2f}"
+                    )
         if audio_present and report.get("final_audio_expected") is not True:
             audio_signal_status = technical.get("audio_signal_status")
             if audio_signal_status in {"near_silent", "unavailable"}:

@@ -148,6 +148,10 @@ class Settings(BaseSettings):
     GENERATION_VIDEO_AUDIO_NEAR_SILENT_PEAK_DB: float = -55.0
     GENERATION_VIDEO_AUDIO_SILENCE_RATIO: float = 0.95
     GENERATION_VIDEO_AUDIO_CLIPPING_PEAK_DB: float = -0.1
+    # Final mobile mixes should remain audible without pushing sustained
+    # program material into an overly hot, fatiguing level.
+    GENERATION_VIDEO_AUDIO_RMS_MIN_DB: float = -35.0
+    GENERATION_VIDEO_AUDIO_RMS_MAX_DB: float = -8.0
     GENERATION_VIDEO_OUTPUT_FPS: int = 24
     GENERATION_VIDEO_POSTPROCESS: bool = True
     GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK: bool = False
