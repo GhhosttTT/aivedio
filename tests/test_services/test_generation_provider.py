@@ -668,6 +668,20 @@ def test_provider_remembers_draft_creation_time():
     assert provider.last_result_metadata["provider_created_at"] == "2026-10-10T12:00:00Z"
 
 
+def test_provider_prefers_explicit_draft_task_id_for_promotion():
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+    provider.last_result_metadata["requested_draft"] = True
+
+    provider._remember_result_metadata({
+        "id": "request-envelope-1",
+        "draft_task_id": "draft-promotable-1",
+        "status": "succeeded",
+    })
+
+    assert provider.last_result_metadata["provider_draft_task_id"] == "draft-promotable-1"
+    assert provider.last_result_metadata["provider_task_id"] == "draft-promotable-1"
+
+
 def test_provider_remembers_draft_expiry_time():
     provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
 

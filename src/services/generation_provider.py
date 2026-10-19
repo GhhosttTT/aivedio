@@ -1418,7 +1418,15 @@ class ApiVideoProvider:
         last_frame = _extract_media_url(data, ("last_frame_url", "last_frame", "last_frame_uri"))
         if last_frame:
             self.last_result_metadata["last_frame_url"] = last_frame
+        draft_task_id = _extract_first(data, ("draft_task_id", "draft_id"))
+        if draft_task_id:
+            self.last_result_metadata["provider_draft_task_id"] = str(draft_task_id)
         task_id = _extract_first(data, ("task_id", "job_id", "request_id", "id"))
+        # Some gateways wrap a Draft in a request envelope and expose both
+        # identifiers. Only the Draft ID can be promoted later, so it must be
+        # the resumable/persisted task identity for an explicit Draft run.
+        if self.last_result_metadata.get("requested_draft") and draft_task_id:
+            task_id = draft_task_id
         if task_id:
             self.last_result_metadata["provider_task_id"] = str(task_id)
         created_at = _extract_first(data, ("created_at", "createdAt", "create_time"))
