@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { apiOrigin } from '../api/client';
 
 export interface WebSocketMessage {
     type: string;
@@ -19,7 +20,7 @@ export interface WebSocketMessage {
  * WebSocket Hook - 实时通信
  * 
  * 注意：WebSocket URL 格式必须与后端路由匹配
- * 后端路由：/ws/progress/{project_id}
+ * 后端路由：/ws/{project_id}
  */
 export const useWebSocket = (projectId: string) => {
     const [messages, setMessages] = useState<WebSocketMessage[]>([]);
@@ -32,7 +33,8 @@ export const useWebSocket = (projectId: string) => {
             setIsConnected(false);
             return;
         }
-        const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000';
+        const configuredWsBase = import.meta.env.VITE_WS_BASE_URL as string | undefined;
+        const wsBaseUrl = (configuredWsBase || apiOrigin.replace(/^http/, 'ws')).replace(/\/+$/, '');
         const token = localStorage.getItem('auth_token');
         if (!token) {
             setIsConnected(false);
