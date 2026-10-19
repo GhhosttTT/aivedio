@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from src.services.asr_service import LocalASRService
 
 
@@ -51,3 +53,24 @@ def test_srt_time_format_rounds_to_milliseconds():
     service = LocalASRService()
 
     assert service._format_srt_time(3661.2345) == "01:01:01,234"
+
+
+def test_srt_write_failure_keeps_previous_output_and_cleans_temp(tmp_path, monkeypatch):
+    service = LocalASRService()
+    srt_path = tmp_path / "transcript.zh.srt"
+    srt_path.write_text("previous-good-subtitles", encoding="utf-8")
+
+    original_replace = Path.replace
+
+    def fail_replace(self, target):
+        if self.name.startswith(".transcript"):
+            raise OSError("simulated publish failure")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="simulated publish failure"):
+        service._write_srt(srt_path, [])
+
+    assert srt_path.read_text(encoding="utf-8") == "previous-good-subtitles"
+    assert not list(tmp_path.glob(".transcript.*.part.srt"))

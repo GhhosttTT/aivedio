@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from uuid import uuid4
 from dataclasses import asdict
 from pathlib import Path
 from typing import Iterable, List
@@ -142,7 +143,16 @@ class TranscriptFusionService:
             "source": "ocr_asr_fusion",
             "segments": [asdict(segment) for segment in segments],
         }
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.stem}.{uuid4().hex}.part{path.suffix}")
+        try:
+            temporary.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def _best_matching_asr_index(self, ocr_segment: ASRSegment, asr_segments: List[ASRSegment]) -> int | None:
         best_index = None

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from uuid import uuid4
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional
@@ -57,7 +58,13 @@ class LocalASRService:
         if settings.ASR_BACKEND == "faster_whisper":
             segments = self._transcribe_with_faster_whisper(str(audio_path))
         elif settings.ASR_BACKEND == "command":
-            segments = self._transcribe_with_command(str(audio_path), str(transcript_path))
+            raw_transcript_path = _temporary_path(transcript_path)
+            try:
+                segments = self._transcribe_with_command(
+                    str(audio_path), str(raw_transcript_path)
+                )
+            finally:
+                raw_transcript_path.unlink(missing_ok=True)
         else:
             raise ASRError(f"unsupported ASR backend: {settings.ASR_BACKEND}")
 
@@ -98,8 +105,9 @@ class LocalASRService:
             "16000",
             "-acodec",
             "pcm_s16le",
-            audio_path,
+            str(_temporary_path(Path(audio_path))),
         ]
+        temporary_audio_path = Path(command[-1])
         completed = subprocess.run(
             command,
             check=False,
@@ -108,9 +116,14 @@ class LocalASRService:
             timeout=settings.ASR_TIMEOUT_SECONDS,
         )
         if completed.returncode != 0:
+            temporary_audio_path.unlink(missing_ok=True)
             raise ASRError(f"ffmpeg audio extraction failed: {completed.stderr}")
-        if not Path(audio_path).exists():
-            raise ASRError(f"ffmpeg did not create audio file: {audio_path}")
+        try:
+            if not temporary_audio_path.is_file() or temporary_audio_path.stat().st_size <= 0:
+                raise ASRError(f"ffmpeg did not create audio file: {audio_path}")
+            temporary_audio_path.replace(audio_path)
+        finally:
+            temporary_audio_path.unlink(missing_ok=True)
 
     def _transcribe_with_faster_whisper(self, audio_path: str) -> List[ASRSegment]:
         try:
@@ -200,7 +213,10 @@ class LocalASRService:
             "language": settings.ASR_LANGUAGE,
             "segments": [asdict(segment) for segment in segments],
         }
-        transcript_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        _atomic_write_text(
+            transcript_path,
+            json.dumps(payload, ensure_ascii=False, indent=2),
+        )
 
     def _write_srt(self, srt_path: Path, segments: Iterable[ASRSegment]) -> None:
         lines: List[str] = []
@@ -213,7 +229,7 @@ class LocalASRService:
                     "",
                 ]
             )
-        srt_path.write_text("\n".join(lines), encoding="utf-8")
+        _atomic_write_text(srt_path, "\n".join(lines))
 
     def _format_srt_time(self, seconds: float) -> str:
         milliseconds = int(round(max(0.0, seconds) * 1000))
@@ -221,3 +237,20 @@ class LocalASRService:
         minutes, remainder = divmod(remainder, 60_000)
         secs, millis = divmod(remainder, 1000)
         return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+
+def _temporary_path(destination: Path) -> Path:
+    suffix = destination.suffix or ".part"
+    return destination.with_name(f".{destination.stem}.{uuid4().hex}.part{suffix}")
+
+
+def _atomic_write_text(destination: Path, content: str) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = _temporary_path(destination)
+    try:
+        temporary.write_text(content, encoding="utf-8")
+        if temporary.stat().st_size <= 0 and content:
+            raise ASRError(f"ASR output was not written: {destination}")
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
