@@ -175,10 +175,22 @@ class CharacterIdentityConsistencyService:
     def _candidate_characters(self, candidate: dict[str, Any]) -> list[str]:
         values = candidate.get("character_name")
         if values is None and isinstance(candidate.get("scene"), dict):
-            values = candidate["scene"].get("character_name") or candidate["scene"].get("characters")
+            scene = candidate["scene"]
+            values = (
+                scene.get("character_name")
+                or scene.get("visible_characters")
+                or scene.get("characters")
+            )
         if isinstance(values, str):
             values = [values]
-        return list(dict.fromkeys(str(value).strip() for value in (values or []) if str(value).strip()))
+        names = []
+        for value in values or []:
+            if isinstance(value, dict):
+                value = value.get("name") or value.get("character_name") or value.get("character")
+            name = str(value).strip()
+            if name and name not in names:
+                names.append(name)
+        return names
 
     def _scene_characters(self, scene) -> list[str]:
         values = []

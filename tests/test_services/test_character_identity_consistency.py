@@ -155,3 +155,19 @@ def test_character_identity_consistency_reads_visible_multi_character_scene_fiel
     assert report.status == "passed"
     assert report.character_count == 2
     assert {item["character"] for item in report.observations} == {"Alice", "Bob"}
+
+
+def test_character_identity_consistency_reads_visible_characters_from_candidate_scene():
+    scenes = [SimpleNamespace(scene_number=1, character_name="Alice")]
+    reports = {
+        "generation": {"cases": [{
+            "scene_number": 1,
+            "scene": {"visible_characters": [{"name": "Alice"}, {"name": "Bob"}]},
+            "review": {"identity_consistency": {"score": 4.5}},
+        }]},
+    }
+
+    report = CharacterIdentityConsistencyService().audit(scenes, reports)
+
+    assert report.status == "passed"
+    assert {item["character"] for item in report.observations} == {"Alice", "Bob"}
