@@ -143,6 +143,14 @@ class TaskOrchestrator:
                 )
                 return active_task.celery_task_id
             raise ValueError("项目正在制作，请等待当前任务结束")
+        # The video generator applies this same normalization at request time.
+        # Do it before readiness/preflight and persistence as well, otherwise
+        # the project can be approved as a single-shot request while the
+        # worker actually submits the Seedance multi-shot contract.
+        effective_request_mode = request_mode
+        normalized_mode = str(request_mode or "").strip().lower()
+        if multi_shot is True and normalized_mode in {"", "reference", "reference_to_video"}:
+            effective_request_mode = "multi_shot"
         # SVD fallback is an explicit draft-only escape hatch. It must never
         # bypass the production readiness and engine contracts for final video.
         fallback_draft = bool(
@@ -156,7 +164,7 @@ class TaskOrchestrator:
             effective_provider = str(provider or configured_provider).strip().lower()
             per_run_provider = bool(provider and effective_provider != configured_provider)
             per_run_model = bool(model and str(model).strip())
-            per_run_request_mode = bool(request_mode and str(request_mode).strip())
+            per_run_request_mode = bool(effective_request_mode and str(effective_request_mode).strip())
             per_run_resolution = bool(resolution and str(resolution).strip())
             per_run_output_format = bool(output_format and str(output_format).strip())
             per_run_duration = duration_seconds is not None
@@ -169,7 +177,7 @@ class TaskOrchestrator:
             if per_run_model:
                 readiness_kwargs["model_override"] = str(model).strip()
             if per_run_request_mode:
-                readiness_kwargs["request_mode_override"] = str(request_mode).strip().lower()
+                readiness_kwargs["request_mode_override"] = str(effective_request_mode).strip().lower()
             if per_run_resolution:
                 readiness_kwargs["resolution_override"] = str(resolution).strip().lower()
             if per_run_output_format:
@@ -193,7 +201,7 @@ class TaskOrchestrator:
                 if per_run_model:
                     preflight_kwargs["model_override"] = str(model).strip()
                 if per_run_request_mode:
-                    preflight_kwargs["request_mode_override"] = str(request_mode).strip().lower()
+                    preflight_kwargs["request_mode_override"] = str(effective_request_mode).strip().lower()
                 if per_run_resolution:
                     preflight_kwargs["resolution_override"] = str(resolution).strip().lower()
                 if per_run_output_format:
@@ -236,7 +244,7 @@ class TaskOrchestrator:
             task_model.id,
             {
                 "provider": provider,
-                "request_mode": request_mode,
+                "request_mode": effective_request_mode,
                 "multi_shot": multi_shot,
                 "sequence_level_multi_shot": sequence_level_multi_shot,
                 "native_audio": native_audio,
@@ -258,7 +266,7 @@ class TaskOrchestrator:
         task_chain = self._build_task_chain(
             project_id, task_model.id, scenes, generate_images, generate_videos,
             generate_audios, generate_subtitles, add_bgm, bgm_path,
-            provider=provider, request_mode=request_mode,
+            provider=provider, request_mode=effective_request_mode,
             multi_shot=multi_shot, native_audio=native_audio,
             sequence_level_multi_shot=sequence_level_multi_shot,
             draft=draft, draft_task_id=draft_task_id,

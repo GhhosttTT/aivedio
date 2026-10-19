@@ -172,12 +172,14 @@ class TestCreateProductionTask:
         celery_task_id = orchestrator.create_production_task(
             project_id=sample_project.id,
             sequence_level_multi_shot=True,
+            multi_shot=True,
             draft=True,
         )
 
         assert celery_task_id == "sequence-celery-task-id"
         mock_sequence_task.si.assert_called_once()
         assert mock_sequence_task.si.call_args.args[0] == [scene.id for scene in sample_scenes]
+        assert mock_sequence_task.si.call_args.kwargs["request_mode"] == "multi_shot"
 
     def test_create_production_task_blocks_failed_readiness(
         self, orchestrator, sample_project, sample_scenes, monkeypatch
