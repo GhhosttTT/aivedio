@@ -100,6 +100,50 @@ def test_observation_timeout_keeps_recoverable_prompt_id(service, monkeypatch, t
     assert job["prompt_id"] == "pending-123"
 
 
+def test_recoverable_job_resumes_without_resubmitting(service, monkeypatch, tmp_path):
+    output = tmp_path / "candidate.png"
+    workflow = {"9": {"class_type": "SaveImage", "inputs": {}}}
+    from src.services.generation_review import fingerprint
+    output.with_suffix(".job.json").write_text(json.dumps({
+        "status": "observation_required",
+        "kind": "image",
+        "server": service.base_url,
+        "workflow_sha256": fingerprint(workflow),
+        "prompt_id": "pending-456",
+    }), encoding="utf-8")
+    submit = Mock(side_effect=AssertionError("recovery must not submit a duplicate job"))
+    monkeypatch.setattr(service, "_submit_workflow", submit)
+    monkeypatch.setattr(service, "_wait_for_completion", Mock(return_value={"outputs": {}}))
+    download = Mock(return_value=str(output))
+
+    assert service._run_submitted_job(workflow, str(output), "image", "9", download) == str(output)
+    submit.assert_not_called()
+    download.assert_called_once_with({"outputs": {}})
+    job = json.loads(output.with_suffix(".job.json").read_text())
+    assert job["status"] == "completed"
+    assert job["prompt_id"] == "pending-456"
+
+
+def test_stale_job_state_is_not_resumed(service, monkeypatch, tmp_path):
+    output = tmp_path / "candidate.png"
+    output.with_suffix(".job.json").write_text(json.dumps({
+        "status": "observation_required",
+        "kind": "image",
+        "server": service.base_url,
+        "workflow_sha256": "stale",
+        "prompt_id": "old-job",
+    }), encoding="utf-8")
+    submit = Mock(return_value="new-job")
+    monkeypatch.setattr(service, "_submit_workflow", submit)
+    monkeypatch.setattr(service, "_wait_for_completion", Mock(return_value={"outputs": {}}))
+    download = Mock(return_value=str(output))
+    workflow = {"9": {"class_type": "SaveImage", "inputs": {}}}
+
+    service._run_submitted_job(workflow, str(output), "image", "9", download)
+
+    submit.assert_called_once_with(workflow)
+
+
 def test_bad_download_cannot_replace_previously_accepted_pixels(tmp_path):
     path = tmp_path / "accepted.png"
     original = b"accepted file content"

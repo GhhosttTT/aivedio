@@ -45,7 +45,7 @@ If a video workflow saves multiple independent outputs, set `COMFYUI_VIDEO_OUTPU
 
 The 1.5x latent detail pass increases GPU memory and rendering time. Parameter optimization preserves the requested aspect ratio when reducing resolution, but local VRAM limits still need real measurement.
 
-ComfyUI retries are bounded by side effects: connection failures before submission can retry, and artifact downloads retry against the same completed job. Ambiguous submission outcomes and observation timeouts do not resubmit. A `.job.json` sidecar records the prompt ID, workflow hash, chosen output node and job state. Reconcile `observation_required` jobs with the local ComfyUI queue/history before a manual rerun; automatic job resumption is not implemented. Downloads validate a temporary file before replacing an existing artifact.
+ComfyUI retries are bounded by side effects: connection failures before submission can retry, and artifact downloads retry against the same completed job. Ambiguous submission outcomes and observation timeouts do not resubmit. A `.job.json` sidecar records the prompt ID, workflow hash, chosen output node and job state. A matching `observing`, `observation_required`, or `downloading` sidecar is resumed from ComfyUI history without submitting a duplicate job; stale sidecars are ignored when the workflow, output kind, or server changes. Downloads validate a temporary file before replacing an existing artifact.
 
 ## Repair And Timing
 

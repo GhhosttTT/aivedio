@@ -795,11 +795,33 @@ class ComfyUIService:
     def _run_submitted_job(self, workflow, output_path, kind, output_node, download):
         from src.services.generation_review import fingerprint, write_report
 
+        workflow_sha256 = fingerprint(workflow)
+        existing_job = None
+        if output_path:
+            job_path = Path(output_path).with_suffix(".job.json")
+            try:
+                candidate = json.loads(job_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, TypeError):
+                candidate = None
+            if (
+                isinstance(candidate, dict)
+                and candidate.get("workflow_sha256") == workflow_sha256
+                and candidate.get("kind") == kind
+                and candidate.get("server") == self.base_url
+                and candidate.get("status") in {"observing", "observation_required", "downloading"}
+                and isinstance(candidate.get("prompt_id"), str)
+                and candidate.get("prompt_id")
+            ):
+                existing_job = candidate
+
         job = {
             "status": "submitting", "kind": kind, "server": self.base_url,
             "output_path": str(output_path) if output_path else None,
-            "output_node": output_node, "workflow_sha256": fingerprint(workflow),
+            "output_node": output_node, "workflow_sha256": workflow_sha256,
         }
+        if existing_job:
+            job.update(existing_job)
+            job.update(status="resuming", output_node=output_node)
 
         def record():
             if output_path:
@@ -810,7 +832,7 @@ class ComfyUIService:
 
         record()
         try:
-            prompt_id = self._submit_workflow(workflow)
+            prompt_id = str(existing_job["prompt_id"]) if existing_job else self._submit_workflow(workflow)
             job.update(status="observing", prompt_id=prompt_id)
             record()
             result = self._wait_for_completion(prompt_id)
