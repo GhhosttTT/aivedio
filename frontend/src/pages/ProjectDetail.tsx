@@ -62,8 +62,29 @@ export function ProjectDetail() {
     }, [id, productionOptions.provider, productionOptions.model, productionOptions.request_mode, productionOptions.resolution, productionOptions.output_format, productionOptions.duration_seconds]);
     useEffect(() => { reload(); }, [reload]);
     useEffect(() => {
-        if (!latestMessage || ![
-            'status_update', 'progress_update', 'progress', 'completion', 'error',
+        if (!latestMessage) return;
+        if (latestMessage.type === 'status_update' || latestMessage.type === 'progress_update') {
+            setTask(current => {
+                if (!current) return current;
+                const nextProgress = typeof latestMessage.progress === 'number'
+                    ? Math.max(0, Math.min(100, latestMessage.progress <= 1 ? latestMessage.progress * 100 : latestMessage.progress))
+                    : current.progress;
+                return {
+                    ...current,
+                    status: latestMessage.status || current.status,
+                    progress: nextProgress,
+                    ...(typeof latestMessage.current_step === 'number' ? {current_step: latestMessage.current_step} : {}),
+                    ...(typeof latestMessage.provider_progress === 'number' ? {provider_progress: latestMessage.provider_progress} : {}),
+                    ...(latestMessage.provider_stage ? {provider_stage: latestMessage.provider_stage} : {}),
+                    ...(latestMessage.provider_task_id ? {provider_task_id: latestMessage.provider_task_id} : {}),
+                    ...(latestMessage.provider_status ? {provider_status: latestMessage.provider_status} : {}),
+                    ...(latestMessage.provider_error ? {provider_error: latestMessage.provider_error} : {}),
+                };
+            });
+            return;
+        }
+        if (![
+            'progress', 'completion', 'error',
             'script_generation_start', 'script_generation_complete', 'script_generation_error',
         ].includes(latestMessage.type)) return;
         void reload();

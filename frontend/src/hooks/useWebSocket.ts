@@ -7,13 +7,18 @@ export interface WebSocketMessage {
     project_id?: number;
     scene_id?: number;
     progress?: number;
-    current_step?: string;
+    current_step?: string | number;
     task_type?: 'image' | 'video' | 'audio' | 'subtitle';
-    status?: 'pending' | 'processing' | 'completed' | 'failed';
+    status?: 'pending' | 'processing' | 'running' | 'completed' | 'failed' | 'cancelled';
     message?: string;
     error?: string;
     characters_count?: number;
     scenes_count?: number;
+    provider_progress?: number;
+    provider_stage?: string;
+    provider_task_id?: string;
+    provider_status?: string;
+    provider_error?: string;
 }
 
 /**
