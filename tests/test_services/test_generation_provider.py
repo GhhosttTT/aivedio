@@ -3982,6 +3982,69 @@ def test_seedance_native_cancellation_attempts_remote_queued_cancel(tmp_path, mo
     assert provider.last_result_metadata["remote_cancel_requested"] is True
 
 
+def test_generic_async_provider_uses_configured_cancel_endpoint(tmp_path, monkeypatch):
+    class FakeResponse:
+        headers = {"content-type": "application/json"}
+
+        def __init__(self, payload):
+            self.payload = payload
+            self.content = b""
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.payload
+
+    class FakeClient:
+        deleted = []
+
+        def __init__(self, **_kwargs):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def post(self, *_args, **_kwargs):
+            return FakeResponse({"job_id": "generic-task-1", "status": "queued"})
+
+        def get(self, *_args, **_kwargs):
+            mark_cancelled()
+            return FakeResponse({"job_id": "generic-task-1", "status": "queued"})
+
+        def delete(self, url, **_kwargs):
+            FakeClient.deleted.append(url)
+            return FakeResponse({})
+
+    monkeypatch.setenv("HTTP_VIDEO_CANCEL_ENDPOINT", "https://gateway.example/v1/jobs/{job_id}/cancel")
+    monkeypatch.setattr("src.services.generation_provider.httpx.Client", FakeClient)
+    monkeypatch.setattr("src.services.generation_provider.time.sleep", lambda *_args: None)
+    provider = HttpVideoApiProvider(endpoint="https://gateway.example/v1/jobs", api_key="secret")
+    provider.status_endpoint = "https://gateway.example/v1/jobs/{job_id}"
+    provider.poll_interval = 0
+    cancelled = False
+
+    def cancellation_check():
+        return cancelled
+
+    def mark_cancelled():
+        nonlocal cancelled
+        cancelled = True
+
+    with pytest.raises(GenerationCancelledError):
+        provider.generate_video(VideoGenerationRequest(
+            prompt="cancel this shot",
+            output_path=str(tmp_path / "scene.mp4"),
+            cancellation_check=cancellation_check,
+        ))
+
+    assert FakeClient.deleted == ["https://gateway.example/v1/jobs/generic-task-1/cancel"]
+    assert provider.last_result_metadata["remote_cancel_requested"] is True
+
+
 def test_seedance_provider_resolves_request_id_result_endpoint(tmp_path, monkeypatch):
     monkeypatch.setenv("SEEDANCE_VALIDATE_OUTPUT", "false")
     class FakeResponse:

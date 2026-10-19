@@ -492,6 +492,7 @@ class ApiVideoProvider:
         self.api_key = api_key or _provider_setting(f"{self.env_prefix}_API_KEY")
         self.status_endpoint = _provider_setting(f"{self.env_prefix}_STATUS_ENDPOINT")
         self.result_endpoint = _provider_setting(f"{self.env_prefix}_RESULT_ENDPOINT")
+        self.cancel_endpoint = _provider_setting(f"{self.env_prefix}_CANCEL_ENDPOINT")
         if (
             not self.status_endpoint
             and self.name == GenerationProviderName.SEEDANCE_API
@@ -1213,25 +1214,33 @@ class ApiVideoProvider:
         return max(0.0, min(600.0, self.retry_backoff * (2 ** attempt)))
 
     def _cancel_remote_task_if_supported(self, client, headers: dict[str, str]) -> None:
-        """Best-effort cancellation for queued native Ark tasks.
+        """Best-effort cancellation for queued remote tasks.
 
-        Ark only cancels tasks while they are queued; DELETE on a running task
-        is rejected. The local cancellation must therefore remain authoritative
-        and this cleanup must never replace the original cancellation error.
+        Native Ark uses the status resource as its documented DELETE endpoint.
+        Other gateways can opt into the same behavior with
+        ``*_CANCEL_ENDPOINT``. Local cancellation remains authoritative and
+        this cleanup must never replace the original cancellation error.
         """
-        if self.name != GenerationProviderName.SEEDANCE_API:
-            return
-        api_format = _seedance_api_format(self.endpoint)
-        if api_format not in {"ark", "ark_v3", "volcengine", "volcengine_v3"}:
-            return
         task_id = self.last_result_metadata.get("provider_task_id")
-        if not task_id or not self.status_endpoint:
+        cancel_endpoint = self.cancel_endpoint
+        if (
+            not cancel_endpoint
+            and self.name == GenerationProviderName.SEEDANCE_API
+            and _seedance_api_format(self.endpoint) in {"ark", "ark_v3", "volcengine", "volcengine_v3"}
+        ):
+            cancel_endpoint = self.status_endpoint
+        if not task_id or not cancel_endpoint:
             return
-        cancel_url = self.status_endpoint.replace("{job_id}", str(task_id)).replace("{request_id}", str(task_id))
+        if "{job_id}" not in cancel_endpoint and "{request_id}" not in cancel_endpoint:
+            logger.warning("Remote cancel endpoint must contain {job_id} or {request_id}; skipping cancellation")
+            self.last_result_metadata["remote_cancel_requested"] = False
+            return
+        cancel_url = cancel_endpoint.replace("{job_id}", str(task_id)).replace("{request_id}", str(task_id))
         try:
             response = client.delete(cancel_url, headers=headers)
             response.raise_for_status()
             self.last_result_metadata["remote_cancel_requested"] = True
+            self.last_result_metadata["remote_cancel_url"] = cancel_url
         except Exception as exc:
             self.last_result_metadata["remote_cancel_requested"] = False
             logger.info("Remote provider task could not be cancelled (it may already be running): {}", exc)

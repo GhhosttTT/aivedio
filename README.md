@@ -109,6 +109,11 @@ python3 scripts/validate_seedance_gateway.py --dry-run --api-format ark_v3 \
 `SEEDANCE_CALLBACK_ALLOW_UNSIGNED=true`，生产环境不要开启。回调会按远端 task ID 写入 pending sidecar，provider 在终态回调到达时优先使用它，轮询仍作为兜底。
 本地任务仍保留轮询兜底，因此回调暂时不可用不会影响已有流程。
 
+异步 HTTP 视频网关可配置 `HTTP_VIDEO_CANCEL_ENDPOINT`，Seedance 网关可配置
+`SEEDANCE_CANCEL_ENDPOINT`，地址必须包含 `{job_id}` 或 `{request_id}`。本地任务取消时
+会尝试向该地址发送 `DELETE`，避免远端任务继续占用额度；未配置时原生 Ark 仍默认对状态
+地址执行取消。
+
 拿到真实样片后，可用 `scripts/compare_video_baseline.py` 对候选视频和 Seedance
 基准视频做本地证据对比；除了分辨率、时长、清晰度和运动量，还会拦截黑帧、冻结段、
 曝光跳变和运动节奏失稳。该报告是技术门禁，不替代角色一致性、表演和叙事的人工/VLM审核。

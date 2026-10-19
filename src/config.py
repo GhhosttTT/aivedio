@@ -259,6 +259,7 @@ class Settings(BaseSettings):
     HTTP_VIDEO_API_KEY: str = ""
     HTTP_VIDEO_STATUS_ENDPOINT: str = ""
     HTTP_VIDEO_RESULT_ENDPOINT: str = ""
+    HTTP_VIDEO_CANCEL_ENDPOINT: str = ""
     HTTP_VIDEO_TIMEOUT_SECONDS: int = 1800
     HTTP_VIDEO_POLL_INTERVAL_SECONDS: float = 5.0
     HTTP_VIDEO_MAX_POLLS: int = 240
@@ -275,6 +276,7 @@ class Settings(BaseSettings):
     SEEDANCE_API_KEY: str = ""
     SEEDANCE_STATUS_ENDPOINT: str = ""
     SEEDANCE_RESULT_ENDPOINT: str = ""
+    SEEDANCE_CANCEL_ENDPOINT: str = ""
     SEEDANCE_MODEL: str = "doubao-seedance-2-5-260628"
     # ``legacy`` keeps compatibility with generic gateways; ``ark_v3`` emits
     # Volcano Ark's native content[] request contract.
