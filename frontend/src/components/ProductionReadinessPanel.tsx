@@ -317,5 +317,6 @@ function isExecutableRepairAction(action: string): boolean {
         || action === 'rewrite_short_drama_story_rhythm'
         || action === 'lower_motion_and_regenerate_video'
         || action === 'regenerate_video_with_performance_direction'
-        || action === 'refine_video_commercial_aesthetic';
+        || action === 'refine_video_commercial_aesthetic'
+        || action === 'refine_final_composition_finish';
 }

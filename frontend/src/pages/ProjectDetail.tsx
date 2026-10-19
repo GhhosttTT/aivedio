@@ -163,6 +163,7 @@ export function ProjectDetail() {
             'lower_motion_and_regenerate_video',
             'regenerate_video_with_performance_direction',
             'refine_video_commercial_aesthetic',
+            'refine_final_composition_finish',
         ]);
         if (automaticRepairActions.has(action)) {
             setBusy('提交自动视频返修'); setError('');
@@ -170,7 +171,9 @@ export function ProjectDetail() {
                 const result = await projectApi.runAutoRepairQueue(Number(id), {max_actions: 5, action});
                 await reload();
                 if (result.status === 'no_auto_actions') {
-                    setError('当前项目没有匹配该动作的可执行分镜返修；请先完成项目级视频审核或选择具体分镜。');
+                    setError(action === 'refine_final_composition_finish'
+                        ? '当前项目没有可执行的最终成片返修；请先完成最终合成审核。'
+                        : '当前项目没有匹配该动作的可执行分镜返修；请先完成项目级视频审核或选择具体分镜。');
                 } else if (result.status === 'manual_review_required') {
                     setError('该动作已达到自动返修预算上限，请先完成人工审核后再继续。');
                 } else {
