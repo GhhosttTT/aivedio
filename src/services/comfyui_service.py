@@ -7,6 +7,7 @@ ComfyUI 服务（ComfyUIService）
 
 import copy
 import json
+import mimetypes
 import time
 import tempfile
 import uuid
@@ -621,19 +622,24 @@ class ComfyUIService:
             return self._upload_reference_image(str(path))
     
     def _upload_reference_image(self, reference_image: str) -> str:
-        path = Path(reference_image)
+        return self._upload_input_media(reference_image)
+
+    def _upload_input_media(self, media_path: str) -> str:
+        """Upload image/video/audio media into ComfyUI's input directory."""
+        path = Path(media_path)
         if not path.is_file():
-            raise ComfyUIError(f"Reference image does not exist: {path}")
+            raise ComfyUIError(f"Reference media does not exist: {path}")
+        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         with path.open("rb") as stream:
             response = self.client.post(
                 f"{self.base_url}/upload/image",
-                files={"image": (path.name, stream, "application/octet-stream")},
+                files={"image": (path.name, stream, content_type)},
                 data={"type": "input", "overwrite": "false"},
             )
         response.raise_for_status()
         data = response.json()
         if not data.get("name"):
-            raise ComfyUIError("ComfyUI upload did not return an image name")
+            raise ComfyUIError("ComfyUI media upload did not return an input name")
         return "/".join(part for part in (data.get("subfolder", ""), data["name"]) if part)
 
     def preflight(self, workflow: Dict) -> None:
@@ -811,15 +817,13 @@ class ComfyUIService:
             "reference_image": uploaded_reference,
             "reference_images_json": json.dumps(uploaded_references, ensure_ascii=False),
             "reference_image_count": len(uploaded_references),
-            # Video/audio files are intentionally passed as a stable JSON
-            # contract. Custom ComfyUI nodes can resolve these local paths;
-            # unlike images, the core API has no portable upload endpoint for
-            # every video/audio loader implementation.
             "reference_videos_json": json.dumps(
-                [str(path) for path in reference_videos or [] if path], ensure_ascii=False,
+                [self._upload_input_media(path) for path in reference_videos or [] if path],
+                ensure_ascii=False,
             ),
             "reference_audios_json": json.dumps(
-                [str(path) for path in reference_audios or [] if path], ensure_ascii=False,
+                [self._upload_input_media(path) for path in reference_audios or [] if path],
+                ensure_ascii=False,
             ),
             "reference_video_count": len([path for path in reference_videos or [] if path]),
             "reference_audio_count": len([path for path in reference_audios or [] if path]),

@@ -270,6 +270,37 @@ class TestComfyUIService:
                     workflow_path=str(workflow_path),
                 )
 
+    def test_video_workflow_uploads_video_and_audio_references(self, mock_workflow_config, mock_http_client, tmp_path, monkeypatch):
+        with patch('src.services.comfyui_service.httpx.Client', return_value=mock_http_client):
+            service = ComfyUIService(workflow_path=mock_workflow_config)
+            workflow_path = tmp_path / "video.json"
+            workflow_path.write_text(json.dumps({
+                "1": {"class_type": "ReferenceStack", "inputs": {
+                    "videos": "{reference_videos_json}",
+                    "audios": "{reference_audios_json}",
+                }},
+            }), encoding="utf-8")
+            opening = tmp_path / "opening.png"
+            previous = tmp_path / "previous.mp4"
+            dialogue = tmp_path / "dialogue.wav"
+            for path in (opening, previous, dialogue):
+                path.write_bytes(b"media")
+            uploaded = []
+            monkeypatch.setattr(service, "_upload_input_media", lambda path: uploaded.append(path) or f"input/{Path(path).name}")
+            monkeypatch.setattr(service, "preflight", lambda _workflow: None)
+            monkeypatch.setattr(service, "_run_submitted_job", lambda *args, **kwargs: str(tmp_path / "scene.mp4"))
+
+            service.generate_video(
+                prompt="multimodal shot",
+                reference_image=str(opening),
+                reference_videos=[str(previous)],
+                reference_audios=[str(dialogue)],
+                output_path=str(tmp_path / "scene.mp4"),
+                workflow_path=str(workflow_path),
+            )
+
+            assert uploaded == [str(opening), str(previous), str(dialogue)]
+
     @pytest.mark.parametrize(
         ("kwargs", "message"),
         [
