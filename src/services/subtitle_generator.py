@@ -10,6 +10,7 @@ import subprocess
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 from datetime import timedelta
+from uuid import uuid4
 
 from src.utils.logger import logger
 
@@ -374,6 +375,10 @@ class SubtitleGenerator:
                 video_dir = Path(video_path).parent
                 video_name = Path(video_path).stem
                 output_path = str(video_dir / f"{video_name}_subtitled.mp4")
+            target_path = Path(output_path)
+            temporary_path = target_path.with_name(
+                f".{target_path.stem}.{uuid4().hex}.part{target_path.suffix}"
+            )
             
             # 构建 FFmpeg 命令
             # 使用 subtitles 滤镜烧录字幕
@@ -415,7 +420,7 @@ class SubtitleGenerator:
                     if output_pixel_format else []
                 ),
                 "-y",  # 覆盖输出文件
-                output_path
+                str(temporary_path)
             ]
             
             logger.debug(f"FFmpeg 命令: {' '.join(cmd)}")
@@ -427,6 +432,9 @@ class SubtitleGenerator:
                 text=True,
                 check=True
             )
+            if not temporary_path.is_file() or temporary_path.stat().st_size <= 0:
+                raise SubtitleError("FFmpeg 未生成有效的字幕视频文件")
+            temporary_path.replace(target_path)
             
             logger.info(f"字幕烧录成功: {output_path}")
             
@@ -441,6 +449,12 @@ class SubtitleGenerator:
             error_msg = f"烧录字幕失败: {e}"
             logger.error(error_msg)
             raise SubtitleError(error_msg) from e
+        finally:
+            try:
+                if "temporary_path" in locals():
+                    temporary_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("清理字幕视频临时文件失败: %s", temporary_path)
 
     @staticmethod
     def _has_high_bit_depth(video_path: str) -> bool:

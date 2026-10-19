@@ -18,6 +18,11 @@ from src.services.subtitle_generator import (
 )
 
 
+def _fake_ffmpeg_run(command, *args, **kwargs):
+    Path(command[-1]).write_bytes(b"fake subtitled video")
+    return MagicMock(returncode=0)
+
+
 class TestSubtitleGenerator:
     """字幕生成服务测试类"""
     
@@ -229,7 +234,7 @@ class TestSubtitleGenerator:
         
         # Mock subprocess.run
         with patch('subprocess.run') as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
             
             result_path = service.burn_subtitle(
                 str(video_file),
@@ -248,7 +253,7 @@ class TestSubtitleGenerator:
         subtitle_file.write_text("fake subtitle")
 
         with patch('subprocess.run') as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
             service.burn_subtitle(str(video_file), str(subtitle_file), str(tmp_path / "output.mp4"))
 
         cmd = mock_run.call_args.args[0]
@@ -269,7 +274,7 @@ class TestSubtitleGenerator:
         monkeypatch.setattr(service, "_has_high_bit_depth", lambda _path: True)
         monkeypatch.setattr(service, "_get_pixel_format", lambda _path: "yuv444p")
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
             service.burn_subtitle(
                 str(video_file), str(subtitle_file), str(tmp_path / "output.mp4"),
                 preserve_provider_quality=True,
@@ -289,7 +294,7 @@ class TestSubtitleGenerator:
         monkeypatch.setattr(service, "_has_high_bit_depth", lambda _path: False)
         monkeypatch.setattr(service, "_get_pixel_format", lambda _path: "yuv444p")
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
             service.burn_subtitle(
                 str(video_file), str(subtitle_file), str(tmp_path / "output.mov"),
                 preserve_provider_quality=True,
@@ -309,7 +314,7 @@ class TestSubtitleGenerator:
         monkeypatch.setattr(service, "_has_high_bit_depth", lambda _path: True)
         monkeypatch.setattr(service, "_get_pixel_format", lambda _path: "yuv444p10le")
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+            mock_run.side_effect = _fake_ffmpeg_run
             service.burn_subtitle(
                 str(video_file), str(subtitle_file), str(tmp_path / "output.mov"),
                 preserve_provider_quality=True,
@@ -331,6 +336,21 @@ class TestSubtitleGenerator:
         with patch('subprocess.run', side_effect=Exception("FFmpeg error")):
             with pytest.raises(SubtitleError, match="烧录字幕失败"):
                 service.burn_subtitle(str(video_file), str(subtitle_file))
+
+    def test_burn_subtitle_keeps_previous_output_when_ffmpeg_fails(self, service, tmp_path):
+        video_file = tmp_path / "video.mp4"
+        subtitle_file = tmp_path / "subtitle.srt"
+        output_file = tmp_path / "output.mp4"
+        video_file.write_text("fake video")
+        subtitle_file.write_text("fake subtitle")
+        output_file.write_bytes(b"previous-good-output")
+
+        with patch("subprocess.run", side_effect=RuntimeError("FFmpeg error")):
+            with pytest.raises(SubtitleError, match="烧录字幕失败"):
+                service.burn_subtitle(str(video_file), str(subtitle_file), str(output_file))
+
+        assert output_file.read_bytes() == b"previous-good-output"
+        assert not list(tmp_path.glob(".output.*.part.mp4"))
     
     def test_color_to_ass(self, service):
         """测试：颜色转换为 ASS 格式"""
