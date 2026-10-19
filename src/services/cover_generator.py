@@ -6,6 +6,7 @@ import json
 import math
 import subprocess
 from pathlib import Path
+from uuid import uuid4
 
 
 class CoverGenerationError(ValueError):
@@ -36,12 +37,18 @@ def generate_cover(
         "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}",
         "-q:v", "2", "-y", str(output),
     ]
+    temporary = output.with_name(f".{output.stem}.{uuid4().hex}.part{output.suffix}")
     try:
+        command[-1] = str(temporary)
         subprocess.run(command, capture_output=True, text=True, check=True, timeout=60)
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         raise CoverGenerationError(f"Cover extraction failed: {exc}") from exc
-    if not output.is_file() or output.stat().st_size <= 0:
-        raise CoverGenerationError("FFmpeg produced an empty cover")
+    try:
+        if not temporary.is_file() or temporary.stat().st_size <= 0:
+            raise CoverGenerationError("FFmpeg produced an empty cover")
+        temporary.replace(output)
+    finally:
+        temporary.unlink(missing_ok=True)
     return {
         "status": "ready",
         "path": str(output),
