@@ -10,7 +10,22 @@ def _scene(number, video_path):
 
 def _write_sidecar(video, **metrics):
     video.write_bytes(b"video")
-    video.with_suffix(".quality.json").write_text(json.dumps({"metrics": metrics}), encoding="utf-8")
+    defaults = {
+        "status": "available",
+        "technical_score": 4.2,
+        "motion_energy": 10.0,
+        "static_transition_ratio": 0.1,
+        "max_static_run_seconds": 0.0,
+        "max_black_run_seconds": 0.0,
+        "black_frame_ratio": 0.0,
+        "motion_jitter_ratio": 0.2,
+        "temporal_jump_ratio": 0.0,
+        "temporal_jump_p95": 0.0,
+        "sampled_frames": 8,
+        "temporal_sample_evidence": "sufficient",
+    }
+    defaults.update(metrics)
+    video.with_suffix(".quality.json").write_text(json.dumps({"metrics": defaults}), encoding="utf-8")
 
 
 def test_atomic_video_motion_audit_accepts_stable_clips(tmp_path):
@@ -125,6 +140,20 @@ def test_atomic_video_motion_audit_rejects_insufficient_temporal_evidence(tmp_pa
     assert report.status == "needs_review"
     assert report.issues[0]["code"] == "insufficient_temporal_evidence"
     assert report.issues[0]["action"] == "lower_motion_and_regenerate_video"
+
+
+def test_atomic_video_motion_audit_rejects_incomplete_available_evidence(tmp_path):
+    video = tmp_path / "scene_1.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".quality.json").write_text(json.dumps({
+        "metrics": {"status": "available", "technical_score": 4.2},
+    }), encoding="utf-8")
+
+    report = AtomicVideoMotionAuditService().audit([_scene(1, video)])
+
+    assert report.status == "needs_review"
+    assert report.issues[0]["code"] == "technical_evidence_incomplete"
+    assert "motion_energy" in report.issues[0]["message"]
 
 
 def test_atomic_video_motion_audit_rejects_partial_video_coverage(tmp_path):

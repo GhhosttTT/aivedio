@@ -56,6 +56,20 @@ class AtomicVideoMotionAuditReport:
 class AtomicVideoMotionAuditService:
     """Use persisted technical evidence; never treat missing evidence as a pass."""
 
+    REQUIRED_METRICS = (
+        "technical_score",
+        "motion_energy",
+        "static_transition_ratio",
+        "max_static_run_seconds",
+        "max_black_run_seconds",
+        "black_frame_ratio",
+        "motion_jitter_ratio",
+        "temporal_jump_ratio",
+        "temporal_jump_p95",
+        "sampled_frames",
+        "temporal_sample_evidence",
+    )
+
     def audit(self, scenes: list) -> AtomicVideoMotionAuditReport:
         reports = []
         missing_video_scenes: list[int] = []
@@ -93,6 +107,20 @@ class AtomicVideoMotionAuditService:
                     "refine_video_commercial_aesthetic",
                 ))
                 continue
+            if item.get("status") == "available":
+                missing_metrics = [
+                    name for name in self.REQUIRED_METRICS
+                    if item.get(name) is None
+                ]
+                if missing_metrics:
+                    issues.append(self._issue(
+                        number,
+                        "technical_evidence_incomplete",
+                        "technical video evidence is marked available but missing: "
+                        + ", ".join(missing_metrics),
+                        "refine_video_commercial_aesthetic",
+                    ))
+                    continue
             if item.get("temporal_sample_evidence") == "insufficient":
                 issues.append(self._issue(
                     number,
