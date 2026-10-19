@@ -549,9 +549,16 @@ def _merge_subtitles(
             # so mixed transition plans share one stable filter graph.
             current_time_offset = max(0.0, round(current_time_offset - 0.001, 3))
     
-    # 写入合并后的字幕文件
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write("\n\n".join(merged_subtitles))
+    # Publish the merged timeline atomically so a failed composition never
+    # exposes a truncated or partially shifted subtitle file.
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.part")
+    try:
+        temporary.write_text("\n\n".join(merged_subtitles), encoding="utf-8")
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _scene_subtitle_path(scene) -> str | Path | None:

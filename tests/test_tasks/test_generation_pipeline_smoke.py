@@ -475,6 +475,26 @@ def test_merge_subtitles_accounts_for_crossfade_overlap(tmp_path):
     assert "00:00:01,880 --> 00:00:02,880" in content
 
 
+def test_merge_subtitles_keeps_previous_output_when_publish_fails(tmp_path, monkeypatch):
+    output = tmp_path / "merged.srt"
+    output.write_text("previous-good-subtitles", encoding="utf-8")
+
+    original_replace = Path.replace
+
+    def fail_replace(self, target):
+        if self.name.startswith(".merged.srt"):
+            raise OSError("simulated subtitle publish failure")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="simulated subtitle publish failure"):
+        composition_tasks._merge_subtitles([], str(output), [])
+
+    assert output.read_text(encoding="utf-8") == "previous-good-subtitles"
+    assert not list(tmp_path.glob(".merged.srt.*.part"))
+
+
 def test_composition_blocks_audio_video_duration_mismatch():
     service = Mock()
     service._get_duration.side_effect = [4.0, 1.0]
