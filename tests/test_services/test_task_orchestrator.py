@@ -299,6 +299,40 @@ class TestCreateProductionTask:
         ).one()
         assert task.total_steps == 2
 
+    def test_audio_repair_recomposes_when_episode_assets_are_complete(
+        self, orchestrator, sample_project, sample_scenes, monkeypatch
+    ):
+        workflow = Mock()
+        workflow.freeze.return_value.id = "audio-recompose-task-id"
+        generate = Mock(return_value=Mock(name="audio-signature"))
+        subtitle = Mock(return_value=Mock(name="subtitle-signature"))
+        review = Mock(return_value=Mock(name="review-signature"))
+        compose = Mock(return_value=Mock(name="compose-signature"))
+        build_chain = Mock(return_value=workflow)
+        monkeypatch.setattr("src.services.task_orchestrator.generate_audio_task.si", generate)
+        monkeypatch.setattr("src.services.task_orchestrator.generate_subtitle_task.si", subtitle)
+        monkeypatch.setattr("src.services.task_orchestrator.review_generation_task.si", review)
+        monkeypatch.setattr("src.services.task_orchestrator.compose_final_video_task.si", compose)
+        monkeypatch.setattr("src.services.task_orchestrator.chain", build_chain)
+        for scene in sample_scenes:
+            scene.video_path = f"scene-{scene.scene_number}.mp4"
+        orchestrator.db.commit()
+
+        celery_task_id = orchestrator.create_scene_repair_task(
+            sample_project.id,
+            sample_scenes[0].scene_number,
+            "refine_dialogue_audio_delivery",
+        )
+
+        assert celery_task_id == "audio-recompose-task-id"
+        review.assert_called_once_with(sample_project.id, ANY)
+        compose.assert_called_once()
+        assert compose.call_args.args[:2] == (sample_project.id, ANY)
+        task = orchestrator.db.query(TaskModel).filter(
+            TaskModel.celery_task_id == celery_task_id
+        ).one()
+        assert task.total_steps == 4
+
     def test_create_scene_repair_task_rerenders_video_after_keyframe_repair(
         self, orchestrator, sample_project, sample_scenes, monkeypatch
     ):
@@ -343,7 +377,7 @@ class TestCreateProductionTask:
         task = orchestrator.db.query(TaskModel).filter(
             TaskModel.celery_task_id == celery_task_id
         ).one()
-        assert task.total_steps == 3
+        assert task.total_steps == 4
 
     def test_create_scene_repair_task_reviews_after_video_repair(
         self, orchestrator, sample_project, sample_scenes, monkeypatch
@@ -381,7 +415,7 @@ class TestCreateProductionTask:
         task = orchestrator.db.query(TaskModel).filter(
             TaskModel.celery_task_id == celery_task_id
         ).one()
-        assert task.total_steps == 2
+        assert task.total_steps == 3
 
 
 class TestCalculateTotalSteps:

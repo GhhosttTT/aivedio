@@ -30,7 +30,7 @@ def repair_case(monkeypatch):
     chain = Mock(return_value=workflow)
     monkeypatch.setattr("src.services.task_orchestrator.chain", chain)
     monkeypatch.setattr("src.services.task_orchestrator.ProductionWorkflowProfileService", lambda: Mock(validate_profile=Mock(return_value={"status": "valid"})))
-    for name in ("generate_image_task", "generate_video_task", "generate_audio_task", "generate_subtitle_task", "review_generation_task"):
+    for name in ("generate_image_task", "generate_video_task", "generate_audio_task", "generate_subtitle_task", "review_generation_task", "compose_final_video_task"):
         monkeypatch.setattr(f"src.services.task_orchestrator.{name}.si", lambda *args, _name=name, **kwargs: SimpleNamespace(task=_name, args=args, kwargs=kwargs))
     yield TaskOrchestrator(db), project, scenes, workflow, chain
     db.close()
@@ -48,9 +48,10 @@ def test_audio_and_visual_repairs_share_one_task_and_review_once_at_the_end(repa
     assert [step.task for step in chain.call_args.args] == [
         "generate_audio_task", "generate_subtitle_task", "generate_image_task",
         "generate_video_task", "generate_video_task", "review_generation_task",
+        "compose_final_video_task",
     ]
     task = orchestrator.db.query(Task).one()
-    assert task.total_steps == 6
+    assert task.total_steps == 7
     assert {step.args[-1] for step in chain.call_args.args if step.task != "generate_audio_task"} == {task.id}
     assert project.status == ProjectStatus.IN_PRODUCTION
     assert scenes[0].image_path is None and scenes[0].audio_path is None
@@ -147,5 +148,6 @@ def test_audio_only_repair_refreshes_media_review_when_all_videos_exist(repair_c
     orchestrator.create_scene_repair_task(project.id, 1, "refine_dialogue_audio_delivery")
     assert [step.task for step in chain.call_args.args] == [
         "generate_audio_task", "generate_subtitle_task", "review_generation_task",
+        "compose_final_video_task",
     ]
-    assert orchestrator.db.query(Task).one().total_steps == 3
+    assert orchestrator.db.query(Task).one().total_steps == 4

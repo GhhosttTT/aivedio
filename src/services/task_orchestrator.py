@@ -384,13 +384,17 @@ class TaskOrchestrator:
                     + (": " + "; ".join(details) if details else "")
                 )
 
+        # Every repair is followed by a fresh review and a final composition.
+        # Without the latter, repaired scene assets never reach the deliverable.
         total_steps = sum(2 if action in image_actions | audio_actions else 1 for _scene, action in entries)
+        if review_after_repair:
+            total_steps += 2  # generation review + final composition
         task_model = TaskModel(
             project_id=project_id,
             celery_task_id=str(uuid4()),
             status=TaskStatus.PENDING,
             progress=0.0,
-            total_steps=total_steps + int(review_after_repair),
+            total_steps=total_steps,
             current_step=0,
         )
         previous_status, previous_final = project.status, project.final_video_path
@@ -430,6 +434,13 @@ class TaskOrchestrator:
                 ))
         if review_after_repair:
             steps.append(review_generation_task.si(project_id, task_model.id))
+            steps.append(compose_final_video_task.si(
+                project_id,
+                task_model.id,
+                add_bgm=bool(inherited_video_options.get("add_bgm", False)),
+                bgm_path=inherited_video_options.get("bgm_path"),
+                bgm_volume=float(inherited_video_options.get("bgm_volume", 0.3)),
+            ))
         task = chain(*steps)
         result = task.freeze()
         task_model.celery_task_id = result.id
