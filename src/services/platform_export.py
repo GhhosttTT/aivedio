@@ -275,6 +275,20 @@ def _validate_export_metrics(
         )
     if metrics.get("audio_present") and metrics.get("audio_clipping_status") == "clipped":
         raise PlatformExportError("Platform export audio signal is clipped at digital full scale")
+    integrated_lufs = metrics.get("audio_integrated_lufs")
+    if metrics.get("audio_present") and isinstance(integrated_lufs, (int, float)):
+        if integrated_lufs < settings.GENERATION_VIDEO_AUDIO_INTEGRATED_LUFS_MIN:
+            raise PlatformExportError(
+                "Platform export integrated loudness is too quiet: "
+                f"audio_integrated_lufs={integrated_lufs:.2f}, minimum="
+                f"{settings.GENERATION_VIDEO_AUDIO_INTEGRATED_LUFS_MIN:.2f}"
+            )
+        if integrated_lufs > settings.GENERATION_VIDEO_AUDIO_INTEGRATED_LUFS_MAX:
+            raise PlatformExportError(
+                "Platform export integrated loudness is too loud: "
+                f"audio_integrated_lufs={integrated_lufs:.2f}, maximum="
+                f"{settings.GENERATION_VIDEO_AUDIO_INTEGRATED_LUFS_MAX:.2f}"
+            )
     audio_rms_db = metrics.get("audio_rms_db")
     if metrics.get("audio_present") and isinstance(audio_rms_db, (int, float)):
         if audio_rms_db < settings.GENERATION_VIDEO_AUDIO_RMS_MIN_DB:

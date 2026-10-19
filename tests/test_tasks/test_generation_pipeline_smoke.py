@@ -863,6 +863,29 @@ def test_composition_review_blocks_extreme_final_audio_mix_levels(audio_rms_db, 
     assert expected in error
 
 
+@pytest.mark.parametrize(
+    ("integrated_lufs", "expected"),
+    [(-25.0, "integrated loudness is too quiet"), (-11.0, "integrated loudness is too loud")],
+)
+def test_composition_review_blocks_extreme_integrated_loudness(integrated_lufs, expected):
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_audio_expected": True,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "audio_present": True,
+            "audio_signal_status": "usable",
+            "audio_integrated_lufs": integrated_lufs,
+        },
+    }
+    error = composition_tasks._composition_review_error(report)
+    assert error is not None
+    assert expected in error
+
+
 def test_composition_review_blocks_optional_audio_start_drift():
     report = {
         "status": "passed",

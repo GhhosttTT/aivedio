@@ -1198,6 +1198,20 @@ def _composition_review_error(report: dict) -> str | None:
             )
         audio_present = technical.get("audio_present") is True
         if audio_present:
+            integrated_lufs = technical.get("audio_integrated_lufs")
+            if isinstance(integrated_lufs, (int, float)) and math.isfinite(float(integrated_lufs)):
+                if integrated_lufs < settings.GENERATION_VIDEO_AUDIO_INTEGRATED_LUFS_MIN:
+                    return (
+                        "final composed video integrated loudness is too quiet: "
+                        f"audio_integrated_lufs={integrated_lufs:.2f}, minimum="
+                        f"{settings.GENERATION_VIDEO_AUDIO_INTEGRATED_LUFS_MIN:.2f}"
+                    )
+                if integrated_lufs > settings.GENERATION_VIDEO_AUDIO_INTEGRATED_LUFS_MAX:
+                    return (
+                        "final composed video integrated loudness is too loud: "
+                        f"audio_integrated_lufs={integrated_lufs:.2f}, maximum="
+                        f"{settings.GENERATION_VIDEO_AUDIO_INTEGRATED_LUFS_MAX:.2f}"
+                    )
             audio_rms_db = technical.get("audio_rms_db")
             if isinstance(audio_rms_db, (int, float)) and math.isfinite(float(audio_rms_db)):
                 if audio_rms_db < settings.GENERATION_VIDEO_AUDIO_RMS_MIN_DB:
