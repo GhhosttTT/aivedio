@@ -10,6 +10,7 @@ import { VideoEngineStatus } from '../components/VideoEngineStatus';
 import { ProductionReadinessPanel } from '../components/ProductionReadinessPanel';
 import CharacterManager from './CharacterManager';
 import type { GenerationReviewResponse, ProductionReadinessReport } from '../api/client';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 export function ProjectDetail() {
     const {id} = useParams();
@@ -34,6 +35,7 @@ export function ProjectDetail() {
     const [options, setOptions] = useState({num_scenes: 16, num_characters: 2, style: '现代都市'});
     const [productionOptions, setProductionOptions] = useState({provider: '', request_mode: 'reference', multi_shot: true, sequence_level_multi_shot: false, native_audio: true, draft: false, model: '', resolution: '1080p', output_format: 'mp4', return_last_frame: true, camera_fixed: false, watermark: false, duration_seconds: null as number | null, add_bgm: false, bgm_path: null as string | null, bgm_volume: 0.3});
     const [bgmName, setBgmName] = useState('');
+    const {isConnected: progressSocketConnected, latestMessage} = useWebSocket(id || '');
     const reload = useCallback(async () => {
         try {
             const projectId = Number(id);
@@ -60,10 +62,14 @@ export function ProjectDetail() {
     }, [id, productionOptions.provider, productionOptions.model, productionOptions.request_mode, productionOptions.resolution, productionOptions.output_format, productionOptions.duration_seconds]);
     useEffect(() => { reload(); }, [reload]);
     useEffect(() => {
+        if (!latestMessage || !['status_update', 'progress_update', 'completion', 'error'].includes(latestMessage.type)) return;
+        void reload();
+    }, [latestMessage, reload]);
+    useEffect(() => {
         if (project?.status !== 'in_production') return;
-        const timer = window.setInterval(reload, 3000);
+        const timer = window.setInterval(reload, progressSocketConnected ? 10000 : 3000);
         return () => window.clearInterval(timer);
-    }, [project?.status, reload]);
+    }, [project?.status, progressSocketConnected, reload]);
     const run = async (operation: string) => {
         if (!project || busy) return;
         setBusy(operation); setError('');

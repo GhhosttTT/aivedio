@@ -1,8 +1,7 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-interface WebSocketMessage {
-    type: 'progress' | 'completed' | 'error' | 'status' | 
-          'script_generation_start' | 'script_generation_complete' | 'script_generation_error';
+export interface WebSocketMessage {
+    type: string;
     task_id?: string;
     project_id?: number;
     scene_id?: number;
@@ -24,61 +23,82 @@ interface WebSocketMessage {
  */
 export const useWebSocket = (projectId: string) => {
     const [messages, setMessages] = useState<WebSocketMessage[]>([]);
+    const [latestMessage, setLatestMessage] = useState<WebSocketMessage | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
 
     useEffect(() => {
-        // 使用环境变量或默认值
+        if (!projectId) {
+            setIsConnected(false);
+            return;
+        }
         const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000';
         const token = localStorage.getItem('auth_token');
         if (!token) {
             setIsConnected(false);
             return;
         }
-        // 后端路由是 /ws/{project_id}，不是 /ws/progress/{project_id}
         const wsUrl = `${wsBaseUrl}/ws/${projectId}?token=${encodeURIComponent(token)}`;
-        
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
+        let disposed = false;
+        let reconnectTimer: number | undefined;
+        let reconnectAttempt = 0;
+        let socket: WebSocket | null = null;
 
-        ws.onopen = () => {
-            console.log('WebSocket 已连接:', wsUrl);
-            setIsConnected(true);
+        const scheduleReconnect = () => {
+            if (disposed || reconnectTimer !== undefined) return;
+            const delay = Math.min(30000, 1000 * (2 ** reconnectAttempt));
+            reconnectAttempt = Math.min(reconnectAttempt + 1, 5);
+            reconnectTimer = window.setTimeout(() => {
+                reconnectTimer = undefined;
+                connect();
+            }, delay);
         };
 
-        ws.onmessage = (event) => {
-            try {
-                const message: WebSocketMessage = JSON.parse(event.data);
-                setMessages(prev => [...prev, message]);
-            } catch (error) {
-                console.error('解析 WebSocket 消息失败:', error);
-            }
-        };
+        const connect = () => {
+            if (disposed) return;
+            socket = new WebSocket(wsUrl);
+            wsRef.current = socket;
 
-        ws.onerror = (error) => {
-            console.error('WebSocket 错误:', error);
-        };
+            socket.onopen = () => {
+                setIsConnected(true);
+                reconnectAttempt = 0;
+            };
 
-        ws.onclose = (event) => {
-            console.log('WebSocket 已断开:', event.code, event.reason);
-            setIsConnected(false);
-            
-            // 如果是 403 或其他认证错误，清除 token 并跳转登录
-            if (event.code === 1008 || event.code === 4003) {
-                console.warn('WebSocket 认证失败，清除 token');
-                localStorage.removeItem('auth_token');
-                if (!window.location.pathname.includes('/login')) {
-                    window.location.href = '/login';
+            socket.onmessage = (event) => {
+                try {
+                    const message: WebSocketMessage = JSON.parse(event.data);
+                    setLatestMessage(message);
+                    setMessages(prev => [...prev.slice(-49), message]);
+                } catch {
+                    // Ignore malformed server frames and keep the connection alive.
                 }
-            }
+            };
+
+            socket.onerror = () => {
+                // onclose performs the single reconnect path.
+            };
+
+            socket.onclose = (event) => {
+                if (socket !== wsRef.current) return;
+                setIsConnected(false);
+                if (event.code === 1008 || event.code === 4003) {
+                    localStorage.removeItem('auth_token');
+                    if (!window.location.pathname.includes('/login')) window.location.href = '/login';
+                    return;
+                }
+                scheduleReconnect();
+            };
         };
 
+        connect();
         return () => {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.close();
-            }
+            disposed = true;
+            if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
+            reconnectTimer = undefined;
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) socket.close();
+            if (wsRef.current === socket) wsRef.current = null;
         };
     }, [projectId]);
 
-    return { messages, isConnected };
+    return { messages, latestMessage, isConnected };
 };
