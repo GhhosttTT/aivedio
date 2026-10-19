@@ -702,6 +702,7 @@ class ComfyUIService:
         output_path: str,
         end_image: Optional[str] = None,
         continuity_reference_image: Optional[str] = None,
+        reference_images: Optional[List[str]] = None,
         negative_prompt: str = "",
         width: int = 1024,
         height: int = 576,
@@ -729,6 +730,16 @@ class ComfyUIService:
             raise ComfyUIError(f"ComfyUI 视频工作流不存在: {workflow_file}")
         workflow = json.loads(workflow_file.read_text(encoding="utf-8"))
         uploaded_reference = self._upload_reference_image(reference_image)
+        uploaded_references = [uploaded_reference]
+        seen_reference_paths = {str(Path(reference_image).resolve())}
+        for reference_path in reference_images or []:
+            if not reference_path:
+                continue
+            resolved_reference_path = str(Path(reference_path).resolve())
+            if resolved_reference_path in seen_reference_paths:
+                continue
+            uploaded_references.append(self._upload_reference_image(reference_path))
+            seen_reference_paths.add(resolved_reference_path)
         uploaded_end = self._upload_reference_image(end_image) if end_image else uploaded_reference
         continuity_fallback = not continuity_reference_image
         # The first shot has no previous tail frame. Reuse its verified opening
@@ -747,6 +758,8 @@ class ComfyUIService:
             "positive_prompt": prompt,
             "negative_prompt": negative_prompt or "",
             "reference_image": uploaded_reference,
+            "reference_images_json": json.dumps(uploaded_references, ensure_ascii=False),
+            "reference_image_count": len(uploaded_references),
             "start_image": uploaded_reference,
             "first_frame": uploaded_reference,
             "end_image": uploaded_end,

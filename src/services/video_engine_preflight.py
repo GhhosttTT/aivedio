@@ -35,6 +35,7 @@ VIDEO_WORKFLOW_PLACEHOLDERS = {
     "spatial_asset_pack_json", "spatial_scene_contract_hash",
     "continuity_reference_image", "continuity_image", "previous_last_frame",
     "continuity_reference_fallback",
+    "reference_images_json", "reference_image_count",
 }
 
 # Keep the selectable catalog next to the provider contract so the UI and

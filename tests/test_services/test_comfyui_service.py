@@ -174,6 +174,7 @@ class TestComfyUIService:
                         "spatial_scene_contract_hash": "{spatial_scene_contract_hash}",
                         "continuity_reference_image": "{continuity_reference_image}",
                         "continuity_reference_fallback": "{continuity_reference_fallback}",
+                        "reference_images_json": "{reference_images_json}",
                     },
                 }
             }
@@ -190,6 +191,7 @@ class TestComfyUIService:
                 "spatial_scene_contract_hash": "scene-hash",
                 "continuity_reference_image": "previous-last-frame.png",
                 "continuity_reference_fallback": "",
+                "reference_images_json": "[\"uploaded/scene.png\"]",
             })
 
             assert replaced["1"]["inputs"]["motion_bucket_id"] == 96
@@ -204,6 +206,28 @@ class TestComfyUIService:
             assert replaced["1"]["inputs"]["spatial_scene_contract_hash"] == "scene-hash"
             assert replaced["1"]["inputs"]["continuity_reference_image"] == "previous-last-frame.png"
             assert replaced["1"]["inputs"]["continuity_reference_fallback"] == ""
+
+    def test_video_workflow_uploads_distinct_reference_images(self, mock_workflow_config, mock_http_client, tmp_path, monkeypatch):
+        with patch('src.services.comfyui_service.httpx.Client', return_value=mock_http_client):
+            service = ComfyUIService(workflow_path=mock_workflow_config)
+            workflow_path = tmp_path / "video.json"
+            workflow_path.write_text(json.dumps({
+                "1": {"class_type": "ReferenceStack", "inputs": {"images": "{reference_images_json}"}},
+            }), encoding="utf-8")
+            uploaded = []
+            monkeypatch.setattr(service, "_upload_reference_image", lambda path: uploaded.append(path) or f"uploaded/{Path(path).name}")
+            monkeypatch.setattr(service, "preflight", lambda _workflow: None)
+            monkeypatch.setattr(service, "_run_submitted_job", lambda *args, **kwargs: str(tmp_path / "scene.mp4"))
+
+            service.generate_video(
+                prompt="identity-preserving shot",
+                reference_image=str(tmp_path / "opening.png"),
+                reference_images=[str(tmp_path / "opening.png"), str(tmp_path / "character.png")],
+                output_path=str(tmp_path / "scene.mp4"),
+                workflow_path=str(workflow_path),
+            )
+
+            assert uploaded == [str(tmp_path / "opening.png"), str(tmp_path / "character.png")]
 
     def test_video_workflow_uses_opening_frame_for_first_shot_continuity(self, mock_workflow_config, mock_http_client, tmp_path, monkeypatch):
         with patch('src.services.comfyui_service.httpx.Client', return_value=mock_http_client):
