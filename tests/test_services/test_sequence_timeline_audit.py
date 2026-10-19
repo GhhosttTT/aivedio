@@ -13,7 +13,10 @@ def _planned(scene_number, duration, start=0.0):
 def test_sequence_timeline_audit_accepts_segment_durations_within_tolerance():
     report = SequenceTimelineAuditService().audit(
         [_planned(1, 2.0), _planned(2, 3.0, 2.0)],
-        [{"scene_number": 1, "duration_seconds": 2.08}, {"scene_number": 2, "duration_seconds": 2.9}],
+        [
+            {"scene_number": 1, "duration_seconds": 2.08, "status": "available", "temporal_sample_evidence": "sufficient"},
+            {"scene_number": 2, "duration_seconds": 2.9, "status": "available", "temporal_sample_evidence": "sufficient"},
+        ],
     )
 
     assert report.status == "passed"
@@ -53,6 +56,16 @@ def test_sequence_timeline_audit_rejects_unavailable_segment_evidence():
     report = SequenceTimelineAuditService().audit(
         [_planned(1, 2.0)],
         [{"scene_number": 1, "duration_seconds": 2.0, "status": "unavailable"}],
+    )
+
+    assert report.status == "needs_review"
+    assert report.issues[0]["code"] == "segment_technical_evidence_unavailable"
+
+
+def test_sequence_timeline_audit_rejects_missing_segment_evidence_schema():
+    report = SequenceTimelineAuditService().audit(
+        [_planned(1, 2.0)],
+        [{"scene_number": 1, "duration_seconds": 2.0}],
     )
 
     assert report.status == "needs_review"

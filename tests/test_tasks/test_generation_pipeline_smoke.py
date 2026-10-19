@@ -1673,7 +1673,16 @@ def test_sequence_task_forwards_explicit_output_path_before_provider_generation(
             Path(path).write_bytes(b"scene-video")
 
     monkeypatch.setattr(video_tasks, "split_sequence_video", fake_split)
-    monkeypatch.setattr(video_tasks, "video_candidate_metrics", lambda *_args, **_kwargs: {"duration_seconds": 2.0})
+    monkeypatch.setattr(
+        video_tasks,
+        "video_candidate_metrics",
+        lambda *_args, **_kwargs: {
+            "status": "available",
+            "duration_seconds": 2.0,
+            "temporal_sample_evidence": "sufficient",
+            "sampled_frames": 8,
+        },
+    )
     monkeypatch.setattr(
         video_tasks,
         "video_boundary_continuity",
