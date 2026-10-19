@@ -788,7 +788,8 @@ def test_workflow_profile_freeze_clears_readiness_workflow_profile_blocker(setup
     reference.write_text('{"1":{"class_type":"IPAdapterFaceID"},"2":{"class_type":"SaveImage"}}', encoding="utf-8")
     video.write_text(
         '{"1":{"class_type":"LoadImage","inputs":{"image":"{reference_image}"}},'
-        '"2":{"class_type":"LoadImage","inputs":{"image":"{last_frame}"}},'
+            '"2":{"class_type":"LoadImage","inputs":{"image":"{last_frame}"}},'
+            '"2b":{"class_type":"LoadImage","inputs":{"image":"{continuity_reference_image}"}},'
         '"3":{"class_type":"CLIPTextEncode","inputs":{"text":"{prompt}"}},'
         '"4":{"class_type":"VideoQualitySwitch","inputs":{"quality_mode":"{quality_mode}",'
         '"repair_action":"{repair_action}","pipeline":"{quality_pipeline_json}",'

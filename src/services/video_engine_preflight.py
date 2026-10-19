@@ -33,6 +33,7 @@ VIDEO_WORKFLOW_PLACEHOLDERS = {
     "quality_pipeline_negative",
     "shot_plan_json", "spatial_plan_json", "spatial_control_references_json",
     "spatial_asset_pack_json", "spatial_scene_contract_hash",
+    "continuity_reference_image", "continuity_image", "previous_last_frame",
 }
 
 # Keep the selectable catalog next to the provider contract so the UI and
@@ -119,6 +120,9 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
         checks["has_spatial_asset_contract_placeholder"] = bool({
             "spatial_asset_pack_json", "spatial_scene_contract_hash",
         } & set(placeholders))
+        checks["has_continuity_reference_placeholder"] = bool({
+            "continuity_reference_image", "continuity_image", "previous_last_frame",
+        } & set(placeholders))
         checks["has_likely_video_output"] = bool(outputs)
         contract_required = (
             "workflow_file", "has_reference_placeholder", "has_prompt_placeholder",
@@ -126,6 +130,7 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
             "has_quality_pipeline_placeholder", "has_likely_video_output",
             "has_spatial_plan_placeholder", "has_spatial_control_references_placeholder",
             "has_spatial_asset_contract_placeholder",
+            "has_continuity_reference_placeholder",
         )
         if not all(checks.get(key) for key in contract_required):
             checks["comfyui_preflight"] = False
@@ -168,6 +173,7 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
                 ),
                 "spatial_asset_pack_json": json.dumps({"scene_contract_hash": "validation"}, ensure_ascii=False),
                 "spatial_scene_contract_hash": "validation",
+                "continuity_reference_image": "validation_previous_last_frame.png",
             })
             service.preflight(resolved)
             checks["comfyui_preflight"] = True
@@ -301,6 +307,11 @@ def _video_workflow_action_items(checks: dict) -> list[str]:
         items.append("Add {spatial_control_references_json} so pose/depth/camera control references reach the video workflow.")
     if not checks.get("has_spatial_asset_contract_placeholder"):
         items.append("Add {spatial_asset_pack_json} or {spatial_scene_contract_hash} to bind the frozen spatial asset pack.")
+    if not checks.get("has_continuity_reference_placeholder"):
+        items.append(
+            "Add {continuity_reference_image}, {continuity_image}, or {previous_last_frame} "
+            "so adjacent shots can consume the verified previous tail frame."
+        )
     if not checks.get("has_likely_video_output"):
         items.append("Add a video output node such as VHS_VideoCombine, WebM/GIF export, or another video save node.")
     if not checks.get("comfyui_preflight"):
@@ -353,6 +364,7 @@ def preflight_production_video_engine(
             "Reference image placeholder for each scene keyframe",
             "Prompt placeholders for the director motion contract",
             "Quality profile, repair action, and quality-pipeline placeholders for commercial repair passes",
+            "A continuity-reference placeholder for verified adjacent-shot tail frames",
             "A real video output node",
             "ComfyUI preflight passing against installed nodes and models, or API endpoint/key configured",
         ],

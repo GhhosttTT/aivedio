@@ -309,6 +309,7 @@ def test_video_workflow_preflight_blocks_missing_video_contract(tmp_path, monkey
     assert report["checks"]["has_quality_profile_placeholder"] is False
     assert report["checks"]["has_repair_action_placeholder"] is False
     assert report["checks"]["has_quality_pipeline_placeholder"] is False
+    assert report["checks"]["has_continuity_reference_placeholder"] is False
     assert report["checks"]["has_likely_video_output"] is False
     assert any("{reference_image}" in item for item in report["action_items"])
     assert any("{quality_mode}" in item for item in report["action_items"])
@@ -361,6 +362,7 @@ def test_video_workflow_preflight_blocks_missing_quality_placeholders(tmp_path, 
     assert any("{quality_mode}" in item for item in report["action_items"])
     assert any("{repair_action}" in item for item in report["action_items"])
     assert any("{quality_pipeline_json}" in item for item in report["action_items"])
+    assert any("continuity_reference" in item for item in report["action_items"])
 
 
 def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeypatch):
@@ -369,6 +371,7 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
         "1": {"class_type": "LoadImage", "inputs": {"image": "{reference_image}"}},
         "2": {"class_type": "CLIPTextEncode", "inputs": {"text": "{prompt}"}},
         "3": {"class_type": "LoadImage", "inputs": {"image": "{last_frame}"}},
+        "3b": {"class_type": "LoadImage", "inputs": {"image": "{continuity_reference_image}"}},
         "4": {
             "class_type": "VideoQualitySwitch",
             "inputs": {
@@ -420,8 +423,9 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
     assert report["checks"]["has_spatial_plan_placeholder"] is True
     assert report["checks"]["has_spatial_control_references_placeholder"] is True
     assert report["checks"]["has_spatial_asset_contract_placeholder"] is True
+    assert report["checks"]["has_continuity_reference_placeholder"] is True
     assert report["placeholders"] == [
-        "last_frame", "output_prefix", "prompt", "quality_mode",
+        "continuity_reference_image", "last_frame", "output_prefix", "prompt", "quality_mode",
         "quality_pipeline_json", "reference_image", "repair_action",
         "spatial_asset_pack_json", "spatial_control_references_json", "spatial_plan_json",
     ]
