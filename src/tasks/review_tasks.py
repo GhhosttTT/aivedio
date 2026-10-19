@@ -40,10 +40,13 @@ def _character_asset_evidence(project) -> list[dict]:
         return []
     try:
         from src.services.character_service import get_character_manager
+        from src.services.character_turnaround_album import CharacterTurnaroundAlbumService
 
         manager = get_character_manager()
+        turnaround_service = CharacterTurnaroundAlbumService()
     except (OSError, RuntimeError, TypeError):
         manager = None
+        turnaround_service = None
     evidence = []
     for character in characters:
         item = {
@@ -52,6 +55,7 @@ def _character_asset_evidence(project) -> list[dict]:
             "appearance": getattr(character, "appearance", None),
             "asset_pack": None,
             "reference_hashes": {},
+            "turnaround_album": None,
         }
         if manager is not None:
             try:
@@ -69,6 +73,26 @@ def _character_asset_evidence(project) -> list[dict]:
                 }
             except (OSError, TypeError, ValueError):
                 item["asset_pack"] = {"status": "unavailable"}
+        if turnaround_service is not None:
+            try:
+                album = turnaround_service.get_album(project.id, character.id)
+                if isinstance(album, dict):
+                    views = album.get("views") if isinstance(album.get("views"), dict) else {}
+                    item["turnaround_album"] = {
+                        "status": album.get("status"),
+                        "version": album.get("version"),
+                        "identity_spec_hash": album.get("identity_spec_hash"),
+                        "views": {
+                            str(view): {
+                                "sha256": value.get("sha256"),
+                                "control_prompt": value.get("control_prompt"),
+                            }
+                            for view, value in sorted(views.items())
+                            if isinstance(value, dict)
+                        },
+                    }
+            except (OSError, TypeError, ValueError):
+                item["turnaround_album"] = {"status": "unavailable"}
         evidence.append(item)
     return evidence
 
