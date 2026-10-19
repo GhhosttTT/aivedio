@@ -1184,6 +1184,8 @@ def generate_image_task(
             steps=kwargs.get("steps", settings.GENERATION_STEPS),
             cfg_scale=kwargs.get("cfg_scale", settings.GENERATION_CFG),
             reference_image=reference_image, use_ipadapter=reference_image is not None,
+            scene_type=shot_aesthetic_profile["id"],
+            quality_mode=settings.GENERATION_QUALITY_PROFILE,
             character_references=character_sheet_contract["references"] if len(visible_characters) > 1 else None,
             spatial_plan=(spatial_contract or {}).get("spatial_plan"),
             spatial_control_references=(spatial_contract or {}).get("control_references"),
