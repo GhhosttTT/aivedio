@@ -140,6 +140,26 @@ class TestCreateProductionTask:
             orchestrator.create_production_task(project_id=sample_project.id)
 
     @patch('src.services.task_orchestrator.chain')
+    def test_create_production_task_is_idempotent_for_active_project(
+        self, mock_chain, orchestrator, sample_project, sample_scenes, db_session
+    ):
+        sample_project.status = ProjectStatus.IN_PRODUCTION
+        active = TaskModel(
+            project_id=sample_project.id,
+            celery_task_id="already-running",
+            status=TaskStatus.RUNNING,
+            total_steps=10,
+        )
+        db_session.add(active)
+        db_session.commit()
+
+        assert orchestrator.create_production_task(
+            project_id=sample_project.id,
+            draft=True,
+        ) == "already-running"
+        mock_chain.assert_not_called()
+
+    @patch('src.services.task_orchestrator.chain')
     @patch('src.services.task_orchestrator.generate_sequence_video_task')
     def test_sequence_level_multi_shot_uses_one_sequence_task(
         self, mock_sequence_task, mock_chain, orchestrator, sample_project, sample_scenes, monkeypatch

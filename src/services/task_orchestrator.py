@@ -131,6 +131,17 @@ class TaskOrchestrator:
         logger.info(f"创建生产任务链: project_id={project_id}, scenes={len(scenes)}")
         
         if project.status == ProjectStatus.IN_PRODUCTION:
+            active_task = self.db.query(TaskModel).filter(
+                TaskModel.project_id == project_id,
+                TaskModel.status.in_([TaskStatus.PENDING, TaskStatus.RUNNING]),
+            ).order_by(TaskModel.created_at.desc()).first()
+            if active_task:
+                logger.info(
+                    "项目已有活动生产任务，幂等返回: project_id=%s, task_id=%s",
+                    project_id,
+                    active_task.celery_task_id,
+                )
+                return active_task.celery_task_id
             raise ValueError("项目正在制作，请等待当前任务结束")
         # SVD fallback is an explicit draft-only escape hatch. It must never
         # bypass the production readiness and engine contracts for final video.
