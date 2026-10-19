@@ -88,6 +88,25 @@ class GenerationContextAuditService:
                 "evidence": f"{len(signatures)} incompatible generation contexts found across {len(contexts)} rendered scenes",
                 "recommendation": "Lock model, task mode, output contract, and spatial project signature before retrying.",
             })
+        identity_signatures = {
+            str(context.get("character_identity_signature") or "").strip().lower()
+            for context in contexts
+            if str(context.get("character_identity_signature") or "").strip()
+        }
+        if len(identity_signatures) > 1:
+            issues.append({
+                "severity": "high",
+                "code": "character_identity_context_drift",
+                "scene_numbers": [
+                    item["scene_number"] for item in contexts
+                    if item.get("character_identity_signature")
+                ],
+                "evidence": (
+                    f"{len(identity_signatures)} character identity reference signatures found across "
+                    f"{len(contexts)} rendered scenes"
+                ),
+                "recommendation": "Regenerate affected shots with one frozen character-sheet asset pack.",
+            })
         missing = [item["scene_number"] for item in contexts if not item.get("request_contract_hash")]
         if missing:
             issues.append({
@@ -162,6 +181,10 @@ class GenerationContextAuditService:
             "output_format": metadata.get("requested_output_format") or contract.get("output_format"),
             "aspect_ratio": metadata.get("requested_aspect_ratio") or contract.get("aspect_ratio"),
             "spatial_project_signature": spatial.get("project_signature"),
+            "character_identity_signature": (
+                metadata.get("character_identity_signature")
+                or contract.get("character_identity_signature")
+            ),
             "request_contract_hash": metadata.get("request_contract_hash") or contract.get("contract_hash"),
         }
         if not any(values.get(key) for key in self.FIELDS):

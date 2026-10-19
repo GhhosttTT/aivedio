@@ -242,6 +242,32 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
             item = _reference_asset_evidence(role, value, index)
             if item:
                 reference_assets.append(item)
+    reference_images_by_index = {
+        item.get("index"): item
+        for item in reference_assets
+        if item.get("role") == "reference_image" and item.get("index") is not None
+    }
+    identity_bindings = [
+        {
+            "image_index": item.get("image_index"),
+            "character_name": item.get("character_name"),
+            "view": item.get("view"),
+            "reference_sha256": (
+                reference_images_by_index.get(item.get("image_index"), {}).get("sha256")
+            ),
+        }
+        for item in character_bindings
+    ]
+    character_identity_signature = None
+    if identity_bindings:
+        character_identity_signature = hashlib.sha256(
+            json.dumps(
+                identity_bindings,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
     dialogue = str(shot_plan.get("dialogue") or "").strip()
     dialogue_fingerprint = hashlib.sha256(
         " ".join(dialogue.split()).encode("utf-8")
@@ -286,6 +312,7 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         "reference_assets": reference_assets,
         "character_reference_binding_count": len(character_bindings),
         "character_reference_bindings": character_bindings,
+        "character_identity_signature": character_identity_signature,
         "sequence_image_bindings": sequence_image_bindings,
         "sequence_audio_bindings": sequence_audio_bindings,
         "spatial_asset_pack": spatial_contract,

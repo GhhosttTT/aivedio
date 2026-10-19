@@ -136,6 +136,32 @@ def test_video_request_contract_records_multicharacter_reference_bindings():
     ]
 
 
+def test_video_request_contract_fingerprints_bound_character_assets(tmp_path):
+    first = tmp_path / "alice.png"
+    second = tmp_path / "bob.png"
+    first.write_bytes(b"alice-v1")
+    second.write_bytes(b"bob-v1")
+    request = VideoGenerationRequest(
+        prompt="two characters",
+        output_path=str(tmp_path / "shot.mp4"),
+        reference_images=[str(first), str(second)],
+        shot_plan={
+            "character_reference_bindings": [
+                {"image_index": 1, "character_name": "Alice", "view": "front"},
+                {"image_index": 2, "character_name": "Bob", "view": "front"},
+            ],
+        },
+    )
+
+    original = _video_request_contract(request, request_mode="reference", sequence_level=False)
+    first.write_bytes(b"alice-v2")
+    changed = _video_request_contract(request, request_mode="reference", sequence_level=False)
+
+    assert original["character_identity_signature"]
+    assert original["character_identity_signature"] != changed["character_identity_signature"]
+    assert original["contract_hash"] != changed["contract_hash"]
+
+
 def test_video_request_contract_records_sequence_image_bindings():
     request = VideoGenerationRequest(
         prompt="sampled sequence",

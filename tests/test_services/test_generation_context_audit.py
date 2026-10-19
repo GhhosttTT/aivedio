@@ -83,3 +83,21 @@ def test_generation_context_audit_blocks_partial_provider_context_coverage(tmp_p
     assert report.status == "needs_review"
     assert report.checked_scene_count == 2
     assert report.issues[0]["code"] == "missing_provider_context_evidence"
+
+
+def test_generation_context_audit_flags_character_identity_asset_drift(tmp_path):
+    first = tmp_path / "scene_1.mp4"
+    second = tmp_path / "scene_2.mp4"
+    first.write_bytes(b"video")
+    second.write_bytes(b"video")
+    first_metadata = _metadata()
+    second_metadata = _metadata()
+    first_metadata["request_contract"]["character_identity_signature"] = "identity-a"
+    second_metadata["request_contract"]["character_identity_signature"] = "identity-b"
+    first.with_suffix(".provider.json").write_text(json.dumps(first_metadata), encoding="utf-8")
+    second.with_suffix(".provider.json").write_text(json.dumps(second_metadata), encoding="utf-8")
+
+    report = GenerationContextAuditService().audit([_scene(1, first), _scene(2, second)], {})
+
+    assert report.status == "needs_review"
+    assert any(issue["code"] == "character_identity_context_drift" for issue in report.issues)
