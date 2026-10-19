@@ -657,6 +657,32 @@ def test_sequence_segment_contract_uses_segment_duration_and_new_hash():
     assert metadata["request_contract"]["duration_seconds"] == 30
 
 
+def test_sequence_segment_contract_binds_scene_contract_hash():
+    metadata = {
+        "request_contract": {
+            "duration_seconds": 30,
+            "spatial_asset_pack": {"project_signature": "project-hash"},
+            "sequence_shot_contracts": [
+                {"scene_number": 1, "scene_contract_hash": "scene-1"},
+                {"scene_number": 2, "scene_contract_hash": "scene-2"},
+            ],
+        }
+    }
+
+    derived = _derive_sequence_segment_provider_metadata(
+        metadata,
+        expected_duration_seconds=4.25,
+        scene_number=2,
+    )
+
+    contract = derived["request_contract"]
+    assert contract["sequence_segment_scene_number"] == 2
+    assert contract["spatial_asset_pack"] == {
+        "project_signature": "project-hash",
+        "scene_contract_hash": "scene-2",
+    }
+
+
 def test_promote_sequence_sidecar_rewrites_staged_paths(tmp_path):
     staging = tmp_path / ".scene.sequence-1.part.mp4"
     output = tmp_path / "scene.mp4"

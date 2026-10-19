@@ -1517,6 +1517,7 @@ def _sequence_segment_quality_report(
     segment_metadata = _derive_sequence_segment_provider_metadata(
         provider_metadata,
         expected_duration_seconds=expected_duration_seconds,
+        scene_number=getattr(scene, "scene_number", None),
     )
     base_report = {
         "kind": "video_candidate_selection",
@@ -1603,6 +1604,7 @@ def _derive_sequence_segment_provider_metadata(
     provider_metadata: dict | None,
     *,
     expected_duration_seconds: float | None,
+    scene_number: int | None = None,
 ) -> dict:
     """Adapt aggregate provider evidence to one atomically published segment."""
     metadata = dict(provider_metadata or {})
@@ -1612,6 +1614,27 @@ def _derive_sequence_segment_provider_metadata(
     derived_contract = dict(contract)
     if expected_duration_seconds is not None:
         derived_contract["duration_seconds"] = round(float(expected_duration_seconds), 3)
+    if scene_number is not None:
+        derived_contract["sequence_segment_scene_number"] = int(scene_number)
+        sequence_shot_contracts = contract.get("sequence_shot_contracts")
+        scene_contract_hash = next(
+            (
+                item.get("scene_contract_hash")
+                for item in (sequence_shot_contracts or [])
+                if isinstance(item, dict)
+                and item.get("scene_number") == int(scene_number)
+                and item.get("scene_contract_hash")
+            ),
+            None,
+        )
+        if scene_contract_hash:
+            spatial_asset_pack = dict(
+                derived_contract.get("spatial_asset_pack")
+                if isinstance(derived_contract.get("spatial_asset_pack"), dict)
+                else {}
+            )
+            spatial_asset_pack["scene_contract_hash"] = scene_contract_hash
+            derived_contract["spatial_asset_pack"] = spatial_asset_pack
     derived_contract["derived_from_sequence"] = True
     derived_contract.pop("contract_hash", None)
     encoded = json.dumps(
