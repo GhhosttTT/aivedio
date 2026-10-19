@@ -3233,6 +3233,27 @@ def test_seedance_sequence_prompt_uses_explicit_sampled_reference_bindings():
     assert "@Image4 is a locked identity reference for Alice" in prompt
 
 
+def test_seedance_sequence_prompt_binds_sampled_audio_to_scenes():
+    prompt = _seedance_prompt(VideoGenerationRequest(
+        prompt="sampled dialogue sequence",
+        output_path="sequence.mp4",
+        multi_shot=True,
+        duration_seconds=30,
+        reference_audios=["scene1.wav", "scene12.wav"],
+        shot_plan={
+            "sequence_level": True,
+            "shots": [{"scene_number": 1}, {"scene_number": 12}],
+            "sequence_audio_bindings": [
+                {"audio_index": 1, "scene_number": 1},
+                {"audio_index": 2, "scene_number": 12},
+            ],
+        },
+    ))
+
+    assert "@Audio1 is the dialogue or sound reference for scene 1" in prompt
+    assert "@Audio2 is the dialogue or sound reference for scene 12" in prompt
+
+
 def test_seedance_sequence_prompt_prefers_explicit_timestamp_timeline():
     prompt = _seedance_prompt(VideoGenerationRequest(
         prompt="continuous short drama sequence",

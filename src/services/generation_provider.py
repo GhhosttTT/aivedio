@@ -2428,7 +2428,21 @@ def _seedance_prompt(request: VideoGenerationRequest, native_ark: bool | None = 
             f"{video_tag(extend_video_index)} is the source video to extend; continue from its final motion and composition"
         )
     if audio_count:
-        bindings.append(f"{audio_tag(1)} onward are dialogue or sound references; keep visible mouth/action timing aligned")
+        explicit_audio_bindings = plan.get("sequence_audio_bindings")
+        if isinstance(explicit_audio_bindings, list) and explicit_audio_bindings:
+            for item in explicit_audio_bindings:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    audio_index = int(item.get("audio_index"))
+                except (TypeError, ValueError):
+                    continue
+                if 1 <= audio_index <= audio_count:
+                    bindings.append(
+                        f"{audio_tag(audio_index)} is the dialogue or sound reference for scene {item.get('scene_number')}"
+                    )
+        else:
+            bindings.append(f"{audio_tag(1)} onward are dialogue or sound references; keep visible mouth/action timing aligned")
     if bindings:
         prompt = f"{prompt}. Reference binding: {'; '.join(bindings)}."
     character_bindings = plan.get("character_reference_bindings")

@@ -201,6 +201,14 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         for item in (shot_plan.get("sequence_image_bindings") or [])
         if isinstance(item, dict)
     ]
+    sequence_audio_bindings = [
+        {
+            "audio_index": item.get("audio_index"),
+            "scene_number": item.get("scene_number"),
+        }
+        for item in (shot_plan.get("sequence_audio_bindings") or [])
+        if isinstance(item, dict)
+    ]
     sequence_shot_contracts = [
         {
             "scene_number": shot.get("scene_number"),
@@ -279,6 +287,7 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         "character_reference_binding_count": len(character_bindings),
         "character_reference_bindings": character_bindings,
         "sequence_image_bindings": sequence_image_bindings,
+        "sequence_audio_bindings": sequence_audio_bindings,
         "spatial_asset_pack": spatial_contract,
         "sequence_shot_contracts": sequence_shot_contracts,
     }
@@ -788,6 +797,7 @@ class _ComfyVideoGenerator:
         self.reference_videos = list(reference_videos or [])
         self.reference_audios = list(reference_audios or [])
         self.sequence_image_bindings: list[dict] = []
+        self.sequence_audio_bindings: list[dict] = []
         self.sequence_context: dict | None = None
         self.character_reference_bindings = [
             dict(item) for item in (character_reference_bindings or []) if isinstance(item, dict)
@@ -904,6 +914,11 @@ class _ComfyVideoGenerator:
                 **shot_plan_payload,
                 "sequence_image_bindings": self.sequence_image_bindings,
             }
+        if shot_plan_payload is not None and self.sequence_audio_bindings:
+            shot_plan_payload = {
+                **shot_plan_payload,
+                "sequence_audio_bindings": self.sequence_audio_bindings,
+            }
         if multi_shot and sequence_level_multi_shot and shot_plan_payload is not None:
             sequence_timeline = self.provider_options.get("SEQUENCE_TIMELINE")
             shot_plan_payload = {
@@ -1019,6 +1034,7 @@ class _ComfyVideoGenerator:
         audios: list[str] | None = None,
         continuity_image: str | None = None,
         sequence_image_bindings: list[dict] | None = None,
+        sequence_audio_bindings: list[dict] | None = None,
     ):
         """Attach Seedance-style references without changing local workflows."""
         self.reference_images = list(images or [])
@@ -1027,6 +1043,9 @@ class _ComfyVideoGenerator:
         self.continuity_reference_image = continuity_image
         self.sequence_image_bindings = [
             dict(item) for item in (sequence_image_bindings or []) if isinstance(item, dict)
+        ]
+        self.sequence_audio_bindings = [
+            dict(item) for item in (sequence_audio_bindings or []) if isinstance(item, dict)
         ]
         return self
 
@@ -1349,6 +1368,17 @@ def _multimodal_references_for_sequence(
             if isinstance(item, dict) and item.get("path") in selected_identity:
                 identity_by_image.setdefault(str(item["path"]), set()).add(str(item.get("name") or "character"))
     ordered_images = selected_shots + selected_identity
+    selected_audios = _select_reference_paths(audios, audio_limit) if supports_multimodal else []
+    scene_by_audio = {
+        str(scene.audio_path): int(scene.scene_number)
+        for scene in scenes
+        if scene.audio_path and str(scene.audio_path) in selected_audios
+    }
+    audio_bindings = [
+        {"audio_index": index, "scene_number": scene_by_audio[path]}
+        for index, path in enumerate(selected_audios, start=1)
+        if path in scene_by_audio
+    ]
     image_bindings = []
     for index, path in enumerate(ordered_images, start=1):
         if path in scene_by_image:
@@ -1363,8 +1393,9 @@ def _multimodal_references_for_sequence(
         "images": ordered_images[:image_limit],
         "continuity_image": None,
         "videos": [],
-        "audios": _select_reference_paths(audios, audio_limit) if supports_multimodal else [],
+        "audios": selected_audios,
         "sequence_image_bindings": image_bindings[:image_limit],
+        "sequence_audio_bindings": audio_bindings,
     }
 
 

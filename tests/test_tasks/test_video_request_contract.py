@@ -155,6 +155,7 @@ def test_video_request_contract_records_sequence_image_bindings():
         {"image_index": 1, "role": "shot_keyframe", "scene_number": 1, "character_names": []},
         {"image_index": 2, "role": "character_identity", "scene_number": None, "character_names": ["Alice"]},
     ]
+    assert contract["sequence_audio_bindings"] == []
 
 
 def test_video_request_contract_binds_frozen_spatial_asset_pack():
