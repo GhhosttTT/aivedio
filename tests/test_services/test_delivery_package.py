@@ -402,6 +402,8 @@ def test_delivery_package_rejects_invalid_production_readiness_snapshot(tmp_path
             {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)},
             {"status": "ready"},
         )
+    assert not (tmp_path / "delivery" / "delivery_package.zip").exists()
+    assert not (tmp_path / "delivery" / "delivery_manifest.json").exists()
 
 
 def test_delivery_package_rejects_snapshot_for_another_project(tmp_path):

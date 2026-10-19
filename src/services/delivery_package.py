@@ -729,6 +729,8 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
     manifest["manifest_path"] = str(manifest_path)
     verification = verify_delivery_package(package_path)
     if verification.get("status") != "passed":
+        package_path.unlink(missing_ok=True)
+        manifest_path.unlink(missing_ok=True)
         raise DeliveryPackageError(
             "Generated delivery package failed verification: "
             + "; ".join(verification.get("errors") or [])
