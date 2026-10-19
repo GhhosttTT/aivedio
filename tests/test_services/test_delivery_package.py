@@ -43,6 +43,7 @@ def _passed_final_composition(final):
         "status": "passed",
         "video_path": str(final),
         "video_sha256": _sha256(final),
+        "video_signature": f"{final.resolve()}:{final.stat().st_size}:{final.stat().st_mtime_ns}",
         "final_technical_metrics": {
             "status": "available",
             "temporal_sample_evidence": "sufficient",
@@ -198,6 +199,22 @@ def test_delivery_package_requires_final_composition_evidence(tmp_path):
         build_delivery_package(project, tmp_path, {"generation": {"status": "passed"}}, {"status": "ready"})
 
 
+def test_delivery_package_rejects_stale_final_video_signature(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+    report = _passed_final_composition(final)
+    report["video_signature"] = "stale-version"
+
+    with pytest.raises(DeliveryPackageError, match="version does not match"):
+        build_delivery_package(
+            project,
+            tmp_path,
+            {"generation": {"status": "passed"}, "final_composition": report},
+            {"status": "ready"},
+        )
+
+
 def test_delivery_package_persists_in_memory_final_composition_report(tmp_path):
     final = tmp_path / "final.mp4"
     final.write_bytes(b"final-video")
@@ -255,6 +272,7 @@ def test_delivery_package_accepts_approved_manual_final_review(tmp_path):
         "status": "needs_review",
         "video_path": str(final),
         "video_sha256": _sha256(final),
+        "video_signature": f"{final.resolve()}:{final.stat().st_size}:{final.stat().st_mtime_ns}",
         "human_decision": {"decision": "approved", "note": "人工确认"},
         "final_technical_metrics": {
             "status": "available",

@@ -346,10 +346,11 @@ def test_delivery_package_endpoint_exports_approved_project(tmp_path, monkeypatc
                     "generation": {"status": "passed"},
                     "seed_dance_baseline_comparison": {"status": "passed"},
                     "final_composition": {
-                    "status": "passed",
-                    "video_path": str(final_video),
-                    "video_sha256": _sha256(final_video),
-                    "final_technical_metrics": {
+                        "status": "passed",
+                        "video_path": str(final_video),
+                        "video_sha256": _sha256(final_video),
+                        "video_signature": f"{final_video.resolve()}:{final_video.stat().st_size}:{final_video.stat().st_mtime_ns}",
+                        "final_technical_metrics": {
                         "status": "available",
                         "temporal_sample_evidence": "sufficient",
                     },

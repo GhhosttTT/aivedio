@@ -24,6 +24,14 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _version_signature(path: Path) -> str | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return f"{path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
+
+
 def _write_json_atomic(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
@@ -431,6 +439,8 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         raise DeliveryPackageError("Final composition review points to a different video")
     if final_composition.get("video_sha256") != _sha256(final_path):
         raise DeliveryPackageError("Final composition review is stale for the current video")
+    if final_composition.get("video_signature") != _version_signature(final_path):
+        raise DeliveryPackageError("Final composition review version does not match the current video")
     delivery_root = root / "delivery"
     package_path = delivery_root / "delivery_package.zip"
     manifest_path = delivery_root / "delivery_manifest.json"
