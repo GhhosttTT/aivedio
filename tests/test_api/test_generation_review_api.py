@@ -359,6 +359,14 @@ def test_delivery_package_endpoint_exports_approved_project(tmp_path, monkeypatc
     project_root = storage_manager.get_project_path(1)
     final_video = project_root / "final.mp4"
     final_video.write_bytes(b"approved-video")
+    (project_root / "reviews").mkdir(parents=True, exist_ok=True)
+    (project_root / "reviews" / "production_readiness_latest.json").write_text(json.dumps({
+        "kind": "production_readiness_snapshot",
+        "readiness": {
+            "status": "ready",
+            "video_engine": {"status": "ready_for_production_video_test"},
+        },
+    }), encoding="utf-8")
     db = Mock()
     db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
         id=1, user_id=2, name="Pilot", theme="悬疑", outline="outline", script="{}",
@@ -397,6 +405,21 @@ def test_delivery_package_endpoint_exports_approved_project(tmp_path, monkeypatc
 
     assert result["status"] == "ready"
     assert (project_root / "delivery" / "delivery_package.zip").is_file()
+
+
+def test_delivery_package_endpoint_requires_production_readiness_snapshot(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        id=1, user_id=2, final_video_path=None,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(create_delivery_package(1, SimpleNamespace(id=2), db))
+
+    assert exc.value.status_code == 409
+    assert "readiness snapshot" in exc.value.detail
 
 
 def test_review_api_marks_old_seedance_baseline_stale_after_candidate_changes(tmp_path, monkeypatch):

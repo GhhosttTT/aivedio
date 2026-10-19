@@ -853,6 +853,12 @@ async def create_delivery_package(
     project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    readiness_snapshot = storage_manager.get_project_path(project_id) / "reviews" / "production_readiness_latest.json"
+    if not readiness_snapshot.is_file():
+        raise HTTPException(
+            status_code=409,
+            detail="Production readiness snapshot is missing; run a production task through the readiness gate before delivery",
+        )
     review = await get_generation_review(project_id, current_user, db_session)
     try:
         return build_delivery_package(
