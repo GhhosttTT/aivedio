@@ -1704,7 +1704,15 @@ def _video_gate_evidence_complete(review_report: dict) -> bool:
             return False
         for key in required:
             value = review.get(key)
-            if not isinstance(value, dict) or not isinstance(value.get("score"), (int, float)):
+            if (
+                not isinstance(value, dict)
+                or isinstance(value.get("score"), bool)
+                or not isinstance(value.get("score"), (int, float))
+                or not isfinite(float(value["score"]))
+                or not 0 <= float(value["score"]) <= 5
+                or not isinstance(value.get("evidence"), str)
+                or len(value["evidence"].strip()) < 12
+            ):
                 return False
     return True
 
@@ -1817,21 +1825,21 @@ def _video_aesthetic_gate_passes(candidate: dict) -> bool:
     gate = candidate.get("video_aesthetic_gate")
     if not isinstance(gate, dict):
         return not settings.GENERATION_REQUIRE_VIDEO_REVIEW
-    return gate.get("status") == "passed"
+    return _video_summary_gate_passes(gate)
 
 
 def _platform_reference_gate_passes(candidate: dict) -> bool:
     gate = candidate.get("platform_reference_gate")
     if not isinstance(gate, dict):
         return not settings.GENERATION_REQUIRE_VIDEO_REVIEW
-    return gate.get("status") == "passed"
+    return _video_summary_gate_passes(gate)
 
 
 def _video_character_distinctiveness_gate_passes(candidate: dict) -> bool:
     gate = candidate.get("character_distinctiveness_gate")
     if not isinstance(gate, dict):
         return True
-    return gate.get("status") == "passed"
+    return _video_summary_gate_passes(gate)
 
 
 def _video_performance_gate_passes(candidate: dict) -> bool:
@@ -1844,7 +1852,32 @@ def _video_performance_gate_passes(candidate: dict) -> bool:
             if role and (role != "establishing" or dialogue):
                 return not settings.GENERATION_REQUIRE_VIDEO_REVIEW
         return True
-    return gate.get("status") == "passed"
+    return _video_summary_gate_passes(gate)
+
+
+def _video_summary_gate_passes(gate: dict) -> bool:
+    """Validate compact gate summaries before allowing candidate promotion."""
+    if gate.get("status") != "passed" or gate.get("missing") or gate.get("low"):
+        return False
+    minimum = gate.get("min_score")
+    average = gate.get("average")
+    if (
+        isinstance(average, bool)
+        or not isinstance(average, (int, float))
+        or not isfinite(float(average))
+        or not 0 <= float(average) <= 5
+    ):
+        return False
+    if minimum is not None:
+        if (
+            isinstance(minimum, bool)
+            or not isinstance(minimum, (int, float))
+            or not isfinite(float(minimum))
+            or not 0 <= float(minimum) <= 5
+            or float(average) < float(minimum)
+        ):
+            return False
+    return True
 
 
 def _video_gate_passes(candidate: dict) -> tuple[bool, dict[str, float]]:
@@ -1856,6 +1889,14 @@ def _video_gate_passes(candidate: dict) -> tuple[bool, dict[str, float]]:
             return False, scores
         required = {"facial_identity", "identity_consistency", "temporal_consistency"}
         if not required.issubset(scores):
+            return False, scores
+    for key, value in scores.items():
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not isfinite(float(value))
+            or not 0 <= float(value) <= 5
+        ):
             return False, scores
     identity_min = settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE
     temporal_min = settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE

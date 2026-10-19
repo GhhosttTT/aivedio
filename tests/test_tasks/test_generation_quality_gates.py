@@ -698,6 +698,20 @@ def test_required_video_review_rejects_incomplete_identity_gate(monkeypatch):
     assert "temporal_consistency" not in scores
 
 
+@pytest.mark.parametrize("invalid_score", [True, float("nan"), float("inf"), 6, -1])
+def test_required_video_review_rejects_invalid_identity_scores(monkeypatch, invalid_score):
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+    passes, _ = _video_gate_passes({
+        "gate_scores": {
+            "facial_identity": invalid_score,
+            "identity_consistency": 5.0,
+            "temporal_consistency": 5.0,
+        },
+    })
+
+    assert passes is False
+
+
 def test_required_video_review_rejects_missing_performance_gate_for_action_shot(monkeypatch):
     monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
 
@@ -726,6 +740,19 @@ def test_video_gate_evidence_requires_every_review_batch():
             {"review": {"facial_identity": {"score": 5}}},
         ],
     }) is False
+
+
+def test_video_gate_evidence_rejects_short_or_out_of_range_scores():
+    assert _video_gate_evidence_complete({"batches": [{"review": {
+        "facial_identity": {"score": 5, "evidence": "short"},
+        "identity_consistency": {"score": 5, "evidence": "identity remains stable"},
+        "temporal_consistency": {"score": 5, "evidence": "motion remains stable"},
+    }}]}) is False
+    assert _video_gate_evidence_complete({"batches": [{"review": {
+        "facial_identity": {"score": 6, "evidence": "identity matches across sampled frames"},
+        "identity_consistency": {"score": 5, "evidence": "identity remains stable"},
+        "temporal_consistency": {"score": 5, "evidence": "motion remains stable"},
+    }}]}) is False
 
 
 def passed_platform_reference_scores(score: int = 5) -> dict:
@@ -2396,7 +2423,7 @@ def test_video_selection_prefers_character_distinctiveness(project_data, tmp_pat
                 "composition": {"score": 5, "evidence": "strong framing"},
                 "aesthetic_quality": {"score": 5, "evidence": "commercial lighting"},
                 "visual_integrity": {"score": 5, "evidence": "clean render"},
-                "facial_identity": {"score": 5, "evidence": "faces match"},
+                "facial_identity": {"score": 5, "evidence": "faces match across sampled frames"},
                 "identity_consistency": {"score": 5, "evidence": "wardrobe stable"},
                 "temporal_consistency": {"score": 5, "evidence": "motion stable"},
                 "video_aesthetic_scores": video_aesthetic_scores,
