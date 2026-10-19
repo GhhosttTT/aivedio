@@ -11,6 +11,7 @@ from src.services.video_quality_metrics import (
     video_boundary_continuity,
     video_start_frame_reference_metrics,
     video_technical_score,
+    _is_abrupt_visual_jump,
 )
 
 
@@ -133,6 +134,12 @@ def test_explicit_sampling_budget_is_preserved(monkeypatch, tmp_path):
 def test_video_boundary_continuity_is_not_applicable_for_one_clip(tmp_path):
     report = video_boundary_continuity([tmp_path / "only.mp4"])
     assert report == {"status": "not_applicable", "boundary_count": 0, "boundaries": []}
+
+
+def test_boundary_visual_jump_classifier_is_conservative_for_normal_cuts():
+    assert _is_abrupt_visual_jump(0.72, 0.72) is True
+    assert _is_abrupt_visual_jump(0.71, 0.90) is False
+    assert _is_abrupt_visual_jump(0.90, 0.71) is False
 
 
 def test_video_start_frame_reference_is_not_applicable_without_reference(tmp_path):

@@ -473,6 +473,7 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
                 (saturation_delta >= 0.35 or contrast_delta >= 0.4)
                 and histogram_distance >= 0.7
             )
+            abrupt_visual_jump = _is_abrupt_visual_jump(pixel_delta, histogram_distance)
             previous_fps = float(previous_probe.get("fps") or 0.0)
             current_fps = float(current_probe.get("fps") or 0.0)
             fps_match = (
@@ -521,9 +522,11 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
                 "histogram_distance": round(histogram_distance, 3),
                 "severe_exposure_or_black_transition": severe,
                 "severe_style_transition": severe_style,
+                "abrupt_visual_jump": abrupt_visual_jump,
             })
         severe_count = sum(item["severe_exposure_or_black_transition"] for item in boundaries)
         severe_style_count = sum(item["severe_style_transition"] for item in boundaries)
+        visual_jump_count = sum(item["abrupt_visual_jump"] for item in boundaries)
         geometry_mismatch_count = sum(not item["geometry_match"] for item in boundaries)
         fps_mismatch_count = sum(not item["fps_match"] for item in boundaries)
         pixel_format_mismatch_count = sum(not item["pixel_format_match"] for item in boundaries)
@@ -533,6 +536,14 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
             "boundary_count": len(boundaries),
             "severe_transition_count": severe_count,
             "severe_style_transition_count": severe_style_count,
+            "visual_jump_count": visual_jump_count,
+                "cut_smoothness_score": round(
+                    max(0.0, 5.0 - sum(
+                        min(1.5, item["pixel_delta"] * 1.5 + item["histogram_distance"] * 1.5)
+                        for item in boundaries
+                    ) / max(1, len(boundaries))),
+                    2,
+                ),
             "geometry_mismatch_count": geometry_mismatch_count,
             "fps_mismatch_count": fps_mismatch_count,
             "pixel_format_mismatch_count": pixel_format_mismatch_count,
@@ -546,6 +557,11 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
             "boundaries": [],
             "error": str(exc),
         }
+
+
+def _is_abrupt_visual_jump(pixel_delta: float, histogram_distance: float) -> bool:
+    """Classify a boundary with an unusually large unaccounted visual jump."""
+    return pixel_delta >= 0.72 and histogram_distance >= 0.72
 
 
 def video_start_frame_reference_metrics(
