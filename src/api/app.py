@@ -243,7 +243,11 @@ def register_routes(app: FastAPI):
             logger.warning("Readiness database check failed: {}", exc)
             checks["database"] = "unavailable"
 
-        require_redis = bool(getattr(settings, "READINESS_REQUIRE_REDIS", False))
+        environment = str(getattr(settings, "ENVIRONMENT", "development")).strip().lower()
+        require_redis = bool(
+            getattr(settings, "READINESS_REQUIRE_REDIS", False)
+            or environment in {"production", "prod"}
+        )
         if require_redis:
             try:
                 from src.api.rate_limiter import get_redis_client

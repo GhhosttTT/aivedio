@@ -46,6 +46,18 @@ def test_readiness_check_reports_database_and_optional_redis(client):
     assert data["checks"]["redis"] == "not_required"
 
 
+def test_readiness_requires_redis_in_production(client, monkeypatch):
+    monkeypatch.setattr("src.api.app.settings.ENVIRONMENT", "production")
+    monkeypatch.setattr("src.api.rate_limiter.get_redis_client", lambda: None)
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    data = response.json()
+    assert data["status"] == "not_ready"
+    assert data["checks"]["redis"] == "unavailable"
+
+
 def test_root_endpoint(client):
     """
     测试根路径端点
