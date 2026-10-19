@@ -27,6 +27,7 @@ from src.services.generation_review import (
     video_character_distinctiveness_gate,
     episode_continuity_gate,
     video_performance_gate,
+    weighted_review_score,
 )
 
 
@@ -182,6 +183,34 @@ def test_platform_reference_gate_quantifies_seed_dance_gap(monkeypatch):
         "production_design",
         "viewer_scroll_stop_appeal",
     }
+
+
+@pytest.mark.parametrize("invalid_score", [True, float("nan"), float("inf"), 6, -1])
+def test_review_gates_reject_non_production_scores(invalid_score):
+    review = {
+        "platform_reference_scores": {
+            feature: {"score": 4, "evidence": "specific platform comparison evidence"}
+            for feature in PLATFORM_REFERENCE_FEATURES
+        }
+    }
+    review["platform_reference_scores"]["seed_dance_gap"]["score"] = invalid_score
+
+    gate = platform_reference_gate(review)
+
+    assert gate["status"] == "needs_review"
+    assert "seed_dance_gap" in gate["missing"]
+
+
+def test_weighted_review_score_ignores_invalid_dimensions_without_producing_nan():
+    score = weighted_review_score(
+        {
+            "story_match": {"score": float("nan")},
+            "composition": {"score": 4},
+        },
+        {"story_match": 0.5, "composition": 0.5},
+    )
+
+    assert score == 4.0
 
 
 def test_video_character_distinctiveness_gate_quantifies_same_face_risk(monkeypatch):

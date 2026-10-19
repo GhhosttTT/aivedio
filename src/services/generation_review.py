@@ -215,9 +215,10 @@ def weighted_review_score(review: dict, weights: dict[str, float]) -> float | No
     weight_total = 0.0
     for key, weight in weights.items():
         value = review.get(key)
-        if isinstance(value, dict) and isinstance(value.get("score"), (int, float)):
-            weighted_total += float(value["score"]) * weight
-            weight_total += weight
+        if not isinstance(value, dict) or not _is_valid_score(value.get("score")):
+            continue
+        weighted_total += float(value["score"]) * weight
+        weight_total += weight
     if weight_total == 0:
         return None
     return round(max(0.0, min(5.0, weighted_total / weight_total)), 2)
@@ -239,6 +240,15 @@ def _clamp_score(value: float) -> float:
     return round(max(0.0, min(5.0, value)), 2)
 
 
+def _is_valid_score(value) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+        and 0 <= float(value) <= 5
+    )
+
+
 def _feature_score_or_missing(
     supplied: dict | None,
     feature: str,
@@ -249,11 +259,11 @@ def _feature_score_or_missing(
     item = supplied.get(feature) if isinstance(supplied, dict) else None
     score = item.get("score") if isinstance(item, dict) else None
     evidence = str(item.get("evidence") or "").strip() if isinstance(item, dict) else ""
-    if not isinstance(score, (int, float)):
+    if not _is_valid_score(score):
         missing.append(feature)
         return {
             "score": 0.0,
-            "evidence": missing_evidence,
+            "evidence": missing_evidence + "; score must be a finite number from 0 to 5",
         }
     if len(evidence) < MIN_REVIEW_EVIDENCE_CHARS:
         missing.append(f"{feature}.evidence")
