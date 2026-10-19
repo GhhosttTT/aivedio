@@ -94,6 +94,52 @@ def _video_version_signature(path: Path) -> str | None:
     return f"{path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
 
 
+def _quality_report_scene_numbers(report: dict) -> set[int]:
+    """Collect explicit scene references from a per-scene quality report."""
+    numbers: set[int] = set()
+    direct = report.get("scene_number")
+    if isinstance(direct, int) and direct > 0:
+        numbers.add(direct)
+    scene = report.get("scene")
+    if isinstance(scene, dict) and isinstance(scene.get("scene_number"), int):
+        numbers.add(scene["scene_number"])
+    entries = report.get("scenes")
+    if isinstance(entries, list):
+        for item in entries:
+            if isinstance(item, dict) and isinstance(item.get("scene_number"), int):
+                numbers.add(item["scene_number"])
+    candidates = report.get("candidates")
+    if isinstance(candidates, list):
+        for item in candidates:
+            if not isinstance(item, dict):
+                continue
+            candidate_scene = item.get("scene")
+            if isinstance(candidate_scene, dict) and isinstance(candidate_scene.get("scene_number"), int):
+                numbers.add(candidate_scene["scene_number"])
+            if isinstance(item.get("scene_number"), int):
+                numbers.add(item["scene_number"])
+    return numbers
+
+
+def _invalidate_quality_reports_without_current_media(reports: dict, scenes: list) -> None:
+    """Fail closed for scene quality evidence whose edited media no longer exists."""
+    current = {int(scene.scene_number): scene for scene in scenes}
+    for key, report in reports.items():
+        if not key.startswith("quality_") or not isinstance(report, dict):
+            continue
+        referenced = _quality_report_scene_numbers(report)
+        missing_media = sorted(
+            number for number in referenced
+            if number in current
+            and not getattr(current[number], "image_path", None)
+            and not getattr(current[number], "video_path", None)
+        )
+        if missing_media and report.get("status") in {"passed", "available"}:
+            report["status"] = "stale"
+            report["stale_scenes"] = missing_media
+            report["error"] = "Scene media was edited after this quality report; regenerate and review the scene again."
+
+
 def _accepted_video_evidence_error(report: dict) -> str | None:
     """Check that final-video evidence fields describe the same media bytes."""
     evidence = report.get("generation_run_evidence")
@@ -511,6 +557,10 @@ async def get_generation_review(
             reports[key] = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, TypeError, ValueError):
             logger.warning("Cannot read quality report: {}", path)
+    _invalidate_quality_reports_without_current_media(
+        reports,
+        sorted(getattr(project, "scenes", []) or [], key=lambda scene: scene.scene_number),
+    )
     for path in sorted(project_root.rglob("*.sequence.json")):
         try:
             relative = path.relative_to(project_root)

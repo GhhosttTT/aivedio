@@ -92,7 +92,7 @@ def test_upload_bgm_rejects_non_audio_extension(setup):
 
 
 def test_scene_save_invalidates_media_and_rejects_manual_completion(setup):
-    client, db, _ = setup
+    client, db, root = setup
     project = db.query(Project).filter(Project.id == 1).one()
     alice = Character(project_id=1, name="Alice", description="lead")
     bob = Character(project_id=1, name="Bob", description="support")
@@ -102,6 +102,9 @@ def test_scene_save_invalidates_media_and_rejects_manual_completion(setup):
     scene_db.image_prompt = "old prompt"
     scene_db.audio_duration = 2.5
     db.commit()
+    quality_path = root / "storage" / "projects" / "1" / "scenes" / "1.quality.json"
+    quality_path.parent.mkdir(parents=True, exist_ok=True)
+    quality_path.write_text(json.dumps({"status": "passed", "scene": {"scene_number": 1}}), encoding="utf-8")
     result = client.put("/api/projects/1/scenes/1", json={"visual_description": "Alice opens the letter", "dialogue": "Changed", "character_name": "Alice", "characters": ["Alice"]})
     assert result.status_code == 200
     scene = result.json()["scenes"][0]
@@ -110,6 +113,9 @@ def test_scene_save_invalidates_media_and_rejects_manual_completion(setup):
     assert db.query(Scene).filter(Scene.id == scene["id"]).one().image_prompt is None
     assert db.query(Scene).filter(Scene.id == scene["id"]).one().audio_duration is None
     assert json.loads(db.query(Project).filter(Project.id == 1).one().script)["scenes"][0]["characters"] == ["Alice"]
+    review = client.get("/api/projects/1/generation-review")
+    assert review.status_code == 200, review.text
+    assert review.json()["reports"]["quality_scenes_1.quality"]["status"] == "stale"
     assert client.put("/api/projects/1", json={"status": "completed"}).status_code == 400
 
 
