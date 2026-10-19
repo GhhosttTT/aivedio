@@ -3588,6 +3588,48 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
     assert "micro_expression_pass" in provider.request.quality_pipeline["stages"]
 
 
+def test_explicit_frame_mode_drops_omni_identity_images(project_data, tmp_path, monkeypatch):
+    _, _, scene, _, _ = project_data
+
+    class FakeProvider:
+        name = GenerationProviderName.SEEDANCE_API
+
+        def __init__(self):
+            self.request = None
+
+        def generate_video(self, request):
+            self.request = request
+            Path(request.output_path).write_bytes(b"seedance-video")
+            return GenerationResult("seedance_api", request.output_path, "video", {})
+
+    provider = FakeProvider()
+    monkeypatch.setenv("SEEDANCE_REQUEST_MODE", "first_last_frame")
+    shot_plan = VideoShotPlan(
+        shot_role="emotion_reaction", action_intensity="low", target_duration_seconds=4.0,
+        fps=8, num_frames=32, motion_bucket_id=92, noise_aug_strength=0.012,
+        director_prompt="locked frame reaction", end_frame_prompt="held ending pose",
+        negative_prompt="identity drift", notes=[],
+    )
+    generator = _ComfyVideoGenerator(scene, provider, shot_plan).with_end_image(
+        str(tmp_path / "end.png")
+    ).with_multimodal_references(
+        images=[str(tmp_path / "source.png"), str(tmp_path / "character.png")],
+    )
+
+    generator.generate_video(
+        image_path=str(tmp_path / "source.png"),
+        output_path=str(tmp_path / "scene.mp4"),
+        num_frames=32,
+        fps=8,
+        motion_bucket_id=92,
+        noise_aug_strength=0.012,
+    )
+
+    assert provider.request.request_mode == "first_last_frame"
+    assert provider.request.reference_image.endswith("source.png")
+    assert provider.request.reference_images is None
+
+
 def test_seedance_multi_shot_generator_emits_bounded_plan_and_long_duration(project_data, tmp_path, monkeypatch):
     _, _, scene, _, _ = project_data
 

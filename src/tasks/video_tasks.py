@@ -968,12 +968,19 @@ class _ComfyVideoGenerator:
             sequence_level=sequence_level_multi_shot,
             expected_duration_seconds=duration if sequence_level_multi_shot else None,
         )
+        provider_reference_images = self.reference_images
+        if request_mode in {"first_frame", "first_last_frame"}:
+            # Native Ark treats explicit frame roles as a mutually exclusive
+            # contract. Character-sheet images belong to omni-reference mode;
+            # forwarding them here changes a locked first/last-frame request
+            # into an invalid multi-image task (or silently changes its mode).
+            provider_reference_images = []
         request = VideoGenerationRequest(
             prompt=prompt,
             negative_prompt=negative_prompt,
             reference_image=image_path,
             end_image=getattr(self, "end_image", None),
-            reference_images=self.reference_images or None,
+            reference_images=provider_reference_images or None,
             continuity_reference_image=self.continuity_reference_image,
             reference_videos=(None if request_mode == "extend" else self.reference_videos or None),
             extend_video=(self.reference_videos[0] if request_mode == "extend" and self.reference_videos else None),
