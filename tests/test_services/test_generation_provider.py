@@ -707,6 +707,37 @@ def test_video_request_fingerprint_resolves_environment_defaults(monkeypatch):
     assert first != second
 
 
+def test_video_request_fingerprint_binds_seedance_boolean_defaults(monkeypatch):
+    request = VideoGenerationRequest(prompt="a shot", output_path="scene.mp4")
+    monkeypatch.setenv("SEEDANCE_RETURN_LAST_FRAME", "true")
+    monkeypatch.setenv("SEEDANCE_WATERMARK", "false")
+    monkeypatch.setenv("SEEDANCE_DRAFT", "false")
+    monkeypatch.setenv("SEEDANCE_MULTI_SHOT", "false")
+    first = generation_provider._video_request_fingerprint(request)
+
+    monkeypatch.setenv("SEEDANCE_RETURN_LAST_FRAME", "false")
+    monkeypatch.setenv("SEEDANCE_WATERMARK", "true")
+    monkeypatch.setenv("SEEDANCE_DRAFT", "true")
+    monkeypatch.setenv("SEEDANCE_MULTI_SHOT", "true")
+    second = generation_provider._video_request_fingerprint(request)
+
+    assert first != second
+
+
+def test_video_request_fingerprint_uses_provider_specific_prefix(monkeypatch):
+    request = VideoGenerationRequest(prompt="a shot", output_path="scene.mp4")
+    monkeypatch.setenv("SEEDANCE_REQUEST_MODE", "reference")
+    first = generation_provider._video_request_fingerprint(
+        request, provider_prefix="HTTP_VIDEO",
+    )
+    monkeypatch.setenv("SEEDANCE_REQUEST_MODE", "first_last_frame")
+    second = generation_provider._video_request_fingerprint(
+        request, provider_prefix="HTTP_VIDEO",
+    )
+
+    assert first == second
+
+
 def test_video_request_fingerprint_changes_with_motion_and_repair_controls():
     base = VideoGenerationRequest(
         prompt="a shot",

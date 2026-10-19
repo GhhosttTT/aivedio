@@ -727,7 +727,9 @@ class ApiVideoProvider:
             return None
         stored_fingerprint = data.get("request_fingerprint")
         if stored_fingerprint and request is not None:
-            expected_fingerprint = _video_request_fingerprint(request)
+            expected_fingerprint = _video_request_fingerprint(
+                request, provider_prefix=self.env_prefix,
+            )
             if stored_fingerprint != expected_fingerprint:
                 raise GenerationProviderError(
                     "A pending provider task belongs to a different video request; "
@@ -774,7 +776,11 @@ class ApiVideoProvider:
                     "duration_seconds": request.duration_seconds if request else None,
                     "local_task_id": str(request.local_task_id) if request and request.local_task_id is not None else None,
                 } if request else {},
-                **({"request_fingerprint": _video_request_fingerprint(request)} if request else {}),
+                **({
+                    "request_fingerprint": _video_request_fingerprint(
+                        request, provider_prefix=self.env_prefix,
+                    )
+                } if request else {}),
             }, ensure_ascii=False, indent=2), encoding="utf-8")
             temporary.replace(path)
         except OSError as exc:
@@ -1112,7 +1118,9 @@ class ApiVideoProvider:
         ).strip()
         if not header:
             return None
-        return header, _video_request_fingerprint(request)
+        return header, _video_request_fingerprint(
+            request, provider_prefix=self.env_prefix,
+        )
 
     def _request_with_retry(
         self,
@@ -2149,22 +2157,50 @@ def _unique_media_paths(paths: list[str] | tuple[str, ...]) -> list[str]:
     return unique
 
 
-def _video_request_fingerprint(request: VideoGenerationRequest) -> str:
+def _video_request_fingerprint(
+    request: VideoGenerationRequest,
+    *,
+    provider_prefix: str = "SEEDANCE",
+) -> str:
     """Hash the request identity used to safely resume a remote task."""
     # Pending tasks must be tied to the controls that actually reached the
     # provider, not only to fields explicitly copied into the request object.
     # Otherwise changing .env between a transport failure and a retry could
     # attach an old paid task to a different model or output contract.
-    effective_model = _seedance_model(model=request.model)
-    effective_request_mode = request.request_mode or _provider_setting(
-        "SEEDANCE_REQUEST_MODE", "reference"
+    prefix = str(provider_prefix or "SEEDANCE").strip().upper()
+    seedance_defaults = prefix == "SEEDANCE"
+    effective_model = (
+        _seedance_model(model=request.model)
+        if seedance_defaults
+        else (request.model or "")
     )
-    effective_resolution = request.resolution or _provider_setting(
-        "SEEDANCE_RESOLUTION", "720p"
+    effective_request_mode = request.request_mode or (
+        _provider_setting(f"{prefix}_REQUEST_MODE", "reference")
+        if seedance_defaults else ""
     )
-    effective_output_format = request.output_format or _provider_setting(
-        "SEEDANCE_OUTPUT_FORMAT", "mp4"
+    effective_resolution = request.resolution or (
+        _provider_setting(f"{prefix}_RESOLUTION", "720p")
+        if seedance_defaults else ""
     )
+    effective_output_format = request.output_format or (
+        _provider_setting(f"{prefix}_OUTPUT_FORMAT", "mp4")
+        if seedance_defaults else ""
+    )
+
+    def effective_bool(value: bool | None, suffix: str, default: bool = False) -> bool:
+        if value is not None:
+            return bool(value)
+        if not seedance_defaults:
+            return default
+        return _provider_bool(f"{prefix}_{suffix}", default)
+
+    effective_return_last_frame = effective_bool(request.return_last_frame, "RETURN_LAST_FRAME")
+    effective_camera_fixed = effective_bool(request.camera_fixed, "CAMERA_FIXED")
+    effective_watermark = effective_bool(request.watermark, "WATERMARK")
+    effective_draft = effective_bool(request.draft, "DRAFT")
+    effective_multi_shot = bool(request.multi_shot)
+    if seedance_defaults and not request.multi_shot:
+        effective_multi_shot = _provider_bool("SEEDANCE_MULTI_SHOT", False)
     def media_identity(value: str | None) -> dict[str, object] | str | None:
         if not value:
             return value
@@ -2194,16 +2230,16 @@ def _video_request_fingerprint(request: VideoGenerationRequest) -> str:
         "reference_videos": [media_identity(path) for path in request.reference_videos or []],
         "reference_audios": [media_identity(path) for path in request.reference_audios or []],
         "generate_audio": request.generate_audio,
-        "return_last_frame": request.return_last_frame,
-        "camera_fixed": request.camera_fixed,
-        "watermark": request.watermark,
+        "return_last_frame": effective_return_last_frame,
+        "camera_fixed": effective_camera_fixed,
+        "watermark": effective_watermark,
         "output_format": effective_output_format,
         "resolution": effective_resolution,
         "model": effective_model,
         "request_mode": effective_request_mode,
-        "draft": request.draft,
+        "draft": effective_draft,
         "draft_task_id": request.draft_task_id,
-        "multi_shot": request.multi_shot,
+        "multi_shot": effective_multi_shot,
         "shot_plan": request.shot_plan or {},
         "duration_seconds": request.duration_seconds,
         "aspect_ratio": request.aspect_ratio,
