@@ -199,6 +199,7 @@ export function ProductionReadinessPanel({
                         <Metric label="视频预算" value={`${qualityGates.video_candidates ?? '-'} 候选 / ${qualityGates.video_refinement_passes ?? '-'} 轮`}/>
                         <Metric label="人物身份底线" value={formatScore(typeof qualityGates.character_identity_min_score === 'number' ? qualityGates.character_identity_min_score : undefined)}/>
                         <Metric label="身份分差上限" value={typeof qualityGates.character_identity_max_score_spread === 'number' ? String(qualityGates.character_identity_max_score_spread) : '-'}/>
+                        <Metric label="身份证据覆盖" value={`${typeof qualityGates.character_identity_min_observations === 'number' ? qualityGates.character_identity_min_observations : '-'} 次起`}/>
                         <Metric label="曝光漂移阻断" value={typeof qualityGates.episode_style_brightness_blocker === 'number' ? String(qualityGates.episode_style_brightness_blocker) : '-'}/>
                         <Metric label="饱和度漂移阻断" value={typeof qualityGates.episode_style_saturation_blocker === 'number' ? String(qualityGates.episode_style_saturation_blocker) : '-'}/>
                         <Metric label="对比度漂移阻断" value={typeof qualityGates.episode_style_contrast_blocker === 'number' ? String(qualityGates.episode_style_contrast_blocker) : '-'}/>

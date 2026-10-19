@@ -110,3 +110,22 @@ def test_character_identity_consistency_does_not_require_two_observations_for_si
     report = CharacterIdentityConsistencyService().audit([_scene(1)], reports)
 
     assert report.status == "passed"
+
+
+def test_character_identity_consistency_requires_every_repeated_scene_observation():
+    reports = {
+        "generation": {
+            "cases": [
+                {"scene_number": 1, "character_name": "Alice", "review": {"identity_consistency": {"score": 5}}},
+                {"scene_number": 2, "character_name": "Alice", "review": {"identity_consistency": {"score": 5}}},
+            ]
+        }
+    }
+
+    report = CharacterIdentityConsistencyService().audit(
+        [_scene(1), _scene(2), _scene(3)], reports,
+    )
+
+    assert report.status == "needs_review"
+    assert report.issues[0]["code"] == "identity_evidence_insufficient"
+    assert report.issues[0]["required_observations"] == 3

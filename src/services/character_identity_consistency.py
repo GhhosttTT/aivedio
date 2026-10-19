@@ -103,16 +103,23 @@ class CharacterIdentityConsistencyService:
             low = min(scores)
             spread = max(scores) - low
             expected_count = expected_scene_counts.get(character, len(items))
-            if expected_count >= minimum_observations and len(items) < minimum_observations:
+            required_observations = (
+                max(minimum_observations, expected_count)
+                if expected_count >= minimum_observations
+                else 0
+            )
+            if required_observations and len(items) < required_observations:
                 issues.append({
                     "severity": "high",
                     "code": "identity_evidence_insufficient",
                     "character": character,
                     "observation_count": len(items),
                     "expected_scene_count": expected_count,
+                    "required_observations": required_observations,
                     "evidence": (
                         f"{character} appears in {expected_count} scenes but has only "
-                        f"{len(items)} identity observations; at least {minimum_observations} are required"
+                        f"{len(items)} identity observations; all {required_observations} repeated-character "
+                        "scene observations are required"
                     ),
                     "recommendation": "Run sampled-frame review for every repeated-character shot before delivery.",
                 })
