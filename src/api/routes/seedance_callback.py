@@ -18,6 +18,7 @@ except ImportError:  # pragma: no cover - Windows uses the atomic replace fallba
 from fastapi import APIRouter, HTTPException, Request, status
 
 from src.config import settings
+from src.services.seedance_callback_store import persist_early_callback
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -171,11 +172,19 @@ async def receive_seedance_callback(request: Request, token: str | None = None):
         except OSError as exc:
             logger.warning("Could not persist Seedance callback for {}: {}", sidecar, exc)
 
+    queued = False
+    if stored == 0:
+        try:
+            queued = persist_early_callback(task_id, payload)
+        except OSError as exc:
+            logger.warning("Could not queue early Seedance callback {}: {}", task_id, exc)
+
     return {
         "accepted": True,
         "task_id": task_id,
         "status": state,
         "matched_pending_tasks": stored,
+        "queued_for_pending_task": queued,
         "callback_secret_configured": bool(_callback_secret()),
         "unsigned_callbacks_allowed": _unsigned_callbacks_allowed(),
     }

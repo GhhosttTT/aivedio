@@ -3673,6 +3673,19 @@ def test_pending_task_404_clears_sidecar_and_returns_actionable_error(tmp_path, 
     assert not output.with_suffix(".provider.pending.json").exists()
 
 
+def test_pending_task_claims_callback_that_arrived_before_sidecar(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path / "storage"))
+    from src.services.seedance_callback_store import persist_early_callback
+
+    output = tmp_path / "scene.mp4"
+    persist_early_callback("race-task", {"id": "race-task", "status": "succeeded"})
+    provider = HttpVideoApiProvider(endpoint="https://gateway.example/video", api_key="secret")
+    provider._write_pending_task(str(output), "race-task")
+
+    callback = output.with_suffix(".provider.callback.json")
+    assert json.loads(callback.read_text(encoding="utf-8"))["status"] == "succeeded"
+
+
 def test_pending_task_rejects_a_different_request_identity(tmp_path):
     output = tmp_path / "scene.mp4"
     provider = HttpVideoApiProvider(endpoint="https://gateway.example/video", api_key="secret")

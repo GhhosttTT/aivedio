@@ -32,6 +32,7 @@ import httpx
 from src.config import settings
 from src.utils.logger import get_logger
 from src.services.video_quality_metrics import temporal_sample_evidence_error, video_candidate_metrics
+from src.services.seedance_callback_store import claim_early_callback
 
 logger = get_logger(__name__)
 
@@ -791,6 +792,18 @@ class ApiVideoProvider:
                 } if request else {}),
             }, ensure_ascii=False, indent=2), encoding="utf-8")
             temporary.replace(path)
+            early_callback = claim_early_callback(task_id)
+            if isinstance(early_callback, dict):
+                callback_path = self._provider_callback_path(output_path)
+                callback_temporary = callback_path.with_name(f".{callback_path.name}.{uuid4().hex}.part")
+                try:
+                    callback_temporary.write_text(
+                        json.dumps(early_callback, ensure_ascii=False, indent=2, default=str),
+                        encoding="utf-8",
+                    )
+                    callback_temporary.replace(callback_path)
+                finally:
+                    callback_temporary.unlink(missing_ok=True)
         except OSError as exc:
             logger.warning("Could not persist pending provider task {}: {}", task_id, exc)
             try:

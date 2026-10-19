@@ -27,6 +27,25 @@ def test_seedance_callback_persists_matching_terminal_result(tmp_path, monkeypat
     assert json.loads(callback.read_text(encoding="utf-8"))["status"] == "succeeded"
 
 
+def test_seedance_callback_is_queued_until_pending_sidecar_is_created(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    monkeypatch.setenv("SEEDANCE_CALLBACK_SECRET", "callback-secret")
+
+    response = TestClient(create_app()).post(
+        "/api/webhooks/seedance",
+        headers={"X-Seedance-Callback-Secret": "callback-secret"},
+        json={"id": "race-task", "status": "succeeded", "content": {"video_url": "https://media/video.mp4"}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["matched_pending_tasks"] == 0
+    assert response.json()["queued_for_pending_task"] is True
+
+    from src.services.seedance_callback_store import claim_early_callback
+    assert claim_early_callback("race-task")["status"] == "succeeded"
+    assert claim_early_callback("race-task") is None
+
+
 def test_seedance_callback_rejects_invalid_secret(tmp_path, monkeypatch):
     monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
     monkeypatch.setenv("SEEDANCE_CALLBACK_SECRET", "callback-secret")
