@@ -92,7 +92,10 @@ plus the native model, ratio, resolution, duration, and audio fields. Use the
 2.5 model limits only when the configured model is a confirmed 2.5 endpoint.
 Local images use Base64 data URLs; local video references must be exposed with
 `SEEDANCE_MEDIA_URL_TEMPLATE` or pre-ingested as `asset://` material, because
-the native task API cannot fetch a filesystem path.
+the native task API cannot fetch a filesystem path. The URL template must
+contain either `{filename}` or `{path}` and must resolve to a public HTTPS URL;
+a static URL is rejected so multiple references cannot silently point to the
+same remote asset.
 
 Transient submit/status failures (HTTP 408/409/425/429 and 5xx, plus transport
 errors) are retried with exponential backoff. Configure the bounds with

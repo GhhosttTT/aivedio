@@ -64,6 +64,7 @@ SEEDANCE_MODEL=doubao-seedance-2-5-260628
 SEEDANCE_REQUEST_MODE=reference
 SEEDANCE_VALIDATE_OUTPUT=true
 # If local video/audio references are used, expose them through a public HTTPS CDN.
+# The template must contain {filename} or {path}.
 SEEDANCE_MEDIA_URL_TEMPLATE=https://cdn.example.com/aivideo/{filename}
 ```
 
