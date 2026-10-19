@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import platform
+import math
 import subprocess
 import sys
 import time
@@ -196,12 +197,18 @@ def build_video_generation_evidence(
 
 
 def _is_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    )
 
 
 def _number(value: str) -> int | float | None:
     try:
         number = float(value)
     except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
         return None
     return int(number) if number.is_integer() else number

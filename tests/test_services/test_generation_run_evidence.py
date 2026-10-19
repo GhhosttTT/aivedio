@@ -109,3 +109,36 @@ def test_build_video_generation_evidence_tracks_attempts_and_provider_contracts(
     assert evidence["accepted_video_sha256"] == "c" * 64
     assert evidence["spatial_scene_contract_hashes"] == ["scene-a", "scene-b"]
     assert evidence["spatial_project_signatures"] == ["project-a"]
+
+
+def test_generation_run_evidence_ignores_non_finite_elapsed_values():
+    evidence = build_generation_run_evidence(
+        {
+            "status": "rendered_pending_human_review",
+            "cases": [
+                {"image": "one.png", "elapsed_seconds": float("nan")},
+                {"image": "two.png", "elapsed_seconds": float("inf")},
+                {"image": "three.png", "elapsed_seconds": 2.5},
+            ],
+        },
+        gpu_evidence={"status": "unavailable", "devices": []},
+    )
+
+    assert evidence["runtime"]["elapsed_seconds_sum"] == 2.5
+    assert evidence["runtime"]["elapsed_seconds_max"] == 2.5
+
+
+def test_generation_run_evidence_ignores_non_finite_gpu_numbers(monkeypatch):
+    class Result:
+        stdout = "GPU, nan, inf, 10, 20\n"
+
+    monkeypatch.setattr(
+        "src.services.generation_run_evidence.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    evidence = collect_gpu_evidence()
+
+    assert evidence["status"] == "available"
+    assert evidence["devices"][0]["memory_total_mb"] is None
+    assert evidence["devices"][0]["memory_used_mb"] is None
