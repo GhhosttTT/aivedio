@@ -107,7 +107,7 @@ class TestVideoComposer:
                 service.concat_videos([str(video1), str(video2)], str(output_path))
 
         assert output_path.read_bytes() == b"previous-good-master"
-        assert not list(tmp_path.glob(".output.mp4.*.part"))
+        assert not list(tmp_path.glob(".output.*.part.mp4"))
 
     def test_concat_videos_single_file_with_output_normalizes(self, service, tmp_path):
         """测试：单个视频有输出路径时也归一化为生产格式"""
@@ -367,6 +367,22 @@ class TestVideoComposer:
         
         assert result == str(output_path)
         mock_run.assert_called_once()
+
+    def test_sync_audio_video_keeps_previous_output_when_ffmpeg_fails(self, service, tmp_path):
+        video_file = tmp_path / "video.mp4"
+        audio_file = tmp_path / "audio.mp3"
+        output_path = tmp_path / "output.mp4"
+        video_file.write_text("fake video")
+        audio_file.write_text("fake audio")
+        output_path.write_bytes(b"previous-good-output")
+
+        with patch.object(service, "_get_duration", side_effect=[10.0, 10.0]), \
+                patch("subprocess.run", side_effect=RuntimeError("ffmpeg crashed")):
+            with pytest.raises(VideoComposerError, match="音视频同步失败"):
+                service.sync_audio_video(str(video_file), str(audio_file), str(output_path))
+
+        assert output_path.read_bytes() == b"previous-good-output"
+        assert not list(tmp_path.glob(".output.*.part.mp4"))
     
     def test_add_bgm_video_not_exists(self, service):
         """测试：视频文件不存在时抛出异常"""
@@ -425,6 +441,23 @@ class TestVideoComposer:
         assert command[command.index("-stream_loop") + 1] == "-1"
         assert command[command.index("-t") + 1] == "10.000000"
         assert "-shortest" not in command
+
+    def test_add_bgm_keeps_previous_output_when_ffmpeg_fails(self, service, tmp_path):
+        video_file = tmp_path / "video.mp4"
+        bgm_file = tmp_path / "bgm.mp3"
+        output_path = tmp_path / "output.mp4"
+        video_file.write_text("fake video")
+        bgm_file.write_text("fake bgm")
+        output_path.write_bytes(b"previous-good-output")
+        service.has_audio_stream = Mock(return_value=True)
+
+        with patch.object(service, "_get_duration", return_value=10.0), \
+                patch("subprocess.run", side_effect=RuntimeError("ffmpeg crashed")):
+            with pytest.raises(VideoComposerError, match="添加背景音乐失败"):
+                service.add_bgm(str(video_file), str(bgm_file), str(output_path))
+
+        assert output_path.read_bytes() == b"previous-good-output"
+        assert not list(tmp_path.glob(".output.*.part.mp4"))
     
     def test_compose_video_empty_list(self, service):
         """测试：空视频列表时抛出异常"""

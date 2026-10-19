@@ -107,7 +107,7 @@ class VideoComposer:
                 output_path = str(output_dir / "concatenated.mp4")
             target_path = Path(output_path)
             temporary_path = target_path.with_name(
-                f".{target_path.name}.{uuid4().hex}.part"
+                f".{target_path.stem}.{uuid4().hex}.part{target_path.suffix}"
             )
 
             provider_geometry = (
@@ -191,6 +191,10 @@ class VideoComposer:
                 video_dir = Path(video_path).parent
                 video_name = Path(video_path).stem
                 output_path = str(video_dir / f"{video_name}_synced.mp4")
+            target_path = Path(output_path)
+            temporary_path = target_path.with_name(
+                f".{target_path.stem}.{uuid4().hex}.part{target_path.suffix}"
+            )
             
             # 获取视频和音频时长
             video_duration = self._get_duration(video_path)
@@ -217,7 +221,7 @@ class VideoComposer:
                 "-af", "apad,loudnorm=I=-16:TP=-1.5:LRA=11:linear=true",
                 "-t", f"{video_duration:.6f}",
                 "-y",
-                output_path
+                str(temporary_path)
             ]
             
             logger.debug(f"FFmpeg 命令: {' '.join(cmd)}")
@@ -228,7 +232,8 @@ class VideoComposer:
                 text=True,
                 check=True
             )
-            self._require_output_file(output_path, "音视频同步")
+            self._require_output_file(temporary_path, "音视频同步")
+            os.replace(temporary_path, target_path)
             
             logger.info(f"音视频同步成功: {output_path}")
             
@@ -243,6 +248,12 @@ class VideoComposer:
             error_msg = f"音视频同步失败: {e}"
             logger.error(error_msg)
             raise VideoComposerError(error_msg) from e
+        finally:
+            try:
+                if 'temporary_path' in locals():
+                    temporary_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("清理音视频同步临时文件失败: %s", temporary_path)
     
     def add_bgm(
         self,
@@ -283,6 +294,10 @@ class VideoComposer:
                 video_dir = Path(video_path).parent
                 video_name = Path(video_path).stem
                 output_path = str(video_dir / f"{video_name}_with_bgm.mp4")
+            target_path = Path(output_path)
+            temporary_path = target_path.with_name(
+                f".{target_path.stem}.{uuid4().hex}.part{target_path.suffix}"
+            )
 
             video_duration = self._get_duration(video_path)
             if not math.isfinite(video_duration) or video_duration <= 0:
@@ -331,7 +346,7 @@ class VideoComposer:
                 "-c:a", "aac",
                 "-t", f"{video_duration:.6f}",
                 "-y",
-                output_path
+                str(temporary_path)
             ]
             
             logger.debug(f"FFmpeg 命令: {' '.join(cmd)}")
@@ -342,7 +357,8 @@ class VideoComposer:
                 text=True,
                 check=True
             )
-            self._require_output_file(output_path, "背景音乐添加")
+            self._require_output_file(temporary_path, "背景音乐添加")
+            os.replace(temporary_path, target_path)
             
             logger.info(f"背景音乐添加成功: {output_path}")
             
@@ -357,6 +373,12 @@ class VideoComposer:
             error_msg = f"添加背景音乐失败: {e}"
             logger.error(error_msg)
             raise VideoComposerError(error_msg) from e
+        finally:
+            try:
+                if 'temporary_path' in locals():
+                    temporary_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("清理背景音乐临时文件失败: %s", temporary_path)
     
     def compose_video(
         self,
