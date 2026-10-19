@@ -36,6 +36,10 @@ export function ProjectDetail() {
     const [productionOptions, setProductionOptions] = useState({provider: '', request_mode: 'reference', multi_shot: true, sequence_level_multi_shot: false, native_audio: true, draft: false, model: '', resolution: '1080p', output_format: 'mp4', return_last_frame: true, camera_fixed: false, watermark: false, duration_seconds: null as number | null, add_bgm: false, bgm_path: null as string | null, bgm_volume: 0.3});
     const [bgmName, setBgmName] = useState('');
     const {isConnected: progressSocketConnected, latestMessage} = useWebSocket(id || '');
+    const readinessRequestMode = productionOptions.multi_shot
+        && ['reference', 'reference_to_video'].includes(productionOptions.request_mode)
+        ? 'multi_shot'
+        : productionOptions.request_mode;
     const reload = useCallback(async () => {
         try {
             const projectId = Number(id);
@@ -44,7 +48,7 @@ export function ProjectDetail() {
                 projectApi.latestTask(projectId),
                 // The production button and model restrictions must use the same
                 // engine preflight that the backend enforces on task creation.
-                projectApi.productionReadiness(projectId, true, productionOptions.provider || undefined, productionOptions.model || undefined, productionOptions.request_mode || undefined, productionOptions.resolution || undefined, productionOptions.output_format || undefined, productionOptions.duration_seconds),
+                projectApi.productionReadiness(projectId, true, productionOptions.provider || undefined, productionOptions.model || undefined, readinessRequestMode || undefined, productionOptions.resolution || undefined, productionOptions.output_format || undefined, productionOptions.duration_seconds),
                 projectApi.topicBrief(projectId),
                 projectApi.marketSignals(projectId),
                 projectApi.reviews(projectId),
@@ -59,7 +63,7 @@ export function ProjectDetail() {
             setMarketScore(signals); setMarketEvidence(current => ({...current, comparables: (signals.evidence?.comparables || []).map((item: any) => [item.title, item.platform, item.genre, item.signal].filter(Boolean).join(' | ')).join('\n'), differentiation: signals.evidence?.differentiation || '', success_metric: signals.evidence?.success_metric || '', notes: signals.evidence?.notes || ''})); setError('');
         } catch(e) { setError(errorText(e)); }
         finally { setLoading(false); }
-    }, [id, productionOptions.provider, productionOptions.model, productionOptions.request_mode, productionOptions.resolution, productionOptions.output_format, productionOptions.duration_seconds]);
+    }, [id, productionOptions.provider, productionOptions.model, readinessRequestMode, productionOptions.resolution, productionOptions.output_format, productionOptions.duration_seconds]);
     useEffect(() => { reload(); }, [reload]);
     useEffect(() => {
         if (!latestMessage) return;
@@ -206,10 +210,10 @@ export function ProjectDetail() {
         if (!id) return;
         setReadinessLoading(true);
         try {
-        setReadiness(await projectApi.productionReadiness(Number(id), true, productionOptions.provider || undefined, productionOptions.model || undefined, productionOptions.request_mode || undefined, productionOptions.resolution || undefined, productionOptions.output_format || undefined, productionOptions.duration_seconds));
+        setReadiness(await projectApi.productionReadiness(Number(id), true, productionOptions.provider || undefined, productionOptions.model || undefined, readinessRequestMode || undefined, productionOptions.resolution || undefined, productionOptions.output_format || undefined, productionOptions.duration_seconds));
         } catch(e) { setError(errorText(e)); }
         finally { setReadinessLoading(false); }
-    }, [id, productionOptions.provider, productionOptions.model, productionOptions.request_mode, productionOptions.resolution, productionOptions.output_format, productionOptions.duration_seconds]);
+    }, [id, productionOptions.provider, productionOptions.model, readinessRequestMode, productionOptions.resolution, productionOptions.output_format, productionOptions.duration_seconds]);
     useEffect(() => {
         if (productionOptions.provider || productionOptions.model || productionOptions.request_mode || productionOptions.resolution || productionOptions.output_format || productionOptions.duration_seconds !== null) {
             // Never let a report for the previous engine/model authorize a new
@@ -217,7 +221,7 @@ export function ProjectDetail() {
             setReadiness(null);
             void refreshReadiness();
         }
-    }, [productionOptions.provider, productionOptions.model, productionOptions.request_mode, productionOptions.resolution, productionOptions.output_format, productionOptions.duration_seconds, refreshReadiness]);
+    }, [productionOptions.provider, productionOptions.model, productionOptions.request_mode, readinessRequestMode, productionOptions.resolution, productionOptions.output_format, productionOptions.duration_seconds, refreshReadiness]);
     if (loading) return <main className="workbench" role="status">项目加载中</main>;
     if (!project) return <main className="workbench"><Link to="/projects">返回项目</Link><p role="alert" className="wb-alert">{error || '项目不存在'}</p><button className="wb-button" onClick={reload}>重试</button></main>;
     const productionBlocked = !readiness || readiness.status !== 'ready';
