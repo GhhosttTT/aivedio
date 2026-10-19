@@ -527,7 +527,7 @@ function FinalCompositionEvidence({projectId, report}: {projectId: number; repor
     </div>;
 }
 
-function VideoCandidateSelectionEvidence({report}: {report: any}) {
+function VideoCandidateSelectionEvidence({projectId, report}: {projectId: number; report: any}) {
     if (report?.kind !== 'video_candidate_selection') return null;
     const candidates = Array.isArray(report.candidates) ? report.candidates : [];
     const componentLabels: Record<string, string> = {
@@ -557,13 +557,14 @@ function VideoCandidateSelectionEvidence({report}: {report: any}) {
                 <div>
                     <p>总分 {score(candidate.selection_score)} · 关键短板 {score(candidate.critical_floor_score)}</p>
                     <p className="wb-muted">{Object.entries(componentLabels).map(([key, label]) => `${label} ${score(components[key])}`).join(' · ')}</p>
+                    <MediaLink projectId={projectId} path={candidate.path} label={selected ? '打开已选视频' : '打开候选视频'}/>
                 </div>
             </div>;
         })}
     </div>;
 }
 
-function ImageCandidateSelectionEvidence({report}: {report: any}) {
+function ImageCandidateSelectionEvidence({projectId, report}: {projectId: number; report: any}) {
     if (report?.kind !== 'image_candidate_selection') return null;
     const candidates = Array.isArray(report.candidates) ? report.candidates : [];
     const componentLabels: Record<string, string> = {
@@ -590,6 +591,7 @@ function ImageCandidateSelectionEvidence({report}: {report: any}) {
                 <div>
                     <p>总分 {score(candidate.selection_score)} · 关键短板 {score(candidate.critical_floor_score)}</p>
                     <p className="wb-muted">{Object.entries(componentLabels).map(([key, label]) => `${label} ${score(components[key])}`).join(' · ')}</p>
+                    <MediaLink projectId={projectId} path={candidate.path} label={selected ? '打开已选关键帧' : '打开候选关键帧'}/>
                 </div>
             </div>;
         })}
@@ -916,8 +918,8 @@ export function ReviewPanel({projectId, updatedAt}: {projectId: number; updatedA
             <OutputContractEvidence report={report}/>
             <GenerationRunEvidence report={report}/>
             <FinalCompositionEvidence projectId={projectId} report={report}/>
-            <VideoCandidateSelectionEvidence report={report}/>
-            <ImageCandidateSelectionEvidence report={report}/>
+            <VideoCandidateSelectionEvidence projectId={projectId} report={report}/>
+            <ImageCandidateSelectionEvidence projectId={projectId} report={report}/>
             <SeedDanceComparison projectId={projectId} report={report}/>
             <SequenceBoundaryEvidence report={report}/>
             <StoryRoomEvidence report={report}/>
