@@ -886,6 +886,25 @@ def test_composition_review_blocks_extreme_integrated_loudness(integrated_lufs, 
     assert expected in error
 
 
+def test_composition_review_blocks_hot_true_peak():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_audio_expected": True,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "audio_present": True,
+            "audio_signal_status": "usable",
+            "audio_true_peak_db": -0.8,
+        },
+    }
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video true peak is too hot: audio_true_peak_db=-0.80, maximum=-1.00"
+    )
+
+
 def test_composition_review_blocks_optional_audio_start_drift():
     report = {
         "status": "passed",

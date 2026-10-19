@@ -275,6 +275,17 @@ def _validate_export_metrics(
         )
     if metrics.get("audio_present") and metrics.get("audio_clipping_status") == "clipped":
         raise PlatformExportError("Platform export audio signal is clipped at digital full scale")
+    true_peak_db = metrics.get("audio_true_peak_db")
+    if (
+        metrics.get("audio_present")
+        and isinstance(true_peak_db, (int, float))
+        and true_peak_db > settings.GENERATION_VIDEO_AUDIO_TRUE_PEAK_MAX_DB
+    ):
+        raise PlatformExportError(
+            "Platform export true peak is too hot: "
+            f"audio_true_peak_db={true_peak_db:.2f}, maximum="
+            f"{settings.GENERATION_VIDEO_AUDIO_TRUE_PEAK_MAX_DB:.2f}"
+        )
     integrated_lufs = metrics.get("audio_integrated_lufs")
     if metrics.get("audio_present") and isinstance(integrated_lufs, (int, float)):
         if integrated_lufs < settings.GENERATION_VIDEO_AUDIO_INTEGRATED_LUFS_MIN:
