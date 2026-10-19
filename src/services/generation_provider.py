@@ -13,6 +13,7 @@ import base64
 import hashlib
 from io import BytesIO
 import json
+import math
 import shutil
 import subprocess
 from string import Formatter
@@ -908,9 +909,11 @@ class ApiVideoProvider:
                         f"pixel_format={pixel_format or 'unknown'}"
                     )
             duration = float(duration_values[0]) if duration_values else 0.0
-            if not has_video or duration <= 0:
+            if not has_video or not math.isfinite(duration) or duration <= 0:
                 raise ValueError("ffprobe found no video stream or a non-positive duration")
             if expected_duration is not None and float(expected_duration) > 0:
+                if not math.isfinite(float(expected_duration)):
+                    raise ValueError("expected video duration is not finite")
                 tolerance = max(
                     settings.GENERATION_VIDEO_DURATION_SYNC_TOLERANCE_SECONDS,
                     float(expected_duration) * 0.08,

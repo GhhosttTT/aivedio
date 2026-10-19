@@ -1055,6 +1055,23 @@ def test_native_ark_output_validation_rejects_duration_drift(tmp_path, monkeypat
     assert not output.exists()
 
 
+def test_native_ark_output_validation_rejects_non_finite_duration(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")
+    output = tmp_path / "non-finite.mp4"
+    output.write_bytes(b"video")
+    monkeypatch.setattr(
+        generation_provider.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout="codec_type=video\nduration=nan\n"),
+    )
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    with pytest.raises(GenerationProviderError, match="non-positive duration"):
+        provider._validate_provider_video(str(output))
+    assert not output.exists()
+
+
 def test_native_ark_output_validation_rejects_temporal_freeze(tmp_path, monkeypatch):
     monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
     monkeypatch.setattr(generation_provider.shutil, "which", lambda _name: "/usr/bin/ffprobe")
