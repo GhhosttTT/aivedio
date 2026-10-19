@@ -53,6 +53,8 @@ Seedance 2.5 多镜头协议后再改为 `multi_shot`。启动后可在
 
 当分镜带有锁定首帧时，系统会在候选和最终归一化视频阶段检查开场帧；可通过
 `GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE` 调整硬门槛（默认 `2.5`）。
+当分镜启用末帧目标时，系统也会在候选和最终归一化视频阶段检查收束画面；可通过
+`GENERATION_VIDEO_END_FRAME_REFERENCE_MIN_SCORE` 调整末帧硬门槛（默认 `2.5`）。
 
 如果使用火山方舟原生视频任务接口，改为：
 

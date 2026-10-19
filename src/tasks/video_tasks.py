@@ -44,6 +44,7 @@ from src.services.video_quality_metrics import (
     video_boundary_continuity,
     video_candidate_metrics,
     video_start_frame_reference_metrics,
+    video_end_frame_reference_metrics,
     video_technical_score,
 )
 from src.services.visual_style_assets import VisualStyleAssetService
@@ -1539,6 +1540,11 @@ def _sequence_segment_quality_report(
         segment_path,
         scene.image_path,
     )
+    end_frame_reference = _scene_end_frame_path(project_id, scene.id)
+    if Path(end_frame_reference).is_file():
+        metrics["end_frame_reference"] = video_end_frame_reference_metrics(
+            segment_path, end_frame_reference,
+        )
     _apply_audio_quality_contract(metrics, segment_metadata)
     error = None
     if metrics.get("status") != "available":
@@ -1567,6 +1573,13 @@ def _sequence_segment_quality_report(
         < settings.GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE
     ):
         error = "sequence segment opening frame reference did not pass"
+    elif (
+        isinstance(metrics.get("end_frame_reference"), dict)
+        and metrics["end_frame_reference"].get("status") == "available"
+        and metrics["end_frame_reference"].get("score", 5.0)
+        < settings.GENERATION_VIDEO_END_FRAME_REFERENCE_MIN_SCORE
+    ):
+        error = "sequence segment ending frame reference did not pass"
     report = {
         **base_report,
         "status": "needs_review" if error else "passed",
@@ -1986,6 +1999,11 @@ def _attach_video_technical_metrics(candidate: dict) -> None:
         metrics["start_frame_reference"] = video_start_frame_reference_metrics(
             candidate["path"], reference_image,
         )
+    end_frame_reference = request.get("end_image") or request.get("end_frame")
+    if end_frame_reference and "end_frame_reference" not in metrics:
+        metrics["end_frame_reference"] = video_end_frame_reference_metrics(
+            candidate["path"], end_frame_reference,
+        )
     if _is_long_form_shot_plan(candidate.get("shot_plan")) and metrics.get("status") == "available":
         metrics["technical_score"] = video_technical_score(
             metrics,
@@ -2190,6 +2208,11 @@ def _review_final_video_after_postprocess(
     technical_metrics["start_frame_reference"] = video_start_frame_reference_metrics(
         video_path, scene.image_path,
     )
+    end_frame_reference = _scene_end_frame_path(project_id, scene.id)
+    if Path(end_frame_reference).is_file():
+        technical_metrics["end_frame_reference"] = video_end_frame_reference_metrics(
+            video_path, end_frame_reference,
+        )
     _apply_audio_quality_contract(
         technical_metrics,
         quality_report.get("selected_provider_metadata"),
@@ -2483,6 +2506,30 @@ def _final_video_acceptance_error(
                     "Final normalized video opening frame reference score "
                     f"{start_frame_score} is below "
                     f"{settings.GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE}"
+                )
+    end_frame_reference = technical_metrics.get("end_frame_reference")
+    if isinstance(end_frame_reference, dict):
+        reference_status = end_frame_reference.get("status")
+        if (
+            enforce_technical_evidence
+            and settings.GENERATION_REQUIRE_VIDEO_REVIEW
+            and "reference image" in str(end_frame_reference.get("error") or "").lower()
+            and reference_status != "available"
+        ):
+            return (
+                "Final normalized video ending frame reference evidence is unavailable: "
+                f"{end_frame_reference.get('error') or reference_status or 'unknown'}"
+            )
+        if reference_status == "available":
+            end_frame_score = end_frame_reference.get("score")
+            if (
+                isinstance(end_frame_score, (int, float))
+                and end_frame_score < settings.GENERATION_VIDEO_END_FRAME_REFERENCE_MIN_SCORE
+            ):
+                return (
+                    "Final normalized video ending frame reference score "
+                    f"{end_frame_score} is below "
+                    f"{settings.GENERATION_VIDEO_END_FRAME_REFERENCE_MIN_SCORE}"
                 )
     provider_metadata = final_review.get("provider_metadata")
     requested_resolution = (
@@ -2821,6 +2868,7 @@ def _generate_quality_video_candidates(
                     "scene": dict(pass_scene),
                     "request": {
                         "image_path": scene.image_path,
+                        "end_image": getattr(svd_service, "end_image", None),
                         "num_frames": num_frames,
                         "fps": fps,
                         "motion_bucket_id": motion,

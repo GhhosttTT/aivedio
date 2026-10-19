@@ -569,35 +569,47 @@ def video_start_frame_reference_metrics(
     reference_image: str | Path | None,
 ) -> dict[str, Any]:
     """Compare a generated clip's first frame with its locked keyframe."""
+    return _video_boundary_frame_reference_metrics(video_path, reference_image, from_end=False)
+
+
+def video_end_frame_reference_metrics(
+    video_path: str | Path,
+    reference_image: str | Path | None,
+) -> dict[str, Any]:
+    """Compare a generated clip's last frame with its locked end-frame target."""
+    return _video_boundary_frame_reference_metrics(video_path, reference_image, from_end=True)
+
+
+def _video_boundary_frame_reference_metrics(
+    video_path: str | Path,
+    reference_image: str | Path | None,
+    *,
+    from_end: bool,
+) -> dict[str, Any]:
+    """Compare one video boundary frame with a locked reference image."""
     if not reference_image:
         return {"status": "not_applicable"}
     try:
         cv2, np = _load_cv2_numpy()
-        capture = cv2.VideoCapture(str(video_path))
-        if not capture.isOpened():
-            raise RuntimeError(f"Video cannot be opened: {video_path}")
-        try:
-            ok, first_frame = capture.read()
-        finally:
-            capture.release()
+        boundary_frame = _read_boundary_frame(Path(video_path), cv2, np, from_end=from_end)
         reference = cv2.imread(str(reference_image), cv2.IMREAD_COLOR)
-        if not ok or first_frame is None or reference is None:
-            raise RuntimeError("video first frame or reference image is unreadable")
-        first_frame = cv2.resize(first_frame, (256, 144), interpolation=cv2.INTER_AREA)
+        if reference is None:
+            raise RuntimeError("video boundary frame or reference image is unreadable")
+        boundary_frame = cv2.resize(boundary_frame, (256, 144), interpolation=cv2.INTER_AREA)
         reference = cv2.resize(reference, (256, 144), interpolation=cv2.INTER_AREA)
-        first_gray = cv2.cvtColor(first_frame, cv2.COLOR_BGR2GRAY)
+        boundary_gray = cv2.cvtColor(boundary_frame, cv2.COLOR_BGR2GRAY)
         reference_gray = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)
         brightness_delta = abs(
-            float(np.mean(first_gray)) - float(np.mean(reference_gray))
+            float(np.mean(boundary_gray)) - float(np.mean(reference_gray))
         ) / 255.0
-        pixel_delta = float(np.mean(cv2.absdiff(first_frame, reference))) / 255.0
-        first_hist = cv2.calcHist([first_frame], [0, 1], None, [16, 16], [0, 256, 0, 256])
+        pixel_delta = float(np.mean(cv2.absdiff(boundary_frame, reference))) / 255.0
+        boundary_hist = cv2.calcHist([boundary_frame], [0, 1], None, [16, 16], [0, 256, 0, 256])
         reference_hist = cv2.calcHist([reference], [0, 1], None, [16, 16], [0, 256, 0, 256])
-        cv2.normalize(first_hist, first_hist)
+        cv2.normalize(boundary_hist, boundary_hist)
         cv2.normalize(reference_hist, reference_hist)
         histogram_distance = max(
             0.0,
-            min(1.0, float(cv2.compareHist(first_hist, reference_hist, cv2.HISTCMP_BHATTACHARYYA))),
+            min(1.0, float(cv2.compareHist(boundary_hist, reference_hist, cv2.HISTCMP_BHATTACHARYYA))),
         )
         score = max(
             0.0,
@@ -606,6 +618,7 @@ def video_start_frame_reference_metrics(
         return {
             "status": "available",
             "reference_image": str(reference_image),
+            "boundary": "end" if from_end else "start",
             "brightness_delta": round(brightness_delta, 3),
             "pixel_delta": round(pixel_delta, 3),
             "histogram_distance": round(histogram_distance, 3),

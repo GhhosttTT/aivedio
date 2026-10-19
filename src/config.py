@@ -120,6 +120,8 @@ class Settings(BaseSettings):
     GENERATION_VIDEO_TECHNICAL_MIN_SCORE: float = 3.0
     # When a locked source/keyframe is available, reject obvious opening-frame drift.
     GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE: float = 2.5
+    # When an end-frame target is generated, reject clips that do not converge to it.
+    GENERATION_VIDEO_END_FRAME_REFERENCE_MIN_SCORE: float = 2.5
     GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE: float = 4.0
     GENERATION_REQUIRE_VIDEO_REVIEW: bool = True
     GENERATION_VIDEO_TARGET_SECONDS: float = 3.6

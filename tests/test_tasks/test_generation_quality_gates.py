@@ -341,6 +341,33 @@ def test_opening_frame_reference_unavailable_blocks_reviewed_candidate(monkeypat
     assert "opening frame reference evidence is unavailable" in error
 
 
+def test_ending_frame_reference_floor_blocks_obvious_target_drift(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.settings.GENERATION_VIDEO_END_FRAME_REFERENCE_MIN_SCORE",
+        2.5,
+    )
+
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {
+                "end_frame_reference": {"status": "available", "score": 1.8},
+            },
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+
+    assert error is not None
+    assert "ending frame reference score" in error
+
+
 def test_black_frame_run_floor_blocks_candidate(monkeypatch):
     monkeypatch.setattr(
         "src.tasks.video_tasks.settings.GENERATION_VIDEO_MAX_BLACK_SECONDS",
