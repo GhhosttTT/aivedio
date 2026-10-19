@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { errorText, projectApi } from '../api/client';
 import type { GenerationReviewSummary, QualityLoopPlan } from '../api/client';
-import { ProjectImage } from './ProjectMedia';
+import { ProjectImage, ProjectVideo } from './ProjectMedia';
 
 const names: Record<string, string> = {
     story: '生成情节复审',
@@ -593,6 +593,7 @@ function VideoCandidateSelectionEvidence({projectId, report}: {projectId: number
                 <div>
                     <p>总分 {score(candidate.selection_score)} · 关键短板 {score(candidate.critical_floor_score)}</p>
                     <p className="wb-muted">{Object.entries(componentLabels).map(([key, label]) => `${label} ${score(components[key])}`).join(' · ')}</p>
+                    {candidate.path && <ProjectVideo projectId={projectId} path={candidate.path} label={selected ? '已选视频' : '候选视频'}/>}
                     <MediaLink projectId={projectId} path={candidate.path} label={selected ? '打开已选视频' : '打开候选视频'}/>
                 </div>
             </div>;
@@ -627,6 +628,7 @@ function ImageCandidateSelectionEvidence({projectId, report}: {projectId: number
                 <div>
                     <p>总分 {score(candidate.selection_score)} · 关键短板 {score(candidate.critical_floor_score)}</p>
                     <p className="wb-muted">{Object.entries(componentLabels).map(([key, label]) => `${label} ${score(components[key])}`).join(' · ')}</p>
+                    {candidate.path && <ProjectImage projectId={projectId} path={candidate.path} alt={selected ? '已选关键帧' : '候选关键帧'}/>}
                     <MediaLink projectId={projectId} path={candidate.path} label={selected ? '打开已选关键帧' : '打开候选关键帧'}/>
                 </div>
             </div>;
