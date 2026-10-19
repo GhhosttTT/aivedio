@@ -156,6 +156,31 @@ def test_atomic_video_motion_audit_rejects_incomplete_available_evidence(tmp_pat
     assert "motion_energy" in report.issues[0]["message"]
 
 
+def test_atomic_video_motion_audit_rejects_available_evidence_without_status(tmp_path):
+    video = tmp_path / "scene_1.mp4"
+    _write_sidecar(video)
+    payload = json.loads(video.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    payload["metrics"].pop("status")
+    video.with_suffix(".quality.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    report = AtomicVideoMotionAuditService().audit([_scene(1, video)])
+
+    assert report.status == "needs_review"
+    assert report.issues[0]["code"] == "technical_evidence_unavailable"
+
+
+def test_atomic_video_motion_audit_rejects_malformed_available_evidence(tmp_path):
+    video = tmp_path / "scene_1.mp4"
+    _write_sidecar(video, motion_energy="not-a-number", temporal_sample_evidence="unknown")
+
+    report = AtomicVideoMotionAuditService().audit([_scene(1, video)])
+
+    assert report.status == "needs_review"
+    assert report.issues[0]["code"] == "technical_evidence_invalid"
+    assert "motion_energy" in report.issues[0]["message"]
+    assert "temporal_sample_evidence" in report.issues[0]["message"]
+
+
 def test_atomic_video_motion_audit_rejects_partial_video_coverage(tmp_path):
     video = tmp_path / "scene_1.mp4"
     _write_sidecar(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -69,6 +70,17 @@ class AtomicVideoMotionAuditService:
         "sampled_frames",
         "temporal_sample_evidence",
     )
+    NUMERIC_METRICS = (
+        "technical_score",
+        "motion_energy",
+        "static_transition_ratio",
+        "max_static_run_seconds",
+        "max_black_run_seconds",
+        "black_frame_ratio",
+        "motion_jitter_ratio",
+        "temporal_jump_ratio",
+        "temporal_jump_p95",
+    )
 
     def audit(self, scenes: list) -> AtomicVideoMotionAuditReport:
         reports = []
@@ -99,7 +111,7 @@ class AtomicVideoMotionAuditService:
             ))
         for item in reports:
             number = item["scene_number"]
-            if item.get("technical_evidence_status") == "unavailable" or item.get("status") == "unavailable":
+            if item.get("technical_evidence_status") == "unavailable" or item.get("status") != "available":
                 issues.append(self._issue(
                     number,
                     "technical_evidence_unavailable",
@@ -107,20 +119,29 @@ class AtomicVideoMotionAuditService:
                     "refine_video_commercial_aesthetic",
                 ))
                 continue
-            if item.get("status") == "available":
-                missing_metrics = [
-                    name for name in self.REQUIRED_METRICS
-                    if item.get(name) is None
-                ]
-                if missing_metrics:
-                    issues.append(self._issue(
-                        number,
-                        "technical_evidence_incomplete",
-                        "technical video evidence is marked available but missing: "
-                        + ", ".join(missing_metrics),
-                        "refine_video_commercial_aesthetic",
-                    ))
-                    continue
+            missing_metrics = [
+                name for name in self.REQUIRED_METRICS
+                if item.get(name) is None
+            ]
+            if missing_metrics:
+                issues.append(self._issue(
+                    number,
+                    "technical_evidence_incomplete",
+                    "technical video evidence is marked available but missing: "
+                    + ", ".join(missing_metrics),
+                    "refine_video_commercial_aesthetic",
+                ))
+                continue
+            invalid_metrics = self._invalid_metrics(item)
+            if invalid_metrics:
+                issues.append(self._issue(
+                    number,
+                    "technical_evidence_invalid",
+                    "technical video evidence contains invalid values: "
+                    + ", ".join(invalid_metrics),
+                    "refine_video_commercial_aesthetic",
+                ))
+                continue
             if item.get("temporal_sample_evidence") == "insufficient":
                 issues.append(self._issue(
                     number,
@@ -145,6 +166,23 @@ class AtomicVideoMotionAuditService:
                 issues.append(self._issue(number, "extreme_temporal_visual_jump", "a worst-case sampled transition contains an extreme full-frame visual reset", "lower_motion_and_regenerate_video"))
         status = "needs_review" if any(issue["severity"] == "high" for issue in issues) else ("warn" if issues else "passed")
         return AtomicVideoMotionAuditReport(status, len(reports), reports, issues)
+
+    def _invalid_metrics(self, item: dict[str, Any]) -> list[str]:
+        invalid = []
+        for name in self.NUMERIC_METRICS:
+            value = item.get(name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                invalid.append(name)
+        sampled_frames = item.get("sampled_frames")
+        if (
+            isinstance(sampled_frames, bool)
+            or not isinstance(sampled_frames, int)
+            or sampled_frames < 1
+        ):
+            invalid.append("sampled_frames")
+        if item.get("temporal_sample_evidence") not in {"sufficient", "insufficient"}:
+            invalid.append("temporal_sample_evidence")
+        return invalid
 
     def _load_metrics(self, video_path: Path) -> dict[str, Any] | None:
         sidecar = video_path.with_suffix(".quality.json")
