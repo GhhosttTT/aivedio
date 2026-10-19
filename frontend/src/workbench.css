@@ -23,6 +23,17 @@
 .wb-alert { padding: 12px 0; color: #ffc1b0; overflow-wrap: anywhere; }
 .wb-item { padding: 20px 0; border-bottom: 1px solid #36383b; }
 .wb-scene { display: grid; grid-template-columns: 42px minmax(0, 1fr) 210px; gap: 18px; }
+.wb-shot-timeline { margin: 20px 0; padding: 16px; border: 1px solid #3b3d40; border-radius: 10px; background: #242628; }
+.wb-shot-timeline h3 { margin: 0 0 4px; }
+.wb-shot-timeline-track { display: flex; gap: 5px; overflow-x: auto; padding: 8px 0 2px; }
+.wb-shot-timeline-item { min-width: 82px; min-height: 68px; flex: 1 1 82px; display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 3px; padding: 8px; border: 1px solid #4b4e51; border-radius: 7px; color: #e6e8e9; background: #303336; text-align: left; cursor: pointer; }
+.wb-shot-timeline-item:hover, .wb-shot-timeline-item:focus-visible { border-color: #8adfbd; outline: 2px solid #8adfbd; outline-offset: 1px; }
+.wb-shot-timeline-item.passed { border-color: #39715e; }
+.wb-shot-timeline-item.needs_review, .wb-shot-timeline-item.loading { border-color: #8a7430; }
+.wb-shot-timeline-item.error, .wb-shot-timeline-item.stale { border-color: #8b4c3c; }
+.wb-shot-timeline-item strong { font-size: 15px; }
+.wb-shot-timeline-item span { color: #aeb4b7; font-size: 12px; }
+.wb-shot-timeline-item small { color: #c5c7c9; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .wb-number { font-variant-numeric: tabular-nums; color: #8c999f; font-size: 24px; }
 .wb-item p { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
 .wb-thumbnails { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0; }

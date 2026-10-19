@@ -29,6 +29,11 @@ export function ScriptPreview({project, onReload, locked = false}: {project: Pro
         return failed?.[1] || passed?.[1] || null;
     };
     const reviewStatus = (sceneNumber: number) => sceneReview(sceneNumber)?.status || (reviewLoading ? 'loading' : '未审核');
+    const timelineScenes = project.scenes || [];
+    const timelineDuration = timelineScenes.reduce((total, scene) => total + Math.max(0.5, Number(scene.duration) || 3.6), 0);
+    const scrollToScene = (sceneNumber: number) => {
+        document.getElementById(`scene-${sceneNumber}`)?.scrollIntoView({behavior: 'smooth', block: 'center'});
+    };
     const visibleCharacters = (scene: Scene): string[] => {
         if (Array.isArray(scene.characters)) return scene.characters;
         if (typeof scene.characters === 'string' && scene.characters.trim()) return [scene.characters.trim()];
@@ -53,7 +58,35 @@ export function ScriptPreview({project, onReload, locked = false}: {project: Pro
     return <section style={{marginTop: 24}} aria-label="分镜列表">
         {error && <p className="wb-alert" role="alert">{error}</p>}
         {!project.scenes?.length && <p className="wb-muted">暂无分镜</p>}
-        {project.scenes?.map(scene => <article key={scene.id} className="wb-item wb-scene">
+        {timelineScenes.length > 0 && <section className="wb-shot-timeline" aria-label="分镜时间轴">
+            <div className="wb-row wb-between">
+                <div>
+                    <h3>导演时间轴</h3>
+                    <p className="wb-muted">{timelineScenes.length} 个镜头 · 预计 {timelineDuration.toFixed(1)} 秒 · 点击镜头定位到分镜</p>
+                </div>
+                <span className="wb-badge">{timelineScenes.filter(scene => scene.video_path).length}/{timelineScenes.length} 已有视频</span>
+            </div>
+            <div className="wb-shot-timeline-track" role="list">
+                {timelineScenes.map(scene => {
+                    const duration = Math.max(0.5, Number(scene.duration) || 3.6);
+                    const status = reviewStatus(scene.scene_number);
+                    return <button
+                        type="button"
+                        role="listitem"
+                        className={`wb-shot-timeline-item ${status}`}
+                        key={scene.id}
+                        style={{flexGrow: duration, flexBasis: `${Math.max(56, duration * 18)}px`}}
+                        title={`定位到分镜 ${scene.scene_number}`}
+                        onClick={() => scrollToScene(scene.scene_number)}
+                    >
+                        <strong>{String(scene.scene_number).padStart(2, '0')}</strong>
+                        <span>{duration.toFixed(1)}s</span>
+                        <small>{scene.video_path ? '视频' : scene.image_path ? '关键帧' : '待生成'} · {status}</small>
+                    </button>;
+                })}
+            </div>
+        </section>}
+        {project.scenes?.map(scene => <article id={`scene-${scene.scene_number}`} key={scene.id} className="wb-item wb-scene">
             <span className="wb-number">{String(scene.scene_number).padStart(2, '0')}</span>
             <div>{editing?.id === scene.id ? <>
                 <label>画面描述<textarea value={editing.visual_description} onChange={e => setEditing({...editing, visual_description: e.target.value})}/></label>
