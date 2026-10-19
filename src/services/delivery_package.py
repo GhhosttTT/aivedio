@@ -183,6 +183,21 @@ def verify_delivery_package(package_path: str | Path) -> dict:
                 result["errors"].append(
                     "ZIP contains files missing from manifest: " + ", ".join(unexpected)
                 )
+            readiness_name = "reviews/production_readiness_latest.json"
+            if readiness_name in names:
+                try:
+                    readiness_snapshot = json.loads(archive.read(readiness_name).decode("utf-8"))
+                except (UnicodeDecodeError, ValueError, TypeError) as exc:
+                    result["errors"].append(f"Production readiness snapshot is invalid: {exc}")
+                else:
+                    readiness = readiness_snapshot.get("readiness") if isinstance(readiness_snapshot, dict) else None
+                    video_engine = readiness.get("video_engine") if isinstance(readiness, dict) else None
+                    if not isinstance(readiness_snapshot, dict) or readiness_snapshot.get("kind") != "production_readiness_snapshot":
+                        result["errors"].append("Production readiness snapshot kind is invalid")
+                    if not isinstance(readiness, dict) or readiness.get("status") != "ready":
+                        result["errors"].append("Production readiness snapshot is not ready")
+                    if not isinstance(video_engine, dict) or video_engine.get("status") != "ready_for_production_video_test":
+                        result["errors"].append("Production readiness snapshot video-engine evidence is not ready")
             final_video_entry = next(
                 (
                     item for archive_name, item in manifest_entries.items()
