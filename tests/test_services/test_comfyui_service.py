@@ -172,6 +172,7 @@ class TestComfyUIService:
                         "spatial_plan_json": "{spatial_plan_json}",
                         "spatial_control_references_json": "{spatial_control_references_json}",
                         "spatial_scene_contract_hash": "{spatial_scene_contract_hash}",
+                        "continuity_reference_image": "{continuity_reference_image}",
                     },
                 }
             }
@@ -186,6 +187,7 @@ class TestComfyUIService:
                 "spatial_plan_json": "{\"camera_angle\": \"over_shoulder\"}",
                 "spatial_control_references_json": "{\"pose_reference_prompt\": \"locked\"}",
                 "spatial_scene_contract_hash": "scene-hash",
+                "continuity_reference_image": "previous-last-frame.png",
             })
 
             assert replaced["1"]["inputs"]["motion_bucket_id"] == 96
@@ -198,6 +200,7 @@ class TestComfyUIService:
             assert "over_shoulder" in replaced["1"]["inputs"]["spatial_plan_json"]
             assert "pose_reference_prompt" in replaced["1"]["inputs"]["spatial_control_references_json"]
             assert replaced["1"]["inputs"]["spatial_scene_contract_hash"] == "scene-hash"
+            assert replaced["1"]["inputs"]["continuity_reference_image"] == "previous-last-frame.png"
 
 
 if __name__ == "__main__":

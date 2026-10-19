@@ -701,6 +701,7 @@ class ComfyUIService:
         reference_image: str,
         output_path: str,
         end_image: Optional[str] = None,
+        continuity_reference_image: Optional[str] = None,
         negative_prompt: str = "",
         width: int = 1024,
         height: int = 576,
@@ -729,6 +730,10 @@ class ComfyUIService:
         workflow = json.loads(workflow_file.read_text(encoding="utf-8"))
         uploaded_reference = self._upload_reference_image(reference_image)
         uploaded_end = self._upload_reference_image(end_image) if end_image else uploaded_reference
+        uploaded_continuity = (
+            self._upload_reference_image(continuity_reference_image)
+            if continuity_reference_image else ""
+        )
         pipeline = quality_pipeline if isinstance(quality_pipeline, dict) else {}
         plan = shot_plan if isinstance(shot_plan, dict) else {}
         spatial_plan = plan.get("spatial_plan") if isinstance(plan.get("spatial_plan"), dict) else {}
@@ -742,6 +747,13 @@ class ComfyUIService:
             "first_frame": uploaded_reference,
             "end_image": uploaded_end,
             "last_frame": uploaded_end,
+            # Keep the previous shot's verified tail frame separate from the
+            # current shot's opening/end-frame controls. Custom workflows can
+            # bind this to a temporal-conditioning node without changing the
+            # legacy first-frame behavior.
+            "continuity_reference_image": uploaded_continuity,
+            "continuity_image": uploaded_continuity,
+            "previous_last_frame": uploaded_continuity,
             "image": uploaded_reference,
             "width": width,
             "height": height,
