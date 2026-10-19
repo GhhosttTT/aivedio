@@ -1719,6 +1719,10 @@ def test_api_provider_rejects_json_download_response(tmp_path):
         "data:video/mp4;base64,AAAA",
         "https://user:secret@media.example/out.mp4",
         "https://media.example/out.mp4#download",
+        "http://localhost:8000/out.mp4",
+        "https://127.0.0.1/out.mp4",
+        "https://169.254.169.254/latest/meta-data",
+        "https://service.internal/out.mp4",
     ],
 )
 def test_api_provider_rejects_unsafe_video_download_urls(tmp_path, url):

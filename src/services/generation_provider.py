@@ -2862,9 +2862,37 @@ def _validate_public_media_url(url: str, media_kind: str) -> None:
 
 
 def _validate_provider_download_url(url: str, provider_name: str = "provider") -> None:
-    """Reject malformed or credential-bearing result URLs before downloading."""
-    parsed = urlparse(str(url).strip())
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+    """Reject malformed, credential-bearing, or private result URLs before downloading."""
+    try:
+        parsed = urlparse(str(url).strip())
+        hostname = (parsed.hostname or "").strip().lower()
+    except ValueError:
+        parsed = None
+        hostname = ""
+    private_host = hostname in {
+        "localhost", "localhost.localdomain", "metadata.google.internal",
+    } or hostname.endswith((".localhost", ".local", ".internal"))
+    if hostname:
+        try:
+            address = ipaddress.ip_address(hostname)
+            private_host = private_host or (
+                address.is_private
+                or address.is_loopback
+                or address.is_link_local
+                or address.is_reserved
+                or address.is_multicast
+            )
+        except ValueError:
+            pass
+    if (
+        parsed is None
+        or parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or not hostname
+        or parsed.username
+        or parsed.password
+        or private_host
+    ):
         raise GenerationProviderError(
             f"{provider_name} returned an invalid video download URL"
         )
