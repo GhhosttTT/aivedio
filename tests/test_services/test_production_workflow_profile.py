@@ -464,3 +464,14 @@ def test_workflow_profile_snapshots_audio_visual_alignment_floor(monkeypatch):
     gates = ProductionWorkflowProfileService()._current_quality_gates()
 
     assert gates["video_audio_visual_alignment_min_score"] == 2.25
+
+
+def test_workflow_profile_snapshots_baseline_regression_tolerance(monkeypatch):
+    monkeypatch.setattr(
+        "src.services.production_workflow_profile.settings.GENERATION_SEED_DANCE_BASELINE_REGRESSION_TOLERANCE",
+        0.08,
+    )
+
+    gates = ProductionWorkflowProfileService()._current_quality_gates()
+
+    assert gates["seed_dance_baseline_regression_tolerance"] == 0.08

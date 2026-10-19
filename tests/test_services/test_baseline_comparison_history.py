@@ -30,6 +30,23 @@ def test_baseline_history_tracks_regression_and_best_score(monkeypatch, tmp_path
     assert second["best_score"] == 0.92
     assert second["score_delta"] == -0.11
     assert second["regression"] is True
+    assert second["regression_tolerance"] == 0.05
+
+
+def test_baseline_history_ignores_small_score_movement(monkeypatch, tmp_path):
+    from src.utils.storage import storage_manager
+
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    monkeypatch.setattr(
+        "src.services.baseline_comparison_history.settings.GENERATION_SEED_DANCE_BASELINE_REGRESSION_TOLERANCE",
+        0.05,
+    )
+    store = BaselineComparisonHistoryStore(1)
+    store.record(_report("candidate-a", 0.92))
+    summary = store.record(_report("candidate-b", 0.87))
+
+    assert summary["score_delta"] == -0.05
+    assert summary["regression"] is False
 
 
 def test_baseline_history_deduplicates_same_media_versions(monkeypatch, tmp_path):

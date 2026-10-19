@@ -697,6 +697,21 @@ def test_generation_review_summary_requires_seed_dance_baseline():
     assert any("Seed Dance baseline" in item for item in summary["action_items"])
 
 
+def test_generation_review_summary_blocks_baseline_regression_beyond_tolerance():
+    summary = _generation_review_summary({
+        "production_story": {"status": "passed"},
+        "generation": {"status": "passed"},
+        "seed_dance_baseline_comparison": {
+            "status": "passed",
+            "history_summary": {"regression": True, "score_delta": -0.12},
+        },
+    })
+
+    assert summary["status"] == "blocked"
+    assert summary["baseline_regression"] is True
+    assert any("regressed beyond tolerance" in item for item in summary["action_items"])
+
+
 def test_generation_review_summary_blocks_failed_sequence_boundary_evidence():
     summary = _generation_review_summary({
         "production_story": {"status": "passed"},

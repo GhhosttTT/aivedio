@@ -1123,6 +1123,13 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
     generation = statuses.get("generation")
     content_safety = statuses.get("content_safety", "not_applicable")
     baseline = statuses.get("seed_dance_baseline_comparison")
+    baseline_report = reports.get("seed_dance_baseline_comparison")
+    baseline_history = (
+        baseline_report.get("history_summary", {})
+        if isinstance(baseline_report, dict) and isinstance(baseline_report.get("history_summary"), dict)
+        else {}
+    )
+    baseline_regression = bool(baseline_history.get("regression"))
     composition = statuses.get("final_composition")
     if production_story != "passed":
         action_items.append("Run production story review before generating final assets.")
@@ -1132,6 +1139,8 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
         action_items.append("Complete content-safety review for flagged script/storyboard evidence before production.")
     if baseline != "passed":
         action_items.append("Run Seed Dance baseline comparison before claiming replacement quality.")
+    if baseline_regression:
+        action_items.append("Seed Dance baseline score regressed beyond tolerance; review the latest candidate before delivery.")
     if composition is not None and composition != "passed":
         action_items.append("Review the final composition quality gate before delivering the video.")
     continuity = statuses.get("continuity_audit")
@@ -1215,7 +1224,7 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
     blocking = bool(
         stale or needs_split or production_story != "passed" or generation != "passed"
         or content_safety not in {"passed", "not_applicable"}
-        or baseline != "passed" or (composition is not None and composition != "passed")
+        or baseline != "passed" or baseline_regression or (composition is not None and composition != "passed")
         or continuity == "needs_review"
         or rhythm == "needs_review"
         or style_consistency == "needs_review"
@@ -1252,6 +1261,7 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
             "status": "blocked" if sequence_manifest_failed else ("passed" if sequence_manifests else "not_applicable"),
             "reports": len(sequence_manifests),
         },
+        "baseline_regression": baseline_regression,
         "quality_scorecard": scorecard,
         "action_items": action_items,
         "human_final_review_required": final_human_review_required,

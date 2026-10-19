@@ -126,6 +126,8 @@ class Settings(BaseSettings):
     GENERATION_VIDEO_CONTINUITY_REFERENCE_MIN_SCORE: float = 2.0
     # Minimum decoded audio/activity correlation when a candidate carries audio.
     GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE: float = 2.5
+    # Ignore small baseline score movement as measurement noise; larger drops block delivery.
+    GENERATION_SEED_DANCE_BASELINE_REGRESSION_TOLERANCE: float = 0.05
     GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE: float = 4.0
     GENERATION_REQUIRE_VIDEO_REVIEW: bool = True
     GENERATION_VIDEO_TARGET_SECONDS: float = 3.6

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.config import settings
 from src.utils.storage import storage_manager
 
 
@@ -58,6 +59,7 @@ class BaselineComparisonHistoryStore:
         current_score = current.get("score") if current else None
         previous_score = previous.get("score") if previous else None
         delta = round(float(current_score) - float(previous_score), 3) if current and previous else None
+        regression_tolerance = float(settings.GENERATION_SEED_DANCE_BASELINE_REGRESSION_TOLERANCE)
         return {
             "count": len(entries),
             "passed_count": sum(1 for item in entries if item.get("status") == "passed"),
@@ -65,6 +67,7 @@ class BaselineComparisonHistoryStore:
             "previous_score": previous_score,
             "best_score": max((float(item["score"]) for item in scored), default=None),
             "score_delta": delta,
-            "regression": bool(delta is not None and delta < 0),
+            "regression_tolerance": regression_tolerance,
+            "regression": bool(delta is not None and delta < -regression_tolerance),
             "entries": entries[-10:],
         }
