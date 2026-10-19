@@ -38,3 +38,47 @@ def test_repair_budget_treats_changed_evidence_as_a_new_attempt(monkeypatch, tmp
 
     assert len(accepted) == 1
     assert not exhausted
+
+
+def test_repair_budget_enforces_project_wide_retry_cap(monkeypatch, tmp_path):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    budget = RepairBudget(1, max_attempts=2, max_total_attempts=2)
+    first = {"scene_number": 1, "stage": "video", "action": "repair-a", "reason": "first"}
+    second = {"scene_number": 2, "stage": "video", "action": "repair-b", "reason": "second"}
+
+    accepted, exhausted = budget.filter([first, second])
+    assert [item["action"] for item in accepted] == ["repair-a", "repair-b"]
+    assert not exhausted
+    budget.record(accepted)
+
+    accepted, exhausted = budget.filter([{
+        "scene_number": 3,
+        "stage": "video",
+        "action": "repair-c",
+        "reason": "new evidence text",
+    }])
+    assert accepted == []
+    assert exhausted[0]["reason"] == "project automatic repair retry budget exhausted"
+    assert exhausted[0]["project_retry_attempts"] == 2
+
+
+def test_repair_budget_migrates_legacy_attempt_file(monkeypatch, tmp_path):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    project_path = storage_manager.get_project_path(1)
+    (project_path / "repair_attempts.json").write_text(
+        '{"version": 1, "attempts": {"legacy": {"count": 3}}}\n',
+        encoding="utf-8",
+    )
+    budget = RepairBudget(1, max_attempts=2, max_total_attempts=3)
+
+    accepted, exhausted = budget.filter([{
+        "scene_number": 1,
+        "stage": "video",
+        "action": "repair",
+        "reason": "new evidence",
+    }])
+
+    assert accepted == []
+    assert exhausted[0]["project_retry_attempts"] == 3
