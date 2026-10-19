@@ -250,6 +250,26 @@ class TestComfyUIService:
                     workflow_path=str(workflow_path),
                 )
 
+    def test_video_workflow_rejects_missing_bound_media(self, mock_workflow_config, mock_http_client, tmp_path):
+        with patch('src.services.comfyui_service.httpx.Client', return_value=mock_http_client):
+            service = ComfyUIService(workflow_path=mock_workflow_config)
+            workflow_path = tmp_path / "video.json"
+            workflow_path.write_text(json.dumps({
+                "1": {"class_type": "ReferenceStack", "inputs": {
+                    "videos": "{reference_videos_json}",
+                    "audios": "{reference_audios_json}",
+                }},
+            }), encoding="utf-8")
+
+            with pytest.raises(ComfyUIError, match="参考视频不存在"):
+                service.generate_video(
+                    prompt="validated references",
+                    reference_image=str(tmp_path / "opening.png"),
+                    reference_videos=[str(tmp_path / "missing.mp4")],
+                    output_path=str(tmp_path / "scene.mp4"),
+                    workflow_path=str(workflow_path),
+                )
+
     @pytest.mark.parametrize(
         ("kwargs", "message"),
         [

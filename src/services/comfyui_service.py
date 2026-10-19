@@ -764,10 +764,16 @@ class ComfyUIService:
             raise ComfyUIError(
                 "ComfyUI 视频工作流未接入 {reference_videos_json}，无法安全使用参考视频"
             )
+        missing_videos = [str(path) for path in reference_videos or [] if path and not Path(path).is_file()]
+        if missing_videos:
+            raise ComfyUIError("参考视频不存在: " + ", ".join(missing_videos))
         if reference_audios and not self._workflow_contains_placeholder(workflow, "reference_audios_json"):
             raise ComfyUIError(
                 "ComfyUI 视频工作流未接入 {reference_audios_json}，无法安全使用参考音频"
             )
+        missing_audios = [str(path) for path in reference_audios or [] if path and not Path(path).is_file()]
+        if missing_audios:
+            raise ComfyUIError("参考音频不存在: " + ", ".join(missing_audios))
         if (
             reference_images
             and len({str(Path(path).resolve()) for path in reference_images if path}) > 1
