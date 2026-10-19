@@ -544,11 +544,15 @@ class ApiVideoProvider:
             if pending:
                 self.last_result_metadata["provider_request_submitted"] = True
                 task_id = str(pending["provider_task_id"])
+                pending_status_endpoint = str(
+                    pending.get("status_endpoint") or self.status_endpoint or ""
+                ).strip()
                 self.last_result_metadata["provider_task_id"] = task_id
                 self.last_result_metadata["resumed_pending_task"] = True
                 self._report_progress(request.progress_callback, 10, "resuming")
                 data = {"job_id": task_id}
             else:
+                pending_status_endpoint = self.status_endpoint
                 # A transport error after the gateway accepted a POST is
                 # ambiguous. Never blindly resubmit a paid generation request;
                 # callers can inspect the provider/task state and retry manually.
@@ -596,6 +600,7 @@ class ApiVideoProvider:
                     headers,
                     request.progress_callback,
                     request.cancellation_check,
+                    status_endpoint=pending_status_endpoint,
                 )
             except GenerationCancelledError:
                 self._cancel_remote_task_if_supported(client, headers)
@@ -721,7 +726,11 @@ class ApiVideoProvider:
                     "A pending provider task belongs to a different video request; "
                     "use a new output path or clear the pending task only after checking the remote task."
                 )
-        return {"provider_task_id": str(data["provider_task_id"])}
+        pending = {"provider_task_id": str(data["provider_task_id"])}
+        stored_status_endpoint = data.get("status_endpoint")
+        if isinstance(stored_status_endpoint, str) and stored_status_endpoint.strip():
+            pending["status_endpoint"] = stored_status_endpoint.strip()
+        return pending
 
     def _write_pending_task(
         self, output_path: str, task_id: str, request: VideoGenerationRequest | None = None,
@@ -1244,6 +1253,7 @@ class ApiVideoProvider:
         headers: dict[str, str],
         progress_callback: Optional[Callable[[int, str], None]] = None,
         cancellation_check: Optional[Callable[[], bool]] = None,
+        status_endpoint: str | None = None,
     ) -> str:
         self._remember_result_metadata(data)
         direct = _extract_video_url(data)
@@ -1261,9 +1271,10 @@ class ApiVideoProvider:
             raise GenerationProviderError(
                 f"{self.name.value} response has no video_url/video_base64/job_id/request_id"
             )
-        if not self.status_endpoint:
+        effective_status_endpoint = str(status_endpoint or self.status_endpoint or "").strip()
+        if not effective_status_endpoint:
             raise GenerationProviderError(f"{self.name.value} returned job_id but {self.env_prefix}_STATUS_ENDPOINT is not configured")
-        status_url = self.status_endpoint.replace("{job_id}", str(job_id)).replace("{request_id}", str(job_id))
+        status_url = effective_status_endpoint.replace("{job_id}", str(job_id)).replace("{request_id}", str(job_id))
         # Keep both guards: ``timeout`` is the wall-clock contract exposed to
         # operators, while ``max_polls`` protects against a bad interval or a
         # gateway that never advances its task state.  The old implementation

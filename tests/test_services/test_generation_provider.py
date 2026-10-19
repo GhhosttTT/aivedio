@@ -3496,6 +3496,7 @@ def test_async_provider_resumes_pending_task_without_resubmitting(tmp_path, monk
 
     class FakeClient:
         phase = "first"
+        urls = []
 
         def __init__(self, **_kwargs):
             return None
@@ -3512,6 +3513,7 @@ def test_async_provider_resumes_pending_task_without_resubmitting(tmp_path, monk
             return FakeResponse({"job_id": "resume-task"})
 
         def get(self, url, **_kwargs):
+            FakeClient.urls.append(url)
             if "status" in url:
                 if FakeClient.phase == "first":
                     return FakeResponse({"status": "running"})
@@ -3522,7 +3524,7 @@ def test_async_provider_resumes_pending_task_without_resubmitting(tmp_path, monk
     monkeypatch.setattr("src.services.generation_provider.time.sleep", lambda *_args: None)
     output = tmp_path / "scene.mp4"
     first = HttpVideoApiProvider(endpoint="https://gateway.example/video", api_key="secret")
-    first.status_endpoint = "https://gateway.example/status/{job_id}"
+    first.status_endpoint = "https://gateway.example/v1/status/{job_id}"
     first.max_polls = 1
     first.poll_interval = 0
 
@@ -3533,7 +3535,7 @@ def test_async_provider_resumes_pending_task_without_resubmitting(tmp_path, monk
 
     FakeClient.phase = "resumed"
     second = HttpVideoApiProvider(endpoint="https://gateway.example/video", api_key="secret")
-    second.status_endpoint = "https://gateway.example/status/{job_id}"
+    second.status_endpoint = "https://gateway.example/v2/status/{job_id}"
     second.poll_interval = 0
     result = second.generate_video(VideoGenerationRequest(prompt="resume me", output_path=str(output)))
 
@@ -3541,6 +3543,11 @@ def test_async_provider_resumes_pending_task_without_resubmitting(tmp_path, monk
     assert output.read_bytes() == b"resumed-video"
     assert result.metadata["resumed_pending_task"] is True
     assert not pending.exists()
+    assert FakeClient.urls == [
+        "https://gateway.example/v1/status/resume-task",
+        "https://gateway.example/v1/status/resume-task",
+        "https://media.example/resumed.mp4",
+    ]
 
 
 def test_pending_task_404_clears_sidecar_and_returns_actionable_error(tmp_path, monkeypatch):
