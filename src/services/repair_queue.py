@@ -376,6 +376,36 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
                 evidence.append("video opening frame diverges from the locked scene keyframe")
         elif "reference image" in str(start_frame_reference.get("error") or "").lower():
             evidence.append("video opening frame reference evidence is unavailable")
+    for reference_key, label, minimum_score in (
+        (
+            "end_frame_reference",
+            "video ending frame diverges from the locked end-frame target",
+            settings.GENERATION_VIDEO_END_FRAME_REFERENCE_MIN_SCORE,
+        ),
+        (
+            "continuity_reference",
+            "video continuity reference diverges from the prior shot tail frame",
+            settings.GENERATION_VIDEO_CONTINUITY_REFERENCE_MIN_SCORE,
+        ),
+    ):
+        reference = video_metrics.get(reference_key)
+        if not isinstance(reference, dict):
+            continue
+        reference_status = reference.get("status")
+        if reference_status == "available":
+            score = reference.get("score")
+            if isinstance(score, (int, float)) and score < minimum_score:
+                evidence.append(label)
+        elif "reference image" in str(reference.get("error") or "").lower():
+            evidence.append(f"{label} reference evidence is unavailable")
+    alignment = video_metrics.get("audio_visual_alignment")
+    if isinstance(alignment, dict):
+        if alignment.get("status") == "available":
+            score = alignment.get("score")
+            if isinstance(score, (int, float)) and score < 2.5:
+                evidence.append("audio visual alignment is below the timing quality floor")
+        elif alignment.get("status") in {"unavailable", "insufficient_variation"}:
+            evidence.append("audio visual alignment evidence is unavailable or insufficient")
     if video_metrics.get("temporal_jump_ratio", 0) > settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO:
         evidence.append("video temporal visual resets between sampled frames")
     if video_metrics.get("temporal_jump_p95", 0) > settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95:
@@ -522,6 +552,44 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
             "recommendation": (
                 "Regenerate with the locked scene keyframe as the exact opening composition; "
                 "preserve face, wardrobe, framing and lighting before adding motion."
+            ),
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
+    if any(
+        term in text
+        for term in (
+            "ending frame diverges",
+            "ending frame reference evidence is unavailable",
+            "continuity reference diverges",
+            "continuity reference evidence is unavailable",
+            "continuity_reference_drift",
+            "ending_frame_drift",
+        )
+    ):
+        return {
+            "priority": "high",
+            "stage": "video",
+            "action": "lower_motion_and_regenerate_video",
+            "execution": _execution_mode("lower_motion_and_regenerate_video"),
+            "reason": evidence[:240],
+            "recommendation": (
+                "Regenerate from the locked boundary references with lower motion/noise and explicit start/end "
+                "and prior-shot continuity constraints; reject clips that do not converge at either boundary."
+            ),
+            "candidate_index": candidate.get("index"),
+            "scene_number": _scene_number(candidate),
+        }
+    if "audio visual alignment" in text or "audio_visual_alignment" in text:
+        return {
+            "priority": _priority(text),
+            "stage": "audio",
+            "action": "refine_dialogue_audio_delivery",
+            "execution": _execution_mode("refine_dialogue_audio_delivery"),
+            "reason": evidence[:240],
+            "recommendation": (
+                "Retune dialogue/audio timing and regenerate the affected clip so audible activity and visible "
+                "reaction beats align, then rerun composition and audio quality gates."
             ),
             "candidate_index": candidate.get("index"),
             "scene_number": _scene_number(candidate),

@@ -500,6 +500,47 @@ def test_repair_queue_maps_dialogue_audio_gate_to_audio_repair():
     assert queue[0]["scene_number"] == 3
 
 
+def test_repair_queue_maps_boundary_reference_failures_to_temporal_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 0,
+            "scene": {"scene_number": 4},
+            "technical_metrics": {
+                "end_frame_reference": {"status": "available", "score": 1.4},
+                "continuity_reference": {"status": "available", "score": 1.1},
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "lower_motion_and_regenerate_video"
+    assert queue[0]["execution"] == "auto"
+    assert queue[0]["scene_number"] == 4
+    assert "ending frame" in queue[0]["reason"]
+
+
+def test_repair_queue_maps_audio_visual_alignment_to_audio_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 0,
+            "scene": {"scene_number": 6},
+            "technical_metrics": {
+                "audio_visual_alignment": {"status": "available", "score": 1.8},
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "refine_dialogue_audio_delivery"
+    assert queue[0]["stage"] == "audio"
+    assert queue[0]["execution"] == "auto"
+    assert queue[0]["scene_number"] == 6
+
+
 def test_repair_queue_reads_final_composition_batches():
     report = {
         "status": "needs_review",
