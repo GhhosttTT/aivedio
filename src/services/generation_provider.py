@@ -540,6 +540,7 @@ class ApiVideoProvider:
         with httpx.Client(timeout=self.timeout, trust_env=False) as client:
             self._check_cancelled(request.cancellation_check)
             if pending:
+                self.last_result_metadata["provider_request_submitted"] = True
                 task_id = str(pending["provider_task_id"])
                 self.last_result_metadata["provider_task_id"] = task_id
                 self.last_result_metadata["resumed_pending_task"] = True
@@ -549,6 +550,7 @@ class ApiVideoProvider:
                 # A transport error after the gateway accepted a POST is
                 # ambiguous. Never blindly resubmit a paid generation request;
                 # callers can inspect the provider/task state and retry manually.
+                self.last_result_metadata["provider_request_submitted"] = True
                 response = self._request_with_retry(
                     client,
                     "post",
@@ -2509,7 +2511,10 @@ class HybridGenerationProvider:
     def _remote_task_was_accepted(self, request) -> bool:
         """Never duplicate an already accepted paid remote generation."""
         metadata = getattr(self.primary, "last_result_metadata", None)
-        if isinstance(metadata, dict) and metadata.get("provider_task_id"):
+        if isinstance(metadata, dict) and (
+            metadata.get("provider_task_id")
+            or metadata.get("provider_request_submitted") is True
+        ):
             return True
         output_path = getattr(request, "output_path", None)
         if not output_path:

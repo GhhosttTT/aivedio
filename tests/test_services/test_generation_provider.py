@@ -3957,3 +3957,20 @@ def test_hybrid_provider_does_not_duplicate_pending_remote_video_task(tmp_path):
         HybridGenerationProvider(Primary(), Fallback()).generate_video(
             VideoGenerationRequest(prompt="hero turns", output_path=str(output))
         )
+
+
+def test_hybrid_provider_does_not_fallback_after_remote_output_validation_failure():
+    class Primary:
+        last_result_metadata = {"provider_request_submitted": True}
+
+        def generate_video(self, _request):
+            raise GenerationProviderError("downloaded video failed validation")
+
+    class Fallback:
+        def generate_video(self, _request):
+            raise AssertionError("remote output validation failure must not duplicate generation")
+
+    with pytest.raises(GenerationProviderError, match="failed validation"):
+        HybridGenerationProvider(Primary(), Fallback()).generate_video(
+            VideoGenerationRequest(prompt="hero turns", output_path="scene.mp4")
+        )
