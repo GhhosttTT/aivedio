@@ -588,10 +588,14 @@ function VideoCandidateSelectionEvidence({projectId, report}: {projectId: number
         {candidates.slice(0, 5).map((candidate: any, index: number) => {
             const selected = candidate.path && candidate.path === report.selected_path;
             const components = candidate.selection_components || {};
+            const openingFrame = candidate.technical_metrics?.start_frame_reference;
+            const openingFrameLabel = openingFrame?.status === 'available'
+                ? `首帧一致 ${score(openingFrame.score)}`
+                : openingFrame?.status === 'not_applicable' ? '首帧一致 不适用' : '首帧一致 证据缺失';
             return <div className={`wb-issue ${selected ? 'warning' : ''}`} key={`${candidate.index || index}-${candidate.path || index}`}>
                 <span>{selected ? '已选' : `候选 ${candidate.index || index + 1}`}</span>
                 <div>
-                    <p>总分 {score(candidate.selection_score)} · 关键短板 {score(candidate.critical_floor_score)}</p>
+                    <p>总分 {score(candidate.selection_score)} · 关键短板 {score(candidate.critical_floor_score)} · {openingFrameLabel}</p>
                     <p className="wb-muted">{Object.entries(componentLabels).map(([key, label]) => `${label} ${score(components[key])}`).join(' · ')}</p>
                     {candidate.path && <ProjectVideo projectId={projectId} path={candidate.path} label={selected ? '已选视频' : '候选视频'}/>}
                     <MediaLink projectId={projectId} path={candidate.path} label={selected ? '打开已选视频' : '打开候选视频'}/>
