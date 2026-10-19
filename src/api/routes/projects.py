@@ -554,6 +554,7 @@ async def get_generation_review(
             }
     from src.tasks.review_tasks import (
         _character_asset_evidence,
+        _image_generation_contract_evidence,
         _production_control_asset_evidence,
         current_story,
         generation_signature,
@@ -580,6 +581,7 @@ async def get_generation_review(
         # frozen pack must invalidate every dependent audit, not only the
         # generation report.
         "character_assets": _character_asset_evidence(project),
+        "image_generation_contracts": _image_generation_contract_evidence(audit_scenes),
         "production_controls": _production_control_asset_evidence(project),
         "scenes": [
             {

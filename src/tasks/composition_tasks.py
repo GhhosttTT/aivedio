@@ -69,7 +69,11 @@ def composition_input_signature(
     bgm_volume: float = 0.3,
 ) -> str:
     """Fingerprint every source asset and story field used by final composition."""
-    from src.tasks.review_tasks import _character_asset_evidence, _production_control_asset_evidence
+    from src.tasks.review_tasks import (
+        _character_asset_evidence,
+        _image_generation_contract_evidence,
+        _production_control_asset_evidence,
+    )
 
     payload = {
         "project_id": getattr(project, "id", None),
@@ -84,6 +88,7 @@ def composition_input_signature(
         # the scene media. A changed character pack must invalidate an old
         # approval even when the existing video bytes are unchanged.
         "character_assets": _character_asset_evidence(project),
+        "image_generation_contracts": _image_generation_contract_evidence(scenes),
         "production_controls": _production_control_asset_evidence(project),
         "scenes": [
             {

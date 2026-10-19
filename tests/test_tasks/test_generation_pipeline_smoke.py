@@ -345,6 +345,37 @@ def test_composition_input_signature_changes_when_turnaround_album_changes(tmp_p
     assert first != second
 
 
+def test_composition_input_signature_changes_when_image_contract_changes(tmp_path):
+    project = Mock(id=1, script='{}', outline='outline', characters=[])
+    video = tmp_path / "scene.mp4"
+    image = tmp_path / "scene.png"
+    video.write_bytes(b"video")
+    image.write_bytes(b"image")
+    scene = Mock(scene_number=1, dialogue="hello", image_path=str(image), video_path=str(video), audio_path=None, subtitle_path=None)
+    quality_report = image.with_suffix(".quality.json")
+    quality_report.write_text(
+        json.dumps({"best_index": 1, "candidates": [{
+            "index": 1, "provider": "local_comfyui",
+            "provider_metadata": {"workflow": {"workflow_sha256": "workflow-v1"}},
+            "request": {"seed": 1, "steps": 30, "quality_pipeline": {"stages": ["face_detail"]}},
+        }]}),
+        encoding="utf-8",
+    )
+    first = composition_tasks.composition_input_signature(project, [scene])
+    quality_report.write_text(
+        json.dumps({"best_index": 1, "candidates": [{
+            "index": 1, "provider": "local_comfyui",
+            "provider_metadata": {"workflow": {"workflow_sha256": "workflow-v2"}},
+            "request": {"seed": 1, "steps": 40, "quality_pipeline": {"stages": ["face_detail", "upscale"]}},
+        }]}),
+        encoding="utf-8",
+    )
+
+    second = composition_tasks.composition_input_signature(project, [scene])
+
+    assert first != second
+
+
 def test_composition_rejects_audio_bound_to_the_wrong_character(tmp_path):
     audio = tmp_path / "scene_001.mp3"
     audio.write_bytes(b"fake audio")
