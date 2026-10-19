@@ -731,6 +731,35 @@ class ComfyUIService:
         if not workflow_file.is_file():
             raise ComfyUIError(f"ComfyUI 视频工作流不存在: {workflow_file}")
         workflow = json.loads(workflow_file.read_text(encoding="utf-8"))
+        plan = shot_plan if isinstance(shot_plan, dict) else {}
+        spatial_plan = plan.get("spatial_plan") if isinstance(plan.get("spatial_plan"), dict) else {}
+        if end_image and not self._workflow_contains_any_placeholder(workflow, {"end_image", "last_frame"}):
+            raise ComfyUIError(
+                "ComfyUI 视频工作流未接入 {end_image} 或 {last_frame}，无法安全使用末帧控制"
+            )
+        if continuity_reference_image and not self._workflow_contains_any_placeholder(
+            workflow, {"continuity_reference_image", "continuity_image", "previous_last_frame"},
+        ):
+            raise ComfyUIError(
+                "ComfyUI 视频工作流未接入连续帧占位符，无法安全使用上一镜头尾帧"
+            )
+        if spatial_plan and not self._workflow_contains_placeholder(workflow, "spatial_plan_json"):
+            raise ComfyUIError(
+                "ComfyUI 视频工作流未接入 {spatial_plan_json}，无法安全使用镜头空间契约"
+            )
+        if spatial_plan.get("control_references") and not self._workflow_contains_placeholder(
+            workflow, "spatial_control_references_json",
+        ):
+            raise ComfyUIError(
+                "ComfyUI 视频工作流未接入 {spatial_control_references_json}，无法安全使用动作控制参考"
+            )
+        spatial_asset_pack = plan.get("spatial_asset_pack") if isinstance(plan.get("spatial_asset_pack"), dict) else {}
+        if spatial_asset_pack and not self._workflow_contains_any_placeholder(
+            workflow, {"spatial_asset_pack_json", "spatial_scene_contract_hash"},
+        ):
+            raise ComfyUIError(
+                "ComfyUI 视频工作流未接入空间资产契约占位符，无法安全生成"
+            )
         if reference_videos and not self._workflow_contains_placeholder(workflow, "reference_videos_json"):
             raise ComfyUIError(
                 "ComfyUI 视频工作流未接入 {reference_videos_json}，无法安全使用参考视频"
@@ -768,8 +797,6 @@ class ComfyUIService:
             if continuity_reference_image else uploaded_reference
         )
         pipeline = quality_pipeline if isinstance(quality_pipeline, dict) else {}
-        plan = shot_plan if isinstance(shot_plan, dict) else {}
-        spatial_plan = plan.get("spatial_plan") if isinstance(plan.get("spatial_plan"), dict) else {}
         spatial_asset_pack = plan.get("spatial_asset_pack") if isinstance(plan.get("spatial_asset_pack"), dict) else {}
         replacements = {
             "prompt": prompt,
@@ -947,6 +974,10 @@ class ComfyUIService:
         if isinstance(value, list):
             return any(ComfyUIService._workflow_contains_placeholder(item, name) for item in value)
         return isinstance(value, str) and marker in value
+
+    @staticmethod
+    def _workflow_contains_any_placeholder(value: Any, names: set[str]) -> bool:
+        return any(ComfyUIService._workflow_contains_placeholder(value, name) for name in names)
     
     def _submit_workflow(self, workflow: Dict) -> str:
         """

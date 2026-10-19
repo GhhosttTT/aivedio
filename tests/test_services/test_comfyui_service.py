@@ -250,6 +250,29 @@ class TestComfyUIService:
                     workflow_path=str(workflow_path),
                 )
 
+    @pytest.mark.parametrize(
+        ("kwargs", "message"),
+        [
+            ({"end_image": "end.png"}, "last_frame"),
+            ({"continuity_reference_image": "previous.png"}, "连续帧"),
+            ({"shot_plan": {"spatial_plan": {"camera_angle": "low"}}}, "spatial_plan_json"),
+        ],
+    )
+    def test_video_workflow_rejects_unbound_control_contracts(self, mock_workflow_config, mock_http_client, tmp_path, kwargs, message):
+        with patch('src.services.comfyui_service.httpx.Client', return_value=mock_http_client):
+            service = ComfyUIService(workflow_path=mock_workflow_config)
+            workflow_path = tmp_path / "video.json"
+            workflow_path.write_text(json.dumps({"1": {"class_type": "VideoSampler", "inputs": {}}}), encoding="utf-8")
+
+            with pytest.raises(ComfyUIError, match=message):
+                service.generate_video(
+                    prompt="controlled shot",
+                    reference_image=str(tmp_path / "opening.png"),
+                    output_path=str(tmp_path / "scene.mp4"),
+                    workflow_path=str(workflow_path),
+                    **kwargs,
+                )
+
     def test_video_workflow_uses_opening_frame_for_first_shot_continuity(self, mock_workflow_config, mock_http_client, tmp_path, monkeypatch):
         with patch('src.services.comfyui_service.httpx.Client', return_value=mock_http_client):
             service = ComfyUIService(workflow_path=mock_workflow_config)
