@@ -710,6 +710,29 @@ def test_generation_review_summary_blocks_severe_style_boundary_evidence():
     assert any("sequence boundary" in item for item in summary["action_items"])
 
 
+def test_generation_review_summary_blocks_audio_format_boundary_evidence():
+    summary = _generation_review_summary({
+        "production_story": {"status": "passed"},
+        "generation": {"status": "passed"},
+        "seed_dance_baseline_comparison": {"status": "passed"},
+        "final_composition": {"status": "passed"},
+        "sequence_boundary_42": {
+            "kind": "sequence_boundary_continuity",
+            "status": "available",
+            "severe_transition_count": 0,
+            "severe_style_transition_count": 0,
+            "geometry_mismatch_count": 0,
+            "fps_mismatch_count": 0,
+            "pixel_format_mismatch_count": 0,
+            "audio_format_mismatch_count": 1,
+        },
+    })
+
+    assert summary["status"] == "blocked"
+    assert summary["sequence_boundary"] == {"status": "blocked", "reports": 1}
+    assert any("sequence boundary" in item for item in summary["action_items"])
+
+
 def test_generation_review_summary_blocks_incomplete_sequence_manifest():
     summary = _generation_review_summary({
         "production_story": {"status": "passed"},
