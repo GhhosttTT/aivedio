@@ -13,7 +13,7 @@ from src.services.shot_prompt_service import ShotPromptService
 from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _character_sheet_generation_contract, _complexity_report, _composition_constraint, _feedback_repair_directive, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _spatial_image_directive, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review, require_story_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
-from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_audio_quality_contract, _apply_video_output_contract_repair, _apply_video_repair_action, _apply_video_repair_prompt, _aspect_ratio_for_size, _build_video_generator, _configured_reference_limit, _continuity_metadata_path, _derive_sequence_segment_provider_metadata, _draft_fallback_allowed, _final_video_acceptance_error, _generate_quality_video_candidates, _multimodal_references_for_scene, _native_audio_enabled, _normalization_duration_for_provider, _preserve_generated_audio, _promote_sequence_sidecar, _publish_sequence_artifacts_atomically, _provider_metadata_path, _provider_task_state_is_ambiguous, _read_scene_continuity_reference, _review_final_video_after_postprocess, _scene_review_payload, _select_best_video_candidate, _sequence_segment_quality_report, _video_gate_evidence_complete, _video_gate_passes, _video_performance_gate_passes, _video_repair_action_from_candidates, _write_provider_metadata, _write_scene_continuity_metadata
+from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_audio_quality_contract, _apply_video_output_contract_repair, _apply_video_repair_action, _apply_video_repair_prompt, _aspect_ratio_for_size, _build_video_generator, _configured_reference_limit, _continuity_metadata_path, _derive_sequence_segment_provider_metadata, _draft_fallback_allowed, _final_video_acceptance_error, _generate_quality_video_candidates, _multimodal_references_for_scene, _multimodal_references_for_sequence, _native_audio_enabled, _normalization_duration_for_provider, _preserve_generated_audio, _promote_sequence_sidecar, _publish_sequence_artifacts_atomically, _provider_metadata_path, _provider_task_state_is_ambiguous, _read_scene_continuity_reference, _review_final_video_after_postprocess, _scene_review_payload, _select_best_video_candidate, _sequence_segment_quality_report, _video_gate_evidence_complete, _video_gate_passes, _video_performance_gate_passes, _video_repair_action_from_candidates, _write_provider_metadata, _write_scene_continuity_metadata
 
 
 def passed_video_aesthetic_scores(score: int = 5) -> dict:
@@ -736,6 +736,33 @@ def test_multimodal_references_keep_scene_first_and_previous_motion(project_data
     assert references["images"] == [str(scene_image)]
     assert references["videos"] == [str(previous_video)]
     assert references["audios"] == []
+
+
+def test_sequence_references_cover_late_shots_and_audio(project_data, tmp_path, monkeypatch):
+    db, project, scene, _character, _ = project_data
+    scenes = [scene]
+    for number in range(2, 13):
+        scenes.append(Scene(project_id=project.id, scene_number=number, visual_description=f"shot {number}"))
+    db.add_all(scenes[1:])
+    for item in scenes:
+        image = tmp_path / f"scene-{item.scene_number}.png"
+        audio = tmp_path / f"scene-{item.scene_number}.wav"
+        image.write_bytes(f"image-{item.scene_number}".encode())
+        audio.write_bytes(f"audio-{item.scene_number}".encode())
+        item.image_path = str(image)
+        item.audio_path = str(audio)
+    db.commit()
+    monkeypatch.setenv("HTTP_VIDEO_MAX_REFERENCE_IMAGES", "4")
+    monkeypatch.setenv("HTTP_VIDEO_MAX_REFERENCE_AUDIOS", "3")
+
+    references = _multimodal_references_for_sequence(scenes, project.id, db, "http_video_api")
+
+    assert len(references["images"]) == 4
+    assert str(tmp_path / "scene-1.png") in references["images"]
+    assert str(tmp_path / "scene-12.png") in references["images"]
+    assert len(references["audios"]) == 3
+    assert str(tmp_path / "scene-1.wav") in references["audios"]
+    assert str(tmp_path / "scene-12.wav") in references["audios"]
 
 
 def test_native_seedance_skips_untransportable_local_previous_video(

@@ -413,6 +413,23 @@ def _configured_reference_limit(
     return max(0, configured)
 
 
+def _select_reference_paths(paths: list[str], limit: int) -> list[str]:
+    """Keep references spread across a sequence instead of only its opening shots."""
+    unique = list(dict.fromkeys(str(path) for path in paths if str(path).strip()))
+    if limit <= 0:
+        return []
+    if len(unique) <= limit:
+        return unique
+    if limit == 1:
+        return [unique[0]]
+    indices = [round(index * (len(unique) - 1) / (limit - 1)) for index in range(limit)]
+    selected = []
+    for index in indices:
+        if unique[index] not in selected:
+            selected.append(unique[index])
+    return selected
+
+
 def _bounded_multi_shot_plan(sequence_context: dict | None) -> list[dict]:
     """Convert bounded continuity context into a model-facing shot plan."""
     if not isinstance(sequence_context, dict):
@@ -1288,11 +1305,22 @@ def _multimodal_references_for_sequence(
         shot_images = shot_images[:1]
         identity_images = []
 
+    image_limit = _configured_reference_limit(provider_name, "MAX_REFERENCE_IMAGES", 9, model)
+    # Character identity anchors are higher priority than additional shot
+    # frames. Reserve their slots first, then distribute the remaining shot
+    # frames across the sequence so a long request does not become an opening-
+    # shot-only reference request.
+    selected_identity = identity_images[:image_limit]
+    selected_shots = _select_reference_paths(
+        shot_images,
+        max(0, image_limit - len(selected_identity)),
+    )
+    audio_limit = _configured_reference_limit(provider_name, "MAX_REFERENCE_AUDIOS", 3, model)
     return {
-        "images": (shot_images + identity_images)[: max(1, _configured_reference_limit(provider_name, "MAX_REFERENCE_IMAGES", 9, model))],
+        "images": (selected_shots + selected_identity)[:image_limit],
         "continuity_image": None,
         "videos": [],
-        "audios": audios[: _configured_reference_limit(provider_name, "MAX_REFERENCE_AUDIOS", 3, model)] if supports_multimodal else [],
+        "audios": _select_reference_paths(audios, audio_limit) if supports_multimodal else [],
     }
 
 
