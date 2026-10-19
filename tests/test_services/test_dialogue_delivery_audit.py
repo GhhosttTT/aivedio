@@ -135,3 +135,15 @@ def test_dialogue_delivery_audit_flags_inconsistent_voice_identity(tmp_path):
 
     assert report.status == "needs_review"
     assert any(issue["code"] == "inconsistent_voice_identity" for issue in report.issues)
+
+
+def test_dialogue_delivery_audit_rejects_out_of_range_subtitle_timecodes(tmp_path):
+    subtitle = tmp_path / "scene.srt"
+    subtitle.write_text("1\n00:61:00,000 --> 00:61:01,000\n对白\n", encoding="utf-8")
+
+    report = DialogueDeliveryAuditService().audit([
+        _scene(1, audio_path=None, subtitle_path=subtitle),
+    ])
+
+    assert report.status == "needs_review"
+    assert any(issue["code"] == "empty_subtitles" for issue in report.issues)

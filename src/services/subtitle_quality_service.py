@@ -35,8 +35,12 @@ def assess_subtitle_timeline(
         if not timing:
             issues.append({"code": "invalid_timing", "entry": index, "message": lines[timing_index]})
             continue
-        start = _parse_time(timing.group("start"))
-        end = _parse_time(timing.group("end"))
+        try:
+            start = _parse_time(timing.group("start"))
+            end = _parse_time(timing.group("end"))
+        except ValueError:
+            issues.append({"code": "invalid_timing", "entry": index, "message": lines[timing_index]})
+            continue
         text = " ".join(lines[timing_index + 1:]).strip()
         if end <= start:
             issues.append({"code": "non_positive_duration", "entry": index})
@@ -75,7 +79,16 @@ def assess_subtitle_timeline(
 
 def _parse_time(value: str) -> float:
     hours, minutes, seconds = value.replace(",", ".").split(":")
-    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    hours_value = int(hours)
+    minutes_value = int(minutes)
+    seconds_value = float(seconds)
+    if (
+        hours_value < 0
+        or not 0 <= minutes_value < 60
+        or not 0 <= seconds_value < 60
+    ):
+        raise ValueError(f"invalid SRT timecode: {value}")
+    return hours_value * 3600 + minutes_value * 60 + seconds_value
 
 
 def _normalized(text: str) -> str:

@@ -30,3 +30,12 @@ def test_assess_subtitle_timeline_flags_fast_reading_speed():
 
     assert report["status"] == "needs_review"
     assert any(issue["code"] == "reading_speed" for issue in report["issues"])
+
+
+def test_assess_subtitle_timeline_rejects_out_of_range_timecode_fields():
+    report = assess_subtitle_timeline(
+        "1\n00:61:00,000 --> 00:61:02,000\n对白\n"
+    )
+
+    assert report["status"] == "needs_review"
+    assert any(issue["code"] == "invalid_timing" for issue in report["issues"])

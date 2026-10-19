@@ -282,7 +282,12 @@ class DialogueDeliveryAuditService:
             )
             if not match:
                 continue
-            cues.append({"start": self._seconds(match, "start"), "end": self._seconds(match, "end")})
+            try:
+                start = self._seconds(match, "start")
+                end = self._seconds(match, "end")
+            except ValueError:
+                continue
+            cues.append({"start": start, "end": end})
         return sorted((cue for cue in cues if cue["end"] >= cue["start"]), key=lambda cue: cue["start"])
 
     def _seconds(self, match, prefix: str) -> float:
@@ -296,6 +301,8 @@ class DialogueDeliveryAuditService:
             minutes = int(match.group("end_minutes"))
             seconds = int(match.group("end_seconds"))
             millis = int(match.group("end_millis"))
+        if hours < 0 or not 0 <= minutes < 60 or not 0 <= seconds < 60:
+            raise ValueError("invalid SRT timecode range")
         return hours * 3600 + minutes * 60 + seconds + millis / 1000
 
     def _positive_float(self, value) -> float | None:
