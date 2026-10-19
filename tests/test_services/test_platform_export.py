@@ -124,6 +124,34 @@ def test_platform_export_rejects_decoded_geometry_drift(tmp_path, monkeypatch):
         export_platform_video(source, tmp_path, "douyin")
 
 
+def test_platform_export_keeps_previous_output_when_validation_fails(tmp_path, monkeypatch):
+    source = tmp_path / "final.mp4"
+    source.write_bytes(b"source")
+    output = tmp_path / "exports" / "douyin.mp4"
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"previous-good-export")
+
+    def fake_run(command, **_kwargs):
+        temporary = tmp_path / "exports" / ".douyin.tmp.mp4"
+        temporary.write_bytes(b"new-invalid-export")
+
+    monkeypatch.setattr("src.services.platform_export.subprocess.run", fake_run)
+    metrics = iter([
+        {"status": "available", "width": 1080, "height": 1920, "fps": 30.0, "duration_seconds": 2.0, "temporal_sample_evidence": "sufficient"},
+        {"status": "available", "width": 1920, "height": 1080, "fps": 30.0, "duration_seconds": 2.0, "temporal_sample_evidence": "sufficient"},
+    ])
+    monkeypatch.setattr(
+        "src.services.platform_export.video_candidate_metrics",
+        lambda *_args, **_kwargs: next(metrics),
+    )
+
+    with pytest.raises(PlatformExportError, match="geometry drifted"):
+        export_platform_video(source, tmp_path, "douyin")
+
+    assert output.read_bytes() == b"previous-good-export"
+    assert not (tmp_path / "exports" / ".douyin.tmp.mp4").exists()
+
+
 def test_platform_export_rejects_unreadable_output(tmp_path, monkeypatch):
     source = tmp_path / "final.mp4"
     source.write_bytes(b"source")

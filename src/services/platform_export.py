@@ -151,15 +151,19 @@ def export_platform_video(
         subprocess.run(command, check=True, capture_output=True, text=True, timeout=900)
         if not temporary.is_file() or temporary.stat().st_size <= 0:
             raise PlatformExportError("FFmpeg produced an empty platform export")
-        os.replace(temporary, output)
     except subprocess.CalledProcessError as exc:
         raise PlatformExportError(f"Platform export failed: {exc.stderr or exc}") from exc
+
+    try:
+        source_metrics = video_candidate_metrics(source, max_samples=8)
+        technical_metrics = video_candidate_metrics(temporary, max_samples=8)
+        # Validate the unpublished file before replacing an existing good
+        # export. A failed quality gate must never destroy the last
+        # deliverable.
+        _validate_export_metrics(technical_metrics, config, temporary, source_metrics=source_metrics)
+        os.replace(temporary, output)
     finally:
         temporary.unlink(missing_ok=True)
-
-    source_metrics = video_candidate_metrics(source, max_samples=8)
-    technical_metrics = video_candidate_metrics(output, max_samples=8)
-    _validate_export_metrics(technical_metrics, config, output, source_metrics=source_metrics)
 
     result = {
         "status": "ready",
