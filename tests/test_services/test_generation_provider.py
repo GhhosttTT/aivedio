@@ -1638,6 +1638,27 @@ def test_api_provider_rejects_json_download_response(tmp_path):
         provider._download_video_with_retry(Client(), "https://gateway.example/out", str(tmp_path / "out.mp4"), {})
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "file:///tmp/out.mp4",
+        "data:video/mp4;base64,AAAA",
+        "https://user:secret@media.example/out.mp4",
+        "https://media.example/out.mp4#download",
+    ],
+)
+def test_api_provider_rejects_unsafe_video_download_urls(tmp_path, url):
+    class Client:
+        def get(self, *_args, **_kwargs):
+            raise AssertionError("unsafe URL must be rejected before the client request")
+
+    provider = HttpVideoApiProvider(endpoint="https://gateway.example/video", api_key="secret")
+    provider.max_retries = 0
+
+    with pytest.raises(GenerationProviderError, match="invalid video download URL|unsupported fragment"):
+        provider._download_video_with_retry(Client(), url, str(tmp_path / "out.mp4"), {})
+
+
 def test_http_video_provider_builds_multimodal_reference_contract(tmp_path):
     image = tmp_path / "actor.png"
     video = tmp_path / "motion.mp4"

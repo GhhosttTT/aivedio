@@ -1461,6 +1461,7 @@ class ApiVideoProvider:
             self.last_result_metadata["provider_status"] = str(status)
 
     def _download_video_with_retry(self, client, url: str, output_path: str, headers: dict[str, str]) -> str:
+        _validate_provider_download_url(url, self.name.value)
         response = self._request_with_retry(
             client, "get", url, headers=self._media_download_headers(url, headers),
         )
@@ -2739,6 +2740,19 @@ def _validate_public_media_url(url: str, media_kind: str) -> None:
         raise GenerationProviderError(
             f"Native Ark local {media_kind} reference URL must be a public HTTPS URL; "
             f"got {url}"
+        )
+
+
+def _validate_provider_download_url(url: str, provider_name: str = "provider") -> None:
+    """Reject malformed or credential-bearing result URLs before downloading."""
+    parsed = urlparse(str(url).strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+        raise GenerationProviderError(
+            f"{provider_name} returned an invalid video download URL"
+        )
+    if parsed.fragment:
+        raise GenerationProviderError(
+            f"{provider_name} returned a video URL with an unsupported fragment"
         )
 
 
