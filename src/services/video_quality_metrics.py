@@ -339,7 +339,7 @@ def _audio_signal_metrics(path: Path, duration_seconds: float) -> dict[str, Any]
         result = subprocess.run(
             [
                 "ffmpeg", "-v", "info", "-i", str(path), "-vn",
-                "-af", "silencedetect=noise=-45dB:d=0.25,astats=metadata=1:reset=1",
+                "-af", "silencedetect=noise=-45dB:d=0.25,astats=metadata=1:reset=1,ebur128=peak=true:framelog=verbose",
                 "-f", "null", "-",
             ],
             capture_output=True,
@@ -371,6 +371,16 @@ def _audio_signal_metrics(path: Path, duration_seconds: float) -> dict[str, Any]
         silence_ratio = min(1.0, silent_seconds / max(float(duration_seconds), 1e-6))
         peak_db = max(peak_values) if peak_values else None
         rms_db = max(rms_values) if rms_values else None
+        integrated_lufs_values = [
+            float(value) for value in re.findall(
+                r"\bI:\s*(-?(?:\d+(?:\.\d+)?|inf))\s*LUFS", output, re.I
+            ) if value.lower() != "inf"
+        ]
+        true_peak_values = [
+            float(value) for value in re.findall(
+                r"\bPeak:\s*(-?(?:\d+(?:\.\d+)?|inf))\s*dBFS", output, re.I
+            ) if value.lower() != "inf"
+        ]
         near_silent = bool(
             (
                 peak_db is not None
@@ -386,6 +396,8 @@ def _audio_signal_metrics(path: Path, duration_seconds: float) -> dict[str, Any]
             "audio_silence_ratio": round(silence_ratio, 3),
             "audio_peak_db": round(peak_db, 2) if peak_db is not None else None,
             "audio_rms_db": round(rms_db, 2) if rms_db is not None else None,
+            "audio_integrated_lufs": round(integrated_lufs_values[-1], 2) if integrated_lufs_values else None,
+            "audio_true_peak_db": round(max(true_peak_values), 2) if true_peak_values else None,
             "audio_signal_status": "near_silent" if near_silent else "usable",
             "audio_clipping_status": "clipped" if clipping else "ok",
         }

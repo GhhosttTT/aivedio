@@ -526,6 +526,7 @@ function FinalCompositionEvidence({projectId, report}: {projectId: number; repor
             <div className="wb-kv"><span>规格</span><strong>{metrics.width || '-'}×{metrics.height || '-'} · {metrics.fps || '-'} fps</strong></div>
             <div className="wb-kv"><span>时长</span><strong>{metrics.duration_seconds ?? '-'} 秒</strong></div>
             <div className="wb-kv"><span>音频</span><strong>{metrics.audio_quality_status || (metrics.audio_present ? '存在' : '未检测')}</strong></div>
+            <div className="wb-kv"><span>响度</span><strong>{typeof metrics.audio_integrated_lufs === 'number' ? `${metrics.audio_integrated_lufs.toFixed(2)} LUFS · 峰值 ${typeof metrics.audio_true_peak_db === 'number' ? `${metrics.audio_true_peak_db.toFixed(2)} dBFS` : '-'}` : '未测量'}</strong></div>
             <div className="wb-kv"><span>混音策略</span><strong>{audioStrategy}</strong></div>
             <div className="wb-kv"><span>技术分</span><strong>{report.technical_score ?? metrics.technical_score ?? '-'}</strong></div>
         </div>

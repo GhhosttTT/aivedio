@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from src.services.video_quality_metrics import (
+    _audio_signal_metrics,
     _probe,
     _sample_frames,
     temporal_sample_evidence_error,
@@ -10,6 +11,29 @@ from src.services.video_quality_metrics import (
     video_start_frame_reference_metrics,
     video_technical_score,
 )
+
+
+def test_audio_signal_metrics_reports_loudness_and_true_peak(monkeypatch, tmp_path):
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = """
+        [Parsed_astats_0] Peak level dB: -1.20
+        [Parsed_astats_0] RMS level dB: -18.40
+        [Parsed_ebur128_1] I: -16.10 LUFS
+        [Parsed_ebur128_1] Peak: -0.80 dBFS
+        """
+
+    monkeypatch.setattr(
+        "src.services.video_quality_metrics.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    metrics = _audio_signal_metrics(tmp_path / "final.mp4", 10.0)
+
+    assert metrics["audio_integrated_lufs"] == -16.10
+    assert metrics["audio_true_peak_db"] == -0.80
+    assert metrics["audio_signal_status"] == "usable"
 
 
 def test_adaptive_sampling_scales_with_duration_and_stays_bounded(monkeypatch, tmp_path):
