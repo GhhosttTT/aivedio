@@ -1344,6 +1344,23 @@ def _composition_review_error(report: dict) -> str | None:
                     "final composed video audio duration is out of sync by "
                     f"{abs(float(audio_delta)):.3f}s"
                 )
+            alignment = technical.get("audio_visual_alignment")
+            if isinstance(alignment, dict):
+                if alignment.get("status") != "available":
+                    return (
+                        "final composed video audio/visual alignment evidence is unavailable: "
+                        f"{alignment.get('error') or alignment.get('status') or 'unknown'}"
+                    )
+                alignment_score = alignment.get("score")
+                if (
+                    isinstance(alignment_score, (int, float))
+                    and alignment_score < settings.GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE
+                ):
+                    return (
+                        "final composed video audio/visual alignment score "
+                        f"{alignment_score} is below "
+                        f"{settings.GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE}"
+                    )
         if report.get("final_audio_expected") is True:
             if not technical.get("audio_present"):
                 return "final composed video is missing the expected audio stream"
@@ -1371,6 +1388,23 @@ def _composition_review_error(report: dict) -> str | None:
                     "final composed video audio duration is out of sync by "
                     f"{audio_delta:.3f}s"
                 )
+            alignment = technical.get("audio_visual_alignment")
+            if isinstance(alignment, dict):
+                if alignment.get("status") != "available":
+                    return (
+                        "final composed video audio/visual alignment evidence is unavailable: "
+                        f"{alignment.get('error') or alignment.get('status') or 'unknown'}"
+                    )
+                alignment_score = alignment.get("score")
+                if (
+                    isinstance(alignment_score, (int, float))
+                    and alignment_score < settings.GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE
+                ):
+                    return (
+                        "final composed video audio/visual alignment score "
+                        f"{alignment_score} is below "
+                        f"{settings.GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE}"
+                    )
     episode_style_gate = report.get("episode_style_consistency_gate")
     if isinstance(episode_style_gate, dict) and episode_style_gate.get("status") != "passed":
         return "final composed episode style consistency gate failed"

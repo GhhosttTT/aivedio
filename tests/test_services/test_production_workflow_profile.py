@@ -453,3 +453,14 @@ def test_workflow_profile_snapshots_temporal_quality_thresholds(monkeypatch):
 
     assert gates["video_max_static_run_seconds"] == 1.25
     assert gates["video_max_temporal_jump_ratio"] == 0.22
+
+
+def test_workflow_profile_snapshots_audio_visual_alignment_floor(monkeypatch):
+    monkeypatch.setattr(
+        "src.services.production_workflow_profile.settings.GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE",
+        2.25,
+    )
+
+    gates = ProductionWorkflowProfileService()._current_quality_gates()
+
+    assert gates["video_audio_visual_alignment_min_score"] == 2.25

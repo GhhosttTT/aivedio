@@ -286,6 +286,63 @@ def test_final_video_acceptance_rejects_optional_audio_sync_drift(
     assert expected_text in error
 
 
+def test_final_video_acceptance_rejects_low_audio_visual_alignment(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.settings.GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE",
+        2.5,
+    )
+
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {
+                "audio_present": True,
+                "audio_signal_status": "usable",
+                "audio_visual_alignment": {"status": "available", "score": 1.8},
+            },
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+
+    assert error is not None
+    assert "audio/visual alignment score" in error
+
+
+def test_final_video_acceptance_uses_configured_audio_visual_alignment_floor(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.settings.GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE",
+        1.5,
+    )
+
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {
+                "audio_present": True,
+                "audio_signal_status": "usable",
+                "audio_visual_alignment": {"status": "available", "score": 1.8},
+            },
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+
+    assert error != "Final normalized video audio/visual alignment score 1.8 is below 1.5"
+
+
 def test_opening_frame_reference_floor_blocks_obvious_keyframe_drift(monkeypatch):
     monkeypatch.setattr(
         "src.tasks.video_tasks.settings.GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE",

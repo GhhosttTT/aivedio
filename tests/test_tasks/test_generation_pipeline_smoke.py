@@ -1005,6 +1005,27 @@ def test_composition_review_blocks_audio_duration_drift():
     )
 
 
+def test_composition_review_blocks_low_audio_visual_alignment():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "final_audio_expected": True,
+        "final_technical_metrics": {
+            "status": "available",
+            "width": 1080,
+            "height": 1920,
+            "audio_present": True,
+            "audio_duration_delta_seconds": 0.0,
+            "audio_visual_alignment": {"status": "available", "score": 1.8},
+        },
+    }
+
+    error = composition_tasks._composition_review_error(report)
+
+    assert error is not None
+    assert "audio/visual alignment score" in error
+
+
 def test_composition_review_blocks_expected_audio_start_drift():
     report = {
         "status": "passed",

@@ -323,6 +323,7 @@ class ProductionWorkflowProfileService:
             "video_character_distinctiveness_min_score": settings.GENERATION_VIDEO_CHARACTER_DISTINCTIVENESS_MIN_SCORE,
             "video_aesthetic_feature_min_score": settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE,
             "video_performance_min_score": settings.GENERATION_VIDEO_PERFORMANCE_MIN_SCORE,
+            "video_audio_visual_alignment_min_score": settings.GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE,
             "image_review_required": settings.GENERATION_REQUIRE_IMAGE_REVIEW,
             "video_review_required": settings.GENERATION_REQUIRE_VIDEO_REVIEW,
             "image_postprocess_required": settings.GENERATION_REQUIRE_IMAGE_POSTPROCESS,

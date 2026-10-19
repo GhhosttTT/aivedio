@@ -2419,6 +2419,27 @@ def _final_video_acceptance_error(
             "Final normalized video native-audio check failed: "
             f"{technical_metrics.get('audio_quality_status') or 'audio stream unavailable'}"
         )
+    alignment = technical_metrics.get("audio_visual_alignment")
+    if technical_metrics.get("audio_present") is True and isinstance(alignment, dict):
+        if (
+            enforce_technical_evidence
+            and settings.GENERATION_REQUIRE_VIDEO_REVIEW
+            and alignment.get("status") != "available"
+        ):
+            return (
+                "Final normalized video audio/visual alignment evidence is unavailable: "
+                f"{alignment.get('error') or alignment.get('status') or 'unknown'}"
+            )
+        alignment_score = alignment.get("score")
+        if (
+            isinstance(alignment_score, (int, float))
+            and alignment_score < settings.GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE
+        ):
+            return (
+                "Final normalized video audio/visual alignment score "
+                f"{alignment_score} is below "
+                f"{settings.GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE}"
+            )
     max_black_run_seconds = technical_metrics.get("max_black_run_seconds")
     if (
         isinstance(max_black_run_seconds, (int, float))
@@ -2719,6 +2740,7 @@ def _select_best_video_candidate(
         "min_identity_score": settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE,
         "min_temporal_score": settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE,
         "min_platform_score": settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE,
+        "min_audio_visual_alignment_score": settings.GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE,
         "selected_gate_scores": gate_scores,
         "selected_video_aesthetic_gate": aesthetic_gate,
         "selected_platform_reference_gate": reference_gate,

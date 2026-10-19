@@ -402,7 +402,10 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
     if isinstance(alignment, dict):
         if alignment.get("status") == "available":
             score = alignment.get("score")
-            if isinstance(score, (int, float)) and score < 2.5:
+            if (
+                isinstance(score, (int, float))
+                and score < settings.GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE
+            ):
                 evidence.append("audio visual alignment is below the timing quality floor")
         elif alignment.get("status") in {"unavailable", "insufficient_variation"}:
             evidence.append("audio visual alignment evidence is unavailable or insufficient")
