@@ -5,6 +5,7 @@ import pytest
 from src.services.sequence_plan import SequenceSegment
 from src.services.sequence_video_service import (
     SequenceVideoError,
+    _probe_audio_video_sync,
     _source_is_high_bit_depth,
     split_sequence_video,
 )
@@ -34,6 +35,28 @@ def test_source_bit_depth_is_read_from_structured_ffprobe_output(
 
     monkeypatch.setattr("src.services.sequence_video_service.subprocess.run", fake_run)
     assert _source_is_high_bit_depth(source) is expected
+
+
+def test_probe_audio_video_sync_returns_start_and_duration_drift(tmp_path, monkeypatch):
+    source = tmp_path / "scene.mp4"
+    source.write_bytes(b"scene")
+    monkeypatch.setattr(
+        "src.services.sequence_video_service.shutil.which",
+        lambda _name: "/usr/bin/ffprobe",
+    )
+    monkeypatch.setattr(
+        "src.services.sequence_video_service.subprocess.run",
+        lambda *_args, **_kwargs: type(
+            "Result",
+            (),
+            {"stdout": '{"streams":['
+                '{"codec_type":"video","start_time":"0.020","duration":"2.000"},'
+                '{"codec_type":"audio","start_time":"0.080","duration":"1.940"}'
+                ']}'},
+        )(),
+    )
+
+    assert _probe_audio_video_sync(source) == pytest.approx((0.06, 0.06))
 
 
 def test_sequence_split_preserves_provider_chroma_sampling(tmp_path, monkeypatch):
@@ -284,6 +307,33 @@ def test_split_sequence_video_rejects_dropped_source_audio(tmp_path, monkeypatch
     monkeypatch.setattr("src.services.sequence_video_service.subprocess.run", fake_run_with_output)
 
     with pytest.raises(SequenceVideoError, match="dropped the source audio"):
+        split_sequence_video(source, [SequenceSegment(1, 0.0, 2.0)], [output])
+    assert not output.exists()
+
+
+def test_split_sequence_video_rejects_audio_video_sync_drift(tmp_path, monkeypatch):
+    source = tmp_path / "sequence.mp4"
+    source.write_bytes(b"sequence")
+    output = tmp_path / "scene_1.mp4"
+    monkeypatch.setattr("src.services.sequence_video_service.shutil.which", lambda _name: "/usr/bin/ffprobe")
+
+    def fake_run(command, **_kwargs):
+        if "stream=codec_type,start_time,duration" in command:
+            return type(
+                "Result", (), {"stdout": '{"streams":['
+                    '{"codec_type":"video","start_time":"0.000","duration":"2.000"},'
+                    '{"codec_type":"audio","start_time":"0.400","duration":"1.000"}'
+                    ']}'}
+            )()
+        if "stream=codec_type" in command:
+            return type("Result", (), {"stdout": "video\naudio\n"})()
+        if command[0] == "ffmpeg":
+            Path(command[-1]).write_bytes(b"segment")
+        return type("Result", (), {"stdout": "2.0\n"})()
+
+    monkeypatch.setattr("src.services.sequence_video_service.subprocess.run", fake_run)
+
+    with pytest.raises(SequenceVideoError, match="Audio/video sync drift"):
         split_sequence_video(source, [SequenceSegment(1, 0.0, 2.0)], [output])
     assert not output.exists()
 

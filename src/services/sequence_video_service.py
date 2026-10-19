@@ -85,6 +85,49 @@ def _probe_stream_types(path: Path) -> set[str] | None:
         return {line.strip().lower() for line in result.stdout.splitlines() if line.strip()}
     except (OSError, subprocess.SubprocessError):
         return None
+
+
+def _probe_audio_video_sync(path: Path) -> tuple[float, float] | None:
+    """Return (start offset, duration delta) for the first A/V streams."""
+    if not shutil.which("ffprobe"):
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "stream=codec_type,start_time,duration",
+                "-of", "json", str(path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        payload = json.loads(result.stdout)
+        streams = payload.get("streams") if isinstance(payload, dict) else None
+        if not isinstance(streams, list):
+            return None
+        timings: dict[str, tuple[float, float]] = {}
+        for stream in streams:
+            if not isinstance(stream, dict):
+                continue
+            kind = str(stream.get("codec_type") or "").lower().strip()
+            if kind not in {"audio", "video"} or kind in timings:
+                continue
+            start = float(stream.get("start_time") or 0.0)
+            duration = float(stream.get("duration") or 0.0)
+            if not math.isfinite(start) or not math.isfinite(duration) or duration <= 0:
+                return None
+            timings[kind] = (start, duration)
+        if "audio" not in timings or "video" not in timings:
+            return None
+        audio_start, audio_duration = timings["audio"]
+        video_start, video_duration = timings["video"]
+        return abs(audio_start - video_start), abs(audio_duration - video_duration)
+    except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError, subprocess.SubprocessError):
+        return None
+
+
 def split_sequence_video(
     input_path: str | Path,
     segments: Iterable[SequenceSegment],
@@ -194,6 +237,22 @@ def split_sequence_video(
                 if output_stream_types is not None and "audio" not in output_stream_types:
                     raise SequenceVideoError(
                         f"ffmpeg dropped the source audio stream for scene {segment.scene_number}"
+                    )
+                if output_stream_types is None:
+                    raise SequenceVideoError(
+                        f"Could not inspect output stream types for scene {segment.scene_number}"
+                    )
+                av_sync = _probe_audio_video_sync(temporary)
+                if av_sync is None:
+                    raise SequenceVideoError(
+                        f"Could not validate audio/video sync for scene {segment.scene_number}"
+                    )
+                start_offset, duration_delta = av_sync
+                sync_tolerance = max(0.15, segment.duration_seconds * 0.08)
+                if start_offset > 0.15 or duration_delta > sync_tolerance:
+                    raise SequenceVideoError(
+                        f"Audio/video sync drift for scene {segment.scene_number}: "
+                        f"start_offset={start_offset:.3f}s, duration_delta={duration_delta:.3f}s"
                     )
         # Publish the complete batch as a small filesystem transaction. A
         # replacement can fail after an earlier destination was promoted
