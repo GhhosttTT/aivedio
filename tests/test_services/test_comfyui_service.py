@@ -235,6 +235,21 @@ class TestComfyUIService:
 
             assert uploaded == [str(tmp_path / "opening.png"), str(tmp_path / "character.png")]
 
+    def test_video_workflow_rejects_unbound_media_references(self, mock_workflow_config, mock_http_client, tmp_path):
+        with patch('src.services.comfyui_service.httpx.Client', return_value=mock_http_client):
+            service = ComfyUIService(workflow_path=mock_workflow_config)
+            workflow_path = tmp_path / "video.json"
+            workflow_path.write_text(json.dumps({"1": {"class_type": "VideoSampler", "inputs": {}}}), encoding="utf-8")
+
+            with pytest.raises(ComfyUIError, match="reference_videos_json"):
+                service.generate_video(
+                    prompt="reference video",
+                    reference_image=str(tmp_path / "opening.png"),
+                    reference_videos=[str(tmp_path / "previous.mp4")],
+                    output_path=str(tmp_path / "scene.mp4"),
+                    workflow_path=str(workflow_path),
+                )
+
     def test_video_workflow_uses_opening_frame_for_first_shot_continuity(self, mock_workflow_config, mock_http_client, tmp_path, monkeypatch):
         with patch('src.services.comfyui_service.httpx.Client', return_value=mock_http_client):
             service = ComfyUIService(workflow_path=mock_workflow_config)

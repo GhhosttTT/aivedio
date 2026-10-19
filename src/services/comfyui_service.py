@@ -731,6 +731,22 @@ class ComfyUIService:
         if not workflow_file.is_file():
             raise ComfyUIError(f"ComfyUI 视频工作流不存在: {workflow_file}")
         workflow = json.loads(workflow_file.read_text(encoding="utf-8"))
+        if reference_videos and not self._workflow_contains_placeholder(workflow, "reference_videos_json"):
+            raise ComfyUIError(
+                "ComfyUI 视频工作流未接入 {reference_videos_json}，无法安全使用参考视频"
+            )
+        if reference_audios and not self._workflow_contains_placeholder(workflow, "reference_audios_json"):
+            raise ComfyUIError(
+                "ComfyUI 视频工作流未接入 {reference_audios_json}，无法安全使用参考音频"
+            )
+        if (
+            reference_images
+            and len({str(Path(path).resolve()) for path in reference_images if path}) > 1
+            and not self._workflow_contains_placeholder(workflow, "reference_images_json")
+        ):
+            raise ComfyUIError(
+                "ComfyUI 视频工作流未接入 {reference_images_json}，无法安全使用多张参考图"
+            )
         uploaded_reference = self._upload_reference_image(reference_image)
         uploaded_references = [uploaded_reference]
         seen_reference_paths = {str(Path(reference_image).resolve())}
@@ -922,6 +938,15 @@ class ComfyUIService:
                 result = result.replace("{" + key + "}", str(replacement))
             return result
         return copy.deepcopy(value)
+
+    @staticmethod
+    def _workflow_contains_placeholder(value: Any, name: str) -> bool:
+        marker = "{" + name + "}"
+        if isinstance(value, dict):
+            return any(ComfyUIService._workflow_contains_placeholder(item, name) for item in value.values())
+        if isinstance(value, list):
+            return any(ComfyUIService._workflow_contains_placeholder(item, name) for item in value)
+        return isinstance(value, str) and marker in value
     
     def _submit_workflow(self, workflow: Dict) -> str:
         """
