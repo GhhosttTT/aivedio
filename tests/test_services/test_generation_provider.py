@@ -3479,6 +3479,40 @@ def test_http_video_provider_polls_async_job(tmp_path, monkeypatch):
     assert progress[-1][0] > progress[0][0]
 
 
+def test_async_provider_reports_invalid_creation_json(tmp_path, monkeypatch):
+    class FakeResponse:
+        headers = {"content-type": "text/html"}
+        text = "<html>gateway timeout</html>"
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            raise json.JSONDecodeError("invalid", self.text, 0)
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def post(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("src.services.generation_provider.httpx.Client", FakeClient)
+    provider = HttpVideoApiProvider(endpoint="https://gateway.example/video", api_key="secret")
+
+    with pytest.raises(GenerationProviderError, match="invalid JSON for task creation.*gateway timeout"):
+        provider.generate_video(VideoGenerationRequest(
+            prompt="invalid response",
+            output_path=str(tmp_path / "scene.mp4"),
+        ))
+
+
 def test_async_provider_resumes_pending_task_without_resubmitting(tmp_path, monkeypatch):
     class FakeResponse:
         headers = {"content-type": "application/json"}

@@ -584,7 +584,7 @@ class ApiVideoProvider:
                         asset_type="video",
                         metadata={"endpoint": self.endpoint, "response_mode": "binary", **self.last_result_metadata},
                     )
-                data = response.json()
+                data = self._parse_json_response(response, "task creation")
                 self._remember_result_metadata(data)
                 if self.last_result_metadata.get("provider_task_id"):
                     self._write_pending_task(
@@ -1291,7 +1291,7 @@ class ApiVideoProvider:
                 self.last_result_metadata["callback_received"] = True
             else:
                 status_response = self._request_with_retry(client, "get", status_url, headers=headers)
-                status = status_response.json()
+                status = self._parse_json_response(status_response, "task status")
             self._remember_result_metadata(status)
             state = str(_extract_first(status, ("status", "state", "task_status")) or "").lower()
             terminal_state = state in {"completed", "complete", "succeeded", "success", "done"}
@@ -1324,7 +1324,7 @@ class ApiVideoProvider:
                     self.result_endpoint.replace("{job_id}", str(job_id)).replace("{request_id}", str(job_id)),
                     headers=headers,
                 )
-                result = result_response.json()
+                result = self._parse_json_response(result_response, "task result")
                 self._remember_result_metadata(result)
                 direct = _extract_video_url(result)
                 if direct:
@@ -1346,7 +1346,7 @@ class ApiVideoProvider:
                     status_url,
                     headers=headers,
                 )
-                fallback = fallback_response.json()
+                fallback = self._parse_json_response(fallback_response, "completed task status")
                 self._remember_result_metadata(fallback)
                 fallback_state = str(
                     _extract_first(fallback, ("status", "state", "task_status")) or ""
@@ -1473,6 +1473,24 @@ class ApiVideoProvider:
         status = _extract_first(data, ("status", "state", "task_status"))
         if status:
             self.last_result_metadata["provider_status"] = str(status)
+
+    def _parse_json_response(self, response, context: str):
+        """Convert provider JSON failures into actionable generation errors."""
+        try:
+            data = response.json()
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            body = str(getattr(response, "text", "") or "").strip().replace("\n", " ")
+            if len(body) > 240:
+                body = body[:240] + "…"
+            detail = f": {body}" if body else ""
+            raise GenerationProviderError(
+                f"{self.name.value} returned invalid JSON for {context}{detail}"
+            ) from exc
+        if not isinstance(data, (dict, list)):
+            raise GenerationProviderError(
+                f"{self.name.value} returned an invalid JSON shape for {context}"
+            )
+        return data
 
     def _download_video_with_retry(self, client, url: str, output_path: str, headers: dict[str, str]) -> str:
         _validate_provider_download_url(url, self.name.value)
