@@ -15,6 +15,7 @@ from io import BytesIO
 import json
 import shutil
 import subprocess
+from string import Formatter
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -2696,6 +2697,15 @@ def _ark_media_source(path: str | None, media_kind: str, *, force_public: bool =
     if media_kind == "audio" and not force_public and file_path.stat().st_size <= 15 * 1024 * 1024:
         return _file_data_url(value)
     if template:
+        template_fields = {
+            field_name
+            for _, field_name, _, _ in Formatter().parse(template)
+            if field_name
+        }
+        if not template_fields.intersection({"filename", "path"}):
+            raise GenerationProviderError(
+                "SEEDANCE_MEDIA_URL_TEMPLATE must include {filename} or {path}"
+            )
         try:
             public_url = template.format(
                 filename=quote(file_path.name),

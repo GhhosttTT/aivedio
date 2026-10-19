@@ -2467,6 +2467,21 @@ def test_seedance_provider_native_ark_rejects_local_video_without_public_source(
         ))
 
 
+def test_seedance_native_ark_rejects_static_media_template(tmp_path, monkeypatch):
+    monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
+    monkeypatch.setenv("SEEDANCE_MEDIA_URL_TEMPLATE", "https://cdn.example/fixed.mp4")
+    video = tmp_path / "motion.mp4"
+    video.write_bytes(b"mp4")
+    provider = SeedanceApiProvider(endpoint="https://ark.example/tasks", api_key="secret")
+
+    with pytest.raises(GenerationProviderError, match=r"must include \{filename\} or \{path\}"):
+        provider._video_payload(VideoGenerationRequest(
+            prompt="continue the motion",
+            output_path=str(tmp_path / "out.mp4"),
+            reference_videos=[str(video)],
+        ))
+
+
 def test_seedance_native_ark_rejects_unsupported_local_video_format(tmp_path, monkeypatch):
     monkeypatch.setenv("SEEDANCE_API_FORMAT", "ark_v3")
     monkeypatch.setenv("SEEDANCE_MEDIA_URL_TEMPLATE", "https://cdn.example/{filename}")
