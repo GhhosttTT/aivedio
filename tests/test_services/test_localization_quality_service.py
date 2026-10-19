@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from src.services.asr_service import ASRSegment
 from src.services.localization_quality_service import LocalizationQualityService
 from src.services.localization_review import LocalizationReviewStore
 
@@ -90,6 +91,9 @@ def test_quality_service_passes_clean_subtitles(tmp_path, monkeypatch):
     translated_dir = tmp_path / "translations"
     translated_dir.mkdir()
     report = tmp_path / "moderation_report.json"
+    rendered_dir = tmp_path / "rendered"
+    rendered_dir.mkdir()
+    (rendered_dir / "en.mp4").write_bytes(b"rendered")
 
     transcript.write_text(
         json.dumps(
@@ -116,16 +120,29 @@ def test_quality_service_passes_clean_subtitles(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     monkeypatch.setattr("src.services.localization_quality_service.settings.TRANSLATION_BACKEND", "command")
+    monkeypatch.setattr(
+        LocalizationQualityService,
+        "_inspect_rendered_subtitles",
+        lambda self, path, segments: {
+            "status": "available",
+            "sampled_cues": len(segments),
+            "visible_ratio": 1.0,
+            "score": 0.95,
+            "issues": [],
+        },
+    )
 
     result = LocalizationQualityService().assess(
         transcript_path=str(transcript),
         translated_subtitle_dir=str(translated_dir),
         target_languages=["en"],
         output_path=str(report),
+        rendered_video_dir=str(rendered_dir),
     )
 
     assert result.status == "passed"
     assert result.score >= 0.78
+    assert result.target_summary["en"]["rendered_visual"]["score"] == 0.95
 
 
 def test_quality_service_flags_many_ocr_asr_disagreements(tmp_path, monkeypatch):
@@ -170,3 +187,13 @@ def test_quality_service_flags_many_ocr_asr_disagreements(tmp_path, monkeypatch)
 
     assert result.status == "needs_review"
     assert any(issue.category == "visual_audio_alignment" for issue in result.issues)
+
+
+def test_rendered_subtitle_visual_audit_fails_closed_for_unreadable_video(tmp_path):
+    report = LocalizationQualityService()._inspect_rendered_subtitles(
+        tmp_path / "missing.mp4",
+        [ASRSegment(start=0.0, end=1.0, text="Hello", source="translation")],
+    )
+
+    assert report["status"] == "unavailable"
+    assert report["issues"] == []

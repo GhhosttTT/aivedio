@@ -79,15 +79,38 @@ class LocalizationQualityService:
             issues.extend(language_issues)
             target_summary[code] = summary
 
-            if rendered_video_dir and not (Path(rendered_video_dir) / f"{code}.mp4").exists():
-                issues.append(
-                    QualityIssue(
-                        "warning",
-                        "missing_render",
-                        f"Rendered video is missing for language {code}",
-                        code,
+            if rendered_video_dir:
+                rendered_path = Path(rendered_video_dir) / f"{code}.mp4"
+                if not rendered_path.exists():
+                    issues.append(
+                        QualityIssue(
+                            "warning",
+                            "missing_render",
+                            f"Rendered video is missing for language {code}",
+                            code,
+                        )
                     )
-                )
+                else:
+                    visual_audit = self._inspect_rendered_subtitles(
+                        rendered_path,
+                        translated_segments,
+                    )
+                    target_summary[code]["rendered_visual"] = visual_audit
+                    if visual_audit.get("status") != "available":
+                        issues.append(QualityIssue(
+                            "warning",
+                            "subtitle_visual_integration",
+                            f"Rendered subtitle visibility could not be verified for language {code}: "
+                            f"{visual_audit.get('error') or visual_audit.get('status') or 'unknown'}",
+                            code,
+                        ))
+                    for message in visual_audit.get("issues", []):
+                        issues.append(QualityIssue(
+                            "warning",
+                            "subtitle_visual_integration",
+                            message,
+                            code,
+                        ))
 
         llm_review = self._run_llm_review(source_segments, translations, story_context, issues)
         issues.extend(self._issues_from_llm_review(llm_review))
@@ -102,13 +125,94 @@ class LocalizationQualityService:
             llm_review=llm_review,
             notes=[
                 "QA combines OCR/ASR transcript evidence, translation timing heuristics, and optional LLM review.",
-                "Frame-level rendered subtitle inspection is not yet a full computer-vision pass; use this report to flag review targets.",
+                "Rendered subtitle visibility is sampled at cue midpoints and nearby non-cue frames; this is a screening signal, not OCR or face tracking.",
             ],
         )
         path = Path(output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(report.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
         return report
+
+    def _inspect_rendered_subtitles(
+        self,
+        video_path: Path,
+        segments: List[ASRSegment],
+    ) -> Dict[str, Any]:
+        """Screen burned-in subtitle visibility at timed cue midpoints.
+
+        The renderer places subtitles in the lower safe area. Comparing edge
+        density during a cue with nearby non-cue frames catches missing burns
+        and very low-contrast text without pretending to be a full OCR/face
+        detector.
+        """
+        if not segments:
+            return {"status": "not_applicable", "issues": []}
+        try:
+            import cv2
+            import numpy as np
+
+            capture = cv2.VideoCapture(str(video_path))
+            if not capture.isOpened():
+                raise RuntimeError(f"rendered video cannot be opened: {video_path}")
+            fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
+            frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            if fps <= 0 or frame_count <= 0:
+                raise RuntimeError("rendered video has no usable frame timing")
+
+            active_values: list[float] = []
+            inactive_values: list[float] = []
+            for segment in segments[:80]:
+                midpoint = max(0.0, (float(segment.start) + float(segment.end)) / 2.0)
+                active = self._subtitle_band_edge_density(capture, midpoint, fps, frame_count, cv2, np)
+                before = max(0.0, float(segment.start) - min(0.25, max(0.05, segment.duration / 3.0)))
+                after = float(segment.end) + min(0.25, max(0.05, segment.duration / 3.0))
+                inactive = [
+                    self._subtitle_band_edge_density(capture, before, fps, frame_count, cv2, np),
+                    self._subtitle_band_edge_density(capture, after, fps, frame_count, cv2, np),
+                ]
+                if active is not None:
+                    active_values.append(active)
+                inactive_values.extend(value for value in inactive if value is not None)
+            capture.release()
+            if not active_values:
+                raise RuntimeError("no subtitle cue frames could be sampled")
+            active_mean = float(np.mean(active_values))
+            inactive_mean = float(np.mean(inactive_values)) if inactive_values else 0.0
+            contrast_gain = active_mean - inactive_mean
+            visible_ratio = sum(value > max(0.015, inactive_mean + 0.01) for value in active_values) / len(active_values)
+            score = max(0.0, min(1.0, 0.5 * min(1.0, visible_ratio) + 0.5 * min(1.0, max(0.0, contrast_gain) / 0.08)))
+            audit = {
+                "status": "available",
+                "sampled_cues": len(active_values),
+                "visible_ratio": round(visible_ratio, 3),
+                "active_edge_density": round(active_mean, 4),
+                "inactive_edge_density": round(inactive_mean, 4),
+                "contrast_gain": round(contrast_gain, 4),
+                "score": round(score, 3),
+                "issues": [],
+            }
+            if visible_ratio < 0.5:
+                audit["issues"].append("Subtitle cues are not visibly distinct from nearby frames in the lower safe area.")
+            elif contrast_gain < 0.01:
+                audit["issues"].append("Rendered subtitle contrast against the lower safe area is weak; review font, outline, and background treatment.")
+            return audit
+        except Exception as exc:
+            return {"status": "unavailable", "error": str(exc), "issues": []}
+
+    @staticmethod
+    def _subtitle_band_edge_density(capture, seconds, fps, frame_count, cv2, np) -> float | None:
+        position = min(frame_count - 1, max(0, int(round(seconds * fps))))
+        capture.set(cv2.CAP_PROP_POS_FRAMES, position)
+        ok, frame = capture.read()
+        if not ok or frame is None:
+            return None
+        height, width = frame.shape[:2]
+        if height < 20 or width < 20:
+            return None
+        band = frame[int(height * 0.70):int(height * 0.98), :]
+        gray = cv2.cvtColor(band, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 60, 160)
+        return float(np.mean(edges > 0))
 
     def _assess_source_segments(self, segments: List[ASRSegment]) -> List[QualityIssue]:
         issues: List[QualityIssue] = []
