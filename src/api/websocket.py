@@ -55,7 +55,7 @@ class ConnectionManager:
         logger.info(f"WebSocket 连接建立: project_id={project_id}, total_connections={len(self.active_connections[project_id])}")
         
         # 发送连接成功消息
-        await self.send_personal_message(
+        delivered = await self.send_personal_message(
             websocket,
             {
                 "type": "connected",
@@ -64,6 +64,8 @@ class ConnectionManager:
                 "timestamp": datetime.now().isoformat()
             }
         )
+        if not delivered:
+            self.disconnect(websocket, project_id)
     
     def disconnect(self, websocket: WebSocket, project_id: int):
         """
@@ -88,7 +90,7 @@ class ConnectionManager:
         
         logger.info(f"WebSocket 连接断开: project_id={project_id}")
     
-    async def send_personal_message(self, websocket: WebSocket, message: dict):
+    async def send_personal_message(self, websocket: WebSocket, message: dict) -> bool:
         """
         发送消息给指定连接
         
@@ -98,8 +100,10 @@ class ConnectionManager:
         """
         try:
             await websocket.send_json(message)
+            return True
         except Exception as e:
             logger.error(f"发送个人消息失败: {e}")
+            return False
     
     async def broadcast(self, project_id: int, message: dict):
         """
@@ -145,13 +149,17 @@ class ConnectionManager:
                 await asyncio.sleep(self.heartbeat_interval)
                 
                 # 发送心跳消息
-                await self.send_personal_message(
+                delivered = await self.send_personal_message(
                     websocket,
                     {
                         "type": "heartbeat",
                         "timestamp": datetime.now().isoformat()
                     }
                 )
+
+                if not delivered:
+                    self.disconnect(websocket, project_id)
+                    return
                 
                 logger.debug(f"发送心跳: project_id={project_id}")
         

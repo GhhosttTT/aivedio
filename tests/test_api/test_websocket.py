@@ -272,9 +272,23 @@ async def test_heartbeat_mechanism(connection_manager, mock_websocket):
             break
     
     assert heartbeat_found, "未找到心跳消息"
-    
-    # 清理
+
     connection_manager.disconnect(mock_websocket, project_id)
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_removes_connection_when_delivery_fails(connection_manager):
+    project_id = 9
+    websocket = AsyncMock()
+    websocket.accept = AsyncMock()
+    websocket.send_json = AsyncMock(side_effect=[None, RuntimeError("socket closed")])
+    connection_manager.heartbeat_interval = 0.01
+
+    await connection_manager.connect(websocket, project_id)
+    await asyncio.sleep(0.04)
+
+    assert websocket not in connection_manager.active_connections.get(project_id, set())
+    assert websocket not in connection_manager.heartbeat_tasks
 
 
 @pytest.mark.asyncio
