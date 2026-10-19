@@ -6,7 +6,7 @@ export interface Scene {
     scene_number: number;
     location?: string | null;
     time_period?: string | null;
-    characters?: string | null;
+    characters?: string | string[] | null;
     character_name?: string | null;
     dialogue: string;
     visual_description: string;

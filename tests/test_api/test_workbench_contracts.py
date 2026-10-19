@@ -93,12 +93,40 @@ def test_upload_bgm_rejects_non_audio_extension(setup):
 
 def test_scene_save_invalidates_media_and_rejects_manual_completion(setup):
     client, db, _ = setup
-    result = client.put("/api/projects/1/scenes/1", json={"visual_description": "A new letter", "dialogue": "Changed"})
+    project = db.query(Project).filter(Project.id == 1).one()
+    alice = Character(project_id=1, name="Alice", description="lead")
+    bob = Character(project_id=1, name="Bob", description="support")
+    project.script = json.dumps({"scenes": [{"scene_number": 1, "characters": ["Alice", "Bob"]}]})
+    db.add_all([alice, bob])
+    scene_db = db.query(Scene).filter(Scene.project_id == 1, Scene.scene_number == 1).one()
+    scene_db.image_prompt = "old prompt"
+    scene_db.audio_duration = 2.5
+    db.commit()
+    result = client.put("/api/projects/1/scenes/1", json={"visual_description": "Alice opens the letter", "dialogue": "Changed", "character_name": "Alice", "characters": ["Alice"]})
     assert result.status_code == 200
     scene = result.json()["scenes"][0]
-    assert scene["visual_description"] == "A new letter"
+    assert scene["visual_description"] == "Alice opens the letter"
     assert scene["image_path"] is None and scene["video_path"] is None
+    assert db.query(Scene).filter(Scene.id == scene["id"]).one().image_prompt is None
+    assert db.query(Scene).filter(Scene.id == scene["id"]).one().audio_duration is None
+    assert json.loads(db.query(Project).filter(Project.id == 1).one().script)["scenes"][0]["characters"] == ["Alice"]
     assert client.put("/api/projects/1", json={"status": "completed"}).status_code == 400
+
+
+def test_scene_save_rejects_unknown_visible_character(setup):
+    client, db, _ = setup
+    db.add(Character(project_id=1, name="Alice", description="lead"))
+    db.commit()
+    result = client.put(
+        "/api/projects/1/scenes/1",
+        json={
+            "visual_description": "Alice looks at the door",
+            "character_name": "Alice",
+            "characters": ["Alice", "Unknown"],
+        },
+    )
+    assert result.status_code == 422
+    assert "Unknown" in result.json()["detail"]
 
 
 def test_repair_script_uses_story_review_before_visual_generation(setup, monkeypatch):

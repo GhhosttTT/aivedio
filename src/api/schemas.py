@@ -389,6 +389,11 @@ class SceneUpdate(BaseModel):
     visual_description: str = Field(..., min_length=1, max_length=1500)
     dialogue: Optional[str] = Field(None, max_length=2000)
     character_name: Optional[str] = Field(None, max_length=100)
+    characters: Optional[List[str]] = Field(
+        None,
+        max_length=10,
+        description="镜头中可见的角色名称；传入空数组表示空镜/无人物镜头",
+    )
 
 
 class RepairSceneRequest(BaseModel):

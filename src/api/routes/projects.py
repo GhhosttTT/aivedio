@@ -2352,18 +2352,71 @@ def update_scene(project_id: int, scene_number: int, request: SceneUpdate, db_se
     scene = db_session.query(Scene).filter(Scene.project_id == project_id, Scene.scene_number == scene_number).first()
     if not scene or not request.visual_description.strip():
         raise HTTPException(400, "分镜不存在或描述为空")
+    if project is None:
+        raise HTTPException(404, "项目不存在")
+    if project.status == ProjectStatus.IN_PRODUCTION:
+        raise HTTPException(409, "项目正在制作，不能修改分镜")
+
+    project_characters = db_session.query(Character).filter(Character.project_id == project_id).all()
+    character_names = {character.name for character in project_characters}
+    speaker = request.character_name.strip() if request.character_name else None
+    if speaker and speaker not in character_names:
+        raise HTTPException(422, f"角色不存在于当前项目: {speaker}")
+
+    script = {}
+    if project.script:
+        try:
+            script = json.loads(project.script)
+        except (TypeError, ValueError):
+            raise HTTPException(409, "项目脚本数据损坏，无法安全编辑分镜")
+    script_items = script.get("scenes", []) if isinstance(script, dict) else []
+    script_item = next(
+        (item for item in script_items if isinstance(item, dict) and item.get("scene_number") == scene_number),
+        None,
+    )
+    existing_visible = script_item.get("characters") if isinstance(script_item, dict) else None
+    if isinstance(existing_visible, str):
+        existing_visible = [existing_visible]
+    if not isinstance(existing_visible, list):
+        existing_visible = []
+    existing_visible = list(dict.fromkeys(
+        name.strip() for name in existing_visible
+        if isinstance(name, str) and name.strip()
+    ))
+    if request.characters is not None:
+        visible_characters = list(dict.fromkeys(name.strip() for name in request.characters if name.strip()))
+        unknown = [name for name in visible_characters if name not in character_names]
+        if unknown:
+            raise HTTPException(422, f"可见角色不存在于当前项目: {', '.join(unknown)}")
+    else:
+        # Preserve an existing two-shot only when the edited visual description
+        # still names the second actor; never carry a stale actor into a new shot.
+        visual_text = request.visual_description.strip().lower()
+        visible_characters = [
+            name for name in existing_visible
+            if name == speaker or name.lower() in visual_text
+        ]
+    if speaker and speaker not in visible_characters:
+        visible_characters.insert(0, speaker)
+
     scene.visual_description = request.visual_description.strip()
-    scene.dialogue = request.dialogue
-    scene.character_name = request.character_name
-    scene.image_prompt = scene.image_path = scene.video_path = None
+    scene.dialogue = request.dialogue.strip() if request.dialogue else None
+    scene.character_name = speaker
+    # Every derived artifact is tied to the edited shot contract. Leaving any
+    # of these fields behind allows a later task to silently reuse stale media.
+    scene.image_prompt = None
+    scene.image_path = scene.video_path = None
     scene.audio_path = scene.subtitle_path = None
+    scene.audio_duration = None
     project.final_video_path = None
     project.status = ProjectStatus.SCRIPT_GENERATED
-    if project.script:
-        script = json.loads(project.script)
-        for item in script.get("scenes", []):
-            if item.get("scene_number") == scene_number:
-                item.update(description=scene.visual_description, dialogue=scene.dialogue, speaker=scene.character_name)
+    if isinstance(script_item, dict):
+        script_item.update(
+            description=scene.visual_description,
+            dialogue=scene.dialogue,
+            speaker=scene.character_name,
+            characters=visible_characters,
+        )
         project.script = json.dumps(script, ensure_ascii=False)
     db_session.commit()
     return project
