@@ -4058,6 +4058,7 @@ def test_hybrid_provider_falls_back_on_transport_error():
     )
 
     assert result.output_path == "fallback.mp4"
+    assert result.metadata["hybrid_route"] == "local_fallback"
 
 
 def test_hybrid_provider_routes_establishing_shots_to_local(monkeypatch):
@@ -4086,6 +4087,7 @@ def test_hybrid_provider_routes_establishing_shots_to_local(monkeypatch):
     )
 
     assert result.output_path == "local.mp4"
+    assert result.metadata["hybrid_route"] == "local_policy"
     assert calls == ["local"]
 
 
@@ -4115,6 +4117,7 @@ def test_hybrid_provider_keeps_dialogue_shots_on_primary(monkeypatch):
     )
 
     assert result.output_path == "primary.mp4"
+    assert result.metadata["hybrid_route"] == "primary_default"
     assert calls == ["primary"]
 
 

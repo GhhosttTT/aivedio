@@ -88,6 +88,7 @@ def _delivery_generation_evidence(reports: dict) -> list[dict]:
             "spatial_scene_contract_hashes": list(run.get("spatial_scene_contract_hashes") or []),
             "spatial_project_signatures": list(run.get("spatial_project_signatures") or []),
             "providers": list(run.get("providers") or []),
+            "hybrid_routes": list(run.get("hybrid_routes") or []),
             "video_sha256s": list(run.get("video_sha256s") or []),
             "selected_video_sha256": run.get("selected_video_sha256"),
             "accepted_video_sha256": run.get("accepted_video_sha256"),

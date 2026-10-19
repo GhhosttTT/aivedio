@@ -2586,33 +2586,39 @@ class HybridGenerationProvider:
         role = role or getattr(request, "scene_type", None)
         return str(role or "").strip().lower() in roles
 
+    @staticmethod
+    def _annotate(result: GenerationResult, route: str) -> GenerationResult:
+        metadata = dict(result.metadata) if isinstance(result.metadata, dict) else {}
+        metadata["hybrid_route"] = route
+        return GenerationResult(result.provider, result.output_path, result.asset_type, metadata)
+
     def generate_image(self, request: ImageGenerationRequest) -> GenerationResult:
         if self._prefer_local(request):
             try:
-                return self.fallback.generate_image(request)
+                return self._annotate(self.fallback.generate_image(request), "local_policy")
             except (GenerationProviderError, httpx.HTTPError, OSError, ValueError) as exc:
                 logger.warning("Local hybrid image route failed; trying primary provider: {}", exc)
         try:
-            return self.primary.generate_image(request)
+            return self._annotate(self.primary.generate_image(request), "primary_after_local_failure" if self._prefer_local(request) else "primary_default")
         except (GenerationProviderError, httpx.HTTPError, OSError, ValueError) as exc:
             if self._remote_task_was_accepted(request):
                 raise
             logger.warning("Primary image provider failed; falling back to local provider: {}", exc)
-            return self.fallback.generate_image(request)
+            return self._annotate(self.fallback.generate_image(request), "local_fallback")
 
     def generate_video(self, request: VideoGenerationRequest) -> GenerationResult:
         if self._prefer_local(request):
             try:
-                return self.fallback.generate_video(request)
+                return self._annotate(self.fallback.generate_video(request), "local_policy")
             except (GenerationProviderError, httpx.HTTPError, OSError, ValueError) as exc:
                 logger.warning("Local hybrid video route failed; trying primary provider: {}", exc)
         try:
-            return self.primary.generate_video(request)
+            return self._annotate(self.primary.generate_video(request), "primary_after_local_failure" if self._prefer_local(request) else "primary_default")
         except (GenerationProviderError, httpx.HTTPError, OSError, ValueError) as exc:
             if self._remote_task_was_accepted(request):
                 raise
             logger.warning("Primary video provider failed; falling back to local provider: {}", exc)
-            return self.fallback.generate_video(request)
+            return self._annotate(self.fallback.generate_video(request), "local_fallback")
 
     def _remote_task_was_accepted(self, request) -> bool:
         """Never duplicate an already accepted paid remote generation."""

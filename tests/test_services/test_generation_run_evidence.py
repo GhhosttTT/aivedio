@@ -62,6 +62,7 @@ def test_build_video_generation_evidence_tracks_attempts_and_provider_contracts(
                     "elapsed_seconds": 3.4,
                     "provider_metadata": {
                         "provider_name": "seedance_api",
+                        "hybrid_route": "primary_default",
                         "provider_task_id": "task-1",
                         "video_sha256": "a" * 64,
                         "request_contract_hash": "hash-a",
@@ -76,6 +77,7 @@ def test_build_video_generation_evidence_tracks_attempts_and_provider_contracts(
                     "elapsed_seconds": 4.6,
                     "provider_metadata": {
                         "provider_name": "seedance_api",
+                        "hybrid_route": "local_fallback",
                         "provider_task_id": "task-2",
                         "video_sha256": "b" * 64,
                         "request_contract_hash": "hash-b",
@@ -102,6 +104,7 @@ def test_build_video_generation_evidence_tracks_attempts_and_provider_contracts(
         "pass_rate": 0.5,
     }
     assert evidence["providers"] == ["seedance_api"]
+    assert evidence["hybrid_routes"] == ["local_fallback", "primary_default"]
     assert evidence["provider_task_ids"] == ["task-1", "task-2"]
     assert evidence["request_contract_hashes"] == ["hash-a", "hash-b"]
     assert evidence["video_sha256s"] == ["a" * 64, "b" * 64]

@@ -73,6 +73,13 @@ def build_generation_run_evidence(
             "acceptance_rate": round(accepted_count / len(cases), 4) if cases else 0.0,
         },
         "render_profile": render_report.get("render_profile", {}),
+        "hybrid_routes": sorted({
+            str((candidate.get("provider_metadata") or {}).get("hybrid_route"))
+            for case in cases
+            for candidate in ((case.get("search") or {}).get("candidates", []) if isinstance(case.get("search"), dict) else [])
+            if isinstance(candidate, dict)
+            and (candidate.get("provider_metadata") or {}).get("hybrid_route")
+        }),
         "gpu": gpu_evidence if isinstance(gpu_evidence, dict) else collect_gpu_evidence(),
         "preflight": {
             "status": preflight_report.get("status") if isinstance(preflight_report, dict) else "missing",
@@ -100,6 +107,12 @@ def build_video_generation_evidence(
         for item in candidates
         if isinstance(item.get("provider_metadata"), dict)
         and (item.get("provider_metadata") or {}).get("provider_name")
+    })
+    hybrid_routes = sorted({
+        str((item.get("provider_metadata") or {}).get("hybrid_route"))
+        for item in candidates
+        if isinstance(item.get("provider_metadata"), dict)
+        and (item.get("provider_metadata") or {}).get("hybrid_route")
     })
     task_ids = sorted({
         str((item.get("provider_metadata") or {}).get("provider_task_id"))
@@ -180,6 +193,7 @@ def build_video_generation_evidence(
             "pass_rate": round(len(passed) / len(generated), 4) if generated else 0.0,
         },
         "providers": providers,
+        "hybrid_routes": hybrid_routes,
         "provider_task_ids": task_ids,
         "request_contract_hashes": contract_hashes,
         "video_sha256s": video_sha256s,
