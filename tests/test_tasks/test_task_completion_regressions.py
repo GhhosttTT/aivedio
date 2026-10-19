@@ -97,3 +97,38 @@ def test_concurrent_success_callbacks_count_every_completed_step(tmp_path, monke
     assert db.get(Project, project.id).status == ProjectStatus.SCRIPT_GENERATED
     db.close()
     engine.dispose()
+
+
+def test_cancelled_task_failure_releases_project_and_broadcasts_terminal_state(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'cancel.db'}")
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine)
+    db = sessions()
+    user = User(username="cancel", email="cancel@example.com", hashed_password="test")
+    db.add(user)
+    db.flush()
+    project = Project(name="cancelled", user_id=user.id, status=ProjectStatus.IN_PRODUCTION)
+    db.add(project)
+    db.flush()
+    record = Task(
+        project_id=project.id,
+        celery_task_id="cancelled-task",
+        status=TaskStatus.CANCELLED,
+        total_steps=4,
+    )
+    db.add(record)
+    db.commit()
+    record_id = record.id
+    events = []
+    monkeypatch.setattr("src.database.session.get_db_session", lambda: iter([sessions()]))
+    monkeypatch.setattr("src.tasks.celery_app._broadcast_task_event", lambda project_id, message: events.append((project_id, message)))
+
+    task = BaseTask()
+    task._production_record = lambda _args, _kwargs, session: session.get(Task, record_id)
+    task.on_failure(RuntimeError("cancelled"), "cancelled-task", (), {}, None)
+
+    db.expire_all()
+    assert db.get(Project, project.id).status == ProjectStatus.SCRIPT_GENERATED
+    assert events[0][1]["status"] == "cancelled"
+    db.close()
+    engine.dispose()

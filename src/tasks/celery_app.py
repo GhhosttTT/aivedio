@@ -184,7 +184,19 @@ class BaseTask(celery_app.Task):
         event = None
         try:
             record = self._production_record(args, kwargs, db)
-            if record and record.status != TaskStatus.CANCELLED:
+            if record and record.status == TaskStatus.CANCELLED:
+                if record.project.status == ProjectStatus.IN_PRODUCTION:
+                    record.project.status = ProjectStatus.SCRIPT_GENERATED
+                db.commit()
+                event = {
+                    "type": "status_update",
+                    "project_id": record.project_id,
+                    "task_id": str(record.celery_task_id),
+                    "status": "cancelled",
+                    "current_step": self.name,
+                    "progress": float(record.progress or 0.0) / 100.0,
+                }
+            elif record:
                 record.status = TaskStatus.FAILED
                 record.error_message = f"{self.name}: {exc}"
                 record.project.status = ProjectStatus.FAILED
