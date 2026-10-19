@@ -2602,6 +2602,41 @@ def test_video_selection_uses_technical_score_when_review_scores_tie(tmp_path, m
     }
 
 
+def test_video_selection_prefers_measured_cross_shot_continuity_on_tie(tmp_path, monkeypatch):
+    weaker = tmp_path / "weaker.mp4"
+    stronger = tmp_path / "stronger.mp4"
+    weaker.write_bytes(b"weaker")
+    stronger.write_bytes(b"stronger")
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", False)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MIN_SCORE", 4.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE", 4.0)
+
+    def candidate(index, path, continuity_score):
+        return {
+            "index": index,
+            "path": str(path),
+            "status": "passed",
+            "average": 4.5,
+            "platform_score": 4.5,
+            "technical_score": 4.5,
+            "technical_metrics": {
+                "status": "available",
+                "technical_score": 4.5,
+                "continuity_reference": {"status": "available", "score": continuity_score},
+            },
+        }
+
+    final_path, report = _select_best_video_candidate(
+        [candidate(1, weaker, 1.6), candidate(2, stronger, 4.4)],
+        str(tmp_path / "final.mp4"),
+        tmp_path / "final.quality.json",
+    )
+
+    assert Path(final_path).read_bytes() == b"stronger"
+    assert report["candidates"][0]["index"] == 2
+    assert report["candidates"][0]["technical_metrics"]["continuity_reference"]["score"] == 4.4
+
+
 def test_video_selection_rejects_candidate_below_technical_floor(tmp_path, monkeypatch):
     candidate_path = tmp_path / "static.mp4"
     candidate_path.write_bytes(b"static")
