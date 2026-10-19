@@ -571,6 +571,9 @@ async def get_generation_review(
     audit_scenes = sorted(getattr(project, "scenes", []) or [], key=lambda scene: scene.scene_number)
     audit_input_hash = fingerprint({
         "project_id": project_id,
+        # Quality reports are evidence of both the media and the gate policy
+        # that evaluated it. Changing a threshold must invalidate old audits.
+        "quality_gates": ProductionWorkflowProfileService()._current_quality_gates(),
         "scenes": [
             {
                 "scene_number": scene.scene_number,

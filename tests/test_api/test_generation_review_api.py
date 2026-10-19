@@ -48,6 +48,31 @@ def test_review_api_returns_score_evidence(tmp_path, monkeypatch):
     assert result["summary"]["status"] == "blocked"
 
 
+def test_review_api_audit_fingerprint_changes_when_quality_gate_changes(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        id=1, final_video_path=None, scenes=[]
+    )
+
+    monkeypatch.setattr(
+        "src.api.routes.projects.settings.GENERATION_RHYTHM_MAX_HOOK_LATENCY_SECONDS",
+        8.0,
+    )
+    first = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    first_hash = first["reports"]["story_room_quality"]["input_hash"]
+
+    monkeypatch.setattr(
+        "src.api.routes.projects.settings.GENERATION_RHYTHM_MAX_HOOK_LATENCY_SECONDS",
+        6.0,
+    )
+    second = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    second_hash = second["reports"]["story_room_quality"]["input_hash"]
+
+    assert first_hash != second_hash
+
+
 def test_review_api_includes_final_composition_report(tmp_path, monkeypatch):
     from src.utils.storage import storage_manager
     monkeypatch.setattr(storage_manager, "base_path", tmp_path)
