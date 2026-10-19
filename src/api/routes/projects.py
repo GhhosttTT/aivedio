@@ -553,6 +553,7 @@ async def get_generation_review(
                 "error": "Final composition review evidence could not be read.",
             }
     from src.tasks.review_tasks import (
+        _character_asset_evidence,
         current_story,
         generation_signature,
         validate_generation_review_coverage,
@@ -574,6 +575,10 @@ async def get_generation_review(
         # Quality reports are evidence of both the media and the gate policy
         # that evaluated it. Changing a threshold must invalidate old audits.
         "quality_gates": ProductionWorkflowProfileService()._current_quality_gates(),
+        # Character identity references are also review inputs; changing a
+        # frozen pack must invalidate every dependent audit, not only the
+        # generation report.
+        "character_assets": _character_asset_evidence(project),
         "scenes": [
             {
                 "scene_number": scene.scene_number,
