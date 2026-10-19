@@ -2217,6 +2217,30 @@ def _final_video_acceptance_error(
             )
         if technical_metrics.get("audio_clipping_status") == "clipped":
             return "Final normalized video audio signal is clipped at digital full scale"
+        true_peak_db = technical_metrics.get("audio_true_peak_db")
+        if (
+            isinstance(true_peak_db, (int, float))
+            and true_peak_db > settings.GENERATION_VIDEO_AUDIO_TRUE_PEAK_MAX_DB
+        ):
+            return (
+                "Final normalized video true peak is too hot: "
+                f"audio_true_peak_db={true_peak_db:.2f}, maximum="
+                f"{settings.GENERATION_VIDEO_AUDIO_TRUE_PEAK_MAX_DB:.2f}"
+            )
+        integrated_lufs = technical_metrics.get("audio_integrated_lufs")
+        if isinstance(integrated_lufs, (int, float)):
+            if integrated_lufs < settings.GENERATION_VIDEO_AUDIO_INTEGRATED_LUFS_MIN:
+                return (
+                    "Final normalized video integrated loudness is too quiet: "
+                    f"audio_integrated_lufs={integrated_lufs:.2f}, minimum="
+                    f"{settings.GENERATION_VIDEO_AUDIO_INTEGRATED_LUFS_MIN:.2f}"
+                )
+            if integrated_lufs > settings.GENERATION_VIDEO_AUDIO_INTEGRATED_LUFS_MAX:
+                return (
+                    "Final normalized video integrated loudness is too loud: "
+                    f"audio_integrated_lufs={integrated_lufs:.2f}, maximum="
+                    f"{settings.GENERATION_VIDEO_AUDIO_INTEGRATED_LUFS_MAX:.2f}"
+                )
         audio_start_delta = technical_metrics.get("audio_video_start_delta_seconds")
         if (
             isinstance(audio_start_delta, (int, float))

@@ -193,6 +193,40 @@ def test_final_video_acceptance_rejects_clipped_audio_even_when_optional():
 @pytest.mark.parametrize(
     ("metric_name", "metric_value", "expected_text"),
     [
+        ("audio_true_peak_db", -0.8, "true peak is too hot"),
+        ("audio_integrated_lufs", -11.0, "integrated loudness is too loud"),
+        ("audio_integrated_lufs", -25.0, "integrated loudness is too quiet"),
+    ],
+)
+def test_final_video_acceptance_rejects_extreme_audio_loudness(
+    metric_name, metric_value, expected_text,
+):
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {
+                "audio_present": True,
+                "audio_signal_status": "usable",
+                metric_name: metric_value,
+            },
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+
+    assert error is not None
+    assert expected_text in error
+
+
+@pytest.mark.parametrize(
+    ("metric_name", "metric_value", "expected_text"),
+    [
         ("audio_video_start_delta_seconds", -0.6, "audio/video start offset"),
         ("audio_duration_delta_seconds", 0.6, "audio duration"),
     ],
