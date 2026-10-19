@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from celery.app.autoretry import add_autoretry_behaviour
@@ -10,7 +10,16 @@ from src.database.models import Base, Project, ProjectStatus, Task, TaskStatus, 
 from src.services.comfyui_service import ComfyUIWaitTimeout
 from src.services.generation_review import ReviewError
 from src.services.generation_provider import GenerationProviderError
-from src.tasks.celery_app import BaseTask
+from src.tasks.celery_app import BaseTask, _broadcast_task_event
+
+
+def test_task_event_bridge_delivers_without_leaking_asyncio_state(monkeypatch):
+    broadcast = AsyncMock()
+    monkeypatch.setattr("src.api.websocket.manager.broadcast", broadcast)
+
+    _broadcast_task_event(7, {"type": "progress_update", "progress": 0.5})
+
+    broadcast.assert_awaited_once_with(7, {"type": "progress_update", "progress": 0.5})
 
 
 @pytest.mark.parametrize("error", [

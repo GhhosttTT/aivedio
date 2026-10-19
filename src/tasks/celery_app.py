@@ -2,6 +2,8 @@
 
 import os
 import inspect
+import asyncio
+import logging
 from pathlib import Path
 
 from celery import Celery
@@ -12,6 +14,20 @@ from src.services.comfyui_service import ComfyUIWaitTimeout
 from src.services.generation_review import ReviewError
 from src.services.image_postprocess import ImagePostprocessError
 from src.services.generation_provider import GenerationCancelledError, GenerationProviderError
+
+
+logger = logging.getLogger(__name__)
+
+
+def _broadcast_task_event(project_id: int, message: dict) -> None:
+    """Best-effort bridge from synchronous Celery hooks to project WebSockets."""
+    try:
+        from src.api.websocket import manager
+
+        asyncio.run(manager.broadcast(project_id, message))
+    except Exception as exc:
+        # A disconnected browser must never make a production task fail.
+        logger.debug("Could not broadcast task event for project %s: %s", project_id, exc)
 
 env_path = Path(__file__).parent.parent.parent / ".env"
 if env_path.exists():
@@ -125,11 +141,21 @@ class BaseTask(celery_app.Task):
         from src.database.session import get_db_session
         from src.database.models import TaskStatus, ProjectStatus
         db = next(get_db_session())
+        event = None
         try:
             record = self._production_record(args, kwargs, db)
             if record and record.status == TaskStatus.PENDING:
                 record.status = TaskStatus.RUNNING
                 db.commit()
+            if record and record.status == TaskStatus.RUNNING:
+                event = {
+                    "type": "status_update",
+                    "project_id": record.project_id,
+                    "task_id": str(record.celery_task_id),
+                    "status": "running",
+                    "current_step": self.name,
+                    "progress": float(record.progress or 0.0) / 100.0,
+                }
             if record and record.status == TaskStatus.RUNNING:
                 from src.services.generation_review import write_report
                 from src.utils.storage import storage_manager
@@ -149,11 +175,14 @@ class BaseTask(celery_app.Task):
                 raise Ignore()
         finally:
             db.close()
+        if event:
+            _broadcast_task_event(event["project_id"], event)
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
         from src.database.session import get_db_session
         from src.database.models import TaskStatus, ProjectStatus
         db = next(get_db_session())
+        event = None
         try:
             record = self._production_record(args, kwargs, db)
             if record and record.status != TaskStatus.CANCELLED:
@@ -161,8 +190,18 @@ class BaseTask(celery_app.Task):
                 record.error_message = f"{self.name}: {exc}"
                 record.project.status = ProjectStatus.FAILED
                 db.commit()
+                event = {
+                    "type": "error",
+                    "project_id": record.project_id,
+                    "task_id": str(record.celery_task_id),
+                    "status": "failed",
+                    "current_step": self.name,
+                    "error": str(exc),
+                }
         finally:
             db.close()
+        if event:
+            _broadcast_task_event(event["project_id"], event)
         print(f"Task failed: {task_id}")
         print(f"Exception: {exc}")
         print(f"Details: {einfo}")
@@ -176,6 +215,7 @@ class BaseTask(celery_app.Task):
         from src.database.session import get_db_session
         from src.database.models import TaskStatus, ProjectStatus
         db = next(get_db_session())
+        event = None
         try:
             record = self._production_record(args, kwargs, db)
             if record and record.status == TaskStatus.CANCELLED:
@@ -206,8 +246,18 @@ class BaseTask(celery_app.Task):
                 if record.status == TaskStatus.COMPLETED and record.project.status == ProjectStatus.IN_PRODUCTION and not record.project.final_video_path:
                     record.project.status = ProjectStatus.SCRIPT_GENERATED
                 db.commit()
+                event = {
+                    "type": "progress_update" if record.status != TaskStatus.COMPLETED else "completion",
+                    "project_id": record.project_id,
+                    "task_id": str(record.celery_task_id),
+                    "status": record.status.value if hasattr(record.status, "value") else str(record.status),
+                    "current_step": record.current_step,
+                    "progress": float(record.progress or 0.0) / 100.0,
+                }
         finally:
             db.close()
+        if event:
+            _broadcast_task_event(event["project_id"], event)
         print(f"Task succeeded: {task_id}")
 
 

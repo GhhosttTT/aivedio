@@ -62,7 +62,10 @@ export function ProjectDetail() {
     }, [id, productionOptions.provider, productionOptions.model, productionOptions.request_mode, productionOptions.resolution, productionOptions.output_format, productionOptions.duration_seconds]);
     useEffect(() => { reload(); }, [reload]);
     useEffect(() => {
-        if (!latestMessage || !['status_update', 'progress_update', 'completion', 'error'].includes(latestMessage.type)) return;
+        if (!latestMessage || ![
+            'status_update', 'progress_update', 'progress', 'completion', 'error',
+            'script_generation_start', 'script_generation_complete', 'script_generation_error',
+        ].includes(latestMessage.type)) return;
         void reload();
     }, [latestMessage, reload]);
     useEffect(() => {
