@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from src.config import settings
 from src.services.video_director_service import VideoDirectorService
 from src.services.topic_brief import TopicBriefService
 
@@ -20,6 +21,7 @@ class RhythmAuditReport:
     editing_plan: list[dict] | None = None
     hook_latency_seconds: float | None = None
     hook_status: str = "not_checked"
+    thresholds: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -33,6 +35,7 @@ class RhythmAuditReport:
             "editing_plan": list(self.editing_plan or []),
             "hook_latency_seconds": self.hook_latency_seconds,
             "hook_status": self.hook_status,
+            "thresholds": dict(self.thresholds or {}),
         }
 
 
@@ -43,20 +46,16 @@ class RhythmAuditService:
     available and the same director plan that drives video generation otherwise.
     """
 
-    MIN_SHOT_SECONDS = 1.2
-    MAX_SILENT_SHOT_SECONDS = 6.0
-    MAX_DIALOGUE_MARGIN_SECONDS = 0.30
-    SAME_ROLE_WARNING_RUN = 3
-    MAX_HOOK_LATENCY_SECONDS = 8.0
     HOOK_TERMS = (
         "秘密", "证据", "背叛", "危机", "威胁", "身份", "反转", "失踪", "离婚", "曝光",
         "复仇", "重生", "secret", "evidence", "betrayal", "threat", "identity", "twist",
     )
 
     def audit(self, project, scenes) -> RhythmAuditReport:
+        thresholds = self._configured_thresholds()
         ordered = sorted(list(scenes or []), key=lambda scene: scene.scene_number)
         if not ordered:
-            return RhythmAuditReport("not_applicable", 0, 0.0, [], [], [], [])
+            return RhythmAuditReport("not_applicable", 0, 0.0, [], [], [], [], thresholds=thresholds)
 
         director = VideoDirectorService()
         timeline = []
@@ -78,19 +77,19 @@ class RhythmAuditService:
                 "action_intensity": getattr(plan, "action_intensity", None),
             }
             timeline.append(item)
-            if duration < self.MIN_SHOT_SECONDS:
+            if duration < thresholds["min_shot_seconds"]:
                 issues.append(self._issue(
                     "short_shot", "high", scene.scene_number,
                     f"Shot duration {duration:.2f}s leaves too little time for a readable cut and reaction.",
                     "split_scene",
                 ))
-            if not dialogue and duration > self.MAX_SILENT_SHOT_SECONDS:
+            if not dialogue and duration > thresholds["max_silent_shot_seconds"]:
                 issues.append(self._issue(
                     "long_silent_shot", "warn", scene.scene_number,
                     f"Silent shot lasts {duration:.2f}s; add motion, a reaction beat, or split the shot.",
                     "split_scene",
                 ))
-            if dialogue and audio_duration and duration - audio_duration <= self.MAX_DIALOGUE_MARGIN_SECONDS + 1e-6:
+            if dialogue and audio_duration and duration - audio_duration <= thresholds["max_dialogue_margin_seconds"] + 1e-6:
                 issues.append(self._issue(
                     "dialogue_reaction_margin", "high", scene.scene_number,
                     f"Dialogue has only {max(0.0, duration - audio_duration):.2f}s of reaction room.",
@@ -99,7 +98,7 @@ class RhythmAuditService:
             cursor += duration
 
         self._add_role_run_issues(timeline, issues)
-        hook_latency, hook_status = self._opening_hook_check(project, ordered, timeline, issues)
+        hook_latency, hook_status = self._opening_hook_check(project, ordered, timeline, issues, thresholds)
         status = "needs_review" if any(item["severity"] == "high" for item in issues) else ("warn" if issues else "passed")
         repair_queue = [
             {
@@ -122,9 +121,20 @@ class RhythmAuditService:
             editing_plan=editing_plan,
             hook_latency_seconds=hook_latency,
             hook_status=hook_status,
+            thresholds=thresholds,
         )
 
-    def _opening_hook_check(self, project, scenes, timeline, issues) -> tuple[float | None, str]:
+    @staticmethod
+    def _configured_thresholds() -> dict[str, float | int]:
+        return {
+            "min_shot_seconds": float(settings.GENERATION_RHYTHM_MIN_SHOT_SECONDS),
+            "max_silent_shot_seconds": float(settings.GENERATION_RHYTHM_MAX_SILENT_SHOT_SECONDS),
+            "max_dialogue_margin_seconds": float(settings.GENERATION_RHYTHM_MAX_DIALOGUE_MARGIN_SECONDS),
+            "same_role_warning_run": int(settings.GENERATION_RHYTHM_SAME_ROLE_WARNING_RUN),
+            "max_hook_latency_seconds": float(settings.GENERATION_RHYTHM_MAX_HOOK_LATENCY_SECONDS),
+        }
+
+    def _opening_hook_check(self, project, scenes, timeline, issues, thresholds) -> tuple[float | None, str]:
         """Enforce commercial hook timing only after a market brief is locked."""
         brief = TopicBriefService().load(getattr(project, "id", None)) if getattr(project, "id", None) else None
         if not isinstance(brief, dict) or not str(brief.get("hook_type") or "").strip():
@@ -139,7 +149,7 @@ class RhythmAuditService:
                 hook_index = index
                 break
         latency = round(float(timeline[hook_index]["start_seconds"]), 3) if hook_index is not None else None
-        if hook_index is None or hook_index > 1 or (latency is not None and latency > self.MAX_HOOK_LATENCY_SECONDS):
+        if hook_index is None or hook_index > 1 or (latency is not None and latency > thresholds["max_hook_latency_seconds"]):
             issues.append(self._issue(
                 "late_opening_hook", "high", scenes[0].scene_number,
                 "Locked commercial hook is not readable within the first two shots or first 8 seconds.",
@@ -228,7 +238,8 @@ class RhythmAuditService:
         return max(0.1, value, required)
 
     def _add_role_run_issues(self, timeline: list[dict], issues: list[dict]) -> None:
-        if len(timeline) < self.SAME_ROLE_WARNING_RUN:
+        warning_run = int(self._configured_thresholds()["same_role_warning_run"])
+        if len(timeline) < warning_run:
             return
         start = 0
         while start < len(timeline):
@@ -236,7 +247,7 @@ class RhythmAuditService:
             end = start + 1
             while end < len(timeline) and timeline[end]["shot_role"] == role:
                 end += 1
-            if end - start >= self.SAME_ROLE_WARNING_RUN:
+            if end - start >= warning_run:
                 issues.append(self._issue(
                     "repeated_shot_role", "warn", timeline[start]["scene_number"],
                     f"{end - start} consecutive shots use the {role} role; vary coverage or add a reaction cut.",

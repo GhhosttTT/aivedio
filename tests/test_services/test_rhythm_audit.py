@@ -120,3 +120,19 @@ def test_rhythm_audit_does_not_require_hook_without_locked_brief(monkeypatch):
 
     assert report.hook_status == "not_checked"
     assert not any(item["code"] == "late_opening_hook" for item in report.issues)
+
+
+def test_rhythm_audit_uses_configured_thresholds(monkeypatch):
+    monkeypatch.setattr("src.services.rhythm_audit.settings.GENERATION_RHYTHM_MIN_SHOT_SECONDS", 2.5)
+    monkeypatch.setattr(
+        "src.services.rhythm_audit.VideoDirectorService.plan_scene",
+        lambda _self, scene, project_id=None: SimpleNamespace(
+            shot_role="story_shot", target_duration_seconds=2.0
+        ),
+    )
+
+    report = RhythmAuditService().audit(SimpleNamespace(id=1), [_scene(1)])
+
+    assert report.status == "needs_review"
+    assert report.thresholds["min_shot_seconds"] == 2.5
+    assert report.issues[0]["code"] == "short_shot"
