@@ -67,6 +67,28 @@ class ContinuityAuditService:
                 "to_prop": current_spatial.get("prop_focus") or None,
             }
             pairs.append(pair)
+            if not previous_plan or not current_plan:
+                missing_scenes = [
+                    scene_number
+                    for scene_number, plan in (
+                        (previous.scene_number, previous_plan),
+                        (current.scene_number, current_plan),
+                    )
+                    if not plan
+                ]
+                issues.append({
+                    "severity": "high",
+                    "code": "missing_continuity_evidence",
+                    "from_scene": previous.scene_number,
+                    "to_scene": current.scene_number,
+                    "missing_scenes": missing_scenes,
+                    "evidence": (
+                        "Director spatial plan is unavailable for scene(s) "
+                        + ", ".join(str(number) for number in missing_scenes)
+                    ),
+                    "recommendation": "Rebuild the director shot plan before evaluating adjacent-shot continuity.",
+                })
+                continue
             previous_axis = previous_spatial.get("camera_axis") or previous_spatial.get("axis")
             current_axis = current_spatial.get("camera_axis") or current_spatial.get("axis")
             if previous_axis and current_axis and previous_axis != current_axis:

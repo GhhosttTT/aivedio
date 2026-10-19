@@ -43,3 +43,24 @@ def test_continuity_audit_flags_axis_jump(monkeypatch):
 
     assert report.status == "needs_review"
     assert report.issues[0]["code"] == "screen_direction_jump"
+
+
+def test_continuity_audit_fails_closed_when_director_plan_is_unavailable(monkeypatch):
+    def unavailable_plan(*_args):
+        raise ValueError("invalid scene contract")
+
+    monkeypatch.setattr(
+        "src.services.continuity_audit.VideoDirectorService.plan_scene",
+        unavailable_plan,
+    )
+    project = SimpleNamespace(id=1, script="{}")
+    scenes = [
+        SimpleNamespace(scene_number=1, character_name="A", visual_description="A"),
+        SimpleNamespace(scene_number=2, character_name="A", visual_description="A"),
+    ]
+
+    report = ContinuityAuditService().audit(project, scenes)
+
+    assert report.status == "needs_review"
+    assert report.issues[0]["code"] == "missing_continuity_evidence"
+    assert report.issues[0]["missing_scenes"] == [1, 2]
