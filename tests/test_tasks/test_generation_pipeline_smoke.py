@@ -237,6 +237,37 @@ def test_composition_input_signature_changes_when_bgm_mix_changes(tmp_path):
     assert without_bgm != with_bgm
 
 
+def test_composition_input_signature_changes_when_character_asset_changes(tmp_path, monkeypatch):
+    project = Mock(
+        id=1,
+        script='{}',
+        outline='outline',
+        characters=[SimpleNamespace(id=7, name="Alice", description="black hair", appearance="black hair")],
+    )
+    video = tmp_path / "scene.mp4"
+    video.write_bytes(b"asset")
+    scene = Mock(scene_number=1, dialogue="hello", image_path=None, video_path=str(video), audio_path=None, subtitle_path=None)
+    identity = {"value": "v1"}
+    monkeypatch.setattr(
+        "src.services.character_service.get_character_manager",
+        lambda: SimpleNamespace(
+            get_character_asset_pack=lambda *_args: {
+                "status": "frozen",
+                "identity_spec_hash": identity["value"],
+                "reference_paths": [],
+                "reference_hashes": {},
+            },
+            get_character_references=lambda *_args: [],
+        ),
+    )
+
+    first = composition_tasks.composition_input_signature(project, [scene])
+    identity["value"] = "v2"
+    second = composition_tasks.composition_input_signature(project, [scene])
+
+    assert first != second
+
+
 def test_composition_rejects_audio_bound_to_the_wrong_character(tmp_path):
     audio = tmp_path / "scene_001.mp3"
     audio.write_bytes(b"fake audio")

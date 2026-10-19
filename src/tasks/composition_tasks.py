@@ -69,6 +69,8 @@ def composition_input_signature(
     bgm_volume: float = 0.3,
 ) -> str:
     """Fingerprint every source asset and story field used by final composition."""
+    from src.tasks.review_tasks import _character_asset_evidence
+
     payload = {
         "project_id": getattr(project, "id", None),
         "script": getattr(project, "script", None),
@@ -78,6 +80,10 @@ def composition_input_signature(
             "bgm_path": _video_version_signature(bgm_path) if bgm_path else None,
             "bgm_volume": round(float(bgm_volume), 4),
         },
+        # Final composition review depends on the identity assets that shaped
+        # the scene media. A changed character pack must invalidate an old
+        # approval even when the existing video bytes are unchanged.
+        "character_assets": _character_asset_evidence(project),
         "scenes": [
             {
                 "scene_number": getattr(scene, "scene_number", None),

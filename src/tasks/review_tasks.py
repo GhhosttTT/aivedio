@@ -36,7 +36,7 @@ def generation_signature(project, scenes):
 def _character_asset_evidence(project) -> list[dict]:
     """Include frozen character assets in the review invalidation signature."""
     characters = getattr(project, "characters", []) or []
-    if not characters:
+    if not isinstance(characters, (list, tuple)) or not characters:
         return []
     try:
         from src.services.character_service import get_character_manager
