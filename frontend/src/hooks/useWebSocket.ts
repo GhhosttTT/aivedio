@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiOrigin } from '../api/client';
+import { apiOrigin, authApi } from '../api/client';
+import { useAuthStore } from '../store/authStore';
 
 export interface WebSocketMessage {
     type: string;
@@ -45,10 +46,10 @@ export const useWebSocket = (projectId: string) => {
             setIsConnected(false);
             return;
         }
-        const wsUrl = `${wsBaseUrl}/ws/${projectId}?token=${encodeURIComponent(token)}`;
         let disposed = false;
         let reconnectTimer: number | undefined;
         let reconnectAttempt = 0;
+        let authRefreshAttempted = false;
         let socket: WebSocket | null = null;
 
         const scheduleReconnect = () => {
@@ -61,17 +62,47 @@ export const useWebSocket = (projectId: string) => {
             }, delay);
         };
 
+        async function refreshAndReconnect() {
+            if (disposed || authRefreshAttempted) {
+                if (!disposed) {
+                    useAuthStore.getState().logout();
+                    if (!window.location.pathname.includes('/login')) window.location.href = '/login';
+                }
+                return;
+            }
+            authRefreshAttempted = true;
+            try {
+                const tokens = await authApi.refreshToken();
+                if (disposed) return;
+                useAuthStore.getState().updateTokens(tokens.access_token, tokens.refresh_token);
+                reconnectAttempt = 0;
+                connect();
+            } catch {
+                if (!disposed) {
+                    useAuthStore.getState().logout();
+                    if (!window.location.pathname.includes('/login')) window.location.href = '/login';
+                }
+            }
+        }
+
         const connect = () => {
             if (disposed) return;
-            socket = new WebSocket(wsUrl);
-            wsRef.current = socket;
+            const currentToken = localStorage.getItem('auth_token');
+            if (!currentToken) {
+                setIsConnected(false);
+                return;
+            }
+            const currentSocket = new WebSocket(`${wsBaseUrl}/ws/${projectId}?token=${encodeURIComponent(currentToken)}`);
+            socket = currentSocket;
+            wsRef.current = currentSocket;
 
-            socket.onopen = () => {
+            currentSocket.onopen = () => {
                 setIsConnected(true);
                 reconnectAttempt = 0;
+                authRefreshAttempted = false;
             };
 
-            socket.onmessage = (event) => {
+            currentSocket.onmessage = (event) => {
                 try {
                     const message: WebSocketMessage = JSON.parse(event.data);
                     setLatestMessage(message);
@@ -81,16 +112,15 @@ export const useWebSocket = (projectId: string) => {
                 }
             };
 
-            socket.onerror = () => {
+            currentSocket.onerror = () => {
                 // onclose performs the single reconnect path.
             };
 
-            socket.onclose = (event) => {
-                if (socket !== wsRef.current) return;
+            currentSocket.onclose = (event) => {
+                if (currentSocket !== wsRef.current) return;
                 setIsConnected(false);
                 if (event.code === 1008 || event.code === 4003) {
-                    localStorage.removeItem('auth_token');
-                    if (!window.location.pathname.includes('/login')) window.location.href = '/login';
+                    void refreshAndReconnect();
                     return;
                 }
                 scheduleReconnect();
