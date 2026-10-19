@@ -39,6 +39,34 @@ def test_retimed_audio_invalidates_the_previous_review(assets):
     assert review_tasks.generation_signature(project, [scene]) != previous
 
 
+def test_character_asset_changes_invalidate_the_previous_review(assets, monkeypatch, tmp_path):
+    project, scene = assets
+    reference = tmp_path / "alice.png"
+    reference.write_bytes(b"identity-v1")
+    project.characters = [SimpleNamespace(id=7, name="Alice", description="black hair", appearance="black hair")]
+
+    class FakeCharacterManager:
+        def get_character_asset_pack(self, character_id, project_id):
+            return {
+                "status": "frozen",
+                "identity_spec_hash": "identity-spec-v1",
+                "reference_paths": [str(reference)],
+                "reference_hashes": {str(reference): review_tasks.file_hash(reference)},
+            }
+
+        def get_character_references(self, character_id, project_id):
+            return [str(reference)]
+
+    monkeypatch.setattr(
+        "src.services.character_service.get_character_manager",
+        lambda: FakeCharacterManager(),
+    )
+    previous = review_tasks.generation_signature(project, [scene])
+    reference.write_bytes(b"identity-v2")
+
+    assert review_tasks.generation_signature(project, [scene]) != previous
+
+
 def test_draft_smoke_review_is_not_production_evidence(assets):
     project, scene = assets
     evidence = review_tasks.validate_generation_review_evidence(

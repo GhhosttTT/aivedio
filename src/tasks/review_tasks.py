@@ -30,7 +30,47 @@ def generation_signature(project, scenes):
          "subtitle": _optional_asset_hash(getattr(s, "subtitle_path", None)),
          "audio_duration": getattr(s, "audio_duration", None) if isinstance(getattr(s, "audio_duration", None), (int, float)) else None}
         for s in scenes
-    ]})
+    ], "character_assets": _character_asset_evidence(project)})
+
+
+def _character_asset_evidence(project) -> list[dict]:
+    """Include frozen character assets in the review invalidation signature."""
+    characters = getattr(project, "characters", []) or []
+    if not characters:
+        return []
+    try:
+        from src.services.character_service import get_character_manager
+
+        manager = get_character_manager()
+    except (OSError, RuntimeError, TypeError):
+        manager = None
+    evidence = []
+    for character in characters:
+        item = {
+            "character_id": getattr(character, "id", None),
+            "name": getattr(character, "name", ""),
+            "appearance": getattr(character, "appearance", None),
+            "asset_pack": None,
+            "reference_hashes": {},
+        }
+        if manager is not None:
+            try:
+                pack = manager.get_character_asset_pack(character.id, project.id)
+                if isinstance(pack, dict):
+                    item["asset_pack"] = {
+                        "status": pack.get("status"),
+                        "identity_spec_hash": pack.get("identity_spec_hash"),
+                        "reference_paths": sorted(pack.get("reference_paths") or []),
+                        "reference_hashes": dict(sorted((pack.get("reference_hashes") or {}).items())),
+                    }
+                references = manager.get_character_references(character.id, project.id)
+                item["reference_hashes"] = {
+                    str(path): _optional_asset_hash(path) for path in sorted(references or [])
+                }
+            except (OSError, TypeError, ValueError):
+                item["asset_pack"] = {"status": "unavailable"}
+        evidence.append(item)
+    return evidence
 
 
 def _optional_asset_hash(path):
