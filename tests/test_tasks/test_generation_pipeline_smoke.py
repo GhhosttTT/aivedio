@@ -651,7 +651,8 @@ def test_final_composed_video_review_payload_tracks_episode_context(tmp_path, mo
     })
 
     report = composition_tasks._review_final_composed_video(
-        project, scenes, str(final_video), native_audio_expected=True,
+        project, scenes, str(final_video), add_bgm=True, bgm_path=tmp_path / "bgm.mp3",
+        native_audio_expected=True,
     )
 
     assert report["path"].endswith(".composition_review.json")
@@ -663,6 +664,14 @@ def test_final_composed_video_review_payload_tracks_episode_context(tmp_path, mo
     assert captured["payload"]["technical_boundary_report"]["status"] == "not_applicable"
     assert captured["payload"]["final_technical_metrics"]["status"] == "available"
     assert report["final_audio_expected"] is True
+    assert report["audio_mix"] == {
+        "add_bgm": True,
+        "bgm_path": str(tmp_path / "bgm.mp3"),
+        "bgm_volume": 0.3,
+        "source_audio_expected": True,
+        "dialogue_ducking": True,
+        "strategy": "sidechain_ducking",
+    }
     assert captured["payload"]["platform_aesthetic_contract"]["video_features"]
     assert "final_composition_finishing_scores" not in captured["payload"]
     assert captured["payload"]["composition_contract"]["finishing_features"]

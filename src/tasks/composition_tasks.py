@@ -1356,7 +1356,9 @@ def _review_final_composed_video(
         "add_bgm": bool(add_bgm),
         "bgm_path": str(bgm_path) if bgm_path else None,
         "bgm_volume": round(float(bgm_volume), 4),
-        "dialogue_ducking": bool(add_bgm),
+        "source_audio_expected": bool(audio_expected),
+        "dialogue_ducking": bool(add_bgm and audio_expected),
+        "strategy": "sidechain_ducking" if add_bgm and audio_expected else ("music_only" if add_bgm else "none"),
     }
     report["stage"] = "final_composition"
     report["technical_boundary_report"] = technical_boundary_report
