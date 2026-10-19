@@ -256,6 +256,7 @@ def compose_final_video_task(
     self.update_state(state="PROGRESS", meta={"current": 0, "total": 100, "step": "视频合成"})
     db = None
     composition_candidate_path: Path | None = None
+    composition_scratch: list[Path] = []
     try:
         # 获取数据库会话
         db = next(get_db())
@@ -327,6 +328,12 @@ def compose_final_video_task(
             preserve_provider_quality=preserve_provider_quality,
             editing_plan=editing_plan,
         )
+        if Path(temp_video_path).resolve() not in {
+            Path(path).resolve() for path in video_paths
+        }:
+            composition_scratch.append(
+                Path(final_video_path.replace(".mp4", "_temp.mp4"))
+            )
         
         # 步骤 2: 同步音频（40%）
         self.update_state(state="PROGRESS", meta={"current": 40, "total": 100, "step": "同步音频"})
@@ -334,6 +341,10 @@ def compose_final_video_task(
         if not preserve_native_audio:
             temp_video_with_audio = final_video_path.replace(".mp4", "_with_audio.mp4")
             merged_audio_path = final_video_path.replace(".mp4", "_merged_audio.wav")
+            composition_scratch.extend([
+                Path(temp_video_with_audio),
+                Path(merged_audio_path),
+            ])
             audio_path = video_composer.compose_scene_audio(
                 audio_segments,
                 merged_audio_path,
@@ -351,6 +362,7 @@ def compose_final_video_task(
         
         if add_bgm and bgm_path:
             temp_video_with_bgm = final_video_path.replace(".mp4", "_with_bgm.mp4")
+            composition_scratch.append(Path(temp_video_with_bgm))
             video_composer.add_bgm(
                 video_path=temp_video_path,
                 bgm_path=bgm_path,
@@ -365,6 +377,7 @@ def compose_final_video_task(
         if subtitle_paths:
             # 合并所有字幕文件
             merged_subtitle_path = final_video_path.replace(".mp4", ".srt")
+            composition_scratch.append(Path(merged_subtitle_path))
             _merge_subtitles(
                 subtitle_paths,
                 merged_subtitle_path,
@@ -457,6 +470,7 @@ def compose_final_video_task(
         
         raise
     finally:
+        _cleanup_composition_scratch(composition_scratch)
         if composition_candidate_path is not None:
             for candidate_artifact in composition_candidate_path.parent.glob(
                 f"{composition_candidate_path.stem}*"
@@ -564,6 +578,24 @@ def _merge_subtitles(
 def _scene_subtitle_path(scene) -> str | Path | None:
     subtitle_path = getattr(scene, "subtitle_path", None)
     return subtitle_path if isinstance(subtitle_path, (str, Path)) and subtitle_path else None
+
+
+def _cleanup_composition_scratch(paths: list[str | Path]) -> None:
+    """Remove only intermediates created by one composition attempt."""
+    sidecar_suffixes = (
+        ".quality.json",
+        ".provider.json",
+        ".continuity.json",
+        ".final_review.json",
+        ".last_frame.png",
+    )
+    for raw_path in paths:
+        artifact = Path(raw_path)
+        for candidate in (
+            artifact,
+            *(artifact.with_suffix(suffix) for suffix in sidecar_suffixes),
+        ):
+            candidate.unlink(missing_ok=True)
 
 
 def _scene_composition_duration(scene, video_composer=None) -> float:
