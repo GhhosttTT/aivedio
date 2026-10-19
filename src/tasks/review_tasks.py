@@ -30,7 +30,44 @@ def generation_signature(project, scenes):
          "subtitle": _optional_asset_hash(getattr(s, "subtitle_path", None)),
          "audio_duration": getattr(s, "audio_duration", None) if isinstance(getattr(s, "audio_duration", None), (int, float)) else None}
         for s in scenes
-    ], "character_assets": _character_asset_evidence(project)})
+    ], "character_assets": _character_asset_evidence(project),
+        "generation_contracts": _generation_contract_evidence(scenes)})
+
+
+def _generation_contract_evidence(scenes) -> list[dict]:
+    """Bind reviews to the provider contract that produced each video asset."""
+    fields = (
+        "provider_name", "provider_model", "requested_model", "requested_resolution",
+        "requested_output_format", "requested_duration_seconds", "requested_generate_audio",
+        "requested_reference_audio", "request_contract_hash",
+    )
+    evidence = []
+    for scene in scenes or []:
+        video_path = getattr(scene, "video_path", None)
+        item = {"scene": getattr(scene, "scene_number", None), "status": "missing"}
+        if isinstance(video_path, (str, Path)) and str(video_path).strip():
+            metadata_path = Path(video_path).with_suffix(".provider.json")
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, TypeError, ValueError):
+                metadata = None
+            if isinstance(metadata, dict):
+                item["status"] = "present"
+                item.update({key: metadata.get(key) for key in fields if key in metadata})
+                contract = metadata.get("request_contract")
+                if isinstance(contract, dict):
+                    item["contract"] = {
+                        key: contract.get(key)
+                        for key in (
+                            "provider_request_version", "request_mode", "model", "resolution",
+                            "output_format", "duration_seconds", "generate_audio", "reference_audio_count",
+                            "multi_shot", "sequence_level_multi_shot", "shot_plan_fingerprint",
+                            "spatial_asset_pack",
+                        )
+                        if key in contract
+                    }
+        evidence.append(item)
+    return evidence
 
 
 def _character_asset_evidence(project) -> list[dict]:

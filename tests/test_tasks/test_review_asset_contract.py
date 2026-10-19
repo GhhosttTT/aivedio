@@ -39,6 +39,26 @@ def test_retimed_audio_invalidates_the_previous_review(assets):
     assert review_tasks.generation_signature(project, [scene]) != previous
 
 
+def test_provider_contract_changes_invalidate_the_previous_review(assets):
+    project, scene = assets
+    provider_metadata = Path(scene.video_path).with_suffix(".provider.json")
+    provider_metadata.write_text(
+        '{"provider_name":"seedance_api","provider_model":"doubao-seedance-2-5-260628",'
+        '"request_contract_hash":"contract-v1","request_contract":{"model":"doubao-seedance-2-5-260628",'
+        '"resolution":"1080p","generate_audio":true}}',
+        encoding="utf-8",
+    )
+    previous = review_tasks.generation_signature(project, [scene])
+    provider_metadata.write_text(
+        '{"provider_name":"seedance_api","provider_model":"doubao-seedance-2-0-260128",'
+        '"request_contract_hash":"contract-v2","request_contract":{"model":"doubao-seedance-2-0-260128",'
+        '"resolution":"720p","generate_audio":false}}',
+        encoding="utf-8",
+    )
+
+    assert review_tasks.generation_signature(project, [scene]) != previous
+
+
 def test_character_asset_changes_invalidate_the_previous_review(assets, monkeypatch, tmp_path):
     project, scene = assets
     reference = tmp_path / "alice.png"
