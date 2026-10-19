@@ -32,6 +32,28 @@ def _version_signature(path: Path) -> str | None:
     return f"{path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
 
 
+def _technical_metric_mismatches(declared: dict, observed: dict, label: str) -> list[str]:
+    """Return evidence mismatches between a declared report and decoded media."""
+    mismatches = []
+    for key in ("width", "height", "sampled_frames"):
+        expected = declared.get(key)
+        actual = observed.get(key)
+        if expected is not None and actual is not None and expected != actual:
+            mismatches.append(f"{label} {key} mismatch: declared {expected}, observed {actual}")
+    expected_duration = declared.get("duration_seconds")
+    actual_duration = observed.get("duration_seconds")
+    if expected_duration is not None and actual_duration is not None:
+        try:
+            if abs(float(expected_duration) - float(actual_duration)) > 0.05:
+                mismatches.append(
+                    f"{label} duration_seconds mismatch: declared {expected_duration}, "
+                    f"observed {actual_duration}"
+                )
+        except (TypeError, ValueError):
+            mismatches.append(f"{label} duration_seconds is not numeric")
+    return mismatches
+
+
 def _write_json_atomic(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
@@ -190,6 +212,12 @@ def verify_delivery_package(package_path: str | Path) -> dict:
                             result["errors"].append(
                                 "Final composition media failed technical evidence revalidation"
                             )
+                        elif isinstance(final_metrics, dict):
+                            result["errors"].extend(
+                                _technical_metric_mismatches(
+                                    final_metrics, observed, "Final composition"
+                                )
+                            )
                     if isinstance(final_review, dict) and final_review.get("final_audio_expected") is True:
                         audio_status = final_metrics.get("audio_signal_status")
                         audio_quality = final_metrics.get("audio_quality_status")
@@ -233,6 +261,12 @@ def verify_delivery_package(package_path: str | Path) -> dict:
                         ):
                             result["errors"].append(
                                 f"Platform export technical evidence failed: {archive_name}"
+                            )
+                        elif isinstance(declared_metrics, dict):
+                            result["errors"].extend(
+                                _technical_metric_mismatches(
+                                    declared_metrics, observed, f"Platform export {archive_name}"
+                                )
                             )
             review_index_name = "metadata/review_index.json"
             if review_index_name in names:
