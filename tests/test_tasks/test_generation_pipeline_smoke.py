@@ -97,6 +97,25 @@ def test_composition_candidate_publishes_video_and_review_together(tmp_path):
     assert review["video_signature"] == composition_tasks._video_version_signature(final)
 
 
+def test_failed_composition_review_is_persisted_for_repair_queue(monkeypatch, tmp_path):
+    from src.utils.storage import storage_manager
+
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    report = {
+        "status": "needs_review",
+        "stage": "final_composition",
+        "error": "final composition subtitle integration failed",
+        "repair_queue": [{"action": "refine_final_composition_finish", "execution": "auto"}],
+    }
+
+    path = composition_tasks._persist_failed_composition_review(42, report)
+
+    assert path == tmp_path / "projects" / "42" / "reviews" / "final_composition.json"
+    persisted = json.loads(path.read_text(encoding="utf-8"))
+    assert persisted["kind"] == "final_composition"
+    assert persisted["repair_queue"][0]["action"] == "refine_final_composition_finish"
+
+
 def test_composition_accepts_passed_video_quality_report(tmp_path):
     video = tmp_path / "scene_001.mp4"
     video.write_bytes(b"fake video")

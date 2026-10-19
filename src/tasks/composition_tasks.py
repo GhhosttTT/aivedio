@@ -33,6 +33,7 @@ from src.services.subtitle_quality_service import assess_subtitle_timeline
 from src.tasks.audio_tasks import has_spoken_dialogue
 from src.tasks.video_tasks import _apply_audio_quality_contract
 from src.utils.storage import get_project_final_video_path
+from src.utils.storage import storage_manager
 from src.utils.media_quality_paths import (
     existing_audio_quality_report_path,
     existing_subtitle_quality_report_path,
@@ -239,6 +240,18 @@ def _publish_composition_candidate(
                 report_payload["video_sha256"] = final_hash
                 write_report(destination_report, report_payload)
     return published_review
+
+
+def _persist_failed_composition_review(project_id: int, report: dict) -> Path:
+    """Keep a failed composition review after its temporary candidate is cleaned up."""
+    destination = storage_manager.get_project_path(project_id) / "reviews" / "final_composition.json"
+    payload = dict(report)
+    payload["kind"] = "final_composition"
+    payload["status"] = payload.get("status") or "needs_review"
+    payload["path"] = str(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    write_report(destination, payload)
+    return destination
 
 
 @celery_app.task(bind=True, name="compose_final_video")
@@ -1474,6 +1487,7 @@ def _review_final_composed_video(
         report["error"] = error
         attach_repair_queue(report, "video")
         write_report(report_path, report)
+        _persist_failed_composition_review(project.id, report)
         raise ValueError("Final composed video is not production-ready: " + error)
     write_report(report_path, report)
     return report
