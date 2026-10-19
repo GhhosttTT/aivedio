@@ -81,6 +81,7 @@ export function ProjectDetail() {
                     ...(latestMessage.provider_error ? {provider_error: latestMessage.provider_error} : {}),
                 };
             });
+            if (latestMessage.status === 'cancelled') void reload();
             return;
         }
         if (![
