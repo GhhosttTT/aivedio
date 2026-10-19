@@ -3919,3 +3919,41 @@ def test_hybrid_provider_falls_back_on_transport_error():
     )
 
     assert result.output_path == "fallback.mp4"
+
+
+def test_hybrid_provider_does_not_duplicate_accepted_remote_video_task():
+    class Primary:
+        last_result_metadata = {"provider_task_id": "task-accepted"}
+
+        def generate_video(self, _request):
+            raise GenerationProviderError("remote polling failed")
+
+    class Fallback:
+        def generate_video(self, _request):
+            raise AssertionError("accepted remote task must not fall back locally")
+
+    with pytest.raises(GenerationProviderError, match="remote polling failed"):
+        HybridGenerationProvider(Primary(), Fallback()).generate_video(
+            VideoGenerationRequest(prompt="hero turns", output_path="scene.mp4")
+        )
+
+
+def test_hybrid_provider_does_not_duplicate_pending_remote_video_task(tmp_path):
+    output = tmp_path / "scene.mp4"
+    output.with_suffix(".provider.pending.json").write_text(
+        json.dumps({"provider_task_id": "task-pending"}),
+        encoding="utf-8",
+    )
+
+    class Primary:
+        def generate_video(self, _request):
+            raise GenerationProviderError("provider timeout")
+
+    class Fallback:
+        def generate_video(self, _request):
+            raise AssertionError("pending remote task must not fall back locally")
+
+    with pytest.raises(GenerationProviderError, match="provider timeout"):
+        HybridGenerationProvider(Primary(), Fallback()).generate_video(
+            VideoGenerationRequest(prompt="hero turns", output_path=str(output))
+        )

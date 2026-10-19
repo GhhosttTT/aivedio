@@ -2492,6 +2492,8 @@ class HybridGenerationProvider:
         try:
             return self.primary.generate_image(request)
         except (GenerationProviderError, httpx.HTTPError, OSError, ValueError) as exc:
+            if self._remote_task_was_accepted(request):
+                raise
             logger.warning("Primary image provider failed; falling back to local provider: {}", exc)
             return self.fallback.generate_image(request)
 
@@ -2499,8 +2501,21 @@ class HybridGenerationProvider:
         try:
             return self.primary.generate_video(request)
         except (GenerationProviderError, httpx.HTTPError, OSError, ValueError) as exc:
+            if self._remote_task_was_accepted(request):
+                raise
             logger.warning("Primary video provider failed; falling back to local provider: {}", exc)
             return self.fallback.generate_video(request)
+
+    def _remote_task_was_accepted(self, request) -> bool:
+        """Never duplicate an already accepted paid remote generation."""
+        metadata = getattr(self.primary, "last_result_metadata", None)
+        if isinstance(metadata, dict) and metadata.get("provider_task_id"):
+            return True
+        output_path = getattr(request, "output_path", None)
+        if not output_path:
+            return False
+        pending_path = Path(str(output_path)).with_suffix(".provider.pending.json")
+        return pending_path.is_file()
 
     def release_generation_resources(self) -> None:
         # A failed API attempt can still leave a local fallback holding GPU
