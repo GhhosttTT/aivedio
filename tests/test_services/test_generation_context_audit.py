@@ -101,3 +101,4 @@ def test_generation_context_audit_flags_character_identity_asset_drift(tmp_path)
 
     assert report.status == "needs_review"
     assert any(issue["code"] == "character_identity_context_drift" for issue in report.issues)
+    assert report.to_dict()["repair_queue"][0]["action"] == "regenerate_character_identity"

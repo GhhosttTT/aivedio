@@ -31,6 +31,20 @@ class GenerationContextAuditReport:
     def _repair_queue(self) -> list[dict[str, Any]]:
         if not self.issues:
             return []
+        identity_drift = any(
+            issue.get("code") == "character_identity_context_drift"
+            for issue in self.issues
+        )
+        if identity_drift:
+            return [{
+                "priority": "high",
+                "stage": "character",
+                "action": "regenerate_character_identity",
+                "execution": "setup_required",
+                "scene_number": None,
+                "reason": "; ".join(issue["code"] for issue in self.issues[:3]),
+                "recommendation": "重新冻结统一的角色身份资产包，再重做使用旧参考图的镜头。",
+            }]
         return [{
             "priority": "high",
             "stage": "workflow",
