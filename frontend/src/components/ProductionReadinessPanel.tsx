@@ -226,6 +226,7 @@ export function ProductionReadinessPanel({
                         <Metric label="静止片段上限" value={`${typeof qualityGates.video_max_static_run_seconds === 'number' ? qualityGates.video_max_static_run_seconds : '-'}s`}/>
                         <Metric label="时间跳变上限" value={typeof qualityGates.video_max_temporal_jump_ratio === 'number' ? String(qualityGates.video_max_temporal_jump_ratio) : '-'}/>
                         <Metric label="开场钩子上限" value={`${typeof qualityGates.rhythm_max_hook_latency_seconds === 'number' ? qualityGates.rhythm_max_hook_latency_seconds : '-'}s`}/>
+                        <Metric label="基准回归容差" value={typeof qualityGates.seed_dance_baseline_regression_tolerance === 'number' ? `-${qualityGates.seed_dance_baseline_regression_tolerance}` : '-'}/>
                     </div>
                     {profileGaps.length > 0 && <div className="wb-issue blocker">
                         <span>Profile</span>

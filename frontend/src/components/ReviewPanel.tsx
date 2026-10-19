@@ -205,6 +205,7 @@ function SeedDanceComparison({projectId, report}: {projectId: number; report: an
             <div className="wb-kv"><span>历史对比次数</span><strong>{history.count}</strong></div>
             <div className="wb-kv"><span>历史最佳分</span><strong>{history.best_score ?? '-'}</strong></div>
             <div className="wb-kv"><span>相对上次</span><strong>{history.score_delta == null ? '-' : `${history.score_delta > 0 ? '+' : ''}${history.score_delta}`}</strong></div>
+            <div className="wb-kv"><span>回归容差</span><strong>{typeof history.regression_tolerance === 'number' ? `-${history.regression_tolerance}` : '-'}</strong></div>
             <div className="wb-kv"><span>回归提示</span><strong>{history.regression ? '低于上次' : '无'}</strong></div>
         </div>}
         <div className="wb-row" style={{marginTop: 12}}>
