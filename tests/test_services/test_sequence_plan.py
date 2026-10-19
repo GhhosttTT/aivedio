@@ -54,3 +54,24 @@ def test_sequence_timeline_uses_dialogue_duration_and_stays_within_provider_limi
     assert timeline[-1].end_seconds <= 5.0
     assert all(item.duration_seconds >= 1.0 for item in timeline)
     assert timeline[0].as_dict()["duration_seconds"] == timeline[0].duration_seconds
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"max_duration_seconds": float("inf")},
+        {"default_scene_duration_seconds": float("nan")},
+        {"minimum_scene_duration_seconds": float("inf")},
+    ],
+)
+def test_sequence_timeline_rejects_non_finite_limits(kwargs):
+    with pytest.raises(ValueError, match="positive"):
+        build_sequence_timeline([_scene(1, "Alice", "entrance")], **kwargs)
+
+
+def test_sequence_timeline_rejects_non_finite_scene_duration():
+    scene = _scene(1, "Alice", "entrance")
+    scene.audio_duration = float("inf")
+
+    with pytest.raises(ValueError, match="duration must be finite"):
+        build_sequence_timeline([scene])

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import math
 from typing import Iterable
 
 
@@ -116,9 +117,14 @@ def build_sequence_timeline(
     when it exceeds the provider's maximum instead of silently overflowing the
     requested 30-second task.
     """
-    if max_duration_seconds <= 0:
+    if not math.isfinite(max_duration_seconds) or max_duration_seconds <= 0:
         raise ValueError("max_duration_seconds must be positive")
-    if default_scene_duration_seconds <= 0 or minimum_scene_duration_seconds <= 0:
+    if (
+        not math.isfinite(default_scene_duration_seconds)
+        or not math.isfinite(minimum_scene_duration_seconds)
+        or default_scene_duration_seconds <= 0
+        or minimum_scene_duration_seconds <= 0
+    ):
         raise ValueError("scene durations must be positive")
     shots = sorted((_to_sequence_shot(scene) for scene in scenes), key=lambda item: item.scene_number)
     if not shots:
@@ -126,9 +132,11 @@ def build_sequence_timeline(
     durations: list[float] = []
     for shot in shots:
         try:
-            measured = float(shot.duration_seconds or 0)
+            measured = float(shot.duration_seconds) if shot.duration_seconds is not None else 0.0
         except (TypeError, ValueError):
             measured = 0.0
+        if not math.isfinite(measured):
+            raise ValueError(f"Scene {shot.scene_number} duration must be finite")
         duration = measured + 0.3 if measured > 0 else default_scene_duration_seconds
         durations.append(max(minimum_scene_duration_seconds, duration))
     total = sum(durations)
