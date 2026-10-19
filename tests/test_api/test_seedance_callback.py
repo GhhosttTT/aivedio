@@ -141,3 +141,24 @@ def test_seedance_callback_accepts_provider_completed_alias(tmp_path, monkeypatc
     assert response.status_code == 200
     assert response.json()["status"] == "completed"
     assert pending.with_name("scene.provider.callback.json").is_file()
+
+
+def test_seedance_callback_matches_draft_task_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    monkeypatch.setenv("SEEDANCE_CALLBACK_SECRET", "callback-secret")
+    pending = tmp_path / "projects" / "7" / "videos" / "scene.provider.pending.json"
+    pending.parent.mkdir(parents=True)
+    pending.write_text(json.dumps({
+        "provider": "seedance_api",
+        "provider_task_id": "draft-promotable-1",
+    }), encoding="utf-8")
+
+    response = TestClient(create_app()).post(
+        "/api/webhooks/seedance",
+        headers={"X-Seedance-Callback-Secret": "callback-secret"},
+        json={"draft_task_id": "draft-promotable-1", "status": "succeeded"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["matched_pending_tasks"] == 1
+    assert pending.with_name("scene.provider.callback.json").is_file()

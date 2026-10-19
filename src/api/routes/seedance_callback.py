@@ -101,7 +101,14 @@ async def receive_seedance_callback(request: Request, token: str | None = None):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Seedance callback must be JSON") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Seedance callback body must be an object")
-    task_id = str(payload.get("id") or payload.get("task_id") or payload.get("job_id") or "").strip()
+    task_id = str(
+        payload.get("draft_task_id")
+        or payload.get("draft_id")
+        or payload.get("id")
+        or payload.get("task_id")
+        or payload.get("job_id")
+        or ""
+    ).strip()
     state = str(payload.get("status") or payload.get("state") or "").strip().lower()
     if not task_id or state not in _KNOWN_STATES:
         raise HTTPException(

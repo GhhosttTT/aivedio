@@ -691,7 +691,14 @@ class ApiVideoProvider:
             return None
         if not isinstance(payload, dict):
             return None
-        callback_id = str(payload.get("id") or payload.get("task_id") or payload.get("job_id") or "")
+        callback_id = str(
+            payload.get("draft_task_id")
+            or payload.get("draft_id")
+            or payload.get("id")
+            or payload.get("task_id")
+            or payload.get("job_id")
+            or ""
+        )
         state = str(payload.get("status") or payload.get("state") or "").strip().lower()
         if callback_id != str(task_id) or state not in {
             "completed", "complete", "succeeded", "success", "done",
