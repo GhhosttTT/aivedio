@@ -214,7 +214,20 @@ function SequenceBoundaryEvidence({report}: {report: any}) {
     if (report?.kind !== 'sequence_boundary_continuity') return null;
     const failed = report.status !== 'available'
         || Number(report.severe_transition_count || 0) > 0
-        || Number(report.geometry_mismatch_count || 0) > 0;
+        || Number(report.severe_style_transition_count || 0) > 0
+        || Number(report.geometry_mismatch_count || 0) > 0
+        || Number(report.fps_mismatch_count || 0) > 0
+        || Number(report.pixel_format_mismatch_count || 0) > 0
+        || Number(report.audio_format_mismatch_count || 0) > 0;
+    const boundaries = Array.isArray(report.boundaries) ? report.boundaries : [];
+    const boundaryIssues = boundaries.filter((boundary: any) => (
+        boundary.severe_exposure_or_black_transition
+        || boundary.severe_style_transition
+        || boundary.geometry_match === false
+        || boundary.fps_match === false
+        || boundary.pixel_format_match === false
+        || boundary.audio_format_match === false
+    )).slice(0, 6);
     return <div className="wb-summary-actions" aria-label="多镜头边界连续性证据">
         <h4>多镜头边界连续性</h4>
         <p className={failed ? 'wb-alert' : 'wb-muted'}>
@@ -222,9 +235,26 @@ function SequenceBoundaryEvidence({report}: {report: any}) {
         </p>
         <div className="wb-grid compact">
             <div className="wb-kv"><span>严重转场</span><strong>{report.severe_transition_count ?? '-'}</strong></div>
+            <div className="wb-kv"><span>风格跳变</span><strong>{report.severe_style_transition_count ?? '-'}</strong></div>
             <div className="wb-kv"><span>画幅不一致</span><strong>{report.geometry_mismatch_count ?? '-'}</strong></div>
+            <div className="wb-kv"><span>帧率不一致</span><strong>{report.fps_mismatch_count ?? '-'}</strong></div>
+            <div className="wb-kv"><span>像素格式不一致</span><strong>{report.pixel_format_mismatch_count ?? '-'}</strong></div>
+            <div className="wb-kv"><span>音频格式不一致</span><strong>{report.audio_format_mismatch_count ?? '-'}</strong></div>
             <div className="wb-kv"><span>报告任务</span><strong>{report.sequence_task_id || '-'}</strong></div>
         </div>
+        {boundaryIssues.length > 0 && <div className="wb-fields" aria-label="边界异常明细">
+            {boundaryIssues.map((boundary: any) => {
+                const issues = [
+                    boundary.severe_exposure_or_black_transition && '曝光/黑帧跳变',
+                    boundary.severe_style_transition && '色彩/对比度跳变',
+                    boundary.geometry_match === false && '画幅',
+                    boundary.fps_match === false && '帧率',
+                    boundary.pixel_format_match === false && '像素格式',
+                    boundary.audio_format_match === false && '音频格式',
+                ].filter(Boolean).join('、');
+                return <p key={boundary.boundary_index} className="wb-alert">边界 {boundary.boundary_index}：{issues}</p>;
+            })}
+        </div>}
     </div>;
 }
 
