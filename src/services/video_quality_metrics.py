@@ -122,6 +122,11 @@ def video_candidate_metrics(path: str | Path, max_samples: int | None = None) ->
         }
         if metrics["audio_present"]:
             metrics.update(_audio_signal_metrics(video_path, metrics["duration_seconds"]))
+            metrics["audio_visual_alignment"] = _audio_visual_alignment_metrics(
+                video_path,
+                motion_values,
+                metrics["duration_seconds"],
+            )
         if metrics["audio_present"] and metrics["audio_duration_seconds"] is not None:
             metrics["audio_duration_delta_seconds"] = round(
                 abs(metrics["duration_seconds"] - metrics["audio_duration_seconds"]), 3
@@ -422,6 +427,82 @@ def _audio_signal_metrics(path: Path, duration_seconds: float) -> dict[str, Any]
             "audio_signal_status": "unavailable",
             "audio_signal_error": str(exc),
         }
+
+
+def _audio_visual_alignment_metrics(
+    path: Path,
+    motion_values: list[float],
+    duration_seconds: float,
+) -> dict[str, Any]:
+    """Compare decoded audio activity with sampled visual motion over time.
+
+    This is a bounded timing signal, not a lip-reading model. It helps surface
+    clips where dialogue/audio is active while the generated picture remains
+    frozen, or where the strongest visual response consistently trails audio.
+    """
+    if len(motion_values) < 3 or duration_seconds <= 0:
+        return {"status": "not_applicable"}
+    try:
+        import numpy as np
+
+        sample_rate = 8000
+        result = subprocess.run(
+            [
+                "ffmpeg", "-v", "error", "-i", str(path), "-vn",
+                "-ac", "1", "-ar", str(sample_rate), "-f", "f32le", "pipe:1",
+            ],
+            capture_output=True,
+            check=True,
+            timeout=90,
+        )
+        audio = np.frombuffer(result.stdout, dtype=np.float32)
+        if audio.size < sample_rate // 4:
+            raise ValueError("decoded audio is too short for audio/visual alignment")
+        edges = np.linspace(0, audio.size, len(motion_values) + 1, dtype=int)
+        audio_rms = np.asarray([
+            float(np.sqrt(np.mean(np.square(audio[start:end]))))
+            for start, end in zip(edges, edges[1:])
+            if end > start
+        ], dtype=float)
+        if len(audio_rms) != len(motion_values):
+            raise ValueError("audio and motion samples could not be aligned")
+        audio_activity = np.maximum(audio_rms - np.percentile(audio_rms, 10), 0.0)
+        motion = np.asarray(motion_values, dtype=float)
+        motion_activity = np.maximum(motion - np.percentile(motion, 10), 0.0)
+        if float(np.std(audio_activity)) < 1e-8 or float(np.std(motion_activity)) < 1e-8:
+            return {
+                "status": "insufficient_variation",
+                "audio_activity_ratio": round(float(np.mean(audio_activity > 0)), 3),
+                "visual_motion_activity_ratio": round(float(np.mean(motion_activity > 0)), 3),
+            }
+        audio_norm = (audio_activity - np.mean(audio_activity)) / max(float(np.std(audio_activity)), 1e-8)
+        motion_norm = (motion_activity - np.mean(motion_activity)) / max(float(np.std(motion_activity)), 1e-8)
+        interval = float(duration_seconds) / max(len(motion_values), 1)
+        best_correlation = -1.0
+        best_lag = 0
+        max_lag = min(2, len(motion_norm) // 4)
+        for lag in range(-max_lag, max_lag + 1):
+            if lag < 0:
+                correlation = float(np.mean(audio_norm[-lag:] * motion_norm[:lag]))
+            elif lag > 0:
+                correlation = float(np.mean(audio_norm[:-lag] * motion_norm[lag:]))
+            else:
+                correlation = float(np.mean(audio_norm * motion_norm))
+            if correlation > best_correlation:
+                best_correlation = correlation
+                best_lag = lag
+        score = max(0.0, min(5.0, 5.0 * (best_correlation + 1.0) / 2.0))
+        return {
+            "status": "available",
+            "correlation": round(best_correlation, 3),
+            "lag_seconds": round(best_lag * interval, 3),
+            "score": round(score, 2),
+            "audio_activity_ratio": round(float(np.mean(audio_activity > 0)), 3),
+            "visual_motion_activity_ratio": round(float(np.mean(motion_activity > 0)), 3),
+            "sample_count": len(motion_values),
+        }
+    except Exception as exc:
+        return {"status": "unavailable", "error": str(exc)}
 
 
 def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:

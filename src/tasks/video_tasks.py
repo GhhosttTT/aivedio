@@ -2654,6 +2654,7 @@ def _video_candidate_rank(candidate: dict) -> tuple:
         _video_performance_gate_passes(candidate),
         _video_critical_floor_score(candidate) or 0,
         _video_continuity_reference_score(candidate),
+        _video_audio_visual_score(candidate),
         _video_selection_score(candidate),
         candidate.get("average", 0),
     )
@@ -2664,6 +2665,14 @@ def _video_continuity_reference_score(candidate: dict) -> float:
     metrics = candidate.get("technical_metrics")
     reference = metrics.get("continuity_reference") if isinstance(metrics, dict) else None
     score = reference.get("score") if isinstance(reference, dict) else None
+    return float(score) if isinstance(score, (int, float)) else 0.0
+
+
+def _video_audio_visual_score(candidate: dict) -> float:
+    """Return measured audio/action timing for candidate tie-breaking."""
+    metrics = candidate.get("technical_metrics")
+    alignment = metrics.get("audio_visual_alignment") if isinstance(metrics, dict) else None
+    score = alignment.get("score") if isinstance(alignment, dict) else None
     return float(score) if isinstance(score, (int, float)) else 0.0
 
 

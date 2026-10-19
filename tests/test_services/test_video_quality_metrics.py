@@ -5,6 +5,7 @@ import pytest
 from src.services.video_quality_metrics import (
     _audio_formats_match,
     _audio_signal_metrics,
+    _audio_visual_alignment_metrics,
     _probe,
     _sample_frames,
     temporal_sample_evidence_error,
@@ -160,6 +161,29 @@ def test_video_continuity_reference_is_not_applicable_without_reference(tmp_path
     assert video_continuity_reference_metrics(tmp_path / "clip.mp4", None) == {
         "status": "not_applicable"
     }
+
+
+def test_audio_visual_alignment_reports_high_score_for_aligned_activity(monkeypatch, tmp_path):
+    import numpy as np
+
+    samples = np.asarray([0.0, 0.1, 0.8, 0.2, 0.0, 0.7, 0.3, 0.0], dtype=np.float32)
+
+    class Completed:
+        stdout = np.repeat(samples, 1000).tobytes()
+
+    monkeypatch.setattr(
+        "src.services.video_quality_metrics.subprocess.run",
+        lambda *args, **kwargs: Completed(),
+    )
+    report = _audio_visual_alignment_metrics(
+        tmp_path / "clip.mp4",
+        [0.0, 0.1, 0.8, 0.2, 0.0, 0.7, 0.3, 0.0],
+        8.0,
+    )
+
+    assert report["status"] == "available"
+    assert report["correlation"] > 0.9
+    assert report["score"] > 4.7
 
 
 def test_video_technical_score_prefers_readable_motion_and_sharpness():
