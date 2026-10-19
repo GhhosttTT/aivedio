@@ -284,6 +284,34 @@ def test_opening_frame_reference_floor_blocks_obvious_keyframe_drift(monkeypatch
     assert "opening frame reference score" in error
 
 
+def test_opening_frame_reference_unavailable_blocks_reviewed_candidate(monkeypatch):
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {
+                "start_frame_reference": {
+                    "status": "unavailable",
+                    "error": "video first frame or reference image is unreadable",
+                },
+            },
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+        enforce_technical_evidence=True,
+    )
+
+    assert error is not None
+    assert "opening frame reference evidence is unavailable" in error
+
+
 def test_black_frame_run_floor_blocks_candidate(monkeypatch):
     monkeypatch.setattr(
         "src.tasks.video_tasks.settings.GENERATION_VIDEO_MAX_BLACK_SECONDS",

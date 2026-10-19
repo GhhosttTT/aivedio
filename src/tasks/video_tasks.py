@@ -2335,17 +2335,29 @@ def _final_video_acceptance_error(
             f"limit={settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95:.3f}"
         )
     start_frame_reference = technical_metrics.get("start_frame_reference")
-    if isinstance(start_frame_reference, dict) and start_frame_reference.get("status") == "available":
-        start_frame_score = start_frame_reference.get("score")
+    if isinstance(start_frame_reference, dict):
+        reference_status = start_frame_reference.get("status")
         if (
-            isinstance(start_frame_score, (int, float))
-            and start_frame_score < settings.GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE
+            enforce_technical_evidence
+            and settings.GENERATION_REQUIRE_VIDEO_REVIEW
+            and "reference image" in str(start_frame_reference.get("error") or "").lower()
+            and reference_status != "available"
         ):
             return (
-                "Final normalized video opening frame reference score "
-                f"{start_frame_score} is below "
-                f"{settings.GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE}"
+                "Final normalized video opening frame reference evidence is unavailable: "
+                f"{start_frame_reference.get('error') or reference_status or 'unknown'}"
             )
+        if reference_status == "available":
+            start_frame_score = start_frame_reference.get("score")
+            if (
+                isinstance(start_frame_score, (int, float))
+                and start_frame_score < settings.GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE
+            ):
+                return (
+                    "Final normalized video opening frame reference score "
+                    f"{start_frame_score} is below "
+                    f"{settings.GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE}"
+                )
     provider_metadata = final_review.get("provider_metadata")
     requested_resolution = (
         str(provider_metadata.get("requested_resolution") or "").lower()
