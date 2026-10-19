@@ -2,7 +2,6 @@
 
 import os
 import inspect
-import asyncio
 import logging
 from pathlib import Path
 
@@ -20,11 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 def _broadcast_task_event(project_id: int, message: dict) -> None:
-    """Best-effort bridge from synchronous Celery hooks to project WebSockets."""
+    """Best-effort cross-process bridge from synchronous Celery hooks to WebSockets."""
     try:
-        from src.api.websocket import manager
+        from src.api.websocket import publish_project_event
 
-        asyncio.run(manager.broadcast(project_id, message))
+        publish_project_event(project_id, message)
     except Exception as exc:
         # A disconnected browser must never make a production task fail.
         logger.debug("Could not broadcast task event for project %s: %s", project_id, exc)

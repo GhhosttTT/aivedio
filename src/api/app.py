@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+import asyncio
 from sqlalchemy import text
 import time
 import os
@@ -31,6 +32,9 @@ async def lifespan(app: FastAPI):
     # 启动时执行
     logger.info("FastAPI 应用启动中...")
     validate_auth_configuration()
+    from src.api.websocket import redis_event_listener
+    event_stop = asyncio.Event()
+    event_listener = asyncio.create_task(redis_event_listener(event_stop))
     
     # 创建必要的目录
     storage_path = os.getenv("STORAGE_PATH", "./storage")
@@ -42,6 +46,12 @@ async def lifespan(app: FastAPI):
     
     # 关闭时执行
     logger.info("FastAPI 应用关闭中...")
+    event_stop.set()
+    event_listener.cancel()
+    try:
+        await event_listener
+    except asyncio.CancelledError:
+        pass
     logger.info("FastAPI 应用已关闭")
 
 

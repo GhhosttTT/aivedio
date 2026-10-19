@@ -1,5 +1,8 @@
 from concurrent.futures import ThreadPoolExecutor
-from unittest.mock import AsyncMock, Mock
+import json
+import sys
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from celery.app.autoretry import add_autoretry_behaviour
@@ -10,16 +13,36 @@ from src.database.models import Base, Project, ProjectStatus, Task, TaskStatus, 
 from src.services.comfyui_service import ComfyUIWaitTimeout
 from src.services.generation_review import ReviewError
 from src.services.generation_provider import GenerationProviderError
+from src.api.websocket import TASK_EVENT_CHANNEL, publish_project_event
 from src.tasks.celery_app import BaseTask, _broadcast_task_event
 
 
 def test_task_event_bridge_delivers_without_leaking_asyncio_state(monkeypatch):
-    broadcast = AsyncMock()
-    monkeypatch.setattr("src.api.websocket.manager.broadcast", broadcast)
+    publish = Mock(return_value=True)
+    monkeypatch.setattr("src.api.websocket.publish_project_event", publish)
 
     _broadcast_task_event(7, {"type": "progress_update", "progress": 0.5})
 
-    broadcast.assert_awaited_once_with(7, {"type": "progress_update", "progress": 0.5})
+    publish.assert_called_once_with(7, {"type": "progress_update", "progress": 0.5})
+
+
+def test_project_event_publisher_uses_shared_redis_channel(monkeypatch):
+    published = []
+
+    class FakeRedis:
+        def publish(self, channel, payload):
+            published.append((channel, json.loads(payload)))
+
+        def close(self):
+            pass
+
+    monkeypatch.setitem(sys.modules, "redis", SimpleNamespace(from_url=lambda *args, **kwargs: FakeRedis()))
+
+    assert publish_project_event(7, {"type": "completion", "progress": 1.0}) is True
+    assert published == [(
+        TASK_EVENT_CHANNEL,
+        {"project_id": 7, "message": {"type": "completion", "progress": 1.0}},
+    )]
 
 
 @pytest.mark.parametrize("error", [

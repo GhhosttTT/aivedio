@@ -187,6 +187,99 @@ class ConnectionManager:
 
 # 全局连接管理器实例
 manager = ConnectionManager()
+TASK_EVENT_CHANNEL = "aivideo:project-events"
+
+
+def publish_project_event(project_id: int, message: dict) -> bool:
+    """Publish a task event through Redis so worker and API processes can share it."""
+    payload = json.dumps({"project_id": project_id, "message": message}, ensure_ascii=False)
+    try:
+        import redis
+        from src.config import settings
+
+        client = redis.from_url(
+            getattr(settings, "REDIS_URL", "redis://localhost:6379/0"),
+            decode_responses=True,
+            socket_connect_timeout=1,
+            socket_timeout=1,
+        )
+        try:
+            client.publish(TASK_EVENT_CHANNEL, payload)
+        finally:
+            close = getattr(client, "close", None)
+            if callable(close):
+                close()
+        return True
+    except Exception as exc:
+        # Preserve local development behavior when Redis is intentionally absent.
+        logger.debug(f"Redis 任务事件发布失败，回退到本地连接: {exc}")
+        try:
+            asyncio.run(manager.broadcast(project_id, message))
+            return True
+        except Exception as fallback_exc:
+            logger.debug(f"本地任务事件广播失败: {fallback_exc}")
+            return False
+
+
+async def redis_event_listener(stop_event: asyncio.Event) -> None:
+    """Forward worker-published Redis events to WebSockets in this API process."""
+    try:
+        import redis.asyncio as redis_async
+        from src.config import settings
+    except ImportError:
+        logger.warning("未安装 redis，跨进程 WebSocket 事件桥接未启用")
+        return
+
+    while not stop_event.is_set():
+        client = None
+        pubsub = None
+        try:
+            client = redis_async.from_url(
+                getattr(settings, "REDIS_URL", "redis://localhost:6379/0"),
+                decode_responses=True,
+                socket_connect_timeout=1,
+                socket_timeout=2,
+            )
+            await client.ping()
+            pubsub = client.pubsub()
+            await pubsub.subscribe(TASK_EVENT_CHANNEL)
+            logger.info("Redis WebSocket 事件桥接已启动")
+            while not stop_event.is_set():
+                item = await pubsub.get_message(
+                    ignore_subscribe_messages=True,
+                    timeout=1.0,
+                )
+                if not item or item.get("type") != "message":
+                    continue
+                try:
+                    envelope = json.loads(item.get("data", "{}"))
+                    project_id = int(envelope["project_id"])
+                    message = envelope["message"]
+                    if isinstance(message, dict):
+                        await manager.broadcast(project_id, message)
+                except (TypeError, ValueError, KeyError, json.JSONDecodeError) as exc:
+                    logger.warning(f"忽略格式错误的 Redis 任务事件: {exc}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.debug(f"Redis WebSocket 事件桥接暂不可用: {exc}")
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                pass
+        finally:
+            if pubsub is not None:
+                try:
+                    await pubsub.close()
+                except Exception:
+                    pass
+            if client is not None:
+                try:
+                    close = getattr(client, "aclose", None)
+                    if callable(close):
+                        await close()
+                except Exception:
+                    pass
 
 
 async def send_status_update(project_id: int, status: str, progress: float = None, current_step: str = None):
