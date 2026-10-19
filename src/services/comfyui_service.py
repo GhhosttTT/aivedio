@@ -730,9 +730,13 @@ class ComfyUIService:
         workflow = json.loads(workflow_file.read_text(encoding="utf-8"))
         uploaded_reference = self._upload_reference_image(reference_image)
         uploaded_end = self._upload_reference_image(end_image) if end_image else uploaded_reference
+        continuity_fallback = not continuity_reference_image
+        # The first shot has no previous tail frame. Reuse its verified opening
+        # frame so a required continuity LoadImage node never receives an
+        # invalid empty filename; later shots always use the explicit tail.
         uploaded_continuity = (
             self._upload_reference_image(continuity_reference_image)
-            if continuity_reference_image else ""
+            if continuity_reference_image else uploaded_reference
         )
         pipeline = quality_pipeline if isinstance(quality_pipeline, dict) else {}
         plan = shot_plan if isinstance(shot_plan, dict) else {}
@@ -754,6 +758,7 @@ class ComfyUIService:
             "continuity_reference_image": uploaded_continuity,
             "continuity_image": uploaded_continuity,
             "previous_last_frame": uploaded_continuity,
+            "continuity_reference_fallback": "current_reference" if continuity_fallback else "",
             "image": uploaded_reference,
             "width": width,
             "height": height,
