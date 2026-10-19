@@ -114,6 +114,15 @@ def _clamp_score(value: float) -> float:
     return round(max(0.0, min(5.0, value)), 2)
 
 
+def _is_valid_score(value: Any) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+        and 0 <= float(value) <= 5
+    )
+
+
 def _feature_score_or_missing(
     supplied: dict[str, Any] | None,
     feature: str,
@@ -124,7 +133,7 @@ def _feature_score_or_missing(
     item = supplied.get(feature) if isinstance(supplied, dict) else None
     score = item.get("score") if isinstance(item, dict) else None
     evidence = str(item.get("evidence") or "").strip() if isinstance(item, dict) else ""
-    if not isinstance(score, (int, float)):
+    if not _is_valid_score(score):
         missing.append(feature)
         return {
             "score": 0.0,
@@ -144,7 +153,7 @@ def _feature_score_or_missing(
 
 def _review_score(candidate: dict[str, Any], key: str) -> float | None:
     value = (candidate.get("review") or {}).get(key)
-    if isinstance(value, dict) and isinstance(value.get("score"), (int, float)):
+    if isinstance(value, dict) and _is_valid_score(value.get("score")):
         return float(value["score"])
     return None
 
@@ -419,12 +428,25 @@ def _image_critical_floor_score(candidate: dict[str, Any]) -> float | None:
 
 def _platform_reference_gate_passes(candidate: dict[str, Any]) -> bool:
     gate = candidate.get("platform_reference_gate")
-    return not isinstance(gate, dict) or gate.get("status") == "passed"
+    return not isinstance(gate, dict) or _image_summary_gate_passes(gate)
 
 
 def _character_distinctiveness_gate_passes(candidate: dict[str, Any]) -> bool:
     gate = candidate.get("character_distinctiveness_gate")
-    return not isinstance(gate, dict) or gate.get("status") == "passed"
+    return not isinstance(gate, dict) or _image_summary_gate_passes(gate)
+
+
+def _image_summary_gate_passes(gate: dict[str, Any]) -> bool:
+    """Validate a persisted image gate summary before candidate promotion."""
+    if gate.get("status") != "passed" or gate.get("missing") or gate.get("low"):
+        return False
+    average = gate.get("average")
+    if not _is_valid_score(average):
+        return False
+    minimum = gate.get("min_score")
+    if minimum is None:
+        return True
+    return _is_valid_score(minimum) and float(average) >= float(minimum)
 
 
 def image_selection_score(candidate: dict[str, Any]) -> float:
@@ -521,14 +543,14 @@ def image_candidate_error(
         gate = candidate.get(key)
         if require_vlm and not isinstance(gate, dict):
             return f"Best image is missing {label} feature scores from local VLM review"
-        if isinstance(gate, dict) and gate.get("status") != "passed":
+        if isinstance(gate, dict) and not _image_summary_gate_passes(gate):
             return f"Best image {label} feature gate did not pass"
     for key, label in (
         ("character_distinctiveness_gate", "character distinctiveness"),
         ("turnaround_gate", "turnaround"),
     ):
         gate = candidate.get(key)
-        if isinstance(gate, dict) and gate.get("status") != "passed":
+        if isinstance(gate, dict) and not _image_summary_gate_passes(gate):
             if key == "turnaround_gate":
                 return f"Turnaround {gate.get('view') or 'unknown'} feature gate failed"
             return f"Best image {label} gate did not pass"

@@ -120,6 +120,24 @@ def test_platform_reference_gate_quantifies_seed_dance_keyframe_gap(monkeypatch)
     assert set(gate["low"]) == {"seed_dance_gap", "premium_casting", "production_design"}
 
 
+@pytest.mark.parametrize("invalid_score", [True, float("nan"), float("inf"), 6, -1])
+def test_image_quality_gates_reject_invalid_feature_scores(invalid_score):
+    candidate = {
+        "review": {
+            "platform_reference_scores": {
+                feature: {"score": 5, "evidence": "specific premium reference comparison evidence"}
+                for feature in PLATFORM_REFERENCE_FEATURES
+            }
+        }
+    }
+    candidate["review"]["platform_reference_scores"]["seed_dance_gap"]["score"] = invalid_score
+
+    gate = platform_reference_gate(candidate)
+
+    assert gate["status"] == "needs_review"
+    assert "seed_dance_gap" in gate["missing"]
+
+
 def test_select_best_promotes_best_candidate(tmp_path):
     first = tmp_path / "first.png"
     second = tmp_path / "second.png"
