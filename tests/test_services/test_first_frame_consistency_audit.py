@@ -43,3 +43,53 @@ def test_first_frame_audit_ignores_clips_without_quality_evidence(tmp_path):
     report = FirstFrameConsistencyAuditService().audit([_scene(1, video)])
 
     assert report.status == "not_applicable"
+
+
+def test_first_frame_audit_reads_final_review_technical_evidence(tmp_path):
+    video = tmp_path / "scene_1.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".quality.json").write_text(
+        json.dumps({
+            "final_video_review": {
+                "path": str(video),
+                "technical_metrics": {
+                    "start_frame_reference": {"status": "available", "score": 1.8},
+                },
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    report = FirstFrameConsistencyAuditService().audit([_scene(1, video)])
+
+    assert report.status == "needs_review"
+    assert report.issues[0]["code"] == "opening_frame_drift"
+
+
+def test_first_frame_audit_reads_matching_candidate_technical_evidence(tmp_path):
+    video = tmp_path / "scene_1.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".quality.json").write_text(
+        json.dumps({
+            "candidates": [
+                {
+                    "path": str(tmp_path / "other.mp4"),
+                    "technical_metrics": {
+                        "start_frame_reference": {"status": "available", "score": 1.5},
+                    },
+                },
+                {
+                    "path": str(video),
+                    "technical_metrics": {
+                        "start_frame_reference": {"status": "available", "score": 4.0},
+                    },
+                },
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    report = FirstFrameConsistencyAuditService().audit([_scene(1, video)])
+
+    assert report.status == "passed"
+    assert report.scenes[0]["score"] == 4.0

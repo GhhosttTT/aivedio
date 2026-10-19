@@ -90,8 +90,32 @@ class FirstFrameConsistencyAuditService:
             return None
         if not isinstance(payload, dict):
             return None
-        metrics = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else payload
-        return metrics if isinstance(metrics, dict) else None
+        legacy_metrics = payload.get("metrics")
+        if isinstance(legacy_metrics, dict):
+            return legacy_metrics
+
+        # Final normalized clips keep their measurable evidence under the
+        # final-review envelope. Candidate-selection reports keep it under the
+        # candidate matching the published video path.
+        containers: list[dict[str, Any]] = []
+        final_review = payload.get("final_video_review")
+        if isinstance(final_review, dict):
+            containers.append(final_review)
+        candidates = payload.get("candidates")
+        if isinstance(candidates, list):
+            video_path_text = str(video_path)
+            containers.extend(
+                candidate
+                for candidate in candidates
+                if isinstance(candidate, dict)
+                and str(candidate.get("path") or "") == video_path_text
+            )
+        containers.append(payload)
+        for container in containers:
+            metrics = container.get("technical_metrics")
+            if isinstance(metrics, dict):
+                return metrics
+        return None
 
     def _issue(self, scene_number: int, code: str, message: str) -> dict[str, Any]:
         return {
