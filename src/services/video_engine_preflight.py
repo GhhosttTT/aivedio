@@ -453,6 +453,7 @@ def preflight_video_provider(
     api_key = os.getenv(f"{prefix}_API_KEY") or str(getattr(settings, f"{prefix}_API_KEY", "") or "")
     status_endpoint = os.getenv(f"{prefix}_STATUS_ENDPOINT") or str(getattr(settings, f"{prefix}_STATUS_ENDPOINT", "") or "")
     result_endpoint = os.getenv(f"{prefix}_RESULT_ENDPOINT") or str(getattr(settings, f"{prefix}_RESULT_ENDPOINT", "") or "")
+    cancel_endpoint = os.getenv(f"{prefix}_CANCEL_ENDPOINT") or str(getattr(settings, f"{prefix}_CANCEL_ENDPOINT", "") or "")
     endpoint_host = (urlparse(endpoint).hostname or "").lower() if endpoint else ""
     endpoint_path = urlparse(endpoint).path if endpoint else ""
     looks_like_ark_endpoint = (
@@ -507,9 +508,20 @@ def preflight_video_provider(
         "result_endpoint_required": not ark_native,
         "native_ark_format": ark_native,
         "ark_endpoint_detected": looks_like_ark_endpoint,
+        "remote_cancel_endpoint_configured": bool(cancel_endpoint),
+        "remote_cancel_endpoint_valid": (
+            not cancel_endpoint
+            or "{job_id}" in cancel_endpoint
+            or "{request_id}" in cancel_endpoint
+        ),
     }
     checks = report["checks"]
     configuration_ok = True
+    if cancel_endpoint and not checks["remote_cancel_endpoint_valid"]:
+        configuration_ok = False
+        report.setdefault("action_items", []).append(
+            f"{prefix}_CANCEL_ENDPOINT must contain {{job_id}} or {{request_id}}."
+        )
     if provider == "seedance_api":
         callback_url = str(runtime_value("SEEDANCE_CALLBACK_URL", "") or "").strip()
         callback_secret = str(runtime_value("SEEDANCE_CALLBACK_SECRET", "") or "").strip()

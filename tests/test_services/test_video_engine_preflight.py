@@ -88,6 +88,28 @@ def test_seedance_preflight_reports_result_endpoint(monkeypatch):
     assert report["checks"]["result_endpoint_configured"] is True
 
 
+def test_remote_cancel_endpoint_requires_task_id_placeholder(monkeypatch):
+    from src.services.video_engine_preflight import settings
+
+    monkeypatch.setattr(settings, "GENERATION_PROVIDER", "http_video_api")
+    monkeypatch.setattr(settings, "HTTP_VIDEO_ENDPOINT", "https://example.test/generate")
+    monkeypatch.setattr(settings, "HTTP_VIDEO_API_KEY", "secret")
+    monkeypatch.setattr(settings, "HTTP_VIDEO_STATUS_ENDPOINT", "https://example.test/status/{job_id}")
+    monkeypatch.setattr(settings, "HTTP_VIDEO_CANCEL_ENDPOINT", "https://example.test/cancel")
+    for name in (
+        "HTTP_VIDEO_ENDPOINT", "HTTP_VIDEO_API_KEY", "HTTP_VIDEO_STATUS_ENDPOINT",
+        "HTTP_VIDEO_CANCEL_ENDPOINT",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    report = preflight_video_provider()
+
+    assert report["status"] == "blocked"
+    assert report["checks"]["remote_cancel_endpoint_configured"] is True
+    assert report["checks"]["remote_cancel_endpoint_valid"] is False
+    assert "HTTP_VIDEO_CANCEL_ENDPOINT" in report["action_items"][0]
+
+
 def test_local_preflight_does_not_require_api_endpoints(monkeypatch):
     from src.services.video_engine_preflight import settings
 
