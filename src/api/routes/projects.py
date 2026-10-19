@@ -1216,6 +1216,20 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
             action_items.append("Complete the final episode human review and approve it before delivery.")
 
     repair_queue = _repair_queue_summary(reports)
+    if baseline_regression and not any(
+        item.get("source_report") == "seed_dance_baseline_comparison"
+        for item in repair_queue.get("manual_actions", [])
+        if isinstance(item, dict)
+    ):
+        repair_queue["manual_actions"].append({
+            "priority": "high",
+            "stage": "review",
+            "action": "manual_review",
+            "execution": "manual",
+            "source_report": "seed_dance_baseline_comparison",
+            "reason": "The latest candidate score dropped beyond the configured Seed Dance baseline tolerance.",
+            "recommendation": "Review the latest candidate against the baseline contact sheet before delivery or rerun the affected generation pass.",
+        })
     repair_plan = build_repair_execution_plan(repair_output or Path("storage/validation"), repair_queue["items"])
     scorecard = build_generation_quality_scorecard(reports)
     if repair_queue["total"]:

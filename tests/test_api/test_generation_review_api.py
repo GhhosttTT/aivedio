@@ -710,6 +710,10 @@ def test_generation_review_summary_blocks_baseline_regression_beyond_tolerance()
     assert summary["status"] == "blocked"
     assert summary["baseline_regression"] is True
     assert any("regressed beyond tolerance" in item for item in summary["action_items"])
+    assert any(
+        item["source_report"] == "seed_dance_baseline_comparison"
+        for item in summary["repair_queue"]["manual_actions"]
+    )
 
 
 def test_generation_review_summary_blocks_failed_sequence_boundary_evidence():
