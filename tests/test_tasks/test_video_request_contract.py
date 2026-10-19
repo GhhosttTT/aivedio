@@ -136,6 +136,27 @@ def test_video_request_contract_records_multicharacter_reference_bindings():
     ]
 
 
+def test_video_request_contract_records_sequence_image_bindings():
+    request = VideoGenerationRequest(
+        prompt="sampled sequence",
+        output_path="/tmp/sequence.mp4",
+        shot_plan={
+            "sequence_level": True,
+            "sequence_image_bindings": [
+                {"image_index": 1, "role": "shot_keyframe", "scene_number": 1},
+                {"image_index": 2, "role": "character_identity", "character_names": ["Alice"]},
+            ],
+        },
+    )
+
+    contract = _video_request_contract(request, request_mode="multi_shot", sequence_level=True)
+
+    assert contract["sequence_image_bindings"] == [
+        {"image_index": 1, "role": "shot_keyframe", "scene_number": 1, "character_names": []},
+        {"image_index": 2, "role": "character_identity", "scene_number": None, "character_names": ["Alice"]},
+    ]
+
+
 def test_video_request_contract_binds_frozen_spatial_asset_pack():
     request = VideoGenerationRequest(
         prompt="shot",

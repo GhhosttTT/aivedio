@@ -191,6 +191,16 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         for item in (raw_bindings or [])
         if isinstance(item, dict)
     ]
+    sequence_image_bindings = [
+        {
+            "image_index": item.get("image_index"),
+            "role": item.get("role"),
+            "scene_number": item.get("scene_number"),
+            "character_names": list(item.get("character_names") or []),
+        }
+        for item in (shot_plan.get("sequence_image_bindings") or [])
+        if isinstance(item, dict)
+    ]
     sequence_shot_contracts = [
         {
             "scene_number": shot.get("scene_number"),
@@ -268,6 +278,7 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         "reference_assets": reference_assets,
         "character_reference_binding_count": len(character_bindings),
         "character_reference_bindings": character_bindings,
+        "sequence_image_bindings": sequence_image_bindings,
         "spatial_asset_pack": spatial_contract,
         "sequence_shot_contracts": sequence_shot_contracts,
     }
