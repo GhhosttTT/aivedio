@@ -104,7 +104,7 @@ def test_scene_save_invalidates_media_and_rejects_manual_completion(setup):
     db.commit()
     quality_path = root / "storage" / "projects" / "1" / "scenes" / "1.quality.json"
     quality_path.parent.mkdir(parents=True, exist_ok=True)
-    quality_path.write_text(json.dumps({"status": "passed", "scene": {"scene_number": 1}}), encoding="utf-8")
+    quality_path.write_text(json.dumps({"status": "passed", "scene": {"scene_number": 1}, "video_sha256": "old-video"}), encoding="utf-8")
     result = client.put("/api/projects/1/scenes/1", json={"visual_description": "Alice opens the letter", "dialogue": "Changed", "character_name": "Alice", "characters": ["Alice"]})
     assert result.status_code == 200
     scene = result.json()["scenes"][0]
@@ -116,6 +116,13 @@ def test_scene_save_invalidates_media_and_rejects_manual_completion(setup):
     review = client.get("/api/projects/1/generation-review")
     assert review.status_code == 200, review.text
     assert review.json()["reports"]["quality_scenes_1.quality"]["status"] == "stale"
+    replacement = root / "replacement.mp4"
+    replacement.write_bytes(b"replacement-video")
+    scene_db.video_path = str(replacement)
+    db.commit()
+    quality_path.write_text(json.dumps({"status": "passed", "scene": {"scene_number": 1}, "video_sha256": "old-video"}), encoding="utf-8")
+    replaced_review = client.get("/api/projects/1/generation-review")
+    assert replaced_review.json()["reports"]["quality_scenes_1.quality"]["status"] == "stale"
     assert client.put("/api/projects/1", json={"status": "completed"}).status_code == 400
 
 

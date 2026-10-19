@@ -134,9 +134,30 @@ def _invalidate_quality_reports_without_current_media(reports: dict, scenes: lis
             and not getattr(current[number], "image_path", None)
             and not getattr(current[number], "video_path", None)
         )
-        if missing_media and report.get("status") in {"passed", "available"}:
+        mismatched_media = []
+        for number in referenced:
+            scene = current.get(number)
+            if not scene:
+                continue
+            checks = (
+                ("image_sha256", getattr(scene, "image_path", None)),
+                ("video_sha256", getattr(scene, "video_path", None)),
+            )
+            for digest_key, media_path in checks:
+                expected_digest = report.get(digest_key)
+                if not isinstance(expected_digest, str) or not expected_digest:
+                    continue
+                if not media_path or not Path(str(media_path)).is_file():
+                    continue
+                try:
+                    if file_hash(Path(str(media_path))) != expected_digest:
+                        mismatched_media.append(number)
+                except OSError:
+                    mismatched_media.append(number)
+        stale_scenes = sorted(set(missing_media + mismatched_media))
+        if stale_scenes and report.get("status") in {"passed", "available"}:
             report["status"] = "stale"
-            report["stale_scenes"] = missing_media
+            report["stale_scenes"] = stale_scenes
             report["error"] = "Scene media was edited after this quality report; regenerate and review the scene again."
 
 
