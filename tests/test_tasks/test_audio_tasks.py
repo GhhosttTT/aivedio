@@ -1,6 +1,8 @@
 import json
 from unittest.mock import Mock
 
+import pytest
+
 from src.tasks import audio_tasks
 from src.tasks.audio_tasks import dialogue_audio_profile, dialogue_audio_quality_report
 from src.utils.media_quality_paths import audio_quality_report_path
@@ -147,6 +149,26 @@ def test_dialogue_audio_quality_report_rejects_clipped_signal(tmp_path, monkeypa
 
     assert report["status"] == "needs_review"
     assert report["dialogue_audio_quality_gate"]["low"]["audio_clipping"]["score"] == 0
+
+
+@pytest.mark.parametrize("duration", [float("nan"), float("inf"), -1.0, True, "1.0"])
+def test_dialogue_audio_quality_report_rejects_invalid_duration(tmp_path, monkeypatch, duration):
+    audio = tmp_path / "scene_invalid_duration.mp3"
+    audio.write_bytes(b"audio")
+    monkeypatch.setattr(audio_tasks, "_audio_signal_metrics", lambda *_args: {
+        "audio_signal_status": "usable",
+    })
+
+    report = dialogue_audio_quality_report(
+        Mock(scene_number=12),
+        "你好",
+        duration=duration,
+        audio_path=str(audio),
+        profile={"emotion": "neutral", "speed": 1.0, "source": "tts"},
+    )
+
+    assert report["status"] == "needs_review"
+    assert "audio_duration" in report["dialogue_audio_quality_gate"]["missing"]
 
 
 def test_dialogue_audio_quality_report_keeps_reported_and_measured_duration(tmp_path, monkeypatch):

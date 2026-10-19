@@ -2,6 +2,7 @@
 
 import json
 import hashlib
+import math
 from pathlib import Path
 
 from src.database.database import get_db
@@ -129,7 +130,7 @@ def dialogue_audio_quality_report(
             missing.append("dialogue_audio_present")
         elif not Path(str(audio_path)).is_file():
             missing.append("dialogue_audio_file")
-        if not duration or duration <= 0:
+        if not _valid_positive_duration(duration):
             missing.append("audio_duration")
         else:
             if audio_path and Path(str(audio_path)).is_file():
@@ -202,6 +203,15 @@ def dialogue_audio_quality_report(
         "dialogue_audio_quality_gate": gate,
     }
     return attach_repair_queue(report, "audio")
+
+
+def _valid_positive_duration(value) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+        and float(value) > 0
+    )
 
 
 @celery_app.task(bind=True, name="generate_audio")
