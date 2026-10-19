@@ -96,24 +96,41 @@ class EpisodeStyleConsistencyService:
         ordered = sorted(scenes or [], key=lambda scene: scene.scene_number)
         thresholds = self._configured_thresholds()
         sampled: list[dict[str, Any]] = []
+        missing_scene_numbers: list[int] = []
         for scene in ordered:
             path_value = getattr(scene, "image_path", None)
             if not path_value:
+                missing_scene_numbers.append(scene.scene_number)
                 continue
             metrics = self._image_metrics(Path(path_value))
             if metrics is None:
+                missing_scene_numbers.append(scene.scene_number)
                 continue
             sampled.append({"scene_number": scene.scene_number, **metrics})
-        if len(sampled) < 2:
+        if not sampled:
             return EpisodeStyleConsistencyReport(
                 "not_applicable", len(ordered), len(sampled), [], sampled, thresholds
+            )
+
+        issues: list[dict[str, Any]] = []
+        for scene_number in missing_scene_numbers:
+            issues.append({
+                "severity": "high",
+                "code": "missing_keyframe_evidence",
+                "scene_number": scene_number,
+                "evidence": "keyframe is missing or unreadable; episode style cannot be verified for every scene",
+                "recommendation": "Generate or repair the missing keyframe before evaluating episode style consistency.",
+            })
+        if len(sampled) < 2:
+            status = "needs_review" if issues else "not_applicable"
+            return EpisodeStyleConsistencyReport(
+                status, len(ordered), len(sampled), issues, sampled, thresholds
             )
 
         medians = {
             key: statistics.median(item[key] for item in sampled)
             for key in ("brightness", "saturation", "contrast", "sharpness", "aspect_ratio")
         }
-        issues: list[dict[str, Any]] = []
         for item in sampled:
             scene_number = item["scene_number"]
             brightness_delta = abs(item["brightness"] - medians["brightness"])

@@ -44,7 +44,7 @@ def test_episode_style_consistency_flags_exposure_and_framing_outlier(tmp_path):
     assert report.to_dict()["repair_queue"][0]["action"] == "refine_project_style_consistency"
 
 
-def test_episode_style_consistency_is_not_applicable_without_two_rendered_keyframes(tmp_path):
+def test_episode_style_consistency_blocks_partial_keyframe_coverage(tmp_path):
     first = tmp_path / "scene-1.png"
     _write_image(first, (95, 105, 115))
     scenes = [
@@ -54,8 +54,21 @@ def test_episode_style_consistency_is_not_applicable_without_two_rendered_keyfra
 
     report = EpisodeStyleConsistencyService().audit(SimpleNamespace(id=1), scenes)
 
-    assert report.status == "not_applicable"
+    assert report.status == "needs_review"
     assert report.sampled_count == 1
+    assert report.issues[0]["code"] == "missing_keyframe_evidence"
+
+
+def test_episode_style_consistency_is_not_applicable_before_any_keyframe_exists():
+    scenes = [
+        SimpleNamespace(scene_number=1, image_path=None),
+        SimpleNamespace(scene_number=2, image_path=None),
+    ]
+
+    report = EpisodeStyleConsistencyService().audit(SimpleNamespace(id=1), scenes)
+
+    assert report.status == "not_applicable"
+    assert report.sampled_count == 0
 
 
 def test_episode_style_consistency_uses_configured_thresholds(tmp_path, monkeypatch):
