@@ -2280,7 +2280,15 @@ async def run_auto_repair_queue(
         else:
             budget.record(selected)
 
-    benign_skips = {"duplicate_action", "stage_already_selected", "scene_already_selected"}
+    benign_skips = {
+        "duplicate_action",
+        "stage_already_selected",
+        "scene_already_selected",
+        # A video repair is intentionally deferred when the same scene's
+        # keyframe repair is submitted in this cycle; it is not a submission
+        # failure and must not downgrade the cycle to ``partial``.
+        "keyframe_repair_required",
+    }
     actionable_skips = [
         item for item in skipped
         if item.get("reason") not in benign_skips

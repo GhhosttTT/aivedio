@@ -58,9 +58,11 @@ class AtomicVideoMotionAuditService:
 
     def audit(self, scenes: list) -> AtomicVideoMotionAuditReport:
         reports = []
+        missing_video_scenes: list[int] = []
         for scene in sorted(scenes or [], key=lambda item: item.scene_number):
             video_path = getattr(scene, "video_path", None)
             if not video_path:
+                missing_video_scenes.append(scene.scene_number)
                 continue
             metrics = self._load_metrics(Path(str(video_path)))
             if not metrics:
@@ -74,6 +76,13 @@ class AtomicVideoMotionAuditService:
         if not reports:
             return AtomicVideoMotionAuditReport("not_applicable", 0, [], [])
         issues: list[dict[str, Any]] = []
+        for scene_number in missing_video_scenes:
+            issues.append(self._issue(
+                scene_number,
+                "video_artifact_missing",
+                "atomic video artifact is missing before composition",
+                "regenerate_video",
+            ))
         for item in reports:
             number = item["scene_number"]
             if item.get("technical_evidence_status") == "unavailable" or item.get("status") == "unavailable":
