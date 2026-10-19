@@ -95,6 +95,7 @@ export interface TaskStatus {
     provider_stage?: string;
     provider_state?: string;
     provider_task_id?: string;
+    provider_request_submitted?: boolean;
     provider_status?: string;
     provider_error?: string;
     production_options?: Record<string, unknown>;
@@ -115,6 +116,7 @@ export interface ProductionTask {
     provider_stage?: string;
     provider_state?: string;
     provider_task_id?: string;
+    provider_request_submitted?: boolean;
     provider_status?: string;
     provider_error?: string;
     production_options?: {

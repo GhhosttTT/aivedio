@@ -457,6 +457,7 @@ class TaskStatusResponse(BaseModel):
     provider_stage: Optional[str] = None
     provider_state: Optional[str] = None
     provider_task_id: Optional[str] = None
+    provider_request_submitted: Optional[bool] = None
     provider_status: Optional[str] = None
     provider_error: Optional[str] = None
     production_options: Optional[dict] = None

@@ -692,6 +692,8 @@ class TaskOrchestrator:
                 result["provider_state"] = async_result.state
                 if info.get("provider_task_id"):
                     result["provider_task_id"] = str(info["provider_task_id"])
+                if info.get("provider_request_submitted") is True:
+                    result["provider_request_submitted"] = True
                 if info.get("provider_status"):
                     result["provider_status"] = str(info["provider_status"])
                 if info.get("provider_error"):
