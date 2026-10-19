@@ -197,6 +197,9 @@ export function ProductionReadinessPanel({
                         <Metric label="质量档" value={String(qualityGates.quality_profile || '未冻结')}/>
                         <Metric label="图像预算" value={`${qualityGates.image_candidates ?? '-'} 候选 / ${qualityGates.image_refinement_passes ?? '-'} 轮`}/>
                         <Metric label="视频预算" value={`${qualityGates.video_candidates ?? '-'} 候选 / ${qualityGates.video_refinement_passes ?? '-'} 轮`}/>
+                        <Metric label="人物身份底线" value={formatScore(typeof qualityGates.character_identity_min_score === 'number' ? qualityGates.character_identity_min_score : undefined)}/>
+                        <Metric label="曝光漂移阻断" value={typeof qualityGates.episode_style_brightness_blocker === 'number' ? String(qualityGates.episode_style_brightness_blocker) : '-'}/>
+                        <Metric label="开场钩子上限" value={`${typeof qualityGates.rhythm_max_hook_latency_seconds === 'number' ? qualityGates.rhythm_max_hook_latency_seconds : '-'}s`}/>
                     </div>
                     {profileGaps.length > 0 && <div className="wb-issue blocker">
                         <span>Profile</span>
