@@ -217,6 +217,27 @@ def test_broker_failure_sets_failed(setup, monkeypatch):
     assert client.get("/api/projects/1").json()["status"] == "failed"
 
 
+def test_corrupt_production_progress_sidecar_falls_back_to_task_state(setup):
+    client, db, root = setup
+    task = Task(
+        project_id=1,
+        celery_task_id="corrupt-progress-task",
+        status=TaskStatus.FAILED,
+        total_steps=4,
+        error_message="worker stopped",
+    )
+    db.add(task)
+    db.commit()
+    sidecar = root / "storage" / "projects" / "1" / "production_progress.json"
+    sidecar.parent.mkdir(parents=True, exist_ok=True)
+    sidecar.write_text("{not-json", encoding="utf-8")
+
+    response = client.get("/api/projects/1/production-task")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "failed"
+
+
 def test_production_engine_block_returns_actionable_400(setup, monkeypatch):
     client, db, _ = setup
     monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", False)

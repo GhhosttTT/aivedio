@@ -2355,9 +2355,13 @@ def latest_production_task(project_id: int, db_session: Session = Depends(get_db
     result = TaskOrchestrator(db_session).get_task_status(task.celery_task_id)
     path = storage_manager.get_project_path(project_id) / "production_progress.json"
     if path.is_file():
-        progress = json.loads(path.read_text(encoding="utf-8"))
-        if progress.get("celery_task_id") == task.celery_task_id:
-            result["live_step"] = progress
+        try:
+            progress = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError) as exc:
+            logger.warning(f"忽略损坏的生产进度 sidecar: project_id={project_id}, error={exc}")
+        else:
+            if isinstance(progress, dict) and progress.get("celery_task_id") == task.celery_task_id:
+                result["live_step"] = progress
     return result
 
 
