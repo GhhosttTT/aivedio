@@ -2575,7 +2575,23 @@ class HybridGenerationProvider:
         self.primary = primary
         self.fallback = fallback
 
+    def _prefer_local(self, request) -> bool:
+        """Route only explicitly low-value shot roles to the local engine."""
+        configured = _provider_setting("GENERATION_HYBRID_LOCAL_SHOT_ROLES", "establishing")
+        roles = {item.strip().lower() for item in configured.split(",") if item.strip()}
+        if not roles:
+            return False
+        shot_plan = getattr(request, "shot_plan", None)
+        role = shot_plan.get("shot_role") if isinstance(shot_plan, dict) else None
+        role = role or getattr(request, "scene_type", None)
+        return str(role or "").strip().lower() in roles
+
     def generate_image(self, request: ImageGenerationRequest) -> GenerationResult:
+        if self._prefer_local(request):
+            try:
+                return self.fallback.generate_image(request)
+            except (GenerationProviderError, httpx.HTTPError, OSError, ValueError) as exc:
+                logger.warning("Local hybrid image route failed; trying primary provider: {}", exc)
         try:
             return self.primary.generate_image(request)
         except (GenerationProviderError, httpx.HTTPError, OSError, ValueError) as exc:
@@ -2585,6 +2601,11 @@ class HybridGenerationProvider:
             return self.fallback.generate_image(request)
 
     def generate_video(self, request: VideoGenerationRequest) -> GenerationResult:
+        if self._prefer_local(request):
+            try:
+                return self.fallback.generate_video(request)
+            except (GenerationProviderError, httpx.HTTPError, OSError, ValueError) as exc:
+                logger.warning("Local hybrid video route failed; trying primary provider: {}", exc)
         try:
             return self.primary.generate_video(request)
         except (GenerationProviderError, httpx.HTTPError, OSError, ValueError) as exc:

@@ -4060,6 +4060,64 @@ def test_hybrid_provider_falls_back_on_transport_error():
     assert result.output_path == "fallback.mp4"
 
 
+def test_hybrid_provider_routes_establishing_shots_to_local(monkeypatch):
+    monkeypatch.setattr(
+        "src.services.generation_provider.settings.GENERATION_HYBRID_LOCAL_SHOT_ROLES",
+        "establishing",
+    )
+    calls = []
+
+    class Primary:
+        def generate_video(self, _request):
+            calls.append("primary")
+            return GenerationResult("primary", "primary.mp4", "video", {})
+
+    class Fallback:
+        def generate_video(self, _request):
+            calls.append("local")
+            return GenerationResult("local_comfyui", "local.mp4", "video", {})
+
+    result = HybridGenerationProvider(Primary(), Fallback()).generate_video(
+        VideoGenerationRequest(
+            prompt="location",
+            output_path="scene.mp4",
+            shot_plan={"shot_role": "establishing"},
+        )
+    )
+
+    assert result.output_path == "local.mp4"
+    assert calls == ["local"]
+
+
+def test_hybrid_provider_keeps_dialogue_shots_on_primary(monkeypatch):
+    monkeypatch.setattr(
+        "src.services.generation_provider.settings.GENERATION_HYBRID_LOCAL_SHOT_ROLES",
+        "establishing",
+    )
+    calls = []
+
+    class Primary:
+        def generate_video(self, _request):
+            calls.append("primary")
+            return GenerationResult("primary", "primary.mp4", "video", {})
+
+    class Fallback:
+        def generate_video(self, _request):
+            calls.append("local")
+            return GenerationResult("local_comfyui", "local.mp4", "video", {})
+
+    result = HybridGenerationProvider(Primary(), Fallback()).generate_video(
+        VideoGenerationRequest(
+            prompt="dialogue",
+            output_path="scene.mp4",
+            shot_plan={"shot_role": "dialogue_reaction"},
+        )
+    )
+
+    assert result.output_path == "primary.mp4"
+    assert calls == ["primary"]
+
+
 def test_hybrid_provider_does_not_duplicate_accepted_remote_video_task():
     class Primary:
         last_result_metadata = {"provider_task_id": "task-accepted"}
