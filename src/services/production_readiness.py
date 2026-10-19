@@ -16,6 +16,7 @@ from src.database.models import Character, Project, Scene
 from src.services.character_service import get_character_manager
 from src.services.character_identity_service import CharacterIdentityService, FACIAL_FIELDS, load_identity_spec
 from src.services.character_turnaround_album import CharacterTurnaroundAlbumService
+from src.services.content_safety_audit import ContentSafetyAuditService
 from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.shot_complexity_service import ShotComplexityService
 from src.services.spatial_control_assets import SpatialControlAssetService
@@ -64,6 +65,7 @@ class ProductionReadinessService:
         "topic_brief_low_specificity": ("refine_topic_brief", "story", "manual"),
         "market_evidence_missing": ("complete_market_evidence", "story", "manual"),
         "market_evidence_low_confidence": ("complete_market_evidence", "story", "manual"),
+        "content_safety_review_required": ("review_content_safety", "compliance", "manual"),
         "weak_story_rhythm": ("rewrite_short_drama_story_rhythm", "script", "setup_required"),
         "weak_story_room_quality": ("rewrite_short_drama_story_rhythm", "script", "setup_required"),
         "story_room_not_approved": ("approve_story_room", "script", "manual"),
@@ -136,6 +138,7 @@ class ProductionReadinessService:
             "story_room": self._story_room_check(project, scenes, blockers, warnings),
             "episode_rhythm": self._episode_rhythm_check(project, scenes, blockers, warnings),
             "topic_brief": self._topic_brief_check(project, warnings),
+            "content_safety": self._content_safety_check(project, scenes, blockers),
             "visual_format": self._visual_format_check(blockers),
             "draft_media_fallback": self._draft_media_fallback_check(blockers),
             "image_postprocess": self._image_postprocess_check(blockers),
@@ -178,6 +181,20 @@ class ProductionReadinessService:
             "action_items": action_items,
             "repair_actions": repair_actions,
         }
+
+    def _content_safety_check(
+        self,
+        project: Project,
+        scenes: list[Scene],
+        blockers: list[ReadinessIssue],
+    ) -> dict:
+        report = ContentSafetyAuditService().audit(project, scenes)
+        if report.get("status") != "passed":
+            blockers.append(ReadinessIssue(
+                "content_safety_review_required",
+                report.get("message") or "Complete content-safety review before production.",
+            ))
+        return report
 
     def _readiness_repair_actions(self, blockers: list[ReadinessIssue]) -> list[dict]:
         actions = []

@@ -32,6 +32,12 @@ ACTION_RULES = [
         "script",
     ),
     (
+        ("content safety", "content_safety", "high-risk content", "safety review"),
+        "review_content_safety",
+        "Complete a human content-safety review for flagged script and storyboard evidence before generation.",
+        "compliance",
+    ),
+    (
         (
             "style drift", "visual style drift", "random color grade", "inconsistent color grade",
             "color grade drift", "inconsistent lighting", "lighting mismatch", "wardrobe drift",

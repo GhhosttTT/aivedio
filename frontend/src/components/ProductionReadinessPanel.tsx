@@ -26,6 +26,7 @@ export function ProductionReadinessPanel({
     const storyApproval = storyRoom?.approval;
     const episodeRhythm = report?.checks.episode_rhythm;
     const topicBrief = report?.checks.topic_brief;
+    const contentSafety = report?.checks.content_safety;
     const visualFormat = report?.checks.visual_format;
     const characters = report?.checks.characters;
     const complexity = report?.checks.shot_complexity;
@@ -64,6 +65,7 @@ export function ProductionReadinessPanel({
                 <Metric label="故事房质量" value={storyRoom ? `${storyRoom.score}/9 ${storyRoom.status}` : '未检查'}/>
                 <Metric label="选题商业度" value={topicBrief?.score != null ? `${topicBrief.score}/${topicBrief.score_max || 10} ${topicBrief.score_status || ''}` : '未检查'}/>
                 <Metric label="市场证据" value={topicBrief?.market_fit ? `${topicBrief.market_fit.score}/${topicBrief.market_fit.score_max} ${topicBrief.market_fit.status}` : '未录入'}/>
+                <Metric label="内容安全" value={contentSafety ? `${contentSafety.status} · ${contentSafety.hit_count || 0} 命中` : '未检查'}/>
                 <Metric label="整集节奏" value={episodeRhythm ? `${episodeRhythm.total_duration_seconds.toFixed(1)}s ${episodeRhythm.status}` : '未检查'}/>
                 <Metric label="开场钩子" value={episodeRhythm?.hook_status === 'passed' ? `${episodeRhythm.hook_latency_seconds ?? 0}s` : episodeRhythm?.hook_status === 'needs_review' ? '需提前' : '未检查'}/>
                 <Metric label="成片画幅" value={visualFormat ? `${visualFormat.width}x${visualFormat.height}` : '未检查'}/>
@@ -159,6 +161,24 @@ export function ProductionReadinessPanel({
                         <span className="wb-badge">{topicBrief.market_fit.score}/{topicBrief.market_fit.score_max}</span>
                     </div>
                     {(topicBrief.market_fit.recommendations || []).slice(0, 3).map((item: string) => <div className="wb-issue warning" key={item}><span>建议</span><p>{item}</p></div>)}
+                </div>
+            )}
+            {contentSafety && contentSafety.status !== 'passed' && (
+                <div className="wb-summary-actions" aria-label="内容安全审计">
+                    <div className="wb-row wb-between">
+                        <div>
+                            <h3>内容安全审计</h3>
+                            <p className="wb-muted">关键词命中只代表风险证据，不替代人工或平台规则审核。</p>
+                        </div>
+                        <span className="wb-badge">{contentSafety.hit_count || 0} 个命中</span>
+                    </div>
+                    <p className="wb-alert">{contentSafety.message}</p>
+                    {(contentSafety.hits || []).slice(0, 6).map((hit: any, index: number) => (
+                        <div className="wb-issue blocker" key={`${hit.scene_number}-${hit.category}-${index}`}>
+                            <span>分镜 {hit.scene_number || '-'} · {hit.category}</span>
+                            <p>{hit.field}：{(hit.terms || []).join('、')}</p>
+                        </div>
+                    ))}
                 </div>
             )}
             {qualityScorecard && (
@@ -302,6 +322,7 @@ function labelScorecardAction(action: string): string {
         refine_dialogue_audio_delivery: '优化对白音频',
         rewrite_short_drama_story_rhythm: '重写短剧节奏',
         complete_topic_brief: '补齐选题定位',
+        review_content_safety: '人工复核内容安全',
         refine_topic_brief: '细化选题定位',
         split_scene: '拆分复杂分镜',
         refreeze_spatial_plan: '重做空间计划',

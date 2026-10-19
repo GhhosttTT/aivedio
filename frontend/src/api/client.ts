@@ -607,6 +607,14 @@ export interface ProductionReadinessReport {
                 recommendations?: string[];
             };
         };
+        content_safety?: {
+            status: string;
+            message?: string;
+            hit_count?: number;
+            categories?: string[];
+            uncovered_categories?: string[];
+            hits?: Array<{scene_number?: number; field?: string; category?: string; terms?: string[]}>
+        };
         visual_format?: {
             status: string;
             width: number;
