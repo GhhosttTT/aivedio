@@ -369,9 +369,13 @@ def _technical_metric_evidence(candidate: dict[str, Any]) -> list[str]:
     elif video_metrics.get("audio_signal_status") == "unavailable" and video_metrics.get("audio_expected") is True:
         evidence.append("audio signal measurement is unavailable for an expected output track")
     start_frame_reference = video_metrics.get("start_frame_reference")
-    if isinstance(start_frame_reference, dict) and start_frame_reference.get("status") == "available":
-        if float(start_frame_reference.get("score") or 0) < 2.5:
-            evidence.append("video opening frame diverges from the locked scene keyframe")
+    if isinstance(start_frame_reference, dict):
+        reference_status = start_frame_reference.get("status")
+        if reference_status == "available":
+            if float(start_frame_reference.get("score") or 0) < settings.GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE:
+                evidence.append("video opening frame diverges from the locked scene keyframe")
+        elif "reference image" in str(start_frame_reference.get("error") or "").lower():
+            evidence.append("video opening frame reference evidence is unavailable")
     if video_metrics.get("temporal_jump_ratio", 0) > settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO:
         evidence.append("video temporal visual resets between sampled frames")
     if video_metrics.get("temporal_jump_p95", 0) > settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95:
@@ -508,7 +512,7 @@ def _classify_evidence(evidence: str, media_type: str, candidate: dict[str, Any]
             "candidate_index": candidate.get("index"),
             "scene_number": _scene_number(candidate),
         }
-    if text.startswith("video opening frame diverges"):
+    if text.startswith("video opening frame diverges") or text.startswith("video opening frame reference evidence is unavailable"):
         return {
             "priority": _priority(text),
             "stage": "video",

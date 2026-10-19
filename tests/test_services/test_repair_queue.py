@@ -340,6 +340,43 @@ def test_repair_queue_maps_keyframe_divergence_to_identity_preserving_video_repa
     assert "locked scene keyframe" in queue[0]["recommendation"]
 
 
+def test_repair_queue_uses_configured_opening_frame_floor(monkeypatch):
+    monkeypatch.setattr("src.services.repair_queue.settings.GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE", 4.0)
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 5,
+            "technical_metrics": {
+                "start_frame_reference": {"status": "available", "score": 3.5},
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "regenerate_video_with_performance_direction"
+
+
+def test_repair_queue_maps_unavailable_opening_frame_reference_to_video_repair():
+    report = {
+        "status": "needs_review",
+        "candidates": [{
+            "index": 6,
+            "technical_metrics": {
+                "start_frame_reference": {
+                    "status": "unavailable",
+                    "error": "video first frame or reference image is unreadable",
+                },
+            },
+        }],
+    }
+
+    queue = build_repair_queue(report, "video")
+
+    assert queue[0]["action"] == "regenerate_video_with_performance_direction"
+    assert "opening composition" in queue[0]["recommendation"]
+
+
 def test_repair_queue_maps_video_performance_gate_to_performance_repair():
     report = {
         "status": "needs_review",
