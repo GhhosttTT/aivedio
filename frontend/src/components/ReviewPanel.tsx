@@ -223,6 +223,7 @@ function SequenceBoundaryEvidence({report}: {report: any}) {
     const boundaryIssues = boundaries.filter((boundary: any) => (
         boundary.severe_exposure_or_black_transition
         || boundary.severe_style_transition
+        || boundary.abrupt_visual_jump
         || boundary.geometry_match === false
         || boundary.fps_match === false
         || boundary.pixel_format_match === false
@@ -236,6 +237,8 @@ function SequenceBoundaryEvidence({report}: {report: any}) {
         <div className="wb-grid compact">
             <div className="wb-kv"><span>严重转场</span><strong>{report.severe_transition_count ?? '-'}</strong></div>
             <div className="wb-kv"><span>风格跳变</span><strong>{report.severe_style_transition_count ?? '-'}</strong></div>
+            <div className="wb-kv"><span>视觉突变</span><strong>{report.visual_jump_count ?? '-'}</strong></div>
+            <div className="wb-kv"><span>切点平滑度</span><strong>{report.cut_smoothness_score ?? '-'}/5</strong></div>
             <div className="wb-kv"><span>画幅不一致</span><strong>{report.geometry_mismatch_count ?? '-'}</strong></div>
             <div className="wb-kv"><span>帧率不一致</span><strong>{report.fps_mismatch_count ?? '-'}</strong></div>
             <div className="wb-kv"><span>像素格式不一致</span><strong>{report.pixel_format_mismatch_count ?? '-'}</strong></div>
@@ -247,6 +250,7 @@ function SequenceBoundaryEvidence({report}: {report: any}) {
                 const issues = [
                     boundary.severe_exposure_or_black_transition && '曝光/黑帧跳变',
                     boundary.severe_style_transition && '色彩/对比度跳变',
+                    boundary.abrupt_visual_jump && '视觉突变',
                     boundary.geometry_match === false && '画幅',
                     boundary.fps_match === false && '帧率',
                     boundary.pixel_format_match === false && '像素格式',
@@ -375,11 +379,11 @@ function GenerationContextEvidence({report}: {report: any}) {
             <span className="wb-badge">{report.context_count || 0} 组上下文</span>
         </div>
         <p className={issues.length ? 'wb-alert' : 'wb-muted'}>
-            {issues.length ? '发现镜头之间的 Provider、模型或输出契约漂移。' : `已核对 ${report.checked_scene_count || 0} 个镜头的生成上下文。`}
+            {issues.length ? '发现镜头之间的 Provider、模型、角色资产或输出契约漂移。' : `已核对 ${report.checked_scene_count || 0} 个镜头的生成上下文。`}
         </p>
         {contexts.slice(0, 8).map((context: any) => <div className="wb-kv" key={context.scene_number}>
             <span>分镜 {context.scene_number}</span>
-            <strong>{context.provider_model || '-'} · {context.resolution || '-'} · {context.request_mode || '-'}</strong>
+            <strong>{context.provider_model || '-'} · {context.resolution || '-'} · {context.request_mode || '-'}{context.character_identity_signature ? ' · 身份资产已锁定' : ''}</strong>
         </div>)}
         {issues.slice(0, 5).map((issue: any, index: number) => <p className="wb-alert" key={`${issue.code}-${index}`}>
             {issue.code} · {issue.evidence || issue.recommendation}
