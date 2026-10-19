@@ -105,6 +105,10 @@ class VideoComposer:
                 output_dir = Path("./storage/temp")
                 output_dir.mkdir(parents=True, exist_ok=True)
                 output_path = str(output_dir / "concatenated.mp4")
+            target_path = Path(output_path)
+            temporary_path = target_path.with_name(
+                f".{target_path.name}.{uuid4().hex}.part"
+            )
 
             provider_geometry = (
                 self._probe_provider_geometry(video_files[0])
@@ -113,12 +117,12 @@ class VideoComposer:
 
             if len(video_files) == 1:
                 cmd = self._build_single_video_normalize_cmd(
-                    video_files[0], output_path, preserve_audio, preserve_provider_quality,
+                    video_files[0], str(temporary_path), preserve_audio, preserve_provider_quality,
                     provider_geometry,
                 )
             else:
                 cmd = self._build_video_concat_cmd(
-                    video_files, output_path, preserve_audio, preserve_provider_quality,
+                    video_files, str(temporary_path), preserve_audio, preserve_provider_quality,
                     provider_geometry, editing_plan,
                 )
             
@@ -130,7 +134,8 @@ class VideoComposer:
                 text=True,
                 check=True
             )
-            self._require_output_file(output_path, "视频拼接")
+            self._require_output_file(temporary_path, "视频拼接")
+            os.replace(temporary_path, target_path)
             
             logger.info(f"视频拼接成功: {output_path}")
             
@@ -145,6 +150,12 @@ class VideoComposer:
             error_msg = f"视频拼接失败: {e}"
             logger.error(error_msg)
             raise VideoComposerError(error_msg) from e
+        finally:
+            try:
+                if 'temporary_path' in locals():
+                    temporary_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("清理视频拼接临时文件失败: %s", temporary_path)
     
     def sync_audio_video(
         self,

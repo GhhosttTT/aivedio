@@ -94,6 +94,21 @@ class TestVideoComposer:
         assert "-movflags" in cmd
         assert cmd[cmd.index("-movflags") + 1] == "+faststart"
 
+    def test_concat_videos_keeps_previous_output_when_ffmpeg_fails(self, service, tmp_path):
+        video1 = tmp_path / "video1.mp4"
+        video2 = tmp_path / "video2.mp4"
+        output_path = tmp_path / "output.mp4"
+        video1.write_bytes(b"video 1")
+        video2.write_bytes(b"video 2")
+        output_path.write_bytes(b"previous-good-master")
+
+        with patch("subprocess.run", side_effect=RuntimeError("ffmpeg crashed")):
+            with pytest.raises(VideoComposerError, match="视频拼接失败"):
+                service.concat_videos([str(video1), str(video2)], str(output_path))
+
+        assert output_path.read_bytes() == b"previous-good-master"
+        assert not list(tmp_path.glob(".output.mp4.*.part"))
+
     def test_concat_videos_single_file_with_output_normalizes(self, service, tmp_path):
         """测试：单个视频有输出路径时也归一化为生产格式"""
         video_file = tmp_path / "video.mp4"
