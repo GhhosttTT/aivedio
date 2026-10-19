@@ -127,6 +127,7 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
         checks["has_continuity_reference_placeholder"] = bool({
             "continuity_reference_image", "continuity_image", "previous_last_frame",
         } & set(placeholders))
+        checks["has_reference_images_placeholder"] = "reference_images_json" in set(placeholders)
         checks["has_likely_video_output"] = bool(outputs)
         contract_required = (
             "workflow_file", "has_reference_placeholder", "has_prompt_placeholder",
@@ -135,6 +136,7 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
             "has_spatial_plan_placeholder", "has_spatial_control_references_placeholder",
             "has_spatial_asset_contract_placeholder",
             "has_continuity_reference_placeholder",
+            "has_reference_images_placeholder",
         )
         if not all(checks.get(key) for key in contract_required):
             checks["comfyui_preflight"] = False
@@ -315,6 +317,10 @@ def _video_workflow_action_items(checks: dict) -> list[str]:
         items.append(
             "Add {continuity_reference_image}, {continuity_image}, or {previous_last_frame} "
             "so adjacent shots can consume the verified previous tail frame."
+        )
+    if not checks.get("has_reference_images_placeholder"):
+        items.append(
+            "Add {reference_images_json} so character and turnaround references reach the video workflow."
         )
     if not checks.get("has_likely_video_output"):
         items.append("Add a video output node such as VHS_VideoCombine, WebM/GIF export, or another video save node.")

@@ -372,6 +372,7 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
         "2": {"class_type": "CLIPTextEncode", "inputs": {"text": "{prompt}"}},
         "3": {"class_type": "LoadImage", "inputs": {"image": "{last_frame}"}},
         "3b": {"class_type": "LoadImage", "inputs": {"image": "{continuity_reference_image}"}},
+        "3c": {"class_type": "ReferenceStack", "inputs": {"images": "{reference_images_json}"}},
         "4": {
             "class_type": "VideoQualitySwitch",
             "inputs": {
@@ -424,9 +425,10 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
     assert report["checks"]["has_spatial_control_references_placeholder"] is True
     assert report["checks"]["has_spatial_asset_contract_placeholder"] is True
     assert report["checks"]["has_continuity_reference_placeholder"] is True
+    assert report["checks"]["has_reference_images_placeholder"] is True
     assert report["placeholders"] == [
         "continuity_reference_image", "last_frame", "output_prefix", "prompt", "quality_mode",
-        "quality_pipeline_json", "reference_image", "repair_action",
+        "quality_pipeline_json", "reference_image", "reference_images_json", "repair_action",
         "spatial_asset_pack_json", "spatial_control_references_json", "spatial_plan_json",
     ]
     assert report["likely_output_nodes"][0]["class_type"] == "VHS_VideoCombine"

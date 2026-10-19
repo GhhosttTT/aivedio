@@ -48,6 +48,7 @@ def write_production_workflows(tmp_path):
               "quality_pipeline": "{quality_pipeline_json}",
               "spatial_plan": "{spatial_plan_json}",
               "continuity": "{continuity_reference_image}",
+              "references": "{reference_images_json}",
               "spatial_references": "{spatial_control_references_json}",
               "spatial_contract": "{spatial_asset_pack_json}"
             }
@@ -99,7 +100,7 @@ def test_workflow_profile_rejects_video_workflow_without_quality_placeholders(tm
           "1": {"class_type": "LoadImage"},
           "2": {"class_type": "LoadImage"},
           "3": {"class_type": "SVD_img2vid_Conditioning"},
-          "4": {"class_type": "VHS_VideoCombine", "inputs": {"continuity": "{continuity_reference_image}"}}
+          "4": {"class_type": "VHS_VideoCombine", "inputs": {"continuity": "{continuity_reference_image}", "references": "{reference_images_json}"}}
         }
         """,
         encoding="utf-8",
@@ -131,7 +132,7 @@ def test_workflow_profile_blocks_stale_video_quality_contract(tmp_path, monkeypa
           "2": {"class_type": "LoadImage", "inputs": {"image": "{last_frame}"}},
           "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "{prompt}"}},
           "4": {"class_type": "SVD_img2vid_Conditioning"},
-          "5": {"class_type": "VHS_VideoCombine", "inputs": {"filename_prefix": "{output_prefix}", "continuity": "{continuity_reference_image}"}}
+          "5": {"class_type": "VHS_VideoCombine", "inputs": {"filename_prefix": "{output_prefix}", "continuity": "{continuity_reference_image}", "references": "{reference_images_json}"}}
         }
         """,
         encoding="utf-8",

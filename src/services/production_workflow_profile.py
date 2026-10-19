@@ -65,6 +65,7 @@ VIDEO_WORKFLOW_PLACEHOLDER_GROUPS = {
     "spatial_control_references": {"spatial_control_references_json"},
     "spatial_asset_contract": {"spatial_asset_pack_json", "spatial_scene_contract_hash"},
     "continuity_reference": {"continuity_reference_image", "continuity_image", "previous_last_frame"},
+    "reference_images": {"reference_images_json"},
 }
 IMAGE_WORKFLOW_PLACEHOLDER_GROUPS = {
     "spatial_plan": {"spatial_plan_json"},
