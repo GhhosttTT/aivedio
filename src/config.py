@@ -122,6 +122,8 @@ class Settings(BaseSettings):
     GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE: float = 2.5
     # When an end-frame target is generated, reject clips that do not converge to it.
     GENERATION_VIDEO_END_FRAME_REFERENCE_MIN_SCORE: float = 2.5
+    # Project-level continuity audit floor for a clip's opening frame versus the prior shot tail.
+    GENERATION_VIDEO_CONTINUITY_REFERENCE_MIN_SCORE: float = 2.0
     GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE: float = 4.0
     GENERATION_REQUIRE_VIDEO_REVIEW: bool = True
     GENERATION_VIDEO_TARGET_SECONDS: float = 3.6

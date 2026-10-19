@@ -77,6 +77,24 @@ class FirstFrameConsistencyAuditService:
                 "pixel_delta": evidence.get("pixel_delta") if isinstance(evidence, dict) else None,
                 "histogram_distance": evidence.get("histogram_distance") if isinstance(evidence, dict) else None,
             }
+            end_evidence = metrics.get("end_frame_reference")
+            if isinstance(end_evidence, dict) and end_evidence.get("status") != "not_applicable":
+                item["end_frame_reference"] = {
+                    "status": end_evidence.get("status"),
+                    "score": end_evidence.get("score"),
+                    "brightness_delta": end_evidence.get("brightness_delta"),
+                    "pixel_delta": end_evidence.get("pixel_delta"),
+                    "histogram_distance": end_evidence.get("histogram_distance"),
+                }
+            continuity_evidence = metrics.get("continuity_reference")
+            if isinstance(continuity_evidence, dict) and continuity_evidence.get("status") != "not_applicable":
+                item["continuity_reference"] = {
+                    "status": continuity_evidence.get("status"),
+                    "score": continuity_evidence.get("score"),
+                    "brightness_delta": continuity_evidence.get("brightness_delta"),
+                    "pixel_delta": continuity_evidence.get("pixel_delta"),
+                    "histogram_distance": continuity_evidence.get("histogram_distance"),
+                }
             observations.append(item)
         if not observations:
             return FirstFrameConsistencyAuditReport("not_applicable", 0, [], [])
@@ -93,6 +111,22 @@ class FirstFrameConsistencyAuditService:
                 issues.append(self._issue(item["scene_number"], "reference_score_missing", "opening-frame reference score is missing"))
             elif score < minimum:
                 issues.append(self._issue(item["scene_number"], "opening_frame_drift", f"opening-frame reference score {score:.2f} is below the production floor {minimum:.2f}"))
+            self._audit_optional_reference(
+                item,
+                "end_frame_reference",
+                float(settings.GENERATION_VIDEO_END_FRAME_REFERENCE_MIN_SCORE),
+                "ending_frame_drift",
+                "ending-frame reference",
+                issues,
+            )
+            self._audit_optional_reference(
+                item,
+                "continuity_reference",
+                float(settings.GENERATION_VIDEO_CONTINUITY_REFERENCE_MIN_SCORE),
+                "continuity_reference_drift",
+                "cross-shot continuity reference",
+                issues,
+            )
         status = "needs_review" if issues else "passed"
         return FirstFrameConsistencyAuditReport(
             status,
@@ -100,6 +134,43 @@ class FirstFrameConsistencyAuditService:
             observations,
             issues,
         )
+
+    def _audit_optional_reference(
+        self,
+        item: dict[str, Any],
+        key: str,
+        minimum: float,
+        drift_code: str,
+        label: str,
+        issues: list[dict[str, Any]],
+    ) -> None:
+        evidence = item.get(key)
+        if not isinstance(evidence, dict):
+            return
+        status = evidence.get("status")
+        if status == "unavailable":
+            issues.append(self._issue(
+                item["scene_number"],
+                f"{key}_unavailable",
+                f"{label} evidence could not be measured",
+                action="regenerate_video_with_performance_direction",
+            ))
+        elif status == "available":
+            score = evidence.get("score")
+            if not isinstance(score, (int, float)):
+                issues.append(self._issue(
+                    item["scene_number"],
+                    f"{key}_score_missing",
+                    f"{label} score is missing",
+                    action="regenerate_video_with_performance_direction",
+                ))
+            elif score < minimum:
+                issues.append(self._issue(
+                    item["scene_number"],
+                    drift_code,
+                    f"{label} score {score:.2f} is below the production floor {minimum:.2f}",
+                    action="regenerate_video_with_performance_direction",
+                ))
 
     def _load_metrics(self, video_path: Path) -> dict[str, Any] | None:
         try:
@@ -135,12 +206,19 @@ class FirstFrameConsistencyAuditService:
                 return metrics
         return None
 
-    def _issue(self, scene_number: int, code: str, message: str) -> dict[str, Any]:
+    def _issue(
+        self,
+        scene_number: int,
+        code: str,
+        message: str,
+        *,
+        action: str = "regenerate_video_with_performance_direction",
+    ) -> dict[str, Any]:
         return {
             "severity": "high",
             "code": code,
             "scene_number": scene_number,
             "message": message,
-            "action": "regenerate_video_with_performance_direction",
+            "action": action,
             "recommendation": "Lock the keyframe as the first frame and regenerate the atomic clip.",
         }

@@ -55,6 +55,8 @@ Seedance 2.5 多镜头协议后再改为 `multi_shot`。启动后可在
 `GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE` 调整硬门槛（默认 `2.5`）。
 当分镜启用末帧目标时，系统也会在候选和最终归一化视频阶段检查收束画面；可通过
 `GENERATION_VIDEO_END_FRAME_REFERENCE_MIN_SCORE` 调整末帧硬门槛（默认 `2.5`）。
+项目级边界一致性报告还会检查上一镜头尾帧到当前镜头开场的连续性；可通过
+`GENERATION_VIDEO_CONTINUITY_REFERENCE_MIN_SCORE` 调整复查门槛（默认 `2.0`）。
 当生成视频包含音频时，候选还会记录音频活动与画面动作的时间相关性；在其他质量分接近时，优先保留音画活动更同步的候选。该指标是对白/动作同步的自动筛查，不替代最终人工或 VLM 复核。
 
 多语言字幕 QA 在存在已渲染视频时，还会抽查字幕 cue 中点与邻近无字幕帧的下方安全区边缘密度，提示字幕未烧录或对比度不足的问题；这是一层视觉筛查，不等同于 OCR 或人脸遮挡检测。

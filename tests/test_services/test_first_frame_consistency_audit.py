@@ -109,3 +109,28 @@ def test_first_frame_audit_blocks_partial_reference_evidence(tmp_path):
     assert report.status == "needs_review"
     assert report.checked_scene_count == 2
     assert report.issues[0]["code"] == "missing_reference_evidence"
+
+
+def test_boundary_audit_reports_end_frame_and_cross_shot_continuity_drift(tmp_path):
+    video = tmp_path / "scene_1.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".quality.json").write_text(
+        json.dumps({
+            "metrics": {
+                "start_frame_reference": {"status": "available", "score": 4.0},
+                "end_frame_reference": {"status": "available", "score": 1.8},
+                "continuity_reference": {"status": "available", "score": 1.2},
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    report = FirstFrameConsistencyAuditService().audit([_scene(1, video)])
+
+    assert report.status == "needs_review"
+    assert {issue["code"] for issue in report.issues} == {
+        "ending_frame_drift",
+        "continuity_reference_drift",
+    }
+    assert report.scenes[0]["end_frame_reference"]["score"] == 1.8
+    assert report.scenes[0]["continuity_reference"]["score"] == 1.2
