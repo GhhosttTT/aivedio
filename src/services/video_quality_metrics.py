@@ -333,6 +333,22 @@ def _stream_start_time(stream: dict | None) -> float | None:
         return None
 
 
+def _audio_formats_match(previous_probe: dict[str, Any], current_probe: dict[str, Any]) -> bool:
+    """Require adjacent clips to agree on audio presence and stream format."""
+    previous_present = bool(previous_probe.get("audio_present"))
+    current_present = bool(current_probe.get("audio_present"))
+    if previous_present != current_present:
+        return False
+    if not previous_present:
+        return True
+    return all(
+        previous_probe.get(key)
+        and current_probe.get(key)
+        and previous_probe.get(key) == current_probe.get(key)
+        for key in ("audio_codec", "audio_channels", "audio_sample_rate")
+    )
+
+
 def _audio_signal_metrics(path: Path, duration_seconds: float) -> dict[str, Any]:
     """Measure whether an audio stream contains usable signal, not only packets."""
     try:
@@ -471,14 +487,7 @@ def video_boundary_continuity(video_paths: list[str | Path]) -> dict[str, Any]:
             )
             previous_audio_present = bool(previous_probe.get("audio_present"))
             current_audio_present = bool(current_probe.get("audio_present"))
-            audio_format_match = True
-            if previous_audio_present and current_audio_present:
-                audio_format_match = all(
-                    previous_probe.get(key)
-                    and current_probe.get(key)
-                    and previous_probe.get(key) == current_probe.get(key)
-                    for key in ("audio_codec", "audio_channels", "audio_sample_rate")
-                )
+            audio_format_match = _audio_formats_match(previous_probe, current_probe)
             boundaries.append({
                 "boundary_index": index,
                 "previous_path": str(previous),

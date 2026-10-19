@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from src.services.video_quality_metrics import (
+    _audio_formats_match,
     _audio_signal_metrics,
     _probe,
     _sample_frames,
@@ -34,6 +35,20 @@ def test_audio_signal_metrics_reports_loudness_and_true_peak(monkeypatch, tmp_pa
     assert metrics["audio_integrated_lufs"] == -16.10
     assert metrics["audio_true_peak_db"] == -0.80
     assert metrics["audio_signal_status"] == "usable"
+
+
+def test_audio_formats_match_rejects_audio_presence_drop_at_boundary():
+    with_audio = {
+        "audio_present": True,
+        "audio_codec": "aac",
+        "audio_channels": 2,
+        "audio_sample_rate": 48000,
+    }
+    without_audio = {"audio_present": False}
+
+    assert _audio_formats_match(with_audio, with_audio) is True
+    assert _audio_formats_match(with_audio, without_audio) is False
+    assert _audio_formats_match(without_audio, without_audio) is True
 
 
 def test_adaptive_sampling_scales_with_duration_and_stays_bounded(monkeypatch, tmp_path):
