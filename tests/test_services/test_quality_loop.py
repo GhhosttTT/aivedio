@@ -385,3 +385,45 @@ def test_quality_loop_action_filter_only_selects_requested_repair():
     assert [item["action"] for item in plan["selected"]] == [
         "refine_video_commercial_aesthetic",
     ]
+
+
+def test_quality_loop_selects_project_level_final_composition_repair_without_scene():
+    plan = build_quality_loop_plan({
+        "repair_queue": {
+            "items": [{
+                "priority": "high",
+                "stage": "video",
+                "action": "refine_final_composition_finish",
+                "execution": "auto",
+                "reason": "final composition finishing failed",
+            }],
+        },
+    }, max_actions=5)
+
+    assert plan["status"] == "can_auto_repair"
+    assert plan["selected"][0]["scene_number"] is None
+
+
+def test_quality_loop_defers_project_repair_until_scene_repairs_finish():
+    plan = build_quality_loop_plan({
+        "repair_queue": {
+            "items": [
+                {
+                    "scene_number": 1,
+                    "priority": "high",
+                    "stage": "video",
+                    "action": "lower_motion_and_regenerate_video",
+                    "execution": "auto",
+                },
+                {
+                    "priority": "high",
+                    "stage": "video",
+                    "action": "refine_final_composition_finish",
+                    "execution": "auto",
+                },
+            ],
+        },
+    }, max_actions=5)
+
+    assert plan["selected"][0]["action"] == "lower_motion_and_regenerate_video"
+    assert any(item["reason"] == "project_repair_deferred" for item in plan["skipped"])

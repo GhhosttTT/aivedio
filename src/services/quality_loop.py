@@ -54,6 +54,7 @@ def _build_action_repair_priority() -> dict[str, int]:
 
 
 ACTION_REPAIR_PRIORITY = _build_action_repair_priority()
+PROJECT_LEVEL_AUTO_ACTIONS = {"refine_final_composition_finish"}
 
 
 def _action_repair_rank(action: Any) -> int:
@@ -109,11 +110,14 @@ def auto_repair_candidates(
 
     selected: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
-    selected_scene_stages: dict[int, set[str]] = {}
+    selected_scene_stages: dict[int | str, set[str]] = {}
     pending_keyframes = {
         scene_number_from_repair_item(item) for item in items
         if _stage_group(item.get("stage")) == "keyframe"
     }
+    has_scene_scoped_items = any(
+        scene_number_from_repair_item(item) is not None for item in items
+    )
     seen_actions = set()
     for item in items:
         scene_number = scene_number_from_repair_item(item)
@@ -121,16 +125,28 @@ def auto_repair_candidates(
         stage_group = _stage_group(item.get("stage"))
         item["scene_number"] = scene_number
         if scene_number is None:
-            skipped.append({**item, "reason": "missing_scene_number"})
-            continue
+            if action not in PROJECT_LEVEL_AUTO_ACTIONS:
+                skipped.append({**item, "reason": "missing_scene_number"})
+                continue
+            scope_key: int | str = "project"
+        else:
+            scope_key = scene_number
         if not action:
             skipped.append({**item, "reason": "missing_action"})
             continue
-        key = (scene_number, action)
+        if scope_key == "project" and has_scene_scoped_items:
+            skipped.append({**item, "reason": "project_repair_deferred"})
+            continue
+        if scope_key != "project" and any(
+            selected_item.get("scene_number") is None for selected_item in selected
+        ):
+            skipped.append({**item, "reason": "project_repair_selected"})
+            continue
+        key = (scope_key, action)
         if key in seen_actions:
             skipped.append({**item, "reason": "duplicate_action"})
             continue
-        selected_stages = selected_scene_stages.setdefault(scene_number, set())
+        selected_stages = selected_scene_stages.setdefault(scope_key, set())
         if stage_group in selected_stages:
             skipped.append({**item, "reason": "stage_already_selected"})
             continue

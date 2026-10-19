@@ -151,3 +151,15 @@ def test_audio_only_repair_refreshes_media_review_when_all_videos_exist(repair_c
         "compose_final_video_task",
     ]
     assert orchestrator.db.query(Task).one().total_steps == 4
+
+
+def test_project_level_composition_repair_is_dispatchable(repair_case):
+    orchestrator, project, _scenes, workflow, chain = repair_case
+
+    result = orchestrator.create_final_composition_repair_task(project.id)
+
+    assert result == "batch-job"
+    assert [step.task for step in chain.call_args.args] == ["compose_final_video_task"]
+    assert orchestrator.db.query(Task).one().total_steps == 1
+    assert project.status == ProjectStatus.IN_PRODUCTION
+    workflow.apply_async.assert_called_once()

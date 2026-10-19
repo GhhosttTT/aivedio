@@ -2268,7 +2268,9 @@ async def run_auto_repair_queue(
 
     if selected:
         try:
-            if len(selected) == 1:
+            if len(selected) == 1 and selected[0].get("scene_number") is None:
+                celery_task_id = task_orchestrator.create_final_composition_repair_task(project_id)
+            elif len(selected) == 1:
                 celery_task_id = task_orchestrator.create_scene_repair_task(
                     project_id, selected[0]["scene_number"], selected[0]["action"],
                 )
@@ -2297,6 +2299,8 @@ async def run_auto_repair_queue(
         # keyframe repair is submitted in this cycle; it is not a submission
         # failure and must not downgrade the cycle to ``partial``.
         "keyframe_repair_required",
+        "project_repair_deferred",
+        "project_repair_selected",
     }
     actionable_skips = [
         item for item in skipped

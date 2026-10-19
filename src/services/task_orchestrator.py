@@ -301,6 +301,52 @@ class TaskOrchestrator:
     ) -> str:
         return self.create_repair_batch_task(project_id, [{"scene_number": scene_number, "action": action}])
 
+    def create_final_composition_repair_task(self, project_id: int) -> str:
+        """Recompose a reviewed episode without regenerating its scene media."""
+        project = self.db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise ValueError(f"项目不存在: {project_id}")
+        if project.status == ProjectStatus.IN_PRODUCTION:
+            raise ValueError("项目正在制作，请等待当前任务结束")
+        scenes = self.db.query(Scene).filter(Scene.project_id == project_id).all()
+        if not scenes:
+            raise ValueError("项目没有可合成的分镜")
+        inherited_options = load_production_video_options(project_id) or {}
+        task_model = TaskModel(
+            project_id=project_id,
+            celery_task_id=str(uuid4()),
+            status=TaskStatus.PENDING,
+            progress=0.0,
+            total_steps=1,
+            current_step=0,
+        )
+        previous_status, previous_final = project.status, project.final_video_path
+        self._reserve_project(project_id)
+        self.db.add(task_model)
+        self.db.flush()
+        save_production_video_options(project_id, task_model.id, inherited_options)
+        project.final_video_path = None
+        compose = compose_final_video_task.si(
+            project_id,
+            task_model.id,
+            add_bgm=bool(inherited_options.get("add_bgm", False)),
+            bgm_path=inherited_options.get("bgm_path"),
+            bgm_volume=float(inherited_options.get("bgm_volume", 0.3)),
+        )
+        task = chain(compose)
+        result = task.freeze()
+        task_model.celery_task_id = result.id
+        self.db.commit()
+        try:
+            task.apply_async()
+        except Exception as exc:
+            task_model.status = TaskStatus.FAILED
+            task_model.error_message = f"最终合成返工投递失败: {exc}"
+            project.status, project.final_video_path = previous_status, previous_final
+            self.db.commit()
+            raise
+        return result.id
+
     def create_repair_batch_task(self, project_id: int, items: list[dict]) -> str:
         """Run one review after all selected repairs, with audio before dependent video."""
         project = self.db.query(Project).filter(Project.id == project_id).first()
