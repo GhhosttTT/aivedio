@@ -106,7 +106,15 @@ def split_sequence_video(
     if not segment_list or len(segment_list) != len(destination_list):
         raise SequenceVideoError("Sequence segments and output paths must have the same non-zero length")
     if any(
-        segment.start_seconds < 0
+        not all(
+            math.isfinite(value)
+            for value in (
+                segment.start_seconds,
+                segment.end_seconds,
+                segment.duration_seconds,
+            )
+        )
+        or segment.start_seconds < 0
         or segment.end_seconds <= segment.start_seconds
         or segment.duration_seconds <= 0
         for segment in segment_list
@@ -128,12 +136,15 @@ def split_sequence_video(
     prepared: list[tuple[Path, Path]] = []
     current_scene_number: int | str = "unknown"
     source_duration = _probe_duration(source)
-    if source_duration is not None:
-        if any(segment.end_seconds > source_duration + 0.12 for segment in segment_list):
-            raise SequenceVideoError(
-                "Sequence segment extends beyond the generated source duration: "
-                f"source={source_duration:.3f}s"
-            )
+    if source_duration is None:
+        raise SequenceVideoError(
+            "Could not determine generated source duration; refusing to split without timing evidence"
+        )
+    if any(segment.end_seconds > source_duration + 0.12 for segment in segment_list):
+        raise SequenceVideoError(
+            "Sequence segment extends beyond the generated source duration: "
+            f"source={source_duration:.3f}s"
+        )
     source_stream_types = _probe_stream_types(source)
     if source_stream_types is None:
         raise SequenceVideoError(

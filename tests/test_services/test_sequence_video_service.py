@@ -128,6 +128,33 @@ def test_split_sequence_video_rejects_segments_beyond_source_duration(tmp_path, 
         )
 
 
+def test_split_sequence_video_rejects_unknown_source_duration(tmp_path, monkeypatch):
+    source = tmp_path / "sequence.mp4"
+    source.write_bytes(b"video")
+    monkeypatch.setattr("src.services.sequence_video_service.shutil.which", lambda name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr("src.services.sequence_video_service._probe_duration", lambda _path: None)
+
+    with pytest.raises(SequenceVideoError, match="timing evidence"):
+        split_sequence_video(
+            source,
+            [SequenceSegment(1, 0.0, 2.0)],
+            [tmp_path / "scene.mp4"],
+        )
+
+
+def test_split_sequence_video_rejects_non_finite_segment_times(tmp_path, monkeypatch):
+    source = tmp_path / "sequence.mp4"
+    source.write_bytes(b"video")
+    monkeypatch.setattr("src.services.sequence_video_service.shutil.which", lambda name: "/usr/bin/ffmpeg")
+
+    with pytest.raises(SequenceVideoError, match="positive, non-overlapping"):
+        split_sequence_video(
+            source,
+            [SequenceSegment(1, float("nan"), 2.0)],
+            [tmp_path / "scene.mp4"],
+        )
+
+
 def test_split_sequence_video_requires_ffprobe_for_quality_validation(tmp_path, monkeypatch):
     source = tmp_path / "sequence.mp4"
     source.write_bytes(b"video")
