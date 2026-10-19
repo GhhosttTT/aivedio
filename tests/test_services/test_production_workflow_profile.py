@@ -419,3 +419,19 @@ def test_workflow_profile_blocks_existing_low_quality_budget(tmp_path, monkeypat
     assert "image_candidates_below_5" in report["quality_budget_issues"]
     assert "quality_profile_not_production_approved" in report["quality_budget_issues"]
     assert "video_end_frame_disabled" in report["quality_budget_issues"]
+
+
+def test_workflow_profile_snapshots_style_and_rhythm_thresholds(monkeypatch):
+    monkeypatch.setattr(
+        "src.services.production_workflow_profile.settings.GENERATION_EPISODE_STYLE_BRIGHTNESS_BLOCKER",
+        50.0,
+    )
+    monkeypatch.setattr(
+        "src.services.production_workflow_profile.settings.GENERATION_RHYTHM_MAX_HOOK_LATENCY_SECONDS",
+        6.0,
+    )
+
+    gates = ProductionWorkflowProfileService()._current_quality_gates()
+
+    assert gates["episode_style_brightness_blocker"] == 50.0
+    assert gates["rhythm_max_hook_latency_seconds"] == 6.0
