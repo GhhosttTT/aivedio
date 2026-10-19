@@ -16,6 +16,8 @@ from typing import Any
 
 from PIL import Image, ImageFilter, ImageStat
 
+from src.config import settings
+
 
 @dataclass(frozen=True)
 class EpisodeStyleConsistencyReport:
@@ -75,8 +77,24 @@ class EpisodeStyleConsistencyService:
         "aspect_ratio_blocker": 0.16,
     }
 
+    @staticmethod
+    def _configured_thresholds() -> dict[str, float]:
+        return {
+            "brightness_warning": float(settings.GENERATION_EPISODE_STYLE_BRIGHTNESS_WARNING),
+            "brightness_blocker": float(settings.GENERATION_EPISODE_STYLE_BRIGHTNESS_BLOCKER),
+            "saturation_warning": float(settings.GENERATION_EPISODE_STYLE_SATURATION_WARNING),
+            "saturation_blocker": float(settings.GENERATION_EPISODE_STYLE_SATURATION_BLOCKER),
+            "contrast_warning": float(settings.GENERATION_EPISODE_STYLE_CONTRAST_WARNING),
+            "contrast_blocker": float(settings.GENERATION_EPISODE_STYLE_CONTRAST_BLOCKER),
+            "sharpness_ratio_warning": float(settings.GENERATION_EPISODE_STYLE_SHARPNESS_RATIO_WARNING),
+            "sharpness_ratio_blocker": float(settings.GENERATION_EPISODE_STYLE_SHARPNESS_RATIO_BLOCKER),
+            "aspect_ratio_warning": float(settings.GENERATION_EPISODE_STYLE_ASPECT_RATIO_WARNING),
+            "aspect_ratio_blocker": float(settings.GENERATION_EPISODE_STYLE_ASPECT_RATIO_BLOCKER),
+        }
+
     def audit(self, project, scenes: list) -> EpisodeStyleConsistencyReport:
         ordered = sorted(scenes or [], key=lambda scene: scene.scene_number)
+        thresholds = self._configured_thresholds()
         sampled: list[dict[str, Any]] = []
         for scene in ordered:
             path_value = getattr(scene, "image_path", None)
@@ -88,7 +106,7 @@ class EpisodeStyleConsistencyService:
             sampled.append({"scene_number": scene.scene_number, **metrics})
         if len(sampled) < 2:
             return EpisodeStyleConsistencyReport(
-                "not_applicable", len(ordered), len(sampled), [], sampled, dict(self.THRESHOLDS)
+                "not_applicable", len(ordered), len(sampled), [], sampled, thresholds
             )
 
         medians = {
@@ -106,11 +124,11 @@ class EpisodeStyleConsistencyService:
             sharpness_drift = max(sharpness_ratio, inverse_sharpness_ratio)
             aspect_delta = abs(item["aspect_ratio"] - medians["aspect_ratio"])
             checks = (
-                ("exposure_drift", brightness_delta, "brightness", self.THRESHOLDS["brightness_warning"], self.THRESHOLDS["brightness_blocker"]),
-                ("saturation_drift", saturation_delta, "saturation", self.THRESHOLDS["saturation_warning"], self.THRESHOLDS["saturation_blocker"]),
-                ("contrast_drift", contrast_delta, "contrast", self.THRESHOLDS["contrast_warning"], self.THRESHOLDS["contrast_blocker"]),
-                ("sharpness_drift", sharpness_drift, "sharpness_ratio", self.THRESHOLDS["sharpness_ratio_warning"], self.THRESHOLDS["sharpness_ratio_blocker"]),
-                ("framing_drift", aspect_delta, "aspect_ratio", self.THRESHOLDS["aspect_ratio_warning"], self.THRESHOLDS["aspect_ratio_blocker"]),
+                ("exposure_drift", brightness_delta, "brightness", thresholds["brightness_warning"], thresholds["brightness_blocker"]),
+                ("saturation_drift", saturation_delta, "saturation", thresholds["saturation_warning"], thresholds["saturation_blocker"]),
+                ("contrast_drift", contrast_delta, "contrast", thresholds["contrast_warning"], thresholds["contrast_blocker"]),
+                ("sharpness_drift", sharpness_drift, "sharpness_ratio", thresholds["sharpness_ratio_warning"], thresholds["sharpness_ratio_blocker"]),
+                ("framing_drift", aspect_delta, "aspect_ratio", thresholds["aspect_ratio_warning"], thresholds["aspect_ratio_blocker"]),
             )
             for code, value, metric, warning_limit, blocker_limit in checks:
                 if value < warning_limit:
@@ -134,7 +152,7 @@ class EpisodeStyleConsistencyService:
                 "aspect_ratio": round(aspect_delta, 3),
             }
         status = "needs_review" if any(item["severity"] == "high" for item in issues) else ("warn" if issues else "passed")
-        return EpisodeStyleConsistencyReport(status, len(ordered), len(sampled), issues, sampled, dict(self.THRESHOLDS))
+        return EpisodeStyleConsistencyReport(status, len(ordered), len(sampled), issues, sampled, thresholds)
 
     def _image_metrics(self, path: Path) -> dict[str, Any] | None:
         try:

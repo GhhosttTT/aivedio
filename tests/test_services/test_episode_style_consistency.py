@@ -56,3 +56,26 @@ def test_episode_style_consistency_is_not_applicable_without_two_rendered_keyfra
 
     assert report.status == "not_applicable"
     assert report.sampled_count == 1
+
+
+def test_episode_style_consistency_uses_configured_thresholds(tmp_path, monkeypatch):
+    first = tmp_path / "scene-1.png"
+    second = tmp_path / "scene-2.png"
+    _write_image(first, (95, 105, 115))
+    _write_image(second, (120, 130, 140))
+    monkeypatch.setattr(
+        "src.services.episode_style_consistency.settings.GENERATION_EPISODE_STYLE_BRIGHTNESS_WARNING",
+        1.0,
+    )
+    monkeypatch.setattr(
+        "src.services.episode_style_consistency.settings.GENERATION_EPISODE_STYLE_BRIGHTNESS_BLOCKER",
+        2.0,
+    )
+
+    report = EpisodeStyleConsistencyService().audit(SimpleNamespace(id=1), [
+        SimpleNamespace(scene_number=1, image_path=str(first)),
+        SimpleNamespace(scene_number=2, image_path=str(second)),
+    ])
+
+    assert report.thresholds["brightness_warning"] == 1.0
+    assert any(issue["code"] == "exposure_drift" for issue in report.issues)
