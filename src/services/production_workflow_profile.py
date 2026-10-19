@@ -14,6 +14,7 @@ from src.services.generation_quality_policy import (
     video_quality_budget,
 )
 from src.services.video_engine_preflight import scan_placeholders
+from src.utils.atomic_json import write_json_atomic
 
 
 REQUIRED_CAPABILITIES = {
@@ -144,8 +145,7 @@ class ProductionWorkflowProfileService:
             "quality_gates": self._current_quality_gates(),
             "notes": notes,
         }
-        profile_file.parent.mkdir(parents=True, exist_ok=True)
-        profile_file.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_json_atomic(profile_file, manifest)
         return manifest
 
     def validate_profile(self, profile_path: str | None = None) -> dict:

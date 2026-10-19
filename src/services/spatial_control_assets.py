@@ -10,6 +10,7 @@ from pathlib import Path
 from src.database.models import Character, Project, Scene
 from src.services.character_turnaround_album import CharacterTurnaroundAlbumService, PRODUCTION_TURNAROUND_VIEWS
 from src.services.video_director_service import get_video_director_service
+from src.utils.atomic_json import write_json_atomic
 from src.utils.storage import storage_manager
 
 
@@ -31,8 +32,7 @@ class SpatialControlAssetService:
         manifest["created_at"] = datetime.now(timezone.utc).isoformat()
         manifest["notes"] = notes
         path = self._pack_path(project.id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_json_atomic(path, manifest)
         return manifest
 
     def validate_project_pack(

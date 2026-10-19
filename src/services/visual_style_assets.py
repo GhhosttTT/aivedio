@@ -10,6 +10,7 @@ from typing import Iterable
 
 from src.config import settings
 from src.database.models import Project, Scene
+from src.utils.atomic_json import write_json_atomic
 from src.utils.storage import storage_manager
 
 
@@ -149,8 +150,7 @@ class VisualStyleAssetService:
             "notes": notes,
         }
         path = self._path(project.id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_json_atomic(path, manifest)
         return manifest
 
     def validate_project_style(self, project: Project, scenes: Iterable[Scene]) -> dict:
