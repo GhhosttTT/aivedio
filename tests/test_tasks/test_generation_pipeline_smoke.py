@@ -664,6 +664,7 @@ def test_final_composed_video_review_payload_tracks_episode_context(tmp_path, mo
     assert captured["payload"]["technical_boundary_report"]["status"] == "not_applicable"
     assert captured["payload"]["final_technical_metrics"]["status"] == "available"
     assert report["final_audio_expected"] is True
+    assert report["final_technical_metrics"]["audio_quality_status"] == "passed"
     assert report["audio_mix"] == {
         "add_bgm": True,
         "bgm_path": str(tmp_path / "bgm.mp3"),

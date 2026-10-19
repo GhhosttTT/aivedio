@@ -28,6 +28,7 @@ from src.services.video_quality_metrics import temporal_sample_evidence_error, v
 from src.services.sequence_plan import build_sequence_context
 from src.services.subtitle_generator import get_subtitle_generator
 from src.tasks.audio_tasks import has_spoken_dialogue
+from src.tasks.video_tasks import _apply_audio_quality_contract
 from src.utils.storage import get_project_final_video_path
 from src.utils.media_quality_paths import (
     existing_audio_quality_report_path,
@@ -1355,6 +1356,11 @@ def _review_final_composed_video(
     technical_boundary_report = video_boundary_continuity(scene_video_paths)
     final_technical_metrics = video_candidate_metrics(final_video_path)
     audio_expected = native_audio_expected or any(_scene_audio_expected(scene) for scene in scenes)
+    if isinstance(final_technical_metrics, dict) and final_technical_metrics.get("status") == "available":
+        _apply_audio_quality_contract(
+            final_technical_metrics,
+            {"requested_generate_audio": audio_expected},
+        )
     review_payload = _project_final_review_payload(project, scenes)
     # Give the VLM concrete media evidence so it can distinguish an intended
     # dramatic hard cut from an accidental black/exposure/geometry break.
