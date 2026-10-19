@@ -162,7 +162,11 @@ class TestCreateProductionTask:
         payload = json.loads(snapshot.read_text(encoding="utf-8"))
         assert payload["kind"] == "production_readiness_snapshot"
         assert payload["readiness"]["status"] == "ready"
+        assert payload["task_record_id"] is not None
         assert payload["generation_options"]["request_mode"] is None
+        from src.services.task_recovery import load_production_video_options
+        saved_options = load_production_video_options(sample_project.id, task_id=payload["task_record_id"])
+        assert saved_options["readiness_task_record_id"] == payload["task_record_id"]
     
     def test_create_production_task_project_not_found(self, orchestrator):
         """测试项目不存在时抛出异常"""

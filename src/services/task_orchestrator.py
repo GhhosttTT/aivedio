@@ -43,6 +43,7 @@ def _persist_production_readiness_snapshot(
     project_id: int,
     readiness: dict,
     generation_options: dict,
+    task_record_id: int | None = None,
 ) -> Path:
     """Persist the exact gate decision used to release a production task."""
     path = storage_manager.get_project_path(project_id) / "reviews" / "production_readiness_latest.json"
@@ -51,6 +52,7 @@ def _persist_production_readiness_snapshot(
         "schema_version": 1,
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "project_id": project_id,
+        "task_record_id": task_record_id,
         "generation_options": generation_options,
         "readiness": readiness,
     })
@@ -177,6 +179,7 @@ class TaskOrchestrator:
             settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK
             and (draft or draft_task_id or draft_task_ids)
         )
+        readiness_snapshot_data = None
         if generate_videos and not fallback_draft:
             configured_provider = str(
                 os.getenv("GENERATION_PROVIDER") or settings.GENERATION_PROVIDER or ""
@@ -246,10 +249,7 @@ class TaskOrchestrator:
                     "Expand the script or split multi-action scenes before production."
                 )
             readiness["video_engine"] = video_engine
-            _persist_production_readiness_snapshot(
-                project_id,
-                readiness,
-                {
+            readiness_snapshot_data = (readiness, {
                     "provider": effective_provider,
                     "model": str(model).strip() if model else None,
                     "request_mode": effective_request_mode,
@@ -260,8 +260,7 @@ class TaskOrchestrator:
                     "output_format": output_format,
                     "duration_seconds": duration_seconds,
                     "draft": bool(draft),
-                },
-            )
+                })
         # Persist the real task ID before a worker can consume the first step.
         self._reserve_project(project_id)
         task_model = TaskModel(
@@ -276,6 +275,17 @@ class TaskOrchestrator:
         )
         self.db.add(task_model)
         self.db.flush()
+        readiness_snapshot_path = None
+        if readiness_snapshot_data:
+            readiness, generation_options = readiness_snapshot_data
+            readiness_snapshot_path = _persist_production_readiness_snapshot(
+                project_id,
+                readiness,
+                generation_options,
+                task_record_id=task_model.id,
+            )
+            generation_options["readiness_snapshot_path"] = str(readiness_snapshot_path)
+            generation_options["readiness_task_record_id"] = task_model.id
         save_production_video_options(
             project_id,
             task_model.id,
@@ -298,6 +308,8 @@ class TaskOrchestrator:
                 "add_bgm": add_bgm,
                 "bgm_path": bgm_path,
                 "bgm_volume": bgm_volume,
+                "readiness_snapshot_path": str(readiness_snapshot_path) if readiness_snapshot_path else None,
+                "readiness_task_record_id": task_model.id if readiness_snapshot_path else None,
             },
         )
         task_chain = self._build_task_chain(

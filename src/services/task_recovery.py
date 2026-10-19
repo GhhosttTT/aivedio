@@ -30,6 +30,8 @@ _PRODUCTION_OPTION_KEYS = (
     "add_bgm",
     "bgm_path",
     "bgm_volume",
+    "readiness_snapshot_path",
+    "readiness_task_record_id",
 )
 
 _PRODUCTION_OPTION_ALIASES = {
