@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -53,6 +54,44 @@ def test_provider_contract_changes_invalidate_the_previous_review(assets):
         '{"provider_name":"seedance_api","provider_model":"doubao-seedance-2-0-260128",'
         '"request_contract_hash":"contract-v2","request_contract":{"model":"doubao-seedance-2-0-260128",'
         '"resolution":"720p","generate_audio":false}}',
+        encoding="utf-8",
+    )
+
+    assert review_tasks.generation_signature(project, [scene]) != previous
+
+
+def test_image_generation_contract_changes_invalidate_the_previous_review(assets):
+    project, scene = assets
+    image_quality = Path(scene.image_path).with_suffix(".quality.json")
+    image_quality.write_text(
+        json.dumps({
+            "best_index": 1,
+            "candidates": [{
+                "index": 1,
+                "provider": "local_comfyui",
+                "provider_metadata": {"workflow": {"workflow_sha256": "workflow-v1"}},
+                "request": {
+                    "seed": 11, "steps": 30, "cfg_scale": 6.5, "width": 768, "height": 1344,
+                    "use_ipadapter": True, "quality_pipeline": {"stages": ["face_detail"]},
+                },
+            }],
+        }),
+        encoding="utf-8",
+    )
+    previous = review_tasks.generation_signature(project, [scene])
+    image_quality.write_text(
+        json.dumps({
+            "best_index": 1,
+            "candidates": [{
+                "index": 1,
+                "provider": "local_comfyui",
+                "provider_metadata": {"workflow": {"workflow_sha256": "workflow-v2"}},
+                "request": {
+                    "seed": 11, "steps": 40, "cfg_scale": 6.5, "width": 768, "height": 1344,
+                    "use_ipadapter": True, "quality_pipeline": {"stages": ["face_detail", "upscale"]},
+                },
+            }],
+        }),
         encoding="utf-8",
     )
 

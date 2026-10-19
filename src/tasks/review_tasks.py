@@ -31,7 +31,52 @@ def generation_signature(project, scenes):
          "audio_duration": getattr(s, "audio_duration", None) if isinstance(getattr(s, "audio_duration", None), (int, float)) else None}
         for s in scenes
     ], "character_assets": _character_asset_evidence(project),
-        "generation_contracts": _generation_contract_evidence(scenes)})
+        "generation_contracts": _generation_contract_evidence(scenes),
+        "image_generation_contracts": _image_generation_contract_evidence(scenes)})
+
+
+def _image_generation_contract_evidence(scenes) -> list[dict]:
+    """Bind keyframe reviews to the selected image provider/workflow contract."""
+    evidence = []
+    for scene in scenes or []:
+        image_path = getattr(scene, "image_path", None)
+        item = {"scene": getattr(scene, "scene_number", None), "status": "missing"}
+        if isinstance(image_path, (str, Path)) and str(image_path).strip():
+            report_path = Path(image_path).with_suffix(".quality.json")
+            try:
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, TypeError, ValueError):
+                report = None
+            if isinstance(report, dict):
+                candidates = report.get("candidates") if isinstance(report.get("candidates"), list) else []
+                best_index = report.get("best_index")
+                selected = next(
+                    (
+                        candidate for candidate in candidates
+                        if isinstance(candidate, dict) and candidate.get("index") == best_index
+                    ),
+                    candidates[0] if candidates and isinstance(candidates[0], dict) else None,
+                )
+                if isinstance(selected, dict):
+                    request = selected.get("request") if isinstance(selected.get("request"), dict) else {}
+                    metadata = selected.get("provider_metadata") if isinstance(selected.get("provider_metadata"), dict) else {}
+                    workflow = metadata.get("workflow") if isinstance(metadata.get("workflow"), dict) else {}
+                    item.update({
+                        "status": "present",
+                        "provider": selected.get("provider"),
+                        "seed": request.get("seed"),
+                        "steps": request.get("steps"),
+                        "cfg_scale": request.get("cfg_scale"),
+                        "width": request.get("width"),
+                        "height": request.get("height"),
+                        "use_ipadapter": request.get("use_ipadapter"),
+                        "spatial_scene_contract_hash": request.get("spatial_scene_contract_hash"),
+                        "quality_pipeline": request.get("quality_pipeline"),
+                        "workflow_sha256": workflow.get("workflow_sha256"),
+                        "workflow_error": workflow.get("workflow_error"),
+                    })
+        evidence.append(item)
+    return evidence
 
 
 def _generation_contract_evidence(scenes) -> list[dict]:
