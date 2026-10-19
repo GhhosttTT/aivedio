@@ -66,3 +66,12 @@ class HumanReviewStore:
                     "reviewed_at": entry.get("reviewed_at"),
                 }
         return active
+
+    def active(self, report_key: str, report: dict) -> dict | None:
+        """Return a decision only when it still matches the supplied report."""
+        entry = self._read().get("decisions", {}).get(report_key)
+        if not isinstance(entry, dict):
+            return None
+        if entry.get("report_signature") != self.report_signature(report):
+            return {"decision": "stale", "report_key": report_key, "reviewed_at": entry.get("reviewed_at")}
+        return dict(entry)

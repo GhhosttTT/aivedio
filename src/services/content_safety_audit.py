@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 from src.services.topic_brief import TopicBriefService
@@ -67,6 +69,7 @@ class ContentSafetyAuditService:
             message = "High-risk content is disclosed in policy notes but still requires human safety review before production."
         return {
             "kind": "content_safety_audit",
+            "input_hash": self._input_hash(project, scenes, policy),
             "status": status,
             "message": message,
             "policy_notes_present": bool(policy),
@@ -94,3 +97,21 @@ class ContentSafetyAuditService:
             for category, terms in RISK_CATEGORIES.items()
             if any(term.lower() in lowered for term in terms)
         )
+
+    @staticmethod
+    def _input_hash(project: Any, scenes: list[Any], policy: str) -> str:
+        payload = {
+            "project_id": getattr(project, "id", None),
+            "policy_notes": policy,
+            "scenes": [
+                {
+                    "scene_number": getattr(scene, "scene_number", None),
+                    "visual_description": str(getattr(scene, "visual_description", "") or ""),
+                    "dialogue": str(getattr(scene, "dialogue", "") or ""),
+                }
+                for scene in sorted(list(scenes or []), key=lambda item: getattr(item, "scene_number", 0))
+            ],
+        }
+        return hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()

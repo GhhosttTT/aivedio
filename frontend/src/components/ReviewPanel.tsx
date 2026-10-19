@@ -787,7 +787,7 @@ function HumanReviewActions({
     onDecision,
     busy,
 }: {reports: Record<string, any>; onDecision: (reportKey: string, decision: 'approved' | 'rejected') => void; busy: boolean}) {
-    const pending = Object.entries(reports).filter(([, report]) => ['needs_review', 'review_unavailable'].includes(report?.status));
+    const pending = Object.entries(reports).filter(([, report]) => ['needs_review', 'review_unavailable', 'blocked'].includes(report?.status));
     if (!pending.length) return null;
     return <section className="wb-panel" aria-label="人工审核决策">
         <h3>人工审核决策</h3>

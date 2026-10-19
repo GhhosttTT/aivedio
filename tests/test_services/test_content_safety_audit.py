@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from src.services.content_safety_audit import ContentSafetyAuditService
+from src.services.human_review import HumanReviewStore
 from src.services.production_readiness import ProductionReadinessService
 
 
@@ -66,3 +67,30 @@ def test_production_readiness_exposes_content_safety_blocker(monkeypatch):
 
     assert report["status"] == "blocked"
     assert blockers[0].code == "content_safety_review_required"
+
+
+def test_content_safety_approval_is_version_bound(monkeypatch, tmp_path):
+    from src.utils.storage import storage_manager
+
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    monkeypatch.setattr(
+        "src.services.content_safety_audit.TopicBriefService.load",
+        lambda _self, _project_id: {"policy_notes": "允许剧情化暴力，但需人工审核尺度"},
+    )
+    project = SimpleNamespace(id=1)
+    scenes = [_scene(2, "A violent confrontation")]
+    report = ContentSafetyAuditService().audit(project, scenes)
+    HumanReviewStore(1).record("content_safety", "approved", "已确认符合平台尺度", report, user_id=7)
+
+    blockers = []
+    approved = ProductionReadinessService(None)._content_safety_check(project, scenes, blockers)
+    assert approved["status"] == "passed"
+    assert approved["human_decision"]["decision"] == "approved"
+    assert blockers == []
+
+    changed_scenes = [_scene(2, "A violent confrontation with blood")]
+    changed_blockers = []
+    stale = ProductionReadinessService(None)._content_safety_check(project, changed_scenes, changed_blockers)
+    assert stale["status"] == "needs_review"
+    assert stale["human_decision"]["decision"] == "stale"
+    assert changed_blockers[0].code == "content_safety_review_required"

@@ -60,6 +60,7 @@ from src.services.platform_export import PLATFORM_EXPORT_PRESETS, PlatformExport
 from src.services.repair_budget import RepairBudget
 from src.services.repair_cycle import RepairCycleStore
 from src.services.human_review import HumanReviewStore
+from src.services.content_safety_audit import ContentSafetyAuditService
 from src.services.continuity_audit import ContinuityAuditService
 from src.services.rhythm_audit import RhythmAuditService
 from src.services.episode_style_consistency import EpisodeStyleConsistencyService
@@ -657,6 +658,9 @@ async def get_generation_review(
             audit_report["input_hash"] = audit_input_hash
             audit_report["evidence_schema_version"] = 1
             write_report(root / f"{audit_key}.json", audit_report)
+    content_safety_report = ContentSafetyAuditService().audit(project, audit_scenes)
+    reports["content_safety"] = content_safety_report
+    write_report(root / "content_safety.json", content_safety_report)
     human_decisions = HumanReviewStore(project_id).apply(reports)
     for name in ("production_story", "generation"):
         report = reports.get(name)
@@ -1107,12 +1111,15 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
 
     production_story = statuses.get("production_story")
     generation = statuses.get("generation")
+    content_safety = statuses.get("content_safety", "not_applicable")
     baseline = statuses.get("seed_dance_baseline_comparison")
     composition = statuses.get("final_composition")
     if production_story != "passed":
         action_items.append("Run production story review before generating final assets.")
     if generation != "passed":
         action_items.append("Run sampled-frame generation review before final composition.")
+    if content_safety not in {"passed", "not_applicable"}:
+        action_items.append("Complete content-safety review for flagged script/storyboard evidence before production.")
     if baseline != "passed":
         action_items.append("Run Seed Dance baseline comparison before claiming replacement quality.")
     if composition is not None and composition != "passed":
@@ -1197,6 +1204,7 @@ def _generation_review_summary(reports: dict, repair_output: Path | None = None)
 
     blocking = bool(
         stale or needs_split or production_story != "passed" or generation != "passed"
+        or content_safety not in {"passed", "not_applicable"}
         or baseline != "passed" or (composition is not None and composition != "passed")
         or continuity == "needs_review"
         or rhythm == "needs_review"
@@ -1259,6 +1267,12 @@ def _effective_review_status(report: dict) -> str | None:
         "seed_dance_baseline_comparison",
     } and status_value != "passed":
         return status_value
+    if (
+        report.get("kind") == "content_safety_audit"
+        and isinstance(report.get("human_decision"), dict)
+        and report["human_decision"].get("decision") == "approved"
+    ):
+        return "passed"
     # A human can resolve a subjective visual disagreement, but cannot waive
     # missing/stale per-scene evidence or incomplete coverage.
     for evidence_key in ("scene_coverage", "evidence"):

@@ -189,6 +189,15 @@ class ProductionReadinessService:
         blockers: list[ReadinessIssue],
     ) -> dict:
         report = ContentSafetyAuditService().audit(project, scenes)
+        from src.services.human_review import HumanReviewStore
+
+        decision = HumanReviewStore(project.id).active("content_safety", report)
+        if decision:
+            report["human_decision"] = decision
+        if decision and decision.get("decision") == "approved":
+            report["audit_status"] = report.get("status")
+            report["status"] = "passed"
+            report["message"] = "Content-safety evidence was explicitly approved by a human reviewer."
         if report.get("status") != "passed":
             blockers.append(ReadinessIssue(
                 "content_safety_review_required",
