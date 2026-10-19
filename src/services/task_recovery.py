@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterable
 
 from src.utils.storage import get_scene_video_path
 from src.utils.storage import storage_manager
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows uses atomic replace without flock.
+    fcntl = None
 
 
 _PRODUCTION_OPTION_KEYS = (
@@ -50,6 +58,20 @@ def _production_options_path(project_id: int) -> Path:
     return storage_manager.get_project_path(project_id) / "production_options.json"
 
 
+@contextmanager
+def _options_lock(path: Path):
+    lock_path = path.with_name(f".{path.name}.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as stream:
+        if fcntl is not None:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
 def save_production_video_options(project_id: int, task_id: int | str, options: dict) -> None:
     """Persist the effective per-run video controls for later repair tasks."""
     normalized_options = dict(options or {})
@@ -65,9 +87,20 @@ def save_production_video_options(project_id: int, task_id: int | str, options: 
         },
     }
     path = _production_options_path(project_id)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
+    with _options_lock(path):
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent,
+        )
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                json.dump(payload, stream, ensure_ascii=False, indent=2)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary_name, path)
+        finally:
+            if os.path.exists(temporary_name):
+                os.unlink(temporary_name)
 
 
 def load_production_video_options(

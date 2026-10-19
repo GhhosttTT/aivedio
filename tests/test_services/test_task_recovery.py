@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from src.services import task_recovery
@@ -121,3 +122,25 @@ def test_production_video_options_normalize_task_aliases(tmp_path, monkeypatch):
         "output_format": "mp4",
         "sequence_output_path": "/tmp/sequence.mp4",
     }
+
+
+def test_production_video_options_concurrent_writes_leave_one_complete_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setattr(task_recovery.storage_manager, "get_project_path", lambda _project_id: tmp_path)
+
+    def save(task_id):
+        task_recovery.save_production_video_options(7, task_id, {
+            "provider": "seedance_api",
+            "model": f"model-{task_id}",
+            "draft_task_id": f"draft-{task_id}",
+            "resolution": "1080p",
+        })
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        list(pool.map(save, range(6)))
+
+    snapshot = task_recovery.load_production_video_options(7)
+    assert snapshot is not None
+    assert snapshot["provider"] == "seedance_api"
+    assert snapshot["model"].startswith("model-")
+    assert snapshot["draft_task_id"].startswith("draft-")
+    assert not list(tmp_path.glob("*.tmp"))
