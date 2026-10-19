@@ -360,6 +360,8 @@ def test_delivery_package_verifies_production_readiness_snapshot(tmp_path):
     (tmp_path / "reviews").mkdir()
     (tmp_path / "reviews" / "production_readiness_latest.json").write_text(json.dumps({
         "kind": "production_readiness_snapshot",
+        "project_id": 7,
+        "task_record_id": 12,
         "readiness": {
             "status": "ready",
             "video_engine": {"status": "ready_for_production_video_test"},
@@ -376,7 +378,7 @@ def test_delivery_package_verifies_production_readiness_snapshot(tmp_path):
 
     assert manifest["verification"]["status"] == "passed"
     assert manifest["readiness_snapshot"]["path"] == "reviews/production_readiness_latest.json"
-    assert manifest["readiness_snapshot"]["task_record_id"] is None
+    assert manifest["readiness_snapshot"]["task_record_id"] == 12
     with zipfile.ZipFile(tmp_path / "delivery" / "delivery_package.zip") as archive:
         assert "reviews/production_readiness_latest.json" in archive.namelist()
         review_index = json.loads(archive.read("metadata/review_index.json").decode("utf-8"))
@@ -394,6 +396,27 @@ def test_delivery_package_rejects_invalid_production_readiness_snapshot(tmp_path
     project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
 
     with pytest.raises(DeliveryPackageError, match="snapshot"):
+        build_delivery_package(
+            project,
+            tmp_path,
+            {"generation": {"status": "passed"}, "final_composition": _passed_final_composition(final)},
+            {"status": "ready"},
+        )
+
+
+def test_delivery_package_rejects_snapshot_for_another_project(tmp_path):
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    (tmp_path / "reviews").mkdir()
+    (tmp_path / "reviews" / "production_readiness_latest.json").write_text(json.dumps({
+        "kind": "production_readiness_snapshot",
+        "project_id": 99,
+        "task_record_id": 12,
+        "readiness": {"status": "ready", "video_engine": {"status": "ready_for_production_video_test"}},
+    }), encoding="utf-8")
+    project = SimpleNamespace(id=7, name="Pilot", final_video_path=str(final), scenes=[])
+
+    with pytest.raises(DeliveryPackageError, match="project"):
         build_delivery_package(
             project,
             tmp_path,

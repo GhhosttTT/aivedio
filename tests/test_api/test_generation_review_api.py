@@ -362,6 +362,8 @@ def test_delivery_package_endpoint_exports_approved_project(tmp_path, monkeypatc
     (project_root / "reviews").mkdir(parents=True, exist_ok=True)
     (project_root / "reviews" / "production_readiness_latest.json").write_text(json.dumps({
         "kind": "production_readiness_snapshot",
+        "project_id": 1,
+        "task_record_id": 1,
         "readiness": {
             "status": "ready",
             "video_engine": {"status": "ready_for_production_video_test"},

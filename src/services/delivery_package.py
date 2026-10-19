@@ -194,6 +194,21 @@ def verify_delivery_package(package_path: str | Path) -> dict:
                     video_engine = readiness.get("video_engine") if isinstance(readiness, dict) else None
                     if not isinstance(readiness_snapshot, dict) or readiness_snapshot.get("kind") != "production_readiness_snapshot":
                         result["errors"].append("Production readiness snapshot kind is invalid")
+                    if isinstance(readiness_snapshot, dict):
+                        if readiness_snapshot.get("project_id") != manifest.get("project_id"):
+                            result["errors"].append("Production readiness snapshot project does not match delivery manifest")
+                        task_record_id = readiness_snapshot.get("task_record_id")
+                        if task_record_id is not None and (
+                            isinstance(task_record_id, bool)
+                            or not isinstance(task_record_id, int)
+                            or task_record_id <= 0
+                        ):
+                            result["errors"].append("Production readiness snapshot task binding is invalid")
+                        manifest_snapshot = manifest.get("readiness_snapshot")
+                        if isinstance(manifest_snapshot, dict) and (
+                            manifest_snapshot.get("task_record_id") != task_record_id
+                        ):
+                            result["errors"].append("Delivery manifest readiness task binding does not match snapshot")
                     if not isinstance(readiness, dict) or readiness.get("status") != "ready":
                         result["errors"].append("Production readiness snapshot is not ready")
                     if not isinstance(video_engine, dict) or video_engine.get("status") != "ready_for_production_video_test":
