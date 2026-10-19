@@ -131,6 +131,7 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
         checks["has_likely_video_output"] = bool(outputs)
         contract_required = (
             "workflow_file", "has_reference_placeholder", "has_prompt_placeholder",
+            "has_end_frame_placeholder",
             "has_quality_profile_placeholder", "has_repair_action_placeholder",
             "has_quality_pipeline_placeholder", "has_likely_video_output",
             "has_spatial_plan_placeholder", "has_spatial_control_references_placeholder",
@@ -298,6 +299,8 @@ def _video_workflow_action_items(checks: dict) -> list[str]:
         items.append("Add {reference_image} or {image} to the workflow input image node.")
     if not checks.get("has_prompt_placeholder"):
         items.append("Add {prompt} or {positive_prompt} to the positive prompt node.")
+    if not checks.get("has_end_frame_placeholder"):
+        items.append("Add {end_image} or {last_frame} so the workflow can honor an approved shot ending.")
     if not checks.get("has_quality_profile_placeholder"):
         items.append("Add {quality_mode} or {quality_profile} so the workflow can switch production quality profiles.")
     if not checks.get("has_repair_action_placeholder"):

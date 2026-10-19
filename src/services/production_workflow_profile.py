@@ -54,6 +54,7 @@ CAPABILITY_KEYWORDS = {
 VIDEO_OUTPUT_KEYWORDS = ("vhs_videocombine", "savevideo", "createvideo", "video combine")
 VIDEO_WORKFLOW_PLACEHOLDER_GROUPS = {
     "reference": {"reference_image", "image"},
+    "end_frame": {"end_image", "last_frame"},
     "prompt": {"prompt", "positive_prompt"},
     "quality_profile": {"quality_mode", "quality_profile"},
     "repair_action": {"repair_action"},
