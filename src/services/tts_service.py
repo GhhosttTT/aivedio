@@ -10,6 +10,7 @@ import time
 import json
 from typing import Optional, List, Dict
 from pathlib import Path
+from uuid import uuid4
 
 try:
     import httpx
@@ -241,10 +242,21 @@ class TTSService:
                 output_path = str(
                     output_dir / f"audio_{int(time.time())}.mp3"
                 )
-            
-            # 保存音频文件
-            with open(output_path, "wb") as f:
-                f.write(response.content)
+
+            destination = Path(output_path)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            temporary = destination.with_name(
+                f".{destination.name}.{uuid4().hex}.part"
+            )
+            try:
+                if not response.content:
+                    raise TTSError("TTS API 返回空音频")
+                temporary.write_bytes(response.content)
+                if temporary.stat().st_size <= 0:
+                    raise TTSError("TTS API 返回空音频")
+                temporary.replace(destination)
+            finally:
+                temporary.unlink(missing_ok=True)
             
             logger.debug(f"音频下载完成: {output_path}")
             

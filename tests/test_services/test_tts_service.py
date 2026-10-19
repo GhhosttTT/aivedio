@@ -157,6 +157,21 @@ class TestTTSService:
         
         with pytest.raises(TTSError, match="API 返回错误"):
             service.generate_speech(text="测试文本")
+
+    def test_download_audio_rejects_empty_response_without_overwriting_output(
+        self, service, mock_client, tmp_path
+    ):
+        output = tmp_path / "dialogue.mp3"
+        output.write_bytes(b"previous-good-audio")
+        response = MagicMock()
+        response.content = b""
+        mock_client.get.return_value = response
+
+        with pytest.raises(TTSError, match="空音频"):
+            service._download_audio("https://test.com/audio.mp3", str(output))
+
+        assert output.read_bytes() == b"previous-good-audio"
+        assert not list(tmp_path.glob(".dialogue.mp3.*.part"))
     
     def test_generate_speech_retry(self, service, mock_client):
         """测试：失败后重试"""
