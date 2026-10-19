@@ -313,6 +313,8 @@ class ProductionWorkflowProfileService:
             "rhythm_same_role_warning_run": settings.GENERATION_RHYTHM_SAME_ROLE_WARNING_RUN,
             "rhythm_max_hook_latency_seconds": settings.GENERATION_RHYTHM_MAX_HOOK_LATENCY_SECONDS,
             "video_temporal_min_score": settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE,
+            "video_max_static_run_seconds": settings.GENERATION_VIDEO_MAX_STATIC_RUN_SECONDS,
+            "video_max_temporal_jump_ratio": settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO,
             "video_platform_min_score": settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE,
             "video_character_distinctiveness_min_score": settings.GENERATION_VIDEO_CHARACTER_DISTINCTIVENESS_MIN_SCORE,
             "video_aesthetic_feature_min_score": settings.GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE,

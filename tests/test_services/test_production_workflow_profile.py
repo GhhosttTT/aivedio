@@ -435,3 +435,19 @@ def test_workflow_profile_snapshots_style_and_rhythm_thresholds(monkeypatch):
 
     assert gates["episode_style_brightness_blocker"] == 50.0
     assert gates["rhythm_max_hook_latency_seconds"] == 6.0
+
+
+def test_workflow_profile_snapshots_temporal_quality_thresholds(monkeypatch):
+    monkeypatch.setattr(
+        "src.services.production_workflow_profile.settings.GENERATION_VIDEO_MAX_STATIC_RUN_SECONDS",
+        1.25,
+    )
+    monkeypatch.setattr(
+        "src.services.production_workflow_profile.settings.GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO",
+        0.22,
+    )
+
+    gates = ProductionWorkflowProfileService()._current_quality_gates()
+
+    assert gates["video_max_static_run_seconds"] == 1.25
+    assert gates["video_max_temporal_jump_ratio"] == 0.22

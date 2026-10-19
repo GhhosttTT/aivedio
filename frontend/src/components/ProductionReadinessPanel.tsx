@@ -198,7 +198,12 @@ export function ProductionReadinessPanel({
                         <Metric label="图像预算" value={`${qualityGates.image_candidates ?? '-'} 候选 / ${qualityGates.image_refinement_passes ?? '-'} 轮`}/>
                         <Metric label="视频预算" value={`${qualityGates.video_candidates ?? '-'} 候选 / ${qualityGates.video_refinement_passes ?? '-'} 轮`}/>
                         <Metric label="人物身份底线" value={formatScore(typeof qualityGates.character_identity_min_score === 'number' ? qualityGates.character_identity_min_score : undefined)}/>
+                        <Metric label="身份分差上限" value={typeof qualityGates.character_identity_max_score_spread === 'number' ? String(qualityGates.character_identity_max_score_spread) : '-'}/>
                         <Metric label="曝光漂移阻断" value={typeof qualityGates.episode_style_brightness_blocker === 'number' ? String(qualityGates.episode_style_brightness_blocker) : '-'}/>
+                        <Metric label="饱和度漂移阻断" value={typeof qualityGates.episode_style_saturation_blocker === 'number' ? String(qualityGates.episode_style_saturation_blocker) : '-'}/>
+                        <Metric label="对比度漂移阻断" value={typeof qualityGates.episode_style_contrast_blocker === 'number' ? String(qualityGates.episode_style_contrast_blocker) : '-'}/>
+                        <Metric label="静止片段上限" value={`${typeof qualityGates.video_max_static_run_seconds === 'number' ? qualityGates.video_max_static_run_seconds : '-'}s`}/>
+                        <Metric label="时间跳变上限" value={typeof qualityGates.video_max_temporal_jump_ratio === 'number' ? String(qualityGates.video_max_temporal_jump_ratio) : '-'}/>
                         <Metric label="开场钩子上限" value={`${typeof qualityGates.rhythm_max_hook_latency_seconds === 'number' ? qualityGates.rhythm_max_hook_latency_seconds : '-'}s`}/>
                     </div>
                     {profileGaps.length > 0 && <div className="wb-issue blocker">
