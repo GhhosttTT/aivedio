@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from src.config import settings
+
 
 @dataclass(frozen=True)
 class CharacterIdentityConsistencyReport:
@@ -56,9 +58,6 @@ class CharacterIdentityConsistencyService:
     identity score and a large score swing for the same named role.
     """
 
-    MIN_SCORE = 3.0
-    MAX_SCORE_SPREAD = 1.5
-
     def audit(self, scenes: list, reports: dict[str, Any]) -> CharacterIdentityConsistencyReport:
         scene_names = {
             getattr(scene, "scene_number", None): self._scene_characters(scene)
@@ -92,23 +91,25 @@ class CharacterIdentityConsistencyService:
             return CharacterIdentityConsistencyReport("not_applicable", 0, 0, [], [])
 
         issues: list[dict[str, Any]] = []
+        minimum = float(settings.GENERATION_CHARACTER_IDENTITY_MIN_SCORE)
+        maximum_spread = float(settings.GENERATION_CHARACTER_IDENTITY_MAX_SCORE_SPREAD)
         for character, items in sorted(grouped.items()):
             scores = [float(item["score"]) for item in items]
             low = min(scores)
             spread = max(scores) - low
-            if low < self.MIN_SCORE:
+            if low < minimum:
                 for item in items:
-                    if item["score"] < self.MIN_SCORE:
+                    if item["score"] < minimum:
                         issues.append({
                             "severity": "high",
                             "code": "identity_score_below_threshold",
                             "character": character,
                             "scene_number": item["scene_number"],
                             "score": item["score"],
-                            "evidence": f"{character} scene {item['scene_number']} identity score {item['score']:.1f}/5 is below {self.MIN_SCORE:.1f}",
+                            "evidence": f"{character} scene {item['scene_number']} identity score {item['score']:.1f}/5 is below {minimum:.1f}",
                             "recommendation": "Regenerate the shot with the frozen identity reference and turnaround controls.",
                         })
-            if len(items) >= 2 and spread > self.MAX_SCORE_SPREAD:
+            if len(items) >= 2 and spread > maximum_spread:
                 issues.append({
                     "severity": "high",
                     "code": "identity_score_drift",

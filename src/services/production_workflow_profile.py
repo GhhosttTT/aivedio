@@ -295,6 +295,8 @@ class ProductionWorkflowProfileService:
             "turnaround_feature_min_score": settings.GENERATION_TURNAROUND_FEATURE_MIN_SCORE,
             "video_min_score": settings.GENERATION_VIDEO_MIN_SCORE,
             "video_identity_min_score": settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE,
+            "character_identity_min_score": settings.GENERATION_CHARACTER_IDENTITY_MIN_SCORE,
+            "character_identity_max_score_spread": settings.GENERATION_CHARACTER_IDENTITY_MAX_SCORE_SPREAD,
             "video_temporal_min_score": settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE,
             "video_platform_min_score": settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE,
             "video_character_distinctiveness_min_score": settings.GENERATION_VIDEO_CHARACTER_DISTINCTIVENESS_MIN_SCORE,
