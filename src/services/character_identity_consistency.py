@@ -181,10 +181,21 @@ class CharacterIdentityConsistencyService:
         return list(dict.fromkeys(str(value).strip() for value in (values or []) if str(value).strip()))
 
     def _scene_characters(self, scene) -> list[str]:
-        value = getattr(scene, "character_name", None)
-        if isinstance(value, str) and value.strip():
-            return [value.strip()]
-        return []
+        values = []
+        for field in ("character_name", "visible_characters", "characters"):
+            value = getattr(scene, field, None)
+            if isinstance(value, str):
+                values.append(value)
+            elif isinstance(value, (list, tuple, set)):
+                values.extend(value)
+        names: list[str] = []
+        for value in values:
+            if isinstance(value, dict):
+                value = value.get("name") or value.get("character_name") or value.get("character")
+            name = str(value or "").strip()
+            if name and name not in names:
+                names.append(name)
+        return names
 
     def _identity_score(self, candidate: dict[str, Any]) -> tuple[float | None, str]:
         review = candidate.get("review") if isinstance(candidate.get("review"), dict) else candidate

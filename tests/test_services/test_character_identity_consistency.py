@@ -129,3 +129,29 @@ def test_character_identity_consistency_requires_every_repeated_scene_observatio
     assert report.status == "needs_review"
     assert report.issues[0]["code"] == "identity_evidence_insufficient"
     assert report.issues[0]["required_observations"] == 3
+
+
+def test_character_identity_consistency_reads_visible_multi_character_scene_fields():
+    scenes = [
+        SimpleNamespace(
+            scene_number=1,
+            visible_characters=[{"name": "Alice"}, {"character_name": "Bob"}],
+        ),
+        SimpleNamespace(scene_number=2, characters=["Alice", "Bob"]),
+    ]
+    reports = {
+        "scene_1": {"cases": [{
+            "scene_number": 1,
+            "review": {"identity_consistency": {"score": 4.5}},
+        }]},
+        "scene_2": {"cases": [{
+            "scene_number": 2,
+            "review": {"identity_consistency": {"score": 4.4}},
+        }]},
+    }
+
+    report = CharacterIdentityConsistencyService().audit(scenes, reports)
+
+    assert report.status == "passed"
+    assert report.character_count == 2
+    assert {item["character"] for item in report.observations} == {"Alice", "Bob"}
