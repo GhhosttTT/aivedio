@@ -2367,9 +2367,11 @@ async def run_auto_repair_queue(
                 "status": task_record.status.value if task_record else "submitted",
             } for item in selected)
         except ValueError as exc:
+            budget.release(selected)
             skipped.extend({**item, "reason": str(exc)} for item in selected)
         except Exception as exc:
             logger.error(f"自动返工任务创建失败: {exc}", exc_info=True)
+            budget.release(selected)
             skipped.extend({**item, "reason": "task_submission_failed"} for item in selected)
         else:
             budget.record(selected)

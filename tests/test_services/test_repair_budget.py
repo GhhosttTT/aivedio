@@ -82,3 +82,25 @@ def test_repair_budget_migrates_legacy_attempt_file(monkeypatch, tmp_path):
 
     assert accepted == []
     assert exhausted[0]["project_retry_attempts"] == 3
+
+
+def test_repair_budget_reserves_concurrent_filters_until_commit(monkeypatch, tmp_path):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    budget = RepairBudget(1, max_attempts=1, max_total_attempts=1)
+    item = {"scene_number": 1, "stage": "video", "action": "repair", "reason": "flicker"}
+
+    accepted, exhausted = budget.filter([item])
+    assert len(accepted) == 1 and not exhausted
+
+    second_accepted, second_exhausted = budget.filter([item])
+    assert second_accepted == []
+    assert second_exhausted[0]["retry_attempts"] == 1
+
+    budget.release(accepted)
+    accepted_after_release, exhausted_after_release = budget.filter([item])
+    assert len(accepted_after_release) == 1 and not exhausted_after_release
+    budget.record(accepted_after_release)
+
+    _, exhausted_after_commit = budget.filter([item])
+    assert exhausted_after_commit[0]["project_retry_attempts"] == 1
