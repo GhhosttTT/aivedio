@@ -45,13 +45,26 @@ class FirstFrameConsistencyAuditService:
 
     def audit(self, scenes: list) -> FirstFrameConsistencyAuditReport:
         observations = []
+        missing_reference_scenes: list[tuple[int, str, str]] = []
         for scene in sorted(scenes or [], key=lambda item: item.scene_number):
             video_path = getattr(scene, "video_path", None)
             reference_image = getattr(scene, "image_path", None)
-            if not video_path or not reference_image:
+            if not reference_image:
+                continue
+            if not video_path:
+                missing_reference_scenes.append((
+                    scene.scene_number,
+                    "video_artifact_missing",
+                    "reference-backed shot has no generated video artifact",
+                ))
                 continue
             metrics = self._load_metrics(Path(str(video_path)))
             if not metrics:
+                missing_reference_scenes.append((
+                    scene.scene_number,
+                    "missing_reference_evidence",
+                    "opening-frame reference evidence sidecar is missing or unreadable",
+                ))
                 continue
             evidence = metrics.get("start_frame_reference")
             item = {
@@ -68,7 +81,7 @@ class FirstFrameConsistencyAuditService:
         if not observations:
             return FirstFrameConsistencyAuditReport("not_applicable", 0, [], [])
 
-        issues = []
+        issues = [self._issue(scene_number, code, message) for scene_number, code, message in missing_reference_scenes]
         minimum = float(settings.GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE)
         for item in observations:
             score = item.get("score")
@@ -81,7 +94,12 @@ class FirstFrameConsistencyAuditService:
             elif score < minimum:
                 issues.append(self._issue(item["scene_number"], "opening_frame_drift", f"opening-frame reference score {score:.2f} is below the production floor {minimum:.2f}"))
         status = "needs_review" if issues else "passed"
-        return FirstFrameConsistencyAuditReport(status, len(observations), observations, issues)
+        return FirstFrameConsistencyAuditReport(
+            status,
+            len(observations) + len(missing_reference_scenes),
+            observations,
+            issues,
+        )
 
     def _load_metrics(self, video_path: Path) -> dict[str, Any] | None:
         try:

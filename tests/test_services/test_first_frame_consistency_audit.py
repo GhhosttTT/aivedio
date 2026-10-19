@@ -93,3 +93,19 @@ def test_first_frame_audit_reads_matching_candidate_technical_evidence(tmp_path)
 
     assert report.status == "passed"
     assert report.scenes[0]["score"] == 4.0
+
+
+def test_first_frame_audit_blocks_partial_reference_evidence(tmp_path):
+    valid = tmp_path / "scene_1.mp4"
+    missing = tmp_path / "scene_2.mp4"
+    _write_sidecar(valid, {"status": "available", "score": 4.0})
+    missing.write_bytes(b"video")
+
+    report = FirstFrameConsistencyAuditService().audit([
+        _scene(1, valid),
+        _scene(2, missing),
+    ])
+
+    assert report.status == "needs_review"
+    assert report.checked_scene_count == 2
+    assert report.issues[0]["code"] == "missing_reference_evidence"
