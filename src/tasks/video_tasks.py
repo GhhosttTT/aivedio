@@ -1634,23 +1634,30 @@ def _publish_sequence_artifacts_atomically(
         if not staging_path.is_file():
             raise FileNotFoundError(f"Missing staged sequence clip: {staging_path}")
         pairs.append((staging_path, output_path))
-        for suffix in (".quality.json", ".final_review.json"):
+        for suffix in (
+            ".quality.json",
+            ".final_review.json",
+            ".provider.json",
+            ".continuity.json",
+            ".last_frame.png",
+        ):
             source = staging_path.with_suffix(suffix)
             if not source.is_file():
                 continue
             destination = output_path.with_suffix(suffix)
-            try:
-                payload = json.loads(source.read_text(encoding="utf-8"))
-                if isinstance(payload, dict):
-                    for key in ("path", "review_path"):
-                        value = payload.get(key)
-                        if value == str(staging_path):
-                            payload[key] = str(output_path)
-                        elif value == str(staging_path.with_suffix(".final_review.json")):
-                            payload[key] = str(output_path.with_suffix(".final_review.json"))
-                    _write_json_sidecar(source, payload)
-            except (OSError, TypeError, ValueError) as exc:
-                raise ValueError(f"Invalid staged sequence sidecar: {source}") from exc
+            if suffix.endswith(".json"):
+                try:
+                    payload = json.loads(source.read_text(encoding="utf-8"))
+                    if isinstance(payload, dict):
+                        for key in ("path", "review_path"):
+                            value = payload.get(key)
+                            if value == str(staging_path):
+                                payload[key] = str(output_path)
+                            elif value == str(staging_path.with_suffix(".final_review.json")):
+                                payload[key] = str(output_path.with_suffix(".final_review.json"))
+                        _write_json_sidecar(source, payload)
+                except (OSError, TypeError, ValueError) as exc:
+                    raise ValueError(f"Invalid staged sequence sidecar: {source}") from exc
             pairs.append((source, destination))
 
     backups: list[tuple[Path, Path]] = []
@@ -3402,22 +3409,33 @@ def generate_sequence_video_task(
                     f"Sequence segment scene {scene.scene_number} is not production-ready: "
                     f"{segment_report.get('error') or 'quality review failed'}"
                 )
+            # Stage provider provenance and the continuity anchor before any
+            # segment becomes visible. The sidecars point to final paths,
+            # while their source hash is computed from the staged media.
+            output_path = output_paths[scenes.index(scene)]
+            _write_provider_metadata(staging_path, derived_metadata)
+            last_frame_path = _extract_video_last_frame(staging_path)
+            if last_frame_path:
+                _write_json_sidecar(
+                    _continuity_metadata_path(staging_path),
+                    {
+                        "last_frame_url": (
+                            derived_metadata.get("last_frame_url")
+                            if isinstance(derived_metadata.get("last_frame_url"), str)
+                            else None
+                        ),
+                        "last_frame_path": str(
+                            output_path.with_name(f"{output_path.stem}.last_frame.png")
+                        ),
+                        "source": derived_metadata.get("endpoint"),
+                        "source_video_sha256": file_hash(staging_path),
+                    },
+                )
         # Publish only after every derived scene has passed its own review.
         _publish_sequence_artifacts_atomically(staging_paths, output_paths)
 
         for scene, output_path in zip(scenes, output_paths):
             scene.video_path = str(output_path)
-            published_provider_metadata = segment_provider_metadata.get(
-                scene.id,
-                sequence_provider_metadata,
-            )
-            last_frame_path = _extract_video_last_frame(output_path)
-            if last_frame_path:
-                _write_scene_continuity_metadata(
-                    output_path,
-                    {**published_provider_metadata, "last_frame_path": last_frame_path},
-                )
-            _write_provider_metadata(output_path, published_provider_metadata)
         db.commit()
         sequence_manifest.update({
             "status": "completed",

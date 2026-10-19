@@ -690,6 +690,27 @@ def test_sequence_artifacts_publish_as_one_batch(tmp_path):
     assert json.loads(outputs[1].with_suffix(".quality.json").read_text())["path"] == str(outputs[1])
 
 
+def test_sequence_artifacts_publish_continuity_and_provider_sidecars_as_one_batch(tmp_path):
+    staging = [tmp_path / ".scene.part.mp4"]
+    outputs = [tmp_path / "scene.mp4"]
+    staging[0].write_bytes(b"new-video")
+    staging[0].with_suffix(".provider.json").write_text(
+        json.dumps({"provider_task_id": "task-1"}), encoding="utf-8"
+    )
+    staging[0].with_suffix(".continuity.json").write_text(
+        json.dumps({"last_frame_path": str(outputs[0].with_name("scene.last_frame.png"))}),
+        encoding="utf-8",
+    )
+    staging[0].with_suffix(".last_frame.png").write_bytes(b"frame")
+
+    _publish_sequence_artifacts_atomically(staging, outputs)
+
+    assert outputs[0].with_suffix(".provider.json").is_file()
+    continuity = json.loads(outputs[0].with_suffix(".continuity.json").read_text())
+    assert continuity["last_frame_path"] == str(outputs[0].with_name("scene.last_frame.png"))
+    assert outputs[0].with_name("scene.last_frame.png").read_bytes() == b"frame"
+
+
 @pytest.mark.parametrize(
     ("metadata", "ambiguous"),
     [
