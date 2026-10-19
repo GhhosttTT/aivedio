@@ -53,7 +53,7 @@ from src.services.video_output_contract import audit_video_output_contract, vali
 from src.services.sequence_plan import build_sequence_context, build_sequence_timeline
 from src.services.sequence_video_service import split_sequence_video
 from src.services.sequence_timeline_audit import SequenceTimelineAuditService
-from src.tasks.celery_app import celery_app
+from src.tasks.celery_app import celery_app, _broadcast_task_event
 from src.utils.logger import get_logger
 from src.utils.storage import get_scene_video_path
 
@@ -2994,11 +2994,51 @@ def generate_video_task(
                 provider_options = _apply_video_output_contract_repair(provider_name, provider_options)
             provider_ref = {}
             external_progress_callback = kwargs.get("PROVIDER_PROGRESS_CALLBACK")
+            last_provider_event_at = 0.0
+            last_provider_event_state = None
+            last_provider_event_progress = None
+
+            def publish_provider_progress(progress, state, metadata):
+                nonlocal last_provider_event_at, last_provider_event_state, last_provider_event_progress
+                try:
+                    numeric_progress = float(progress)
+                except (TypeError, ValueError):
+                    return
+                if not isfinite(numeric_progress):
+                    return
+                numeric_progress = max(0.0, min(100.0, numeric_progress))
+                now = time.monotonic()
+                state_changed = state != last_provider_event_state
+                progress_changed = (
+                    last_provider_event_progress is None
+                    or abs(numeric_progress - last_provider_event_progress) >= 1.0
+                )
+                if not state_changed and not progress_changed and now - last_provider_event_at < 1.0:
+                    return
+                last_provider_event_at = now
+                last_provider_event_state = state
+                last_provider_event_progress = numeric_progress
+                metadata = metadata if isinstance(metadata, dict) else {}
+                _broadcast_task_event(project_id, {
+                    "type": "progress_update",
+                    "project_id": project_id,
+                    "task_id": str(task_id),
+                    "status": "running",
+                    "progress": numeric_progress / 100.0,
+                    "current_step": f"provider_{state}",
+                    "provider_progress": numeric_progress,
+                    "provider_stage": f"provider_{state}",
+                    "provider_task_id": metadata.get("provider_task_id"),
+                    "provider_status": metadata.get("provider_status") or metadata.get("provider_task_status"),
+                    "provider_error": metadata.get("provider_error"),
+                })
+
             def report_provider_progress(progress, state):
                 generator = provider_ref.get("generator")
                 metadata = getattr(generator, "last_result_metadata", {}) if generator else {}
                 if callable(external_progress_callback):
                     external_progress_callback(progress, state, metadata)
+                publish_provider_progress(progress, state, metadata)
                 self.update_state(
                     state="PROGRESS",
                     meta={
@@ -3216,8 +3256,42 @@ def generate_sequence_video_task(
             "DURATION_SECONDS": sequence_duration,
             "sequence_timeline": [segment.as_dict() for segment in segments],
         })
+        last_sequence_event_at = 0.0
+        last_sequence_event_state = None
+        last_sequence_event_progress = None
+
         def report_sequence_provider_progress(progress, state, metadata=None):
+            nonlocal last_sequence_event_at, last_sequence_event_state, last_sequence_event_progress
             metadata = metadata if isinstance(metadata, dict) else {}
+            try:
+                numeric_progress = float(progress)
+            except (TypeError, ValueError):
+                numeric_progress = None
+            if numeric_progress is not None and isfinite(numeric_progress):
+                numeric_progress = max(0.0, min(100.0, numeric_progress))
+                now = time.monotonic()
+                state_changed = state != last_sequence_event_state
+                progress_changed = (
+                    last_sequence_event_progress is None
+                    or abs(numeric_progress - last_sequence_event_progress) >= 1.0
+                )
+                if state_changed or progress_changed or now - last_sequence_event_at >= 1.0:
+                    last_sequence_event_at = now
+                    last_sequence_event_state = state
+                    last_sequence_event_progress = numeric_progress
+                    _broadcast_task_event(project_id, {
+                        "type": "progress_update",
+                        "project_id": project_id,
+                        "task_id": str(task_id),
+                        "status": "running",
+                        "progress": numeric_progress / 100.0,
+                        "current_step": f"provider_{state}",
+                        "provider_progress": numeric_progress,
+                        "provider_stage": f"provider_{state}",
+                        "provider_task_id": metadata.get("provider_task_id"),
+                        "provider_status": metadata.get("provider_status") or metadata.get("provider_task_status"),
+                        "provider_error": metadata.get("provider_error"),
+                    })
             self.update_state(
                 state="PROGRESS",
                 meta={
