@@ -94,6 +94,14 @@ class CharacterCreate(BaseModel):
     appearance: Optional[str] = Field(None, max_length=500, description="角色外貌")
 
 
+class CharacterUpdate(BaseModel):
+    """更新角色圣经资料；改动后需重新审核相关资产。"""
+    name: Optional[str] = Field(None, min_length=1, max_length=100, description="角色名称")
+    description: Optional[str] = Field(None, max_length=500, description="角色描述")
+    personality: Optional[str] = Field(None, max_length=200, description="角色性格")
+    appearance: Optional[str] = Field(None, max_length=500, description="角色外貌")
+
+
 class CharacterReferenceResponse(BaseModel):
     """
     角色参考图像响应模型

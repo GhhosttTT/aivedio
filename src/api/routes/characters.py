@@ -13,6 +13,7 @@ from pathlib import Path
 from src.api.dependencies import require_project_access
 from src.api.schemas import (
     CharacterCreate,
+    CharacterUpdate,
     CharacterIdentityPlanRequest,
     CharacterIdentityPlanResponse,
     CharacterIdentityScoreRequest,
@@ -170,6 +171,32 @@ async def get_character(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="获取角色详情时发生错误"
         )
+
+
+@router.patch("/{character_id}", response_model=CharacterResponse)
+async def update_character(
+    project_id: int,
+    character_id: int,
+    character_update: CharacterUpdate,
+    db_session: Session = Depends(get_db_session),
+):
+    """更新角色圣经资料；资产包会在就绪检查时被标记为 stale。"""
+    character = db_session.query(Character).filter(
+        Character.id == character_id,
+        Character.project_id == project_id,
+    ).first()
+    if not character:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"角色不存在: {character_id}")
+    changes = character_update.model_dump(exclude_unset=True)
+    if "name" in changes:
+        changes["name"] = changes["name"].strip()
+        if not changes["name"]:
+            raise HTTPException(status_code=422, detail="角色名称不能为空")
+    for field, value in changes.items():
+        setattr(character, field, value)
+    db_session.commit()
+    db_session.refresh(character)
+    return character
 
 
 @router.post("/{character_id}/identity-plan", response_model=CharacterIdentityPlanResponse)
@@ -406,6 +433,7 @@ async def freeze_character_asset_pack(
                 identity_spec=identity_spec,
                 distinctiveness=distinctiveness,
                 notes=request.notes or "",
+                personality=character.personality or "",
                 voice_profile={
                     "voice_id": request.voice_id or "",
                     "style": request.voice_style or "",

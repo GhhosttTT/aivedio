@@ -597,7 +597,12 @@ class ProductionReadinessService:
             references = manager.get_character_references(character.id, project.id)
             if not references:
                 missing_references.append(name)
-            asset_pack = manager.validate_character_asset_pack(character.id, project.id, identity_spec or {})
+            asset_pack = manager.validate_character_asset_pack(
+                character.id,
+                project.id,
+                identity_spec or {},
+                personality=character.personality,
+            )
             if asset_pack.get("status") == "missing":
                 missing_asset_packs.append(name)
             elif asset_pack.get("status") != "valid":

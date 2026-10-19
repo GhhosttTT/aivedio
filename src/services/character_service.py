@@ -87,6 +87,7 @@ class CharacterManager:
         distinctiveness: dict,
         notes: str = "",
         voice_profile: Optional[dict] = None,
+        personality: str = "",
     ) -> dict:
         """
         Freeze the approved character bible and reference images for production.
@@ -114,6 +115,7 @@ class CharacterManager:
             "reference_hashes": {path: self._file_hash(Path(path)) for path in references},
             "distinctiveness": distinctiveness,
             "voice_profile": self._normalize_voice_profile(voice_profile),
+            "personality": str(personality or "").strip(),
             "notes": notes,
         }
         path = char_dir / "asset_pack.json"
@@ -145,6 +147,7 @@ class CharacterManager:
         character_id: int,
         project_id: int,
         identity_spec: dict,
+        personality: Optional[str] = None,
     ) -> dict:
         manifest = self.get_character_asset_pack(character_id, project_id)
         references = self.get_character_references(character_id, project_id)
@@ -159,6 +162,8 @@ class CharacterManager:
             stale.append("distinctiveness")
         if manifest.get("identity_spec_hash") != self._json_hash(identity_spec):
             stale.append("identity_spec")
+        if "personality" in manifest and manifest.get("personality", "") != str(personality or "").strip():
+            stale.append("personality")
         manifest_paths = manifest.get("reference_paths") if isinstance(manifest.get("reference_paths"), list) else []
         if sorted(manifest_paths) != sorted(references):
             stale.append("reference_set")

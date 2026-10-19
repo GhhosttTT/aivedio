@@ -21,13 +21,15 @@ def test_character_asset_pack_freezes_identity_and_reference_hashes(tmp_path):
         distinctiveness={"status": "passed"},
         notes="approved closeup",
         voice_profile={"voice_id": "voice-lin-an", "style": "calm", "ignored": "drop"},
+        personality="restrained",
     )
 
     assert manifest["status"] == "frozen"
     assert manifest["reference_paths"] == [saved]
     assert manifest["voice_profile"] == {"voice_id": "voice-lin-an", "style": "calm"}
     assert Path(tmp_path / "characters" / "1" / "10" / "asset_pack.json").is_file()
-    assert manager.validate_character_asset_pack(10, 1, spec)["status"] == "valid"
+    assert manager.validate_character_asset_pack(10, 1, spec, personality="restrained")["status"] == "valid"
+    assert manager.validate_character_asset_pack(10, 1, spec, personality="changed")["status"] == "stale"
 
     Image.new("RGB", (32, 32), "red").save(saved)
     stale = manager.validate_character_asset_pack(10, 1, spec)

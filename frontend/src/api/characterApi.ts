@@ -77,6 +77,10 @@ export const characterApi = {
     return apiClient.get<Character>(`/projects/${projectId}/characters/${characterId}`);
   },
 
+  updateCharacter: async (projectId: number, characterId: number, data: Partial<Omit<Character, 'id'>>) => {
+    return apiClient.patch<Character>(`/projects/${projectId}/characters/${characterId}`, data);
+  },
+
   /**
    * 删除角色
    */

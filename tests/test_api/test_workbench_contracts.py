@@ -1976,6 +1976,14 @@ def test_character_asset_pack_freeze_clears_readiness_asset_pack_blocker(setup):
         "style": "冷静克制",
         "language": "zh-CN",
     }
+    updated = client.patch(
+        f"/api/projects/1/characters/{character.id}",
+        json={"personality": "外冷内热、克制但坚定"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["personality"] == "外冷内热、克制但坚定"
+    stale_readiness = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
+    assert any(item["name"] == "Alice" and "personality" in item["stale"] for item in stale_readiness["checks"]["characters"]["stale_asset_packs"])
 
     after = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
     assert after["checks"]["characters"]["missing_asset_packs"] == []

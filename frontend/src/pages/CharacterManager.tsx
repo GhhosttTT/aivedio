@@ -13,6 +13,7 @@ export default function CharacterManager({projectId, locked = false}: {projectId
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
     const [creating, setCreating] = useState(false);
+    const [editing, setEditing] = useState<number | null>(null);
     const [form, setForm] = useState({name: '', description: '', personality: '', appearance: ''});
     const load = useCallback(async () => {
         try {
@@ -40,11 +41,12 @@ export default function CharacterManager({projectId, locked = false}: {projectId
         finally { setBusy(false); }
     };
     return <section aria-label="角色参考">
-        <div className="wb-row wb-between"><h2>角色与参考图</h2><button className="wb-button" disabled={locked || busy} onClick={() => setCreating(true)}><Plus size={16}/>创建角色</button></div>
+        <div className="wb-row wb-between"><h2>角色与参考图</h2><button className="wb-button" disabled={locked || busy} onClick={() => { setEditing(null); setForm({name: '', description: '', personality: '', appearance: ''}); setCreating(true); }}><Plus size={16}/>创建角色</button></div>
         {error && <p role="alert" className="wb-alert">{error}</p>}
         {!characters.length && <p className="wb-muted">暂无角色</p>}
         {characters.map(c => <article className="wb-item" key={c.id}>
             <div className="wb-row wb-between"><h3>{c.name}</h3><div className="wb-row">
+                <button className="wb-button" disabled={locked || busy} onClick={() => { setEditing(c.id); setForm({name: c.name, description: c.description || '', personality: c.personality || '', appearance: c.appearance || ''}); setCreating(true); }}><BadgeCheck size={16}/>编辑角色资料</button>
                 <button className="wb-button" disabled={locked || busy} onClick={() => operate(async () => {
                     const plan = await characterApi.planIdentity(projectId, c.id);
                     setPlans(current => ({...current, [c.id]: plan}));
@@ -108,8 +110,8 @@ export default function CharacterManager({projectId, locked = false}: {projectId
                 operate(() => characterApi.uploadReference(projectId, c.id, file));
             }}/></label>
         </article>)}
-        {creating && <div className="wb-overlay"><form role="dialog" aria-modal="true" aria-label="创建角色" className="wb-modal" onSubmit={e => {e.preventDefault(); operate(() => characterApi.createCharacter(projectId, form));}}>
-            <div className="wb-row wb-between"><h2>创建角色</h2><button type="button" className="wb-icon" title="关闭" aria-label="关闭" onClick={() => setCreating(false)}><X size={17}/></button></div>
+        {creating && <div className="wb-overlay"><form role="dialog" aria-modal="true" aria-label={editing ? '编辑角色' : '创建角色'} className="wb-modal" onSubmit={e => {e.preventDefault(); operate(() => editing ? characterApi.updateCharacter(projectId, editing, form) : characterApi.createCharacter(projectId, form));}}>
+            <div className="wb-row wb-between"><h2>{editing ? '编辑角色资料' : '创建角色'}</h2><button type="button" className="wb-icon" title="关闭" aria-label="关闭" onClick={() => setCreating(false)}><X size={17}/></button></div>
             <label>角色名称<input required maxLength={100} value={form.name} onChange={e => setForm({...form, name: e.target.value})}/></label>
             <label>角色描述<textarea value={form.description} maxLength={500} onChange={e => setForm({...form, description: e.target.value})}/></label>
             <label>性格与表演方向<textarea value={form.personality} maxLength={200} onChange={e => setForm({...form, personality: e.target.value})} placeholder="如：外冷内热、克制但在真相曝光时爆发" /></label>
