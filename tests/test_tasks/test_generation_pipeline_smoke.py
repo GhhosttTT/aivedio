@@ -872,6 +872,34 @@ def test_composition_review_blocks_missing_expected_audio_stream():
     )
 
 
+def test_composition_review_blocks_unavailable_rendered_subtitle_visual_evidence():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "rendered_subtitle_visual": {
+            "status": "unavailable",
+            "error": "rendered video cannot be opened",
+        },
+    }
+
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video rendered subtitle visibility evidence is unavailable: "
+        "rendered video cannot be opened"
+    )
+
+
+def test_composition_review_blocks_invisible_rendered_subtitles():
+    report = {
+        "status": "passed",
+        "average": 4.5,
+        "rendered_subtitle_visual": {"status": "available", "score": 0.1},
+    }
+
+    assert composition_tasks._composition_review_error(report) == (
+        "final composed video rendered subtitles are not visibly integrated"
+    )
+
+
 def test_composition_review_blocks_unavailable_technical_metrics():
     report = {
         "status": "passed",

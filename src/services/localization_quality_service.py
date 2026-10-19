@@ -133,6 +133,14 @@ class LocalizationQualityService:
         path.write_text(json.dumps(report.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
         return report
 
+    def inspect_rendered_subtitles(
+        self,
+        video_path: str | Path,
+        segments: List[ASRSegment],
+    ) -> Dict[str, Any]:
+        """Expose the rendered subtitle visual screen to final composition QA."""
+        return self._inspect_rendered_subtitles(Path(video_path), segments)
+
     def _inspect_rendered_subtitles(
         self,
         video_path: Path,

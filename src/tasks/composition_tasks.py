@@ -23,10 +23,13 @@ from src.services.generation_review import (
 )
 from src.services.repair_queue import attach_repair_queue
 from src.services.rhythm_audit import RhythmAuditService
+from src.services.asr_service import ASRSegment
+from src.services.localization_quality_service import LocalizationQualityService
 from src.services.video_composer import get_video_composer
 from src.services.video_quality_metrics import temporal_sample_evidence_error, video_boundary_continuity, video_candidate_metrics
 from src.services.sequence_plan import build_sequence_context
 from src.services.subtitle_generator import get_subtitle_generator
+from src.services.subtitle_quality_service import assess_subtitle_timeline
 from src.tasks.audio_tasks import has_spoken_dialogue
 from src.tasks.video_tasks import _apply_audio_quality_contract
 from src.utils.storage import get_project_final_video_path
@@ -1121,6 +1124,18 @@ def _require_editing_plan(project: Project, scenes: list[Scene]) -> list[dict]:
 def _composition_review_error(report: dict) -> str | None:
     if not settings.GENERATION_REQUIRE_VIDEO_REVIEW:
         return None
+    subtitle_visual = report.get("rendered_subtitle_visual")
+    if isinstance(subtitle_visual, dict):
+        if subtitle_visual.get("status") != "available":
+            return (
+                "final composed video rendered subtitle visibility evidence is unavailable: "
+                f"{subtitle_visual.get('error') or subtitle_visual.get('status') or 'unknown'}"
+            )
+        if (
+            isinstance(subtitle_visual.get("score"), (int, float))
+            and subtitle_visual["score"] < 0.2
+        ):
+            return "final composed video rendered subtitles are not visibly integrated"
     boundary = report.get("technical_boundary_report")
     if isinstance(boundary, dict) and boundary.get("status") == "unavailable":
         return (
@@ -1418,6 +1433,9 @@ def _review_final_composed_video(
     review_payload["technical_boundary_report"] = technical_boundary_report
     review_payload["final_technical_metrics"] = final_technical_metrics
     review_payload["final_audio_expected"] = audio_expected
+    rendered_subtitle_visual = _final_rendered_subtitle_visual_audit(final_video_path)
+    if rendered_subtitle_visual is not None:
+        review_payload["rendered_subtitle_visual"] = rendered_subtitle_visual
     report = GenerationReviewService().review_video(
         final_video_path,
         review_payload,
@@ -1446,6 +1464,8 @@ def _review_final_composed_video(
     report["technical_boundary_report"] = technical_boundary_report
     report["final_technical_metrics"] = final_technical_metrics
     report["final_audio_expected"] = audio_expected
+    if rendered_subtitle_visual is not None:
+        report["rendered_subtitle_visual"] = rendered_subtitle_visual
     style_gate = _episode_style_consistency_gate(scenes)
     if style_gate:
         report["episode_style_consistency_gate"] = style_gate
@@ -1457,6 +1477,28 @@ def _review_final_composed_video(
         raise ValueError("Final composed video is not production-ready: " + error)
     write_report(report_path, report)
     return report
+
+
+def _final_rendered_subtitle_visual_audit(final_video_path: str) -> dict | None:
+    """Audit burned subtitles in the final composition when its merged SRT exists."""
+    subtitle_path = Path(final_video_path).with_suffix(".srt")
+    if not subtitle_path.is_file():
+        return None
+    try:
+        timeline = assess_subtitle_timeline(subtitle_path.read_text(encoding="utf-8"))
+        segments = [
+            ASRSegment(
+                start=float(entry["start"]),
+                end=float(entry["end"]),
+                text=str(entry.get("text") or ""),
+                source="rendered_subtitle",
+            )
+            for entry in timeline.get("entries", [])
+            if isinstance(entry, dict)
+        ]
+        return LocalizationQualityService().inspect_rendered_subtitles(final_video_path, segments)
+    except Exception as exc:
+        return {"status": "unavailable", "error": str(exc), "issues": []}
 
 
 def _episode_style_consistency_gate(scenes: list[Scene]) -> dict | None:
