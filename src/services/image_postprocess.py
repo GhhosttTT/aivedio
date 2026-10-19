@@ -56,6 +56,7 @@ class ImagePostprocessor:
             "input_path": str(source),
             "command_configured": bool(self.command.strip()),
         }
+        output: Path | None = None
         try:
             if not source.is_file():
                 raise ImagePostprocessError(f"Input image does not exist: {source}")
@@ -116,6 +117,9 @@ class ImagePostprocessor:
             if self.required:
                 raise ImagePostprocessError(str(exc)) from exc
             return report
+        finally:
+            if output is not None and output != source:
+                output.unlink(missing_ok=True)
         write_report(report_file, report)
         return report
 

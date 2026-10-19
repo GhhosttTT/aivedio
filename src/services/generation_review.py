@@ -187,18 +187,21 @@ def write_report(path: Path, data: dict) -> None:
     from uuid import uuid4
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + f".{uuid4().hex}.tmp")
-    temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    last_error = None
-    for attempt in range(5):
-        try:
-            temporary.replace(path)
-            return
-        except OSError as exc:
-            last_error = exc
-            if attempt == 4:
-                break
-            time.sleep(0.05 * (attempt + 1))
-    raise last_error
+    try:
+        temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        last_error = None
+        for attempt in range(5):
+            try:
+                temporary.replace(path)
+                return
+            except OSError as exc:
+                last_error = exc
+                if attempt == 4:
+                    break
+                time.sleep(0.05 * (attempt + 1))
+        raise last_error
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def decision(review: BaseModel) -> tuple[str, float]:

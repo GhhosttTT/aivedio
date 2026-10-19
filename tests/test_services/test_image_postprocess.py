@@ -63,3 +63,22 @@ def test_placeholder_like_text_inside_prompt_is_not_expanded_again(tmp_path):
     )
     assert "{reference} label" in cmd
     assert cmd.endswith("actor.png")
+
+
+def test_failed_image_postprocess_cleans_generated_temporary_output(tmp_path):
+    image = tmp_path / "scene.png"
+    Image.new("RGB", (64, 64), (10, 10, 10)).save(image)
+    command = (
+        f'"{sys.executable}" -c "from PIL import Image; import sys; '
+        'Image.new(\'RGB\', (64, 64), (200, 10, 10)).save(sys.argv[2]); sys.exit(7)" '
+        "{input} {output}"
+    )
+
+    report = ImagePostprocessor(command=command, required=False, timeout=30).process(
+        image,
+        prompt="prompt",
+        negative_prompt="negative",
+    )
+
+    assert report["status"] == "failed"
+    assert not list(tmp_path.glob("scene.postprocessed-*.png"))
