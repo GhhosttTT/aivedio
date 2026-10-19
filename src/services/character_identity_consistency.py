@@ -93,10 +93,29 @@ class CharacterIdentityConsistencyService:
         issues: list[dict[str, Any]] = []
         minimum = float(settings.GENERATION_CHARACTER_IDENTITY_MIN_SCORE)
         maximum_spread = float(settings.GENERATION_CHARACTER_IDENTITY_MAX_SCORE_SPREAD)
+        minimum_observations = max(2, int(settings.GENERATION_CHARACTER_IDENTITY_MIN_OBSERVATIONS))
+        expected_scene_counts: dict[str, int] = {}
+        for names in scene_names.values():
+            for name in names:
+                expected_scene_counts[name] = expected_scene_counts.get(name, 0) + 1
         for character, items in sorted(grouped.items()):
             scores = [float(item["score"]) for item in items]
             low = min(scores)
             spread = max(scores) - low
+            expected_count = expected_scene_counts.get(character, len(items))
+            if expected_count >= minimum_observations and len(items) < minimum_observations:
+                issues.append({
+                    "severity": "high",
+                    "code": "identity_evidence_insufficient",
+                    "character": character,
+                    "observation_count": len(items),
+                    "expected_scene_count": expected_count,
+                    "evidence": (
+                        f"{character} appears in {expected_count} scenes but has only "
+                        f"{len(items)} identity observations; at least {minimum_observations} are required"
+                    ),
+                    "recommendation": "Run sampled-frame review for every repeated-character shot before delivery.",
+                })
             if low < minimum:
                 for item in items:
                     if item["score"] < minimum:

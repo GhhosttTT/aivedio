@@ -297,6 +297,7 @@ class ProductionWorkflowProfileService:
             "video_identity_min_score": settings.GENERATION_VIDEO_IDENTITY_MIN_SCORE,
             "character_identity_min_score": settings.GENERATION_CHARACTER_IDENTITY_MIN_SCORE,
             "character_identity_max_score_spread": settings.GENERATION_CHARACTER_IDENTITY_MAX_SCORE_SPREAD,
+            "character_identity_min_observations": settings.GENERATION_CHARACTER_IDENTITY_MIN_OBSERVATIONS,
             "episode_style_brightness_warning": settings.GENERATION_EPISODE_STYLE_BRIGHTNESS_WARNING,
             "episode_style_brightness_blocker": settings.GENERATION_EPISODE_STYLE_BRIGHTNESS_BLOCKER,
             "episode_style_saturation_warning": settings.GENERATION_EPISODE_STYLE_SATURATION_WARNING,
