@@ -73,6 +73,58 @@ def _character_asset_evidence(project) -> list[dict]:
     return evidence
 
 
+def _production_control_asset_evidence(project) -> dict:
+    """Return stable fingerprints for the frozen visual and spatial contracts."""
+    project_id = getattr(project, "id", None)
+    evidence = {}
+    try:
+        from src.services.visual_style_assets import VisualStyleAssetService
+
+        style_pack = VisualStyleAssetService().get_project_pack(project_id)
+    except (OSError, RuntimeError, TypeError, ValueError):
+        style_pack = {"status": "unavailable"}
+    if isinstance(style_pack, dict):
+        evidence["visual_style"] = {
+            "status": style_pack.get("status", "missing"),
+            "version": style_pack.get("version"),
+            "source_hash": style_pack.get("source_hash"),
+            "scene_style_hash": style_pack.get("scene_style_hash"),
+            "style_prompt": style_pack.get("style_prompt"),
+            "negative_prompt": style_pack.get("negative_prompt"),
+        }
+    else:
+        evidence["visual_style"] = {"status": "missing"}
+
+    try:
+        from src.services.spatial_control_assets import SpatialControlAssetService
+
+        spatial_pack = SpatialControlAssetService().get_project_pack(project_id)
+    except (OSError, RuntimeError, TypeError, ValueError):
+        spatial_pack = {"status": "unavailable"}
+    if isinstance(spatial_pack, dict):
+        evidence["spatial_control"] = {
+            "status": spatial_pack.get("status", "missing"),
+            "version": spatial_pack.get("version"),
+            "planner_contract_version": spatial_pack.get("planner_contract_version"),
+            "required_control_types": list(spatial_pack.get("required_control_types") or []),
+            "project_signature": spatial_pack.get("project_signature"),
+            "scenes": [
+                {
+                    "scene_number": item.get("scene_number"),
+                    "source_hash": item.get("source_hash"),
+                    "spatial_plan_hash": item.get("spatial_plan_hash"),
+                    "control_references_hash": item.get("control_references_hash"),
+                    "turnaround_controls_hash": item.get("turnaround_controls_hash"),
+                }
+                for item in spatial_pack.get("scenes", [])
+                if isinstance(item, dict)
+            ],
+        }
+    else:
+        evidence["spatial_control"] = {"status": "missing"}
+    return evidence
+
+
 def _optional_asset_hash(path):
     return file_hash(Path(path)) if isinstance(path, (str, Path)) and path else None
 

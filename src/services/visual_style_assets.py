@@ -178,6 +178,17 @@ class VisualStyleAssetService:
             "current": current,
         }
 
+    def get_project_pack(self, project_id: int) -> dict | None:
+        """Read the stored style pack without rebuilding it from live scenes."""
+        path = self._path(project_id)
+        if not path.is_file():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {"status": "invalid", "path": str(path)}
+        return payload if isinstance(payload, dict) else {"status": "invalid", "path": str(path)}
+
     def style_prompt_for_project(self, project_id: int) -> str:
         manifest = self._read_manifest(project_id)
         return str(manifest.get("style_prompt") or "").strip()

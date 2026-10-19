@@ -268,6 +268,43 @@ def test_composition_input_signature_changes_when_character_asset_changes(tmp_pa
     assert first != second
 
 
+def test_composition_input_signature_changes_when_production_controls_change(tmp_path, monkeypatch):
+    project = Mock(id=1, script='{}', outline='outline', characters=[])
+    video = tmp_path / "scene.mp4"
+    video.write_bytes(b"asset")
+    scene = Mock(scene_number=1, dialogue="hello", image_path=None, video_path=str(video), audio_path=None, subtitle_path=None)
+    controls = {"style": "style-v1", "spatial": "spatial-v1"}
+
+    monkeypatch.setattr(
+        "src.services.visual_style_assets.VisualStyleAssetService.get_project_pack",
+        lambda _service, _project_id: {
+            "status": "frozen",
+            "version": 1,
+            "source_hash": controls["style"],
+            "scene_style_hash": "scene-style",
+            "style_prompt": "premium drama",
+            "negative_prompt": "style drift",
+        },
+    )
+    monkeypatch.setattr(
+        "src.services.spatial_control_assets.SpatialControlAssetService.get_project_pack",
+        lambda _service, _project_id: {
+            "status": "frozen",
+            "version": 2,
+            "planner_contract_version": "spatial-director-v2",
+            "required_control_types": ["pose", "depth", "camera", "character_turnaround"],
+            "project_signature": controls["spatial"],
+            "scenes": [{"scene_number": 1, "source_hash": "source", "spatial_plan_hash": "plan"}],
+        },
+    )
+
+    first = composition_tasks.composition_input_signature(project, [scene])
+    controls["spatial"] = "spatial-v2"
+    second = composition_tasks.composition_input_signature(project, [scene])
+
+    assert first != second
+
+
 def test_composition_rejects_audio_bound_to_the_wrong_character(tmp_path):
     audio = tmp_path / "scene_001.mp3"
     audio.write_bytes(b"fake audio")
