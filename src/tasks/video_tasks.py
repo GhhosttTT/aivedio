@@ -1948,10 +1948,15 @@ def _apply_audio_quality_contract(metrics: dict, provider_metadata: dict | None)
     if not audio_expected:
         return metrics
     metrics["audio_expected"] = True
-    if not metrics.get("audio_present"):
+    if metrics.get("audio_present") is not True:
         metrics["audio_quality_status"] = "missing"
         metrics["audio_sync_score"] = 0.0
-    elif not isinstance(metrics.get("audio_duration_delta_seconds"), (int, float)):
+    elif (
+        isinstance(metrics.get("audio_duration_delta_seconds"), bool)
+        or not isinstance(metrics.get("audio_duration_delta_seconds"), (int, float))
+        or not isfinite(float(metrics["audio_duration_delta_seconds"]))
+        or float(metrics["audio_duration_delta_seconds"]) < 0
+    ):
         # A present stream with no measurable duration cannot prove sync.
         # Do not turn an ffprobe blind spot into a false production pass.
         metrics["audio_quality_status"] = "unavailable"
@@ -1962,7 +1967,16 @@ def _apply_audio_quality_contract(metrics: dict, provider_metadata: dict | None)
         metrics["audio_quality_status"] = "passed" if delta <= tolerance else "needs_review"
         metrics["audio_sync_score"] = round(max(0.0, 5.0 - min(delta / tolerance, 5.0)), 2)
     start_delta = metrics.get("audio_video_start_delta_seconds")
-    if isinstance(start_delta, (int, float)):
+    if start_delta is not None and (
+        isinstance(start_delta, bool)
+        or not isinstance(start_delta, (int, float))
+        or not isfinite(float(start_delta))
+        or float(start_delta) < 0
+    ):
+        metrics["audio_quality_status"] = "unavailable"
+        metrics["audio_sync_score"] = 0.0
+        metrics["audio_sync_error"] = "audio/video stream start offset evidence is invalid"
+    elif isinstance(start_delta, (int, float)):
         start_delta = abs(float(start_delta))
         metrics["audio_video_start_delta_seconds"] = round(start_delta, 3)
         tolerance = settings.GENERATION_VIDEO_AUDIO_SYNC_TOLERANCE_SECONDS
@@ -1978,21 +1992,28 @@ def _apply_audio_quality_contract(metrics: dict, provider_metadata: dict | None)
                 float(metrics["audio_sync_score"]),
                 max(0.0, 5.0 - start_delta / tolerance * 5.0),
             ), 2)
-    signal_status = metrics.get("audio_signal_status")
-    if signal_status == "near_silent":
-        metrics["audio_quality_status"] = "needs_review"
-        metrics["audio_signal_error"] = (
-            "audio stream is present but contains near-silence; generated dialogue/audio cannot be trusted"
-        )
-        metrics["audio_sync_score"] = 0.0
-    elif signal_status == "unavailable":
-        metrics["audio_quality_status"] = "unavailable"
-        metrics["audio_sync_score"] = 0.0
-    if metrics.get("audio_clipping_status") == "clipped":
-        metrics["audio_quality_status"] = "needs_review"
-        metrics["audio_signal_error"] = "audio signal reaches digital full scale and may be clipped"
-        metrics["audio_sync_score"] = 0.0
-    if isinstance(metrics.get("technical_score"), (int, float)):
+    if metrics.get("audio_present") is True:
+        signal_status = metrics.get("audio_signal_status")
+        if signal_status == "near_silent":
+            metrics["audio_quality_status"] = "needs_review"
+            metrics["audio_signal_error"] = (
+                "audio stream is present but contains near-silence; generated dialogue/audio cannot be trusted"
+            )
+            metrics["audio_sync_score"] = 0.0
+        elif signal_status != "usable":
+            metrics["audio_quality_status"] = "unavailable"
+            metrics["audio_sync_score"] = 0.0
+        if metrics.get("audio_clipping_status") == "clipped":
+            metrics["audio_quality_status"] = "needs_review"
+            metrics["audio_signal_error"] = "audio signal reaches digital full scale and may be clipped"
+            metrics["audio_sync_score"] = 0.0
+    if (
+        isinstance(metrics.get("technical_score"), bool)
+        or not isinstance(metrics.get("technical_score"), (int, float))
+        or not isfinite(float(metrics["technical_score"]))
+    ):
+        metrics["technical_score"] = 0.0
+    else:
         metrics["technical_score"] = round(min(
             float(metrics["technical_score"]),
             float(metrics["audio_sync_score"]),

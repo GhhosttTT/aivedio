@@ -648,6 +648,7 @@ def test_final_composed_video_review_payload_tracks_episode_context(tmp_path, mo
     monkeypatch.setattr(composition_tasks, "video_candidate_metrics", lambda _path: {
         "status": "available", "width": 1080, "height": 1920,
         "audio_present": True, "audio_duration_delta_seconds": 0.0,
+        "audio_signal_status": "usable",
     })
 
     report = composition_tasks._review_final_composed_video(

@@ -81,6 +81,35 @@ def test_audio_quality_contract_rejects_unmeasurable_requested_audio():
     assert metrics["audio_quality_status"] == "unavailable"
 
 
+@pytest.mark.parametrize("delta", [-0.1, float("nan"), float("inf"), "0.02"])
+def test_audio_quality_contract_rejects_invalid_sync_evidence(delta):
+    metrics = {
+        "technical_score": 4.8,
+        "audio_present": True,
+        "audio_duration_delta_seconds": delta,
+        "audio_signal_status": "usable",
+    }
+
+    _apply_audio_quality_contract(metrics, {"requested_generate_audio": True})
+
+    assert metrics["audio_quality_status"] == "unavailable"
+    assert metrics["audio_sync_score"] == 0.0
+
+
+def test_audio_quality_contract_rejects_unknown_signal_status():
+    metrics = {
+        "technical_score": 4.8,
+        "audio_present": True,
+        "audio_duration_delta_seconds": 0.02,
+        "audio_signal_status": "unknown",
+    }
+
+    _apply_audio_quality_contract(metrics, {"requested_generate_audio": True})
+
+    assert metrics["audio_quality_status"] == "unavailable"
+    assert metrics["audio_sync_score"] == 0.0
+
+
 def test_audio_quality_contract_rejects_near_silent_requested_audio():
     metrics = {
         "audio_present": True,
