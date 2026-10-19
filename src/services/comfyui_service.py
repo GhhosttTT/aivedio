@@ -703,6 +703,8 @@ class ComfyUIService:
         end_image: Optional[str] = None,
         continuity_reference_image: Optional[str] = None,
         reference_images: Optional[List[str]] = None,
+        reference_videos: Optional[List[str]] = None,
+        reference_audios: Optional[List[str]] = None,
         negative_prompt: str = "",
         width: int = 1024,
         height: int = 576,
@@ -760,6 +762,18 @@ class ComfyUIService:
             "reference_image": uploaded_reference,
             "reference_images_json": json.dumps(uploaded_references, ensure_ascii=False),
             "reference_image_count": len(uploaded_references),
+            # Video/audio files are intentionally passed as a stable JSON
+            # contract. Custom ComfyUI nodes can resolve these local paths;
+            # unlike images, the core API has no portable upload endpoint for
+            # every video/audio loader implementation.
+            "reference_videos_json": json.dumps(
+                [str(path) for path in reference_videos or [] if path], ensure_ascii=False,
+            ),
+            "reference_audios_json": json.dumps(
+                [str(path) for path in reference_audios or [] if path], ensure_ascii=False,
+            ),
+            "reference_video_count": len([path for path in reference_videos or [] if path]),
+            "reference_audio_count": len([path for path in reference_audios or [] if path]),
             "start_image": uploaded_reference,
             "first_frame": uploaded_reference,
             "end_image": uploaded_end,

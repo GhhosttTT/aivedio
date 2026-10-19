@@ -334,6 +334,8 @@ def test_local_comfyui_provider_delegates_video_generation():
             reference_image="scene.png",
             continuity_reference_image="previous.last_frame.png",
             reference_images=["scene.png", "character.png"],
+            reference_videos=["previous.mp4"],
+            reference_audios=["dialogue.wav"],
             output_path="storage/project_1/videos/scene_1.mp4",
             duration_seconds=2.0,
             width=1344,
@@ -361,6 +363,8 @@ def test_local_comfyui_provider_delegates_video_generation():
     assert service.last_kwargs["reference_image"] == "scene.png"
     assert service.last_kwargs["continuity_reference_image"] == "previous.last_frame.png"
     assert service.last_kwargs["reference_images"] == ["scene.png", "character.png"]
+    assert service.last_kwargs["reference_videos"] == ["previous.mp4"]
+    assert service.last_kwargs["reference_audios"] == ["dialogue.wav"]
     assert service.last_kwargs["negative_prompt"] == "flicker"
     assert service.last_kwargs["fps"] == 8
     assert service.last_kwargs["motion_bucket_id"] == 96
@@ -374,6 +378,8 @@ def test_local_comfyui_provider_delegates_video_generation():
     assert result.metadata["repair_action"] == "refine_video_commercial_aesthetic"
     assert result.metadata["continuity_reference_image"] == "previous.last_frame.png"
     assert result.metadata["reference_images"] == ["scene.png", "character.png"]
+    assert result.metadata["reference_videos"] == ["previous.mp4"]
+    assert result.metadata["reference_audios"] == ["dialogue.wav"]
     assert result.metadata["quality_pipeline"] == {"stages": ["platform_reference_gap_repair"]}
     assert result.metadata["spatial_asset_pack"]["scene_contract_hash"] == "scene-hash"
     assert service.last_kwargs["shot_plan"]["spatial_asset_pack"]["project_signature"] == "project-hash"

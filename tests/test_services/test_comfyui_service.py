@@ -175,6 +175,8 @@ class TestComfyUIService:
                         "continuity_reference_image": "{continuity_reference_image}",
                         "continuity_reference_fallback": "{continuity_reference_fallback}",
                         "reference_images_json": "{reference_images_json}",
+                        "reference_videos_json": "{reference_videos_json}",
+                        "reference_audios_json": "{reference_audios_json}",
                     },
                 }
             }
@@ -192,6 +194,8 @@ class TestComfyUIService:
                 "continuity_reference_image": "previous-last-frame.png",
                 "continuity_reference_fallback": "",
                 "reference_images_json": "[\"uploaded/scene.png\"]",
+                "reference_videos_json": "[\"previous.mp4\"]",
+                "reference_audios_json": "[\"dialogue.wav\"]",
             })
 
             assert replaced["1"]["inputs"]["motion_bucket_id"] == 96
@@ -206,6 +210,8 @@ class TestComfyUIService:
             assert replaced["1"]["inputs"]["spatial_scene_contract_hash"] == "scene-hash"
             assert replaced["1"]["inputs"]["continuity_reference_image"] == "previous-last-frame.png"
             assert replaced["1"]["inputs"]["continuity_reference_fallback"] == ""
+            assert replaced["1"]["inputs"]["reference_videos_json"] == "[\"previous.mp4\"]"
+            assert replaced["1"]["inputs"]["reference_audios_json"] == "[\"dialogue.wav\"]"
 
     def test_video_workflow_uploads_distinct_reference_images(self, mock_workflow_config, mock_http_client, tmp_path, monkeypatch):
         with patch('src.services.comfyui_service.httpx.Client', return_value=mock_http_client):

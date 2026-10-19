@@ -36,6 +36,8 @@ VIDEO_WORKFLOW_PLACEHOLDERS = {
     "continuity_reference_image", "continuity_image", "previous_last_frame",
     "continuity_reference_fallback",
     "reference_images_json", "reference_image_count",
+    "reference_videos_json", "reference_audios_json",
+    "reference_video_count", "reference_audio_count",
 }
 
 # Keep the selectable catalog next to the provider contract so the UI and
