@@ -89,14 +89,19 @@ class DialogueDeliveryAuditService:
             number = scene.scene_number
             audio_path = Path(str(getattr(scene, "audio_path", "") or ""))
             subtitle_path = Path(str(getattr(scene, "subtitle_path", "") or ""))
+            video_path = Path(str(getattr(scene, "video_path", "") or ""))
             audio_duration = self._positive_float(getattr(scene, "audio_duration", None))
             report = {
                 "scene_number": number,
                 "audio_present": audio_path.is_file(),
                 "subtitle_present": subtitle_path.is_file(),
                 "audio_duration_seconds": audio_duration,
+                "video_present": video_path.is_file(),
                 "subtitle_cues": 0,
             }
+            video_duration = self._audit_video_timing(
+                number, video_path, audio_duration, issues, report,
+            )
             checked += 1
             voice_report = self._read_voice_report(audio_path)
             if audio_path.is_file() and voice_report is None:
@@ -194,11 +199,61 @@ class DialogueDeliveryAuditService:
                     "subtitle_past_audio",
                     f"Last subtitle ends at {cues[-1]['end']:.2f}s, beyond audio duration {audio_duration:.2f}s.",
                 ))
+            if video_duration is not None and cues[-1]["end"] > video_duration + self.END_TOLERANCE_SECONDS:
+                issues.append(self._issue(
+                    number,
+                    "subtitle_past_video",
+                    f"Last subtitle ends at {cues[-1]['end']:.2f}s, beyond video duration {video_duration:.2f}s.",
+                ))
             report["first_cue_seconds"] = round(cues[0]["start"], 3)
             report["last_cue_seconds"] = round(cues[-1]["end"], 3)
             scene_reports.append(report)
         status = "needs_review" if any(issue["severity"] == "high" for issue in issues) else ("warn" if issues else "passed")
         return DialogueDeliveryAuditReport(status, len(dialogue_scenes), checked, cues_count, issues, scene_reports)
+
+    def _audit_video_timing(
+        self,
+        scene_number: int,
+        video_path: Path,
+        audio_duration: float | None,
+        issues: list[dict[str, Any]],
+        report: dict[str, Any],
+    ) -> float | None:
+        if not video_path.is_file():
+            return None
+        try:
+            from src.services.video_quality_metrics import video_candidate_metrics
+
+            metrics = video_candidate_metrics(video_path, max_samples=4)
+        except (OSError, RuntimeError, ValueError, TypeError):
+            metrics = None
+        video_duration = self._positive_float(
+            metrics.get("duration_seconds") if isinstance(metrics, dict) else None
+        )
+        if video_duration is None:
+            issues.append(self._issue(
+                scene_number,
+                "unmeasurable_video_duration",
+                "Dialogue scene video exists but its duration cannot be measured.",
+            ))
+            return None
+        report["video_duration_seconds"] = video_duration
+        if audio_duration is None:
+            return video_duration
+        if audio_duration > video_duration + self.END_TOLERANCE_SECONDS:
+            issues.append(self._issue(
+                scene_number,
+                "dialogue_past_video",
+                f"Dialogue audio ends at {audio_duration:.2f}s, beyond video duration {video_duration:.2f}s.",
+            ))
+        elif video_duration - audio_duration < 0.15:
+            issues.append(self._issue(
+                scene_number,
+                "insufficient_dialogue_reaction_tail",
+                f"Video leaves only {video_duration - audio_duration:.2f}s after dialogue; preserve a readable reaction beat.",
+                severity="warning",
+            ))
+        return video_duration
 
     def _read_voice_report(self, audio_path: Path) -> dict[str, Any] | None:
         if not audio_path.is_file():
@@ -315,9 +370,9 @@ class DialogueDeliveryAuditService:
     def _normalize_text(self, value: str) -> str:
         return re.sub(r"[^\w\u4e00-\u9fff]+", "", str(value or "").lower())
 
-    def _issue(self, scene_number: int, code: str, message: str) -> dict[str, Any]:
+    def _issue(self, scene_number: int, code: str, message: str, *, severity: str = "high") -> dict[str, Any]:
         return {
-            "severity": "high",
+            "severity": severity,
             "code": code,
             "scene_number": scene_number,
             "message": message,

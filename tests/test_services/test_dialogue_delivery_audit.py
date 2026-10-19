@@ -6,12 +6,13 @@ from src.services.dialogue_delivery_audit import DialogueDeliveryAuditService
 from src.utils.media_quality_paths import audio_quality_report_path, subtitle_quality_report_path
 
 
-def _scene(number, dialogue="你到底是谁？", audio_path=None, subtitle_path=None, duration=2.0):
+def _scene(number, dialogue="你到底是谁？", audio_path=None, subtitle_path=None, duration=2.0, video_path=None):
     return SimpleNamespace(
         scene_number=number,
         dialogue=dialogue,
         audio_path=str(audio_path) if audio_path else None,
         subtitle_path=str(subtitle_path) if subtitle_path else None,
+        video_path=str(video_path) if video_path else None,
         audio_duration=duration,
     )
 
@@ -147,3 +148,72 @@ def test_dialogue_delivery_audit_rejects_out_of_range_subtitle_timecodes(tmp_pat
 
     assert report.status == "needs_review"
     assert any(issue["code"] == "empty_subtitles" for issue in report.issues)
+
+
+def test_dialogue_delivery_audit_binds_audio_and_subtitles_to_video_duration(tmp_path, monkeypatch):
+    audio = tmp_path / "scene.wav"
+    subtitle = tmp_path / "scene.srt"
+    video = tmp_path / "scene.mp4"
+    audio.write_bytes(b"audio")
+    video.write_bytes(b"video")
+    subtitle.write_text("1\n00:00:00,000 --> 00:00:02,500\n你到底是谁？\n", encoding="utf-8")
+    audio_quality_report_path(audio).write_text(json.dumps({
+        "voice_identity": {"requested_speaker": "default", "voice_id": "voice-a"},
+        "dialogue_audio_quality_gate": {"status": "passed"},
+        "dialogue_fingerprint": hashlib.sha256("你到底是谁？".encode("utf-8")).hexdigest(),
+        "audio_sha256": hashlib.sha256(audio.read_bytes()).hexdigest(),
+        "audio_signal": {"audio_signal_status": "usable"},
+        "duration_measured": 2.0,
+    }), encoding="utf-8")
+    subtitle_quality_report_path(subtitle).write_text(json.dumps({
+        "status": "passed",
+        "expected_text": "你到底是谁？",
+        "subtitle_sha256": hashlib.sha256(subtitle.read_bytes()).hexdigest(),
+    }), encoding="utf-8")
+    monkeypatch.setattr(
+        "src.services.video_quality_metrics.video_candidate_metrics",
+        lambda *_args, **_kwargs: {"status": "available", "duration_seconds": 1.7},
+    )
+
+    report = DialogueDeliveryAuditService().audit([
+        _scene(1, audio_path=audio, subtitle_path=subtitle, video_path=video, duration=2.0),
+    ])
+
+    assert report.status == "needs_review"
+    assert {issue["code"] for issue in report.issues} >= {
+        "dialogue_past_video",
+        "subtitle_past_video",
+    }
+
+
+def test_dialogue_delivery_audit_warns_when_reaction_tail_is_too_short(tmp_path, monkeypatch):
+    audio = tmp_path / "scene.wav"
+    subtitle = tmp_path / "scene.srt"
+    video = tmp_path / "scene.mp4"
+    audio.write_bytes(b"audio")
+    video.write_bytes(b"video")
+    subtitle.write_text("1\n00:00:00,000 --> 00:00:01,000\n台词\n", encoding="utf-8")
+    audio_quality_report_path(audio).write_text(json.dumps({
+        "voice_identity": {"requested_speaker": "default", "voice_id": "voice-a"},
+        "dialogue_audio_quality_gate": {"status": "passed"},
+        "dialogue_fingerprint": hashlib.sha256("台词".encode("utf-8")).hexdigest(),
+        "audio_sha256": hashlib.sha256(audio.read_bytes()).hexdigest(),
+        "audio_signal": {"audio_signal_status": "usable"},
+        "duration_measured": 2.0,
+    }), encoding="utf-8")
+    subtitle_quality_report_path(subtitle).write_text(json.dumps({
+        "status": "passed",
+        "expected_text": "台词",
+        "subtitle_sha256": hashlib.sha256(subtitle.read_bytes()).hexdigest(),
+    }), encoding="utf-8")
+    monkeypatch.setattr(
+        "src.services.video_quality_metrics.video_candidate_metrics",
+        lambda *_args, **_kwargs: {"status": "available", "duration_seconds": 2.05},
+    )
+
+    report = DialogueDeliveryAuditService().audit([
+        _scene(1, dialogue="台词", audio_path=audio, subtitle_path=subtitle, video_path=video, duration=2.0),
+    ])
+
+    assert report.status == "warn"
+    assert any(issue["code"] == "insufficient_dialogue_reaction_tail" for issue in report.issues)
