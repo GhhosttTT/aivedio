@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.api.app import create_app
-from src.api.auth import create_access_token
+from src.api.auth import create_access_token, create_refresh_token
 from src.database.models import Base, User, Project, Scene, Character, Task, ProjectStatus, TaskStatus
 from src.database.session import get_db_session
 from src.services.task_orchestrator import TaskOrchestrator
@@ -2218,4 +2218,8 @@ def test_reference_upload_and_signed_media_access(setup):
     assert client.get("/storage/characters/1/1/reference_1.png").status_code == 404
     expired = create_access_token({"kind": "media", "project_id": 1, "path": response.json()["image_path"]}, timedelta(seconds=-1))
     assert client.get("/api/media", params={"token": expired}).status_code == 401
+    refresh_media = create_refresh_token({"kind": "media", "project_id": 1, "path": response.json()["image_path"]})
+    assert client.get("/api/media", params={"token": refresh_media}).status_code == 401
+    malformed_media = create_access_token({"kind": "media", "project_id": "not-an-int", "path": response.json()["image_path"]})
+    assert client.get("/api/media", params={"token": malformed_media}).status_code == 401
     assert client.post(f"/api/projects/1/characters/{c['id']}/reference", files={"file": ("bad.png", b"bad", "image/png")}).status_code == 400

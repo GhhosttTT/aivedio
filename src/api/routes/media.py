@@ -38,7 +38,18 @@ def media_url(project_id: int, path: str, user=Depends(get_current_user), db: Se
 @router.get("/media")
 def read_media(token: str, download: bool = False):
     payload = decode_access_token(token)
-    if not payload or payload.get("kind") != "media":
+    if (
+        not payload
+        or payload.get("token_type") != "access"
+        or payload.get("kind") != "media"
+        or not isinstance(payload.get("path"), str)
+    ):
         raise HTTPException(401, "媒体链接无效或已过期")
-    candidate = project_file(payload["project_id"], payload["path"])
+    try:
+        project_id = int(payload.get("project_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(401, "媒体链接无效或已过期")
+    if project_id <= 0:
+        raise HTTPException(401, "媒体链接无效或已过期")
+    candidate = project_file(project_id, payload["path"])
     return FileResponse(candidate, filename=candidate.name if download else None, headers={"Cache-Control": "private, max-age=60"})
