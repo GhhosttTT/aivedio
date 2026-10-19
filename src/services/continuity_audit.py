@@ -99,6 +99,36 @@ class ContinuityAuditService:
                     "evidence": f"camera axis changed from {previous_axis} to {current_axis}",
                     "recommendation": "Freeze the 180-degree axis or add an explicit establishing/reorientation shot.",
                 })
+            previous_positions = pair["from_positions"]
+            current_positions = pair["to_positions"]
+            shared_characters = sorted(set(previous_positions) & set(current_positions))
+            position_changes = [
+                {
+                    "character": character,
+                    "from": previous_positions[character],
+                    "to": current_positions[character],
+                }
+                for character in shared_characters
+                if previous_positions.get(character) and current_positions.get(character)
+                and previous_positions[character] != current_positions[character]
+            ]
+            if position_changes and current_plan.get("shot_role") != "establishing":
+                issues.append({
+                    "severity": "warning",
+                    "code": "character_position_jump",
+                    "from_scene": previous.scene_number,
+                    "to_scene": current.scene_number,
+                    "characters": position_changes,
+                    "evidence": "Shared characters change screen position across the cut: "
+                    + ", ".join(
+                        f"{item['character']} {item['from']}→{item['to']}"
+                        for item in position_changes
+                    ),
+                    "recommendation": (
+                        "Preserve character screen positions or add a motivated camera move, "
+                        "establishing shot, or explicit blocking transition."
+                    ),
+                })
             if (
                 pair["from_prop"] and pair["to_prop"]
                 and pair["from_prop"] != pair["to_prop"]

@@ -45,6 +45,31 @@ def test_continuity_audit_flags_axis_jump(monkeypatch):
     assert report.issues[0]["code"] == "screen_direction_jump"
 
 
+def test_continuity_audit_flags_shared_character_position_jump(monkeypatch):
+    positions = iter(["frame left", "frame right"])
+    monkeypatch.setattr(
+        "src.services.continuity_audit.VideoDirectorService.plan_scene",
+        lambda *_args: SimpleNamespace(as_dict=lambda: {
+            "shot_role": "dialogue_reaction",
+            "spatial_plan": {
+                "camera_axis": "fixed",
+                "character_positions": {"A": next(positions)},
+            },
+        }),
+    )
+    project = SimpleNamespace(id=1, script="{}")
+    scenes = [
+        SimpleNamespace(scene_number=1, character_name="A", visual_description="A"),
+        SimpleNamespace(scene_number=2, character_name="A", visual_description="A"),
+    ]
+
+    report = ContinuityAuditService().audit(project, scenes)
+
+    assert report.status == "warn"
+    assert report.issues[0]["code"] == "character_position_jump"
+    assert report.issues[0]["characters"][0]["character"] == "A"
+
+
 def test_continuity_audit_fails_closed_when_director_plan_is_unavailable(monkeypatch):
     def unavailable_plan(*_args):
         raise ValueError("invalid scene contract")
