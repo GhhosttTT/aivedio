@@ -67,14 +67,13 @@ class ContinuityAuditService:
                 "to_prop": current_spatial.get("prop_focus") or None,
             }
             pairs.append(pair)
-            if not previous_plan or not current_plan:
+            if not previous_plan or not current_plan or not previous_spatial or not current_spatial:
                 missing_scenes = [
-                    scene_number
-                    for scene_number, plan in (
-                        (previous.scene_number, previous_plan),
-                        (current.scene_number, current_plan),
+                    scene_number for scene_number, plan, spatial in (
+                        (previous.scene_number, previous_plan, previous_spatial),
+                        (current.scene_number, current_plan, current_spatial),
                     )
-                    if not plan
+                    if not plan or not spatial
                 ]
                 issues.append({
                     "severity": "high",
