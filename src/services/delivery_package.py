@@ -5,11 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 import re
+
+from src.utils.storage import storage_manager
 
 
 class DeliveryPackageError(ValueError):
@@ -90,6 +93,36 @@ def _delivery_generation_evidence(reports: dict) -> list[dict]:
             "accepted_video_sha256": run.get("accepted_video_sha256"),
         })
     return evidence
+
+
+def _collect_control_assets(project, root: Path, delivery_root: Path) -> list[tuple[Path, str]]:
+    """Collect the frozen contracts needed to reproduce an approved delivery."""
+    candidates: list[tuple[Path, str]] = [
+        (root / "style" / "visual_style_asset_pack.json", "controls/visual_style_asset_pack.json"),
+        (root / "spatial" / "spatial_asset_pack.json", "controls/spatial_asset_pack.json"),
+    ]
+    project_id = getattr(project, "id", None)
+    for character in getattr(project, "characters", []) or []:
+        character_id = getattr(character, "id", None)
+        if project_id is None or character_id is None:
+            continue
+        candidates.append((
+            storage_manager.base_path
+            / "characters"
+            / str(project_id)
+            / str(character_id)
+            / "turnaround_album.json",
+            f"controls/turnaround_{character_id}.json",
+        ))
+    collected = []
+    for source, archive_name in candidates:
+        if not source.is_file() or source.stat().st_size <= 0:
+            continue
+        destination = delivery_root / archive_name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+        collected.append((destination, archive_name))
+    return collected
 
 
 def verify_delivery_package(package_path: str | Path) -> dict:
@@ -507,6 +540,8 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
     # approval could produce a package with no final composition evidence.
     _write_json_atomic(root / "reviews" / "final_composition.json", final_composition)
     files = _collect_files(project, root, reports)
+    control_assets = _collect_control_assets(project, root, delivery_root)
+    files.extend(control_assets)
 
     project_metadata = delivery_root / "project_metadata.json"
     generation_evidence = _delivery_generation_evidence(reports)
@@ -537,6 +572,10 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         "topic_brief": topic_brief,
         "market_signals": market_signals,
         "generation_evidence": generation_evidence,
+        "control_assets": [
+            {"path": archive_name, "sha256": _sha256(source)}
+            for source, archive_name in control_assets
+        ],
     })
     files.append((project_metadata, "metadata/project.json"))
     if cover_report.get("status") == "ready":
@@ -625,6 +664,7 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         "cover": cover_report,
         "platform_covers": platform_cover_reports,
         "generation_evidence": generation_evidence,
+        "control_assets": [archive_name for _source, archive_name in control_assets],
         "files": manifest_files,
         "package_path": str(package_path),
     }

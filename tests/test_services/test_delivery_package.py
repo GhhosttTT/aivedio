@@ -121,6 +121,46 @@ def test_delivery_package_contains_media_evidence_and_hashes(tmp_path, monkeypat
     assert "metadata/platform_covers.json" in names
 
 
+def test_delivery_package_archives_frozen_control_assets(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "src.services.video_quality_metrics.video_candidate_metrics",
+        lambda path, max_samples=8: {"status": "available", "temporal_sample_evidence": "sufficient"},
+    )
+    monkeypatch.setattr("src.services.delivery_package.storage_manager.base_path", tmp_path / "storage")
+    final = tmp_path / "final.mp4"
+    final.write_bytes(b"final-video")
+    final.with_suffix(".composition_review.json").write_text(
+        json.dumps(_passed_final_composition(final)), encoding="utf-8"
+    )
+    (tmp_path / "style").mkdir()
+    (tmp_path / "spatial").mkdir()
+    (tmp_path / "style" / "visual_style_asset_pack.json").write_text('{"status":"frozen"}', encoding="utf-8")
+    (tmp_path / "spatial" / "spatial_asset_pack.json").write_text('{"status":"frozen"}', encoding="utf-8")
+    album = tmp_path / "storage" / "characters" / "7" / "3"
+    album.mkdir(parents=True)
+    (album / "turnaround_album.json").write_text('{"status":"frozen","version":2}', encoding="utf-8")
+    project = SimpleNamespace(
+        id=7, name="Pilot", theme="都市悬疑", outline="outline", script="{}",
+        final_video_path=str(final), scenes=[],
+        characters=[SimpleNamespace(id=3)],
+    )
+
+    manifest = build_delivery_package(
+        project, tmp_path,
+        {"final_composition": _passed_final_composition(final)},
+        {"status": "ready"},
+    )
+
+    assert manifest["control_assets"] == [
+        "controls/visual_style_asset_pack.json",
+        "controls/spatial_asset_pack.json",
+        "controls/turnaround_3.json",
+    ]
+    with zipfile.ZipFile(tmp_path / "delivery" / "delivery_package.zip") as archive:
+        names = set(archive.namelist())
+        assert set(manifest["control_assets"]).issubset(names)
+
+
 def test_delivery_package_includes_mov_platform_exports(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "src.services.video_quality_metrics.video_candidate_metrics",
