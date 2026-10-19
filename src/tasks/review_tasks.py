@@ -64,6 +64,11 @@ def _character_asset_evidence(project) -> list[dict]:
                     item["asset_pack"] = {
                         "status": pack.get("status"),
                         "identity_spec_hash": pack.get("identity_spec_hash"),
+                        "voice_profile": {
+                            "voice_id": (pack.get("voice_profile") or {}).get("voice_id"),
+                            "style": (pack.get("voice_profile") or {}).get("style"),
+                            "language": (pack.get("voice_profile") or {}).get("language"),
+                        } if isinstance(pack.get("voice_profile"), dict) else None,
                         "reference_paths": sorted(pack.get("reference_paths") or []),
                         "reference_hashes": dict(sorted((pack.get("reference_hashes") or {}).items())),
                     }

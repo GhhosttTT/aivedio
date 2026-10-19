@@ -248,12 +248,14 @@ def test_composition_input_signature_changes_when_character_asset_changes(tmp_pa
     video.write_bytes(b"asset")
     scene = Mock(scene_number=1, dialogue="hello", image_path=None, video_path=str(video), audio_path=None, subtitle_path=None)
     identity = {"value": "v1"}
+    voice = {"value": "voice-v1"}
     monkeypatch.setattr(
         "src.services.character_service.get_character_manager",
         lambda: SimpleNamespace(
             get_character_asset_pack=lambda *_args: {
                 "status": "frozen",
                 "identity_spec_hash": identity["value"],
+                "voice_profile": {"voice_id": voice["value"], "style": "restrained", "language": "zh-CN"},
                 "reference_paths": [],
                 "reference_hashes": {},
             },
@@ -266,6 +268,9 @@ def test_composition_input_signature_changes_when_character_asset_changes(tmp_pa
     second = composition_tasks.composition_input_signature(project, [scene])
 
     assert first != second
+    voice["value"] = "voice-v2"
+    third = composition_tasks.composition_input_signature(project, [scene])
+    assert second != third
 
 
 def test_composition_input_signature_changes_when_production_controls_change(tmp_path, monkeypatch):
