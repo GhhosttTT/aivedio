@@ -3,6 +3,8 @@ TaskOrchestrator 服务单元测试
 测试任务编排服务的核心功能
 """
 
+import json
+
 import pytest
 from unittest.mock import ANY, Mock, patch
 from datetime import datetime
@@ -101,9 +103,11 @@ class TestCreateProductionTask:
     
     @patch('src.services.task_orchestrator.chain')
     def test_create_production_task_success(
-        self, mock_chain, orchestrator, sample_project, sample_scenes, monkeypatch
+        self, mock_chain, orchestrator, sample_project, sample_scenes, monkeypatch, tmp_path
     ):
         """测试成功创建生产任务"""
+        monkeypatch.setattr("src.services.task_orchestrator.storage_manager.base_path", tmp_path)
+        monkeypatch.setattr("src.services.task_orchestrator.MIN_PRODUCTION_SCENES", 3)
         monkeypatch.setattr("src.services.task_orchestrator.settings.GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK", True)
         # Mock Celery chain
         mock_result = Mock()
@@ -128,6 +132,37 @@ class TestCreateProductionTask:
         assert task is not None
         assert task.project_id == sample_project.id
         assert task.status == TaskStatus.PENDING
+
+    @patch('src.services.task_orchestrator.chain')
+    def test_create_production_task_persists_readiness_snapshot(
+        self, mock_chain, orchestrator, sample_project, sample_scenes, monkeypatch, tmp_path
+    ):
+        monkeypatch.setattr("src.services.task_orchestrator.storage_manager.base_path", tmp_path)
+        monkeypatch.setattr("src.services.task_orchestrator.MIN_PRODUCTION_SCENES", 3)
+        mock_result = Mock(id="snapshot-task-id")
+        mock_chain.return_value.freeze.return_value = mock_result
+
+        class FakeReadiness:
+            def __init__(self, _db):
+                pass
+
+            def build_report(self, project_id, **_kwargs):
+                return {"project_id": project_id, "status": "ready", "checks": {"workflow_profile": "frozen"}}
+
+        monkeypatch.setattr("src.services.task_orchestrator.ProductionReadinessService", FakeReadiness)
+        monkeypatch.setattr(
+            "src.services.task_orchestrator.preflight_production_video_engine",
+            lambda **_kwargs: {"status": "ready_for_production_video_test"},
+        )
+
+        task_id = orchestrator.create_production_task(project_id=sample_project.id, draft=False)
+
+        assert task_id == "snapshot-task-id"
+        snapshot = tmp_path / "projects" / str(sample_project.id) / "reviews" / "production_readiness_latest.json"
+        payload = json.loads(snapshot.read_text(encoding="utf-8"))
+        assert payload["kind"] == "production_readiness_snapshot"
+        assert payload["readiness"]["status"] == "ready"
+        assert payload["generation_options"]["request_mode"] is None
     
     def test_create_production_task_project_not_found(self, orchestrator):
         """测试项目不存在时抛出异常"""

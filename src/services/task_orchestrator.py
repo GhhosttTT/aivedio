@@ -7,7 +7,7 @@ import os
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 from celery import chain, group
 from celery.result import AsyncResult, GroupResult
@@ -18,6 +18,7 @@ from src.database.models import Project, Scene, Task as TaskModel, TaskStatus, P
 from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.production_readiness import ProductionReadinessService
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
+from src.services.generation_review import write_report
 from src.services.video_engine_preflight import preflight_production_video_engine
 from src.services.task_recovery import (
     load_pending_video_options,
@@ -33,8 +34,27 @@ from src.tasks.subtitle_tasks import generate_subtitle_task
 from src.tasks.composition_tasks import compose_final_video_task
 from src.tasks.draft_tasks import finalize_draft_generation_task
 from src.utils.logger import get_logger
+from src.utils.storage import storage_manager
 
 logger = get_logger(__name__)
+
+
+def _persist_production_readiness_snapshot(
+    project_id: int,
+    readiness: dict,
+    generation_options: dict,
+) -> Path:
+    """Persist the exact gate decision used to release a production task."""
+    path = storage_manager.get_project_path(project_id) / "reviews" / "production_readiness_latest.json"
+    write_report(path, {
+        "kind": "production_readiness_snapshot",
+        "schema_version": 1,
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "project_id": project_id,
+        "generation_options": generation_options,
+        "readiness": readiness,
+    })
+    return path
 
 
 def _task_result_payload(output_path: str) -> dict:
@@ -225,6 +245,23 @@ class TaskOrchestrator:
                     f"{MIN_PRODUCTION_SCENES} atomic scenes; current project has {len(scenes)}. "
                     "Expand the script or split multi-action scenes before production."
                 )
+            readiness["video_engine"] = video_engine
+            _persist_production_readiness_snapshot(
+                project_id,
+                readiness,
+                {
+                    "provider": effective_provider,
+                    "model": str(model).strip() if model else None,
+                    "request_mode": effective_request_mode,
+                    "multi_shot": bool(multi_shot),
+                    "sequence_level_multi_shot": bool(sequence_level_multi_shot),
+                    "native_audio": native_audio,
+                    "resolution": resolution,
+                    "output_format": output_format,
+                    "duration_seconds": duration_seconds,
+                    "draft": bool(draft),
+                },
+            )
         # Persist the real task ID before a worker can consume the first step.
         self._reserve_project(project_id)
         task_model = TaskModel(
