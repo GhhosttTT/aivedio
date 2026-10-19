@@ -6,8 +6,14 @@ import hashlib
 import hmac
 import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows uses the atomic replace fallback.
+    fcntl = None
 
 from fastapi import APIRouter, HTTPException, Request, status
 
@@ -22,6 +28,20 @@ _TERMINAL_STATES = {
     "failed", "error", "expired", "cancelled", "canceled",
 }
 _KNOWN_STATES = {"queued", "running", *_TERMINAL_STATES}
+_CALLBACK_STATE_RANK = {
+    "queued": 1,
+    "running": 2,
+    "failed": 3,
+    "error": 3,
+    "expired": 3,
+    "cancelled": 3,
+    "canceled": 3,
+    "succeeded": 4,
+    "success": 4,
+    "completed": 4,
+    "complete": 4,
+    "done": 4,
+}
 
 
 def _callback_secret() -> str:
@@ -66,29 +86,48 @@ def _callback_path(sidecar: Path) -> Path:
     ))
 
 
+@contextmanager
+def _callback_lock(target: Path):
+    """Serialize callback read/compare/write across web workers."""
+    lock_path = target.with_name(f".{target.name}.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        if fcntl is not None:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 def _persist_callback(sidecar: Path, payload: dict) -> None:
     target = _callback_path(sidecar)
     incoming_state = str(payload.get("status") or payload.get("state") or "").strip().lower()
-    if target.is_file():
+    with _callback_lock(target):
+        if target.is_file():
+            try:
+                existing = json.loads(target.read_text(encoding="utf-8"))
+            except (OSError, ValueError, TypeError):
+                existing = None
+            existing_state = (
+                str(existing.get("status") or existing.get("state") or "").strip().lower()
+                if isinstance(existing, dict) else ""
+            )
+            # Provider callbacks can arrive out of order. A terminal failure
+            # may be superseded by a later success, but no state can regress
+            # to an older lifecycle phase or downgrade a successful result.
+            if _CALLBACK_STATE_RANK.get(existing_state, 0) > _CALLBACK_STATE_RANK.get(incoming_state, 0):
+                return
+        temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
         try:
-            existing = json.loads(target.read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError):
-            existing = None
-        existing_state = (
-            str(existing.get("status") or existing.get("state") or "").strip().lower()
-            if isinstance(existing, dict) else ""
-        )
-        # Provider callbacks can arrive out of order. Never let a delayed
-        # queued/running event erase a terminal result already consumed by
-        # the polling worker.
-        if existing_state in _TERMINAL_STATES and incoming_state != existing_state:
-            return
-    temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
-    temporary.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
-    temporary.replace(target)
+            temporary.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+                encoding="utf-8",
+            )
+            temporary.replace(target)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 @router.post("/seedance", status_code=status.HTTP_200_OK)
