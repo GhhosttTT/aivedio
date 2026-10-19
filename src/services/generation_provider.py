@@ -2381,14 +2381,32 @@ def _seedance_prompt(request: VideoGenerationRequest, native_ark: bool | None = 
     end_index = (continuity_index or base_image_count) + 1 if end_is_separate else None
     if base_image_count:
         if sequence_level and shots:
-            shot_image_count = min(base_image_count, len(shots))
-            bindings.append(
-                    f"{image_tag(1)} through {image_tag(shot_image_count)} map in order to the shot keyframes in the timeline"
-            )
-            if base_image_count > shot_image_count:
+            explicit_bindings = plan.get("sequence_image_bindings")
+            if isinstance(explicit_bindings, list) and explicit_bindings:
+                for item in explicit_bindings:
+                    if not isinstance(item, dict):
+                        continue
+                    try:
+                        image_index = int(item.get("image_index"))
+                    except (TypeError, ValueError):
+                        continue
+                    if image_index < 1 or image_index > base_image_count:
+                        continue
+                    role = str(item.get("role") or "reference").strip()
+                    if role == "shot_keyframe":
+                        bindings.append(f"{image_tag(image_index)} is the keyframe for scene {item.get('scene_number')}")
+                    elif role == "character_identity":
+                        names = ", ".join(str(name) for name in item.get("character_names") or ["character"])
+                        bindings.append(f"{image_tag(image_index)} is a locked identity reference for {names}")
+            else:
+                shot_image_count = min(base_image_count, len(shots))
                 bindings.append(
-                    f"{image_tag(shot_image_count + 1)} onward are frozen character identity and wardrobe references"
+                    f"{image_tag(1)} through {image_tag(shot_image_count)} map in order to the shot keyframes in the timeline"
                 )
+                if base_image_count > shot_image_count:
+                    bindings.append(
+                        f"{image_tag(shot_image_count + 1)} onward are frozen character identity and wardrobe references"
+                    )
         else:
             bindings.append(f"{image_tag(1)} is the current scene keyframe and establishes composition")
         if base_image_count > 1 and not sequence_level:

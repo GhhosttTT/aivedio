@@ -3208,6 +3208,31 @@ def test_seedance_sequence_prompt_binds_shot_keyframes_before_identity_refs():
     assert "@Image3 onward are frozen character identity" in prompt
 
 
+def test_seedance_sequence_prompt_uses_explicit_sampled_reference_bindings():
+    prompt = _seedance_prompt(VideoGenerationRequest(
+        prompt="sampled multi-shot sequence",
+        output_path="sequence.mp4",
+        multi_shot=True,
+        duration_seconds=30,
+        reference_images=["scene1.png", "scene7.png", "scene12.png", "identity.png"],
+        shot_plan={
+            "sequence_level": True,
+            "shots": [{"scene_number": number, "visual": "beat", "duration_seconds": 7.5} for number in range(1, 5)],
+            "sequence_image_bindings": [
+                {"image_index": 1, "role": "shot_keyframe", "scene_number": 1},
+                {"image_index": 2, "role": "shot_keyframe", "scene_number": 7},
+                {"image_index": 3, "role": "shot_keyframe", "scene_number": 12},
+                {"image_index": 4, "role": "character_identity", "character_names": ["Alice"]},
+            ],
+        },
+    ))
+
+    assert "@Image1 is the keyframe for scene 1" in prompt
+    assert "@Image2 is the keyframe for scene 7" in prompt
+    assert "@Image3 is the keyframe for scene 12" in prompt
+    assert "@Image4 is a locked identity reference for Alice" in prompt
+
+
 def test_seedance_sequence_prompt_prefers_explicit_timestamp_timeline():
     prompt = _seedance_prompt(VideoGenerationRequest(
         prompt="continuous short drama sequence",

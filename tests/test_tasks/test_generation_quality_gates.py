@@ -763,6 +763,9 @@ def test_sequence_references_cover_late_shots_and_audio(project_data, tmp_path, 
     assert len(references["audios"]) == 3
     assert str(tmp_path / "scene-1.wav") in references["audios"]
     assert str(tmp_path / "scene-12.wav") in references["audios"]
+    assert [item["role"] for item in references["sequence_image_bindings"]] == [
+        "shot_keyframe", "shot_keyframe", "shot_keyframe", "shot_keyframe",
+    ]
 
 
 def test_native_seedance_skips_untransportable_local_previous_video(

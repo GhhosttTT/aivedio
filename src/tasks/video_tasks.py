@@ -776,6 +776,7 @@ class _ComfyVideoGenerator:
         self.continuity_reference_image: str | None = None
         self.reference_videos = list(reference_videos or [])
         self.reference_audios = list(reference_audios or [])
+        self.sequence_image_bindings: list[dict] = []
         self.sequence_context: dict | None = None
         self.character_reference_bindings = [
             dict(item) for item in (character_reference_bindings or []) if isinstance(item, dict)
@@ -886,6 +887,11 @@ class _ComfyVideoGenerator:
             shot_plan_payload = {
                 **shot_plan_payload,
                 "character_reference_bindings": self.character_reference_bindings,
+            }
+        if shot_plan_payload is not None and self.sequence_image_bindings:
+            shot_plan_payload = {
+                **shot_plan_payload,
+                "sequence_image_bindings": self.sequence_image_bindings,
             }
         if multi_shot and sequence_level_multi_shot and shot_plan_payload is not None:
             sequence_timeline = self.provider_options.get("SEQUENCE_TIMELINE")
@@ -1001,12 +1007,16 @@ class _ComfyVideoGenerator:
         videos: list[str] | None = None,
         audios: list[str] | None = None,
         continuity_image: str | None = None,
+        sequence_image_bindings: list[dict] | None = None,
     ):
         """Attach Seedance-style references without changing local workflows."""
         self.reference_images = list(images or [])
         self.reference_videos = list(videos or [])
         self.reference_audios = list(audios or [])
         self.continuity_reference_image = continuity_image
+        self.sequence_image_bindings = [
+            dict(item) for item in (sequence_image_bindings or []) if isinstance(item, dict)
+        ]
         return self
 
     def with_continuity_reference(self, image: str | None):
@@ -1316,11 +1326,34 @@ def _multimodal_references_for_sequence(
         max(0, image_limit - len(selected_identity)),
     )
     audio_limit = _configured_reference_limit(provider_name, "MAX_REFERENCE_AUDIOS", 3, model)
+    scene_by_image = {
+        str(scene.image_path): int(scene.scene_number)
+        for scene in scenes
+        if scene.image_path and str(scene.image_path) in selected_shots
+    }
+    identity_by_image = {}
+    for scene in scenes:
+        payload = _scene_review_payload(scene, project_id, db)
+        for item in payload.get("character_sheet_references", []):
+            if isinstance(item, dict) and item.get("path") in selected_identity:
+                identity_by_image.setdefault(str(item["path"]), set()).add(str(item.get("name") or "character"))
+    ordered_images = selected_shots + selected_identity
+    image_bindings = []
+    for index, path in enumerate(ordered_images, start=1):
+        if path in scene_by_image:
+            image_bindings.append({"image_index": index, "role": "shot_keyframe", "scene_number": scene_by_image[path]})
+        else:
+            image_bindings.append({
+                "image_index": index,
+                "role": "character_identity",
+                "character_names": sorted(identity_by_image.get(path, {"character"})),
+            })
     return {
-        "images": (selected_shots + selected_identity)[:image_limit],
+        "images": ordered_images[:image_limit],
         "continuity_image": None,
         "videos": [],
         "audios": _select_reference_paths(audios, audio_limit) if supports_multimodal else [],
+        "sequence_image_bindings": image_bindings[:image_limit],
     }
 
 
