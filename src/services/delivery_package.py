@@ -558,6 +558,18 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
     files = _collect_files(project, root, reports)
     control_assets = _collect_control_assets(project, root, delivery_root)
     files.extend(control_assets)
+    readiness_snapshot_metadata = {}
+    readiness_snapshot_path = root / "reviews" / "production_readiness_latest.json"
+    try:
+        readiness_snapshot = json.loads(readiness_snapshot_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        readiness_snapshot = None
+    if isinstance(readiness_snapshot, dict):
+        readiness_snapshot_metadata = {
+            "path": "reviews/production_readiness_latest.json",
+            "task_record_id": readiness_snapshot.get("task_record_id"),
+            "captured_at": readiness_snapshot.get("captured_at"),
+        }
 
     project_metadata = delivery_root / "project_metadata.json"
     generation_evidence = _delivery_generation_evidence(reports)
@@ -653,6 +665,7 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         "critical_reports": critical_reports,
         "review_files": review_files,
         "quality_summary_status": review_summary.get("status"),
+        "readiness_snapshot": readiness_snapshot_metadata,
     })
     files.append((review_index, "metadata/review_index.json"))
 
@@ -680,6 +693,7 @@ def build_delivery_package(project, project_root: str | Path, reports: dict, rev
         "cover": cover_report,
         "platform_covers": platform_cover_reports,
         "generation_evidence": generation_evidence,
+        "readiness_snapshot": readiness_snapshot_metadata,
         "control_assets": [archive_name for _source, archive_name in control_assets],
         "files": manifest_files,
         "package_path": str(package_path),

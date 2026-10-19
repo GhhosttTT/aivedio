@@ -375,8 +375,12 @@ def test_delivery_package_verifies_production_readiness_snapshot(tmp_path):
     )
 
     assert manifest["verification"]["status"] == "passed"
+    assert manifest["readiness_snapshot"]["path"] == "reviews/production_readiness_latest.json"
+    assert manifest["readiness_snapshot"]["task_record_id"] is None
     with zipfile.ZipFile(tmp_path / "delivery" / "delivery_package.zip") as archive:
         assert "reviews/production_readiness_latest.json" in archive.namelist()
+        review_index = json.loads(archive.read("metadata/review_index.json").decode("utf-8"))
+        assert review_index["readiness_snapshot"]["path"] == "reviews/production_readiness_latest.json"
 
 
 def test_delivery_package_rejects_invalid_production_readiness_snapshot(tmp_path):
