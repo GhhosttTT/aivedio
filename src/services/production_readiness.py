@@ -25,6 +25,7 @@ from src.services.generation_quality_scorecard import (
     build_generation_quality_scorecard,
     production_score_meets_candidate_threshold,
 )
+from src.services.generation_review import invalidate_quality_reports_without_current_media
 from src.services.production_workflow_profile import ProductionWorkflowProfileService, REQUIRED_IMAGE_PIPELINE_STAGES
 from src.services.quality_loop import build_quality_loop_plan
 from src.services.story_room_quality import StoryRoomQualityService
@@ -1320,6 +1321,17 @@ class ProductionReadinessService:
                 key = "quality_" + "_".join(path.relative_to(project_root).with_suffix("").parts)
                 reports[key] = payload
 
+        invalidate_quality_reports_without_current_media(
+            reports,
+            sorted(getattr(project, "scenes", []) or [], key=lambda scene: scene.scene_number),
+        )
+        stale_quality_reports = sorted(
+            name for name, report in reports.items()
+            if name.startswith("quality_")
+            and isinstance(report, dict)
+            and report.get("status") == "stale"
+        )
+
         repair_items: list[dict] = []
         actions: dict[str, int] = {}
         execution = {"auto": 0, "setup_required": 0, "manual": 0}
@@ -1346,9 +1358,15 @@ class ProductionReadinessService:
             "manual_actions": [item for item in repair_items if item.get("execution") not in {"auto", "setup_required"}][:10],
         }
         summary = {
-            "status": "blocked" if repair_items else "ready",
+            "status": "blocked" if repair_items or stale_quality_reports else "ready",
             "repair_queue": repair_queue,
         }
+        if stale_quality_reports:
+            warnings.append(ReadinessIssue(
+                "stale_scene_quality_evidence",
+                "Scene quality evidence is stale after media changes; regenerate and review the affected scenes.",
+                severity="blocker",
+            ))
         loop_plan = build_quality_loop_plan(summary, max_actions=5)
         scorecard = build_generation_quality_scorecard(reports)
         if invalid_reports:
@@ -1371,6 +1389,7 @@ class ProductionReadinessService:
             "project_root": str(project_root),
             "report_count": len(reports),
             "invalid_reports": invalid_reports,
+            "stale_quality_reports": stale_quality_reports,
             "repair_queue_total": len(repair_items),
             "actions": actions,
             "execution": execution,

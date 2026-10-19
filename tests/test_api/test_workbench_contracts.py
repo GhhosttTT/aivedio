@@ -123,6 +123,11 @@ def test_scene_save_invalidates_media_and_rejects_manual_completion(setup):
     quality_path.write_text(json.dumps({"status": "passed", "scene": {"scene_number": 1}, "video_sha256": "old-video"}), encoding="utf-8")
     replaced_review = client.get("/api/projects/1/generation-review")
     assert replaced_review.json()["reports"]["quality_scenes_1.quality"]["status"] == "stale"
+    readiness = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+    assert readiness.status_code == 200, readiness.text
+    quality_check = readiness.json()["checks"]["project_generation_quality"]
+    assert "quality_scenes_1.quality" in quality_check["stale_quality_reports"]
+    assert any(item["code"] == "stale_scene_quality_evidence" for item in readiness.json()["warnings"])
     assert client.put("/api/projects/1", json={"status": "completed"}).status_code == 400
 
 

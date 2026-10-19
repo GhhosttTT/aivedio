@@ -129,6 +129,60 @@ def file_hash(path: Path) -> str:
     return digest.hexdigest()
 
 
+def invalidate_quality_reports_without_current_media(reports: dict, scenes: list) -> None:
+    """Mark scene quality evidence stale when edited media is missing or replaced."""
+    current = {int(scene.scene_number): scene for scene in scenes}
+    for key, report in reports.items():
+        if not key.startswith("quality_") or not isinstance(report, dict):
+            continue
+        numbers: set[int] = set()
+        direct = report.get("scene_number")
+        if isinstance(direct, int) and direct > 0:
+            numbers.add(direct)
+        scene = report.get("scene")
+        if isinstance(scene, dict) and isinstance(scene.get("scene_number"), int):
+            numbers.add(scene["scene_number"])
+        for collection_key in ("scenes", "candidates"):
+            collection = report.get(collection_key)
+            if not isinstance(collection, list):
+                continue
+            for item in collection:
+                if not isinstance(item, dict):
+                    continue
+                if isinstance(item.get("scene_number"), int):
+                    numbers.add(item["scene_number"])
+                nested = item.get("scene")
+                if isinstance(nested, dict) and isinstance(nested.get("scene_number"), int):
+                    numbers.add(nested["scene_number"])
+        stale_scenes = set()
+        for number in numbers:
+            scene = current.get(number)
+            if not scene:
+                continue
+            if not getattr(scene, "image_path", None) and not getattr(scene, "video_path", None):
+                stale_scenes.add(number)
+                continue
+            for digest_key, media_path in (
+                ("image_sha256", getattr(scene, "image_path", None)),
+                ("video_sha256", getattr(scene, "video_path", None)),
+            ):
+                expected_digest = report.get(digest_key)
+                if not isinstance(expected_digest, str) or not expected_digest:
+                    continue
+                if not media_path or not Path(str(media_path)).is_file():
+                    stale_scenes.add(number)
+                    continue
+                try:
+                    if file_hash(Path(str(media_path))) != expected_digest:
+                        stale_scenes.add(number)
+                except OSError:
+                    stale_scenes.add(number)
+        if stale_scenes and report.get("status") in {"passed", "available"}:
+            report["status"] = "stale"
+            report["stale_scenes"] = sorted(stale_scenes)
+            report["error"] = "Scene media was edited after this quality report; regenerate and review the scene again."
+
+
 def write_report(path: Path, data: dict) -> None:
     from uuid import uuid4
     path.parent.mkdir(parents=True, exist_ok=True)
