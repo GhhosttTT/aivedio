@@ -43,6 +43,7 @@ from src.services.video_quality_metrics import (
     temporal_sample_evidence_error,
     video_boundary_continuity,
     video_candidate_metrics,
+    video_continuity_reference_metrics,
     video_start_frame_reference_metrics,
     video_end_frame_reference_metrics,
     video_technical_score,
@@ -2004,6 +2005,11 @@ def _attach_video_technical_metrics(candidate: dict) -> None:
         metrics["end_frame_reference"] = video_end_frame_reference_metrics(
             candidate["path"], end_frame_reference,
         )
+    continuity_reference = request.get("continuity_reference_image")
+    if continuity_reference and "continuity_reference" not in metrics:
+        metrics["continuity_reference"] = video_continuity_reference_metrics(
+            candidate["path"], continuity_reference,
+        )
     if _is_long_form_shot_plan(candidate.get("shot_plan")) and metrics.get("status") == "available":
         metrics["technical_score"] = video_technical_score(
             metrics,
@@ -2647,9 +2653,18 @@ def _video_candidate_rank(candidate: dict) -> tuple:
         _video_character_distinctiveness_gate_passes(candidate),
         _video_performance_gate_passes(candidate),
         _video_critical_floor_score(candidate) or 0,
+        _video_continuity_reference_score(candidate),
         _video_selection_score(candidate),
         candidate.get("average", 0),
     )
+
+
+def _video_continuity_reference_score(candidate: dict) -> float:
+    """Return measured prior-shot continuity for candidate tie-breaking."""
+    metrics = candidate.get("technical_metrics")
+    reference = metrics.get("continuity_reference") if isinstance(metrics, dict) else None
+    score = reference.get("score") if isinstance(reference, dict) else None
+    return float(score) if isinstance(score, (int, float)) else 0.0
 
 
 def _select_best_video_candidate(

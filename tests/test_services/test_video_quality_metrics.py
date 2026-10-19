@@ -9,6 +9,7 @@ from src.services.video_quality_metrics import (
     _sample_frames,
     temporal_sample_evidence_error,
     video_boundary_continuity,
+    video_continuity_reference_metrics,
     video_end_frame_reference_metrics,
     video_start_frame_reference_metrics,
     video_technical_score,
@@ -151,6 +152,12 @@ def test_video_start_frame_reference_is_not_applicable_without_reference(tmp_pat
 
 def test_video_end_frame_reference_is_not_applicable_without_reference(tmp_path):
     assert video_end_frame_reference_metrics(tmp_path / "clip.mp4", None) == {
+        "status": "not_applicable"
+    }
+
+
+def test_video_continuity_reference_is_not_applicable_without_reference(tmp_path):
+    assert video_continuity_reference_metrics(tmp_path / "clip.mp4", None) == {
         "status": "not_applicable"
     }
 

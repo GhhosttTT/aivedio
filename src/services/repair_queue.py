@@ -158,7 +158,7 @@ ACTION_RULES = [
         (
             "flicker", "flickers", "temporal", "motion", "motion_smoothness", "stutter", "camera jump",
             "warped body", "melting", "first frame", "last frame", "background_stability",
-            "artifact_absence", "repair scar flickers",
+            "continuity reference", "continuity_reference", "artifact_absence", "repair scar flickers",
         ),
         "lower_motion_and_regenerate_video",
         "Lower motion strength/noise and regenerate the video clip from the accepted keyframe.",

@@ -580,6 +580,17 @@ def video_end_frame_reference_metrics(
     return _video_boundary_frame_reference_metrics(video_path, reference_image, from_end=True)
 
 
+def video_continuity_reference_metrics(
+    video_path: str | Path,
+    reference_image: str | Path | None,
+) -> dict[str, Any]:
+    """Compare a clip's opening frame with the accepted prior-shot tail frame."""
+    result = _video_boundary_frame_reference_metrics(video_path, reference_image, from_end=False)
+    if result.get("status") == "available":
+        result["boundary"] = "continuity_start"
+    return result
+
+
 def _video_boundary_frame_reference_metrics(
     video_path: str | Path,
     reference_image: str | Path | None,
