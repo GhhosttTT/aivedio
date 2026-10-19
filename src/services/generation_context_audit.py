@@ -52,17 +52,34 @@ class GenerationContextAuditService:
 
     def audit(self, scenes: list, reports: dict[str, Any]) -> GenerationContextAuditReport:
         contexts = []
+        missing_context_scenes: list[int] = []
         for scene in sorted(scenes or [], key=lambda item: item.scene_number):
+            has_video = bool(getattr(scene, "video_path", None))
             metadata = self._scene_metadata(scene)
             if not metadata:
                 metadata = self._metadata_from_reports(scene.scene_number, reports)
+            if not metadata and not has_video:
+                continue
             context = self._context(scene.scene_number, metadata)
             if context:
                 contexts.append(context)
+            elif has_video:
+                missing_context_scenes.append(scene.scene_number)
         if not contexts:
             return GenerationContextAuditReport("not_applicable", 0, 0, [], [])
         signatures = {self._signature(context) for context in contexts}
         issues: list[dict[str, Any]] = []
+        if missing_context_scenes:
+            issues.append({
+                "severity": "high",
+                "code": "missing_provider_context_evidence",
+                "scene_numbers": missing_context_scenes,
+                "evidence": (
+                    "provider generation context is missing or incomplete for scene(s) "
+                    + ", ".join(str(number) for number in missing_context_scenes)
+                ),
+                "recommendation": "Persist provider metadata and the request contract for every generated clip before delivery.",
+            })
         if len(signatures) > 1:
             issues.append({
                 "severity": "high",
@@ -81,7 +98,13 @@ class GenerationContextAuditService:
                 "recommendation": "Persist the exact request contract before accepting a remote generation result.",
             })
         status = "needs_review" if any(item["severity"] == "high" for item in issues) else ("warn" if issues else "passed")
-        return GenerationContextAuditReport(status, len(contexts), len(signatures), contexts, issues)
+        return GenerationContextAuditReport(
+            status,
+            len(contexts) + len(missing_context_scenes),
+            len(signatures),
+            contexts,
+            issues,
+        )
 
     def _scene_metadata(self, scene) -> dict[str, Any] | None:
         video_path = getattr(scene, "video_path", None)

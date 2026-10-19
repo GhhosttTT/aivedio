@@ -66,3 +66,20 @@ def test_generation_context_audit_can_use_report_metadata():
 
     assert report.status == "passed"
     assert report.checked_scene_count == 2
+
+
+def test_generation_context_audit_blocks_partial_provider_context_coverage(tmp_path):
+    first = tmp_path / "scene_1.mp4"
+    second = tmp_path / "scene_2.mp4"
+    first.write_bytes(b"video")
+    second.write_bytes(b"video")
+    first.with_suffix(".provider.json").write_text(json.dumps(_metadata()), encoding="utf-8")
+
+    report = GenerationContextAuditService().audit(
+        [_scene(1, first), _scene(2, second)],
+        {},
+    )
+
+    assert report.status == "needs_review"
+    assert report.checked_scene_count == 2
+    assert report.issues[0]["code"] == "missing_provider_context_evidence"
