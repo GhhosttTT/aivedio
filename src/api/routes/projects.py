@@ -105,6 +105,33 @@ def _record_baseline_comparison(project_id: int, report: dict) -> dict:
     return report
 
 
+def _delivery_evidence_snapshot(project_id: int) -> dict:
+    path = storage_manager.get_project_path(project_id) / "reviews" / "production_readiness_latest.json"
+    if not path.is_file():
+        return {"status": "missing", "path": str(path)}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        return {"status": "invalid", "path": str(path)}
+    readiness = payload.get("readiness") if isinstance(payload, dict) else None
+    video_engine = readiness.get("video_engine") if isinstance(readiness, dict) else None
+    valid = (
+        isinstance(payload, dict)
+        and payload.get("kind") == "production_readiness_snapshot"
+        and payload.get("project_id") == project_id
+        and isinstance(readiness, dict)
+        and readiness.get("status") == "ready"
+        and isinstance(video_engine, dict)
+        and video_engine.get("status") == "ready_for_production_video_test"
+    )
+    return {
+        "status": "ready" if valid else "invalid",
+        "path": str(path),
+        "task_record_id": payload.get("task_record_id") if isinstance(payload, dict) else None,
+        "captured_at": payload.get("captured_at") if isinstance(payload, dict) else None,
+    }
+
+
 def _accepted_video_evidence_error(report: dict) -> str | None:
     """Check that final-video evidence fields describe the same media bytes."""
     evidence = report.get("generation_run_evidence")
@@ -1007,7 +1034,9 @@ async def get_production_readiness(
         readiness_kwargs["output_format_override"] = output_format_override.strip().lower()
     if duration_override is not None:
         readiness_kwargs["duration_override"] = duration_override
-    return ProductionReadinessService(db_session).build_report(project_id, **readiness_kwargs)
+    report = ProductionReadinessService(db_session).build_report(project_id, **readiness_kwargs)
+    report["delivery_evidence"] = _delivery_evidence_snapshot(project_id)
+    return report
 
 
 @router.post("/{project_id}/approve-story-room", response_model=StoryRoomApprovalResponse)

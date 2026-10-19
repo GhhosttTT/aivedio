@@ -16,6 +16,7 @@ from src.api.routes.projects import (
     compare_seed_dance_baseline,
     create_delivery_package,
     get_generation_review,
+    get_production_readiness,
     upload_seed_dance_baseline,
 )
 from src.services.generation_review import file_hash, write_report
@@ -422,6 +423,38 @@ def test_delivery_package_endpoint_requires_production_readiness_snapshot(tmp_pa
 
     assert exc.value.status_code == 409
     assert "readiness snapshot" in exc.value.detail
+
+
+def test_production_readiness_exposes_delivery_evidence_status(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    monkeypatch.setattr(
+        "src.api.routes.projects.ProductionReadinessService.build_report",
+        lambda _self, _project_id, **_kwargs: {"project_id": 1, "status": "ready", "checks": {}},
+    )
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(id=1, user_id=2)
+
+    missing = asyncio.run(get_production_readiness(
+        1, False, None, None, None, None, None, None,
+        current_user=SimpleNamespace(id=2), db_session=db,
+    ))
+    assert missing["delivery_evidence"]["status"] == "missing"
+
+    snapshot = storage_manager.get_project_path(1) / "reviews" / "production_readiness_latest.json"
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_text(json.dumps({
+        "kind": "production_readiness_snapshot",
+        "project_id": 1,
+        "task_record_id": 4,
+        "readiness": {"status": "ready", "video_engine": {"status": "ready_for_production_video_test"}},
+    }), encoding="utf-8")
+    ready = asyncio.run(get_production_readiness(
+        1, False, None, None, None, None, None, None,
+        current_user=SimpleNamespace(id=2), db_session=db,
+    ))
+    assert ready["delivery_evidence"]["status"] == "ready"
+    assert ready["delivery_evidence"]["task_record_id"] == 4
 
 
 def test_review_api_marks_old_seedance_baseline_stale_after_candidate_changes(tmp_path, monkeypatch):

@@ -229,12 +229,17 @@ export function ProjectDetail() {
     if (!project) return <main className="workbench"><Link to="/projects">返回项目</Link><p role="alert" className="wb-alert">{error || '项目不存在'}</p><button className="wb-button" onClick={reload}>重试</button></main>;
     const productionBlocked = !readiness || readiness.status !== 'ready';
     const productionBlockedTitle = !readiness ? '生产就绪检查未完成' : readiness.status === 'needs_review' ? '先处理生产复查项' : '先处理生产就绪阻断项';
-    const deliveryReady = reviewSummary?.summary?.status === 'ready';
+    const deliveryReady = reviewSummary?.summary?.status === 'ready'
+        && readiness?.delivery_evidence?.status === 'ready';
     const deliveryTitle = !reviewSummary
         ? '最终审核状态尚未加载'
-        : deliveryReady
+        : reviewSummary.summary?.status !== 'ready'
+            ? '最终审核未 ready：请完成抽帧、基线对比和人工终审'
+            : readiness?.delivery_evidence?.status !== 'ready'
+                ? '生产启动证据缺失或无效：请通过生产门禁重新生成'
+                : deliveryReady
             ? '导出已通过审核的交付包'
-            : '最终审核未 ready：请完成抽帧、基线对比和人工终审';
+                : '交付证据尚未就绪';
     const locked = Boolean(busy) || project.status === 'in_production';
     const draftEvidenceMissing = project.draft_missing_scenes || [];
     const draftExpiredScenes = project.draft_expired_scenes || [];

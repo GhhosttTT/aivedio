@@ -543,6 +543,12 @@ export interface ProductionReadinessIssue {
 export interface ProductionReadinessReport {
     project_id: number;
     status: 'ready' | 'needs_review' | 'blocked' | string;
+    delivery_evidence?: {
+        status: 'ready' | 'missing' | 'invalid' | string;
+        path?: string;
+        task_record_id?: number | null;
+        captured_at?: string | null;
+    };
     blockers: ProductionReadinessIssue[];
     warnings: ProductionReadinessIssue[];
     repair_actions?: Array<{
