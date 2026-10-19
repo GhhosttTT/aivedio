@@ -61,6 +61,7 @@ from src.services.repair_budget import RepairBudget
 from src.services.repair_cycle import RepairCycleStore
 from src.services.human_review import HumanReviewStore
 from src.services.content_safety_audit import ContentSafetyAuditService
+from src.services.baseline_comparison_history import BaselineComparisonHistoryStore
 from src.services.continuity_audit import ContinuityAuditService
 from src.services.rhythm_audit import RhythmAuditService
 from src.services.episode_style_consistency import EpisodeStyleConsistencyService
@@ -97,6 +98,11 @@ def _video_version_signature(path: Path) -> str | None:
     except OSError:
         return None
     return f"{path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
+
+
+def _record_baseline_comparison(project_id: int, report: dict) -> dict:
+    report["history_summary"] = BaselineComparisonHistoryStore(project_id).record(report)
+    return report
 
 
 def _accepted_video_evidence_error(report: dict) -> str | None:
@@ -418,6 +424,7 @@ async def compare_seed_dance_baseline(
     report["baseline_signature"] = _video_version_signature(baseline)
     report["candidate_sha256"] = file_hash(candidate)
     report["baseline_sha256"] = file_hash(baseline)
+    _record_baseline_comparison(project_id, report)
     write_report(review_root / "seed_dance_baseline_comparison.json", report)
     return report
 
@@ -466,6 +473,7 @@ async def upload_seed_dance_baseline(
     report["baseline_signature"] = _video_version_signature(baseline)
     report["candidate_sha256"] = file_hash(candidate)
     report["baseline_sha256"] = file_hash(baseline)
+    _record_baseline_comparison(project_id, report)
     write_report(review_root / "seed_dance_baseline_comparison.json", report)
     return report
 
@@ -703,6 +711,8 @@ async def get_generation_review(
                 f"missing={evidence['missing']}, invalid={evidence['invalid']}"
             )
     baseline_report = reports.get("seed_dance_baseline_comparison")
+    if isinstance(baseline_report, dict):
+        baseline_report["history_summary"] = BaselineComparisonHistoryStore(project_id).summary()
     if isinstance(baseline_report, dict) and baseline_report.get("status") == "passed":
         candidate_path = Path(
             baseline_report.get("candidate_video_path")

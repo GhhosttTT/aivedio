@@ -20,6 +20,7 @@ const names: Record<string, string> = {
     first_frame_consistency_audit: '锁定关键帧首帧一致性',
     sequence_timeline_audit: '多镜头时间轴一致性',
     seed_dance_baseline_comparison: 'Seed Dance 对比验收',
+    content_safety: '内容安全审计',
     causal_logic: '因果逻辑',
     character_motivation: '角色动机',
     continuity: '连续性',
@@ -182,6 +183,7 @@ function SeedDanceComparison({projectId, report}: {projectId: number; report: an
         no_temporal_visual_resets: '无重复视觉跳变',
         no_extreme_temporal_visual_reset: '无极端视觉跳变',
     };
+    const history = report.history_summary || {};
     return <div>
         <div className="wb-fields">
             <div><h3>时长差</h3><p className="wb-muted">{differences.duration_delta_seconds ?? '-'} 秒</p></div>
@@ -198,6 +200,12 @@ function SeedDanceComparison({projectId, report}: {projectId: number; report: an
                 <span>{gateLabels[key] || key}</span>
                 <strong>{passed ? '通过' : '未通过'}</strong>
             </div>)}
+        </div>}
+        {history.count > 0 && <div className="wb-grid compact">
+            <div className="wb-kv"><span>历史对比次数</span><strong>{history.count}</strong></div>
+            <div className="wb-kv"><span>历史最佳分</span><strong>{history.best_score ?? '-'}</strong></div>
+            <div className="wb-kv"><span>相对上次</span><strong>{history.score_delta == null ? '-' : `${history.score_delta > 0 ? '+' : ''}${history.score_delta}`}</strong></div>
+            <div className="wb-kv"><span>回归提示</span><strong>{history.regression ? '低于上次' : '无'}</strong></div>
         </div>}
         <div className="wb-row" style={{marginTop: 12}}>
             <MediaLink projectId={projectId} path={report.candidate_video_path} label="候选视频"/>
