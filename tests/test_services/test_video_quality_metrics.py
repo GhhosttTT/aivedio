@@ -383,3 +383,36 @@ def test_probe_rejects_unverifiable_video_metadata(
 
     with pytest.raises(ValueError, match=message):
         _probe(tmp_path / "invalid.mp4")
+
+
+def test_video_candidate_metrics_returns_available_metrics(tmp_path):
+    import shutil
+    import subprocess
+
+    from src.services.video_quality_metrics import (
+        clear_video_candidate_metrics_cache,
+        video_candidate_metrics,
+    )
+
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg is required for the metrics integration test")
+
+    clip = tmp_path / "clip.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc=size=160x96:rate=12:duration=1",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+            "-c:v", "mpeg4", "-q:v", "5", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", str(clip),
+        ],
+        check=True,
+    )
+
+    clear_video_candidate_metrics_cache()
+    metrics = video_candidate_metrics(clip)
+
+    assert metrics["status"] == "available"
+    assert metrics["sampled_frames"] > 0
+    assert metrics["duration_seconds"] > 0
+    assert metrics["technical_score"] is not None

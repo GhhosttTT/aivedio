@@ -192,6 +192,7 @@ def _compute_video_candidate_metrics(
                 float(metrics["audio_video_start_delta_seconds"]), 3
             )
         metrics["technical_score"] = video_technical_score(metrics)
+        return metrics
     except Exception as exc:
         return {
             "status": "unavailable",
