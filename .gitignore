@@ -61,6 +61,7 @@ svd/
 
 # Generated Files (生成的图片和视频)
 storage/
+data/
 output/
 results/
 ComfyUI/output/

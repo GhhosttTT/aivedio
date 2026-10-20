@@ -1,5 +1,4 @@
 # AI 短剧自动化生产平台 - Docker Compose 配置
-version: '3.8'
 
 services:
   # Redis 服务（消息队列和缓存）
@@ -74,6 +73,7 @@ services:
     volumes:
       - ./models:/app/models:ro
       - ./storage:/app/storage
+      - ./data:/app/data
       - ./logs:/app/logs
       - ./configs:/app/configs
       - ./.env:/app/.env
@@ -88,7 +88,8 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - ENVIRONMENT=production
       - READINESS_REQUIRE_REDIS=true
-      - DATABASE_URL=sqlite:///./short_drama.db
+      # API and worker must share one SQLite file; /app/data is a shared volume.
+      - DATABASE_URL=sqlite:////app/data/short_drama.db
       # 如果使用 PostgreSQL，取消注释下面的行
       # - DATABASE_URL=postgresql://short_drama_user:${POSTGRES_PASSWORD:-changeme}@postgres:5432/short_drama
       - REDIS_URL=redis://redis:6379/0
@@ -121,6 +122,7 @@ services:
     volumes:
       - ./models:/app/models:ro
       - ./storage:/app/storage
+      - ./data:/app/data
       - ./logs:/app/logs
       - ./configs:/app/configs
       - ./.env:/app/.env
@@ -134,7 +136,8 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - ENVIRONMENT=production
-      - DATABASE_URL=sqlite:///./short_drama.db
+      # API and worker must share one SQLite file; /app/data is a shared volume.
+      - DATABASE_URL=sqlite:////app/data/short_drama.db
       # 如果使用 PostgreSQL，取消注释下面的行
       # - DATABASE_URL=postgresql://short_drama_user:${POSTGRES_PASSWORD:-changeme}@postgres:5432/short_drama
       - REDIS_URL=redis://redis:6379/0

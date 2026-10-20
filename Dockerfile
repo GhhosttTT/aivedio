@@ -48,6 +48,7 @@ COPY .env.example .env
 # 创建必要的目录
 RUN mkdir -p /app/models \
     /app/storage \
+    /app/data \
     /app/logs \
     /app/configs
 
