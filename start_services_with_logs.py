@@ -222,30 +222,10 @@ def start_service_with_logs(name, cmd, cwd=None):
 
 
 def check_port(port, timeout=10):
-    """
-    检查端口是否已监听
-    
-    Args:
-        port: 端口号
-        timeout: 超时时间（秒）
-    """
-    import socket
-    
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            result = sock.connect_ex(('127.0.0.1', port))
-            sock.close()
-            
-            if result == 0:
-                return True
-        except Exception:
-            pass
-        
-        time.sleep(1)
-    
-    return False
+    """检查端口是否已监听（复用主启动脚本的实现）"""
+    from start_services import check_port as check_port_impl
+
+    return check_port_impl(port, timeout)
 
 
 def check_database():
@@ -353,11 +333,15 @@ def main():
         ('Frontend', 5173)
     ]
     
+    from start_services import describe_port_owner
+
     for name, port in services_to_check:
         if check_port(port, timeout=5):
             print_success(f"✓ {name} (端口 {port}) - 运行中")
         else:
-            print_warning(f"✗ {name} (端口 {port}) - 可能未就绪")
+            owner = describe_port_owner(port)
+            detail = f"，占用进程: {owner}" if owner else ""
+            print_warning(f"✗ {name} (端口 {port}) - 可能未就绪{detail}")
     
     print_success("✓ Celery Worker - 已在新窗口启动")
     

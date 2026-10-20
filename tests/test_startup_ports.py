@@ -25,3 +25,17 @@ def test_port_in_use_false_for_closed_port():
 
 def test_describe_port_owner_returns_none_when_unused():
     assert start_services.describe_port_owner(_free_port()) is None
+
+
+def test_log_launcher_delegates_port_check(monkeypatch):
+    import start_services_with_logs
+
+    calls = []
+
+    def fake_check(port, timeout=10):
+        calls.append((port, timeout))
+        return True
+
+    monkeypatch.setattr(start_services, "check_port", fake_check)
+    assert start_services_with_logs.check_port(8080, timeout=3) is True
+    assert calls == [(8080, 3)]
