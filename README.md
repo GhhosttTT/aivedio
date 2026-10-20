@@ -16,6 +16,14 @@ pip install -r requirements.txt
 python start_services.py
 ```
 
+可选运行时依赖：
+
+```bash
+pip install -e ".[api]"      # 使用 DeepSeek/OpenAI 兼容 API 生成剧本或翻译
+pip install -e ".[asr]"      # faster-whisper 本地语音识别
+pip install -e ".[metrics]"  # GPUtil GPU 指标
+```
+
 脚本会自动：
 - ✅ 检测 Python 环境和虚拟环境
 - ✅ 检查并更新数据库结构

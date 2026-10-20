@@ -24,3 +24,9 @@ def test_project_dependencies_come_from_requirements():
 def test_requirements_are_not_duplicated():
     requirements = _requirements()
     assert len(requirements) == len(set(requirements))
+
+
+def test_optional_runtime_extras_are_declared():
+    config = read_configuration(ROOT / "pyproject.toml")
+    extras = config["project"]["optional-dependencies"]
+    assert {"api", "asr", "metrics"} <= set(extras)
