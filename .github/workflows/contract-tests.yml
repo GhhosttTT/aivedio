@@ -28,6 +28,7 @@ jobs:
             "Pillow==10.1.0" \
             "PyYAML==6.0.1" \
             "python-dotenv==1.0.0" \
+            "psutil>=5.9" \
             "loguru==0.7.2" \
             "psycopg2-binary==2.9.9" \
             "pytest==7.4.3" \
@@ -40,4 +41,7 @@ jobs:
             tests/test_packaging_metadata.py \
             tests/test_celery_queue_contract.py \
             tests/test_startup_database.py \
-            tests/test_database_engine.py
+            tests/test_database_engine.py \
+            tests/test_utils/test_file_hash_cache.py \
+            tests/test_services/test_video_metrics_cache.py \
+            tests/test_services/test_production_readiness_cache.py
