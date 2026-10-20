@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, FileText, Users, Activity, ShieldCheck, Play, RefreshCw, Film, Download } from 'lucide-react';
 import { projectApi, errorText, ProductionTask } from '../api/client';
@@ -36,6 +36,9 @@ export function ProjectDetail() {
     const [productionOptions, setProductionOptions] = useState({provider: '', request_mode: 'reference', multi_shot: true, sequence_level_multi_shot: false, native_audio: true, draft: false, model: '', resolution: '1080p', output_format: 'mp4', return_last_frame: true, camera_fixed: false, watermark: false, duration_seconds: null as number | null, add_bgm: false, bgm_path: null as string | null, bgm_volume: 0.3});
     const [bgmName, setBgmName] = useState('');
     const {isConnected: progressSocketConnected, latestMessage} = useWebSocket(id || '');
+    // LLM streaming emits progress every ~2s; a full reload fetches six
+    // endpoints, so coalesce those refreshes instead of firing each time.
+    const lastProgressReloadRef = useRef(0);
     const readinessRequestMode = productionOptions.multi_shot
         && ['reference', 'reference_to_video'].includes(productionOptions.request_mode)
         ? 'multi_shot'
@@ -92,6 +95,11 @@ export function ProjectDetail() {
             'progress', 'completion', 'error',
             'script_generation_start', 'script_generation_complete', 'script_generation_error',
         ].includes(latestMessage.type)) return;
+        if (latestMessage.type === 'progress') {
+            const now = Date.now();
+            if (now - lastProgressReloadRef.current < 4000) return;
+            lastProgressReloadRef.current = now;
+        }
         void reload();
     }, [latestMessage, reload]);
     useEffect(() => {
