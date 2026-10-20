@@ -480,8 +480,6 @@ async def upload_seed_dance_baseline(
     if suffix not in {".mp4", ".mov", ".mkv", ".webm"}:
         raise HTTPException(status_code=400, detail="Baseline must be a video file")
 
-    from scripts.compare_video_baseline import compare
-
     review_root = storage_manager.get_project_path(project_id) / "reviews"
     baseline_dir = review_root / "baselines"
     baseline_dir.mkdir(parents=True, exist_ok=True)

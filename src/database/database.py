@@ -4,8 +4,9 @@
 """
 
 import os
+import sqlite3
 from typing import Generator
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 from contextlib import contextmanager
@@ -15,32 +16,60 @@ from src.database.models import Base
 
 # 从环境变量获取数据库 URL
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./short_drama.db")
+SQLITE_BUSY_TIMEOUT_SECONDS = 30
 
-# 创建数据库引擎
-if DATABASE_URL.startswith("sqlite"):
-    # SQLite 配置
-    engine = create_engine(
-        DATABASE_URL,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-        echo=False  # 设置为 True 可以看到 SQL 日志
-    )
-    
-    # 启用 SQLite 外键约束
-    @event.listens_for(engine, "connect")
-    def set_sqlite_pragma(dbapi_conn, connection_record):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-else:
+
+def create_database_engine(database_url: str):
+    """Create an engine tuned for the configured database backend.
+
+    File-backed SQLite runs in WAL mode so the Celery worker can keep writing
+    while FastAPI serves status and readiness polls.  In-memory databases keep
+    ``StaticPool`` because every session must see the same temporary schema.
+    """
+    if database_url.startswith("sqlite"):
+        in_memory = ":memory:" in database_url or database_url.rstrip("/") == "sqlite:"
+        engine_options = {
+            "connect_args": {
+                "check_same_thread": False,
+                "timeout": SQLITE_BUSY_TIMEOUT_SECONDS,
+            },
+            "echo": False,  # 设置为 True 可以看到 SQL 日志
+        }
+        if in_memory:
+            engine_options["poolclass"] = StaticPool
+        sqlite_engine = create_engine(database_url, **engine_options)
+
+        @event.listens_for(sqlite_engine, "connect")
+        def set_sqlite_pragma(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            try:
+                cursor.execute("PRAGMA foreign_keys=ON")
+                cursor.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_SECONDS * 1000}")
+                if not in_memory:
+                    try:
+                        cursor.execute("PRAGMA journal_mode=WAL")
+                        cursor.execute("PRAGMA synchronous=NORMAL")
+                    except sqlite3.OperationalError:
+                        # Read-only or network filesystems may reject WAL; the
+                        # busy timeout still protects writers in that case.
+                        pass
+            finally:
+                cursor.close()
+
+        return sqlite_engine
+
     # PostgreSQL 或其他数据库配置
-    engine = create_engine(
-        DATABASE_URL,
+    return create_engine(
+        database_url,
         pool_pre_ping=True,  # 连接前检查连接是否有效
         pool_size=10,  # 连接池大小
         max_overflow=20,  # 最大溢出连接数
         echo=False
     )
+
+
+# 创建数据库引擎
+engine = create_database_engine(DATABASE_URL)
 
 # 创建会话工厂
 SessionLocal = sessionmaker(
@@ -139,7 +168,7 @@ def check_database_connection() -> bool:
     """
     try:
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            conn.execute(text("SELECT 1"))
         return True
     except Exception as e:
         print(f"数据库连接失败: {e}")
@@ -148,6 +177,7 @@ def check_database_connection() -> bool:
 
 # 导出常用对象
 __all__ = [
+    "create_database_engine",
     "engine",
     "SessionLocal",
     "get_db",

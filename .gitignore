@@ -150,6 +150,8 @@ __pycache__/
 .pytest_cache/
 short_drama.db
 short_drama.db-journal
+short_drama.db-wal
+short_drama.db-shm
 .env
 .env.local
 .env.production

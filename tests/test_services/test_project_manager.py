@@ -8,7 +8,7 @@ import pytest
 import os
 import tempfile
 from datetime import datetime
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Project, Character, Scene, ProjectStatus, User
@@ -209,7 +209,37 @@ class TestProjectManager:
         assert projects[0].name == "项目3"
         assert projects[1].name == "项目2"
         assert projects[2].name == "项目1"
-    
+
+    def test_list_projects_eager_loads_relations(self, db_session, test_user):
+        """列表接口不应为每个项目各查一次角色和分镜。"""
+        for index in range(3):
+            project = Project(name=f"项目{index}", user_id=test_user.id)
+            db_session.add(project)
+            db_session.flush()
+            db_session.add(Character(project_id=project.id, name=f"角色{index}"))
+            db_session.add(Scene(
+                project_id=project.id,
+                scene_number=1,
+                visual_description="画面描述",
+            ))
+        db_session.commit()
+        db_session.expire_all()
+
+        selects = []
+
+        @event.listens_for(db_session.bind, "before_cursor_execute")
+        def collect(conn, cursor, statement, parameters, context, executemany):
+            if statement.lstrip().upper().startswith("SELECT"):
+                selects.append(statement)
+
+        projects = ProjectManager(db_session).list_projects(user_id=test_user.id)
+        assert len(projects) == 3
+        assert all(len(project.characters) == 1 for project in projects)
+        assert all(len(project.scenes) == 1 for project in projects)
+        event.remove(db_session.bind, "before_cursor_execute", collect)
+        # One query for projects plus one per eager-loaded relationship.
+        assert len(selects) <= 4
+
     def test_list_projects_with_status_filter(self, project_manager, test_user, temp_storage):
         """测试列出项目（状态过滤）"""
         # 创建不同状态的项目

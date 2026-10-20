@@ -9,7 +9,7 @@ import shutil
 import json
 from typing import Optional, List, Dict
 from datetime import datetime
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import desc
 
 from src.database.models import Project, Character, Scene, ProjectStatus
@@ -270,7 +270,12 @@ class ProjectManager:
             项目列表
         """
         try:
-            query = self.db.query(Project)
+            # The list endpoint serializes characters and scenes for every
+            # project; eager-load them once instead of two queries per row.
+            query = self.db.query(Project).options(
+                selectinload(Project.characters),
+                selectinload(Project.scenes),
+            )
             if user_id is not None:
                 query = query.filter(Project.user_id == user_id)
             
