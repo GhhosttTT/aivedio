@@ -27,6 +27,7 @@ pip install -e ".[metrics]"  # GPUtil GPU 指标
 脚本会自动：
 - ✅ 检测 Python 环境和虚拟环境
 - ✅ 检查并更新数据库结构
+- ✅ 启动 Redis（若本机已安装 `redis-server` 且 6379 未被占用）
 - ✅ 启动 ComfyUI (端口 8188)
 - ✅ 启动 FastAPI 后端 (端口 8000)
 - ✅ 启动 Celery Worker

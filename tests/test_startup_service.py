@@ -38,3 +38,24 @@ def test_new_window_streams_logs_on_posix(monkeypatch):
 
     assert start_services_with_logs.start_service_in_new_window("Demo", ["true"]) is True
     assert calls == [("Demo", ["true"], None)]
+
+
+def test_build_services_adds_redis_when_available(tmp_path, monkeypatch):
+    monkeypatch.setattr(start_services.shutil, "which", lambda name: "/usr/bin/redis-server")
+
+    services = start_services.build_services(tmp_path)
+    names = [service["name"] for service in services]
+
+    assert names[0] == "Redis"
+    assert {"ComfyUI", "FastAPI Backend", "Celery Worker", "Frontend (Vite)"} <= set(names)
+    fastapi = next(service for service in services if service["name"] == "FastAPI Backend")
+    assert fastapi["cmd"][0] == sys.executable
+
+
+def test_build_services_skips_missing_redis(tmp_path, monkeypatch):
+    monkeypatch.setattr(start_services.shutil, "which", lambda name: None)
+
+    names = [service["name"] for service in start_services.build_services(tmp_path)]
+
+    assert "Redis" not in names
+    assert "ComfyUI" in names

@@ -10,6 +10,7 @@ AI 短剧系统服务启动脚本
 
 import os
 import re
+import shutil
 import sys
 import subprocess
 import time
@@ -273,6 +274,49 @@ def check_database():
         return False
 
 
+def build_services(project_root):
+    """Return the local development service list."""
+    services = [
+        {
+            'name': 'ComfyUI',
+            'cmd': [sys.executable, 'main.py', '--listen', '127.0.0.1', '--port', '8188'],
+            'cwd': str(project_root / 'ComfyUI'),
+            'port': 8188,
+            'delay': 10
+        },
+        {
+            'name': 'FastAPI Backend',
+            'cmd': [sys.executable, 'main.py'],
+            'cwd': str(project_root),
+            'port': 8000,
+            'delay': 5
+        },
+        {
+            'name': 'Celery Worker',
+            'cmd': ['celery', '-A', 'src.tasks.celery_app', 'worker', '--pool=solo', '--loglevel=info'],
+            'cwd': str(project_root),
+            'port': None,  # Celery 不监听端口
+            'delay': 3
+        },
+        {
+            'name': 'Frontend (Vite)',
+            'cmd': ['npm', 'run', 'dev'],
+            'cwd': str(project_root / 'frontend'),
+            'port': 5173,
+            'delay': 5
+        }
+    ]
+    if shutil.which('redis-server'):
+        services.insert(0, {
+            'name': 'Redis',
+            'cmd': ['redis-server'],
+            'cwd': str(project_root),
+            'port': 6379,
+            'delay': 1
+        })
+    return services
+
+
 def main():
     """主函数"""
     print("=" * 60)
@@ -302,36 +346,9 @@ def main():
     print()
     
     # 服务配置
-    services = [
-        {
-            'name': 'ComfyUI',
-            'cmd': ['python', 'main.py', '--listen', '127.0.0.1', '--port', '8188'],
-            'cwd': str(project_root / 'ComfyUI'),
-            'port': 8188,
-            'delay': 10
-        },
-        {
-            'name': 'FastAPI Backend',
-            'cmd': ['python', 'main.py'],
-            'cwd': str(project_root),
-            'port': 8000,
-            'delay': 5
-        },
-        {
-            'name': 'Celery Worker',
-            'cmd': ['celery', '-A', 'src.tasks.celery_app', 'worker', '--pool=solo', '--loglevel=info'],
-            'cwd': str(project_root),
-            'port': None,  # Celery 不监听端口
-            'delay': 3
-        },
-        {
-            'name': 'Frontend (Vite)',
-            'cmd': ['npm', 'run', 'dev'],
-            'cwd': str(project_root / 'frontend'),
-            'port': 5173,
-            'delay': 5
-        }
-    ]
+    services = build_services(project_root)
+    if not any(service['name'] == 'Redis' for service in services):
+        print_info("未找到 redis-server，跳过本地 Redis；可用 Docker 启动 redis 服务")
     
     # 启动所有服务
     started_services = []
