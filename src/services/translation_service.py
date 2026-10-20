@@ -7,6 +7,7 @@ import re
 import subprocess
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -159,12 +160,32 @@ class SubtitleTranslationService:
         if not settings.DEEPSEEK_API_KEY:
             raise TranslationError("DEEPSEEK_API_KEY is not configured")
 
-        translated: List[ASRSegment] = []
         batch_size = max(1, settings.TRANSLATION_MAX_SEGMENTS_PER_BATCH)
-        for start in range(0, len(segments), batch_size):
-            batch = segments[start : start + batch_size]
-            prompt = self._build_translation_prompt(batch, language, context)
-            response = self._call_deepseek(prompt)
+        batches = [
+            segments[start : start + batch_size]
+            for start in range(0, len(segments), batch_size)
+        ]
+        prompts = [
+            self._build_translation_prompt(batch, language, context)
+            for batch in batches
+        ]
+        worker_count = max(
+            1,
+            min(
+                int(settings.TRANSLATION_MAX_CONCURRENCY or 1),
+                len(prompts),
+            ),
+        )
+        if worker_count == 1:
+            responses = [self._call_deepseek(prompt) for prompt in prompts]
+        else:
+            # Batches are independent, but subtitles must stay in source order,
+            # so map() keeps results aligned with the original batch list.
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                responses = list(executor.map(self._call_deepseek, prompts))
+
+        translated: List[ASRSegment] = []
+        for batch, response in zip(batches, responses):
             translated.extend(self._parse_llm_response(response, batch))
         return translated
 

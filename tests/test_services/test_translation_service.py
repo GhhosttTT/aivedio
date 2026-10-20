@@ -221,3 +221,63 @@ def test_context_payload_overrides_story_package():
     assert context.characters == ["heroine: betrayed but resilient"]
     assert context.worldbuilding == ["\u4e0a\u754c is a celestial realm/order, not a normal location"]
     assert context.glossary["\u4e0a\u754c"] == "celestial upper realm"
+
+
+def test_deepseek_batches_run_concurrently_and_keep_source_order(tmp_path, monkeypatch):
+    import threading
+
+    transcript = tmp_path / "transcript.json"
+    transcript.write_text(
+        json.dumps(
+            {
+                "language": "zh",
+                "segments": [
+                    {"start": float(index), "end": float(index) + 0.8, "text": marker}
+                    for index, marker in enumerate(["A1", "B1", "C1", "D1"])
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("src.services.translation_service.settings.TRANSLATION_BACKEND", "deepseek")
+    monkeypatch.setattr("src.services.translation_service.settings.DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr("src.services.translation_service.settings.TRANSLATION_MAX_SEGMENTS_PER_BATCH", 1)
+    monkeypatch.setattr("src.services.translation_service.settings.TRANSLATION_MAX_CONCURRENCY", 2)
+
+    barrier = threading.Barrier(2)
+    peak = {"active": 0, "max": 0}
+    lock = threading.Lock()
+
+    def fake_call(_self, prompt):
+        if "Analyze this Chinese" in prompt:
+            return "{}"
+        marker = next(item for item in ("A1", "B1", "C1", "D1") if f'"text": "{item}"' in prompt)
+        with lock:
+            peak["active"] += 1
+            peak["max"] = max(peak["max"], peak["active"])
+        try:
+            barrier.wait(timeout=5)
+        finally:
+            with lock:
+                peak["active"] -= 1
+        return json.dumps({"segments": [{"index": 1, "text": f"EN-{marker}"}]})
+
+    monkeypatch.setattr(
+        "src.services.translation_service.SubtitleTranslationService._call_deepseek",
+        fake_call,
+    )
+
+    results = SubtitleTranslationService().translate_transcript(
+        str(transcript), ["en"], str(tmp_path / "out")
+    )
+
+    assert peak["max"] == 2
+    assert [segment.text for segment in results["en"].segments] == [
+        "EN-A1",
+        "EN-B1",
+        "EN-C1",
+        "EN-D1",
+    ]
+    assert [segment.start for segment in results["en"].segments] == [0.0, 1.0, 2.0, 3.0]

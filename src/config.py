@@ -227,6 +227,7 @@ class Settings(BaseSettings):
     TRANSLATION_COMMAND: str = ""
     TRANSLATION_TIMEOUT_SECONDS: int = 7200
     TRANSLATION_MAX_SEGMENTS_PER_BATCH: int = 30
+    TRANSLATION_MAX_CONCURRENCY: int = 2
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     DEEPSEEK_MODEL: str = "deepseek-chat"
