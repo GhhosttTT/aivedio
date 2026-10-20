@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,8 +31,22 @@ def _default_text(name: str, field) -> str:
     return f"`{text}`" if text else '`""`'
 
 
+def _group_name(name: str) -> str:
+    parts = name.split("_")
+    if parts[0] == "GENERATION" and len(parts) > 1:
+        return f"GENERATION_{parts[1]}"
+    return parts[0]
+
+
+def _anchor(group: str) -> str:
+    return group.lower()
+
+
 def build_document() -> str:
-    fields = sorted(Settings.model_fields.items())
+    groups: dict[str, list[tuple[str, object]]] = defaultdict(list)
+    for name, field in Settings.model_fields.items():
+        groups[_group_name(name)].append((name, field))
+
     lines = [
         "# 配置项参考",
         "",
@@ -40,21 +55,32 @@ def build_document() -> str:
         "",
         "加载优先级：进程环境变量 > `.env` > 代码默认值。",
         "",
-        f"共 {len(fields)} 项。",
+        f"共 {len(Settings.model_fields)} 项，按变量前缀分组。",
         "",
-        "| 变量 | 类型 | 默认值 |",
-        "| --- | --- | --- |",
+        "## 目录",
+        "",
     ]
-    for name, field in fields:
-        annotation = field.annotation
-        if isinstance(annotation, type):
-            annotation_text = annotation.__name__
-        else:
-            annotation_text = str(annotation).replace("typing.", "")
-        lines.append(
-            f"| `{name}` | `{_cell(annotation_text)}` | {_cell(_default_text(name, field))} |"
-        )
+    for group in sorted(groups):
+        lines.append(f"- [{group}](#{_anchor(group)})（{len(groups[group])} 项）")
     lines.append("")
+
+    for group in sorted(groups):
+        lines.extend([
+            f"## {group}",
+            "",
+            "| 变量 | 类型 | 默认值 |",
+            "| --- | --- | --- |",
+        ])
+        for name, field in sorted(groups[group]):
+            annotation = field.annotation
+            if isinstance(annotation, type):
+                annotation_text = annotation.__name__
+            else:
+                annotation_text = str(annotation).replace("typing.", "")
+            lines.append(
+                f"| `{name}` | `{_cell(annotation_text)}` | {_cell(_default_text(name, field))} |"
+            )
+        lines.append("")
     return "\n".join(lines)
 
 

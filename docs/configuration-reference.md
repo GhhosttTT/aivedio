@@ -5,7 +5,74 @@
 
 加载优先级：进程环境变量 > `.env` > 代码默认值。
 
-共 272 项。
+共 272 项，按变量前缀分组。
+
+## 目录
+
+- [API](#api)（4 项）
+- [ASR](#asr)（8 项）
+- [AUTO](#auto)（1 项）
+- [CELERY](#celery)（3 项）
+- [COMFYUI](#comfyui)（9 项）
+- [CORS](#cors)（1 项）
+- [DATABASE](#database)（1 项）
+- [DEEPSEEK](#deepseek)（6 项）
+- [ENABLE](#enable)（1 项）
+- [ENVIRONMENT](#environment)（1 项）
+- [FACE](#face)（11 项）
+- [FACEID](#faceid)（3 项）
+- [GENERATION_ALLOW](#generation_allow)（1 项）
+- [GENERATION_BLOCK](#generation_block)（1 项）
+- [GENERATION_CFG](#generation_cfg)（2 项）
+- [GENERATION_CHARACTER](#generation_character)（4 项）
+- [GENERATION_ENABLE](#generation_enable)（2 项）
+- [GENERATION_EPISODE](#generation_episode)（10 项）
+- [GENERATION_HEIGHT](#generation_height)（1 项）
+- [GENERATION_HYBRID](#generation_hybrid)（1 项）
+- [GENERATION_IMAGE](#generation_image)（8 项）
+- [GENERATION_MAX](#generation_max)（2 项）
+- [GENERATION_MIN](#generation_min)（1 项）
+- [GENERATION_PREFER](#generation_prefer)（1 项）
+- [GENERATION_PRIMARY](#generation_primary)（1 项）
+- [GENERATION_PROVIDER](#generation_provider)（1 项）
+- [GENERATION_QUALITY](#generation_quality)（3 项）
+- [GENERATION_REPAIR](#generation_repair)（3 项）
+- [GENERATION_REQUIRE](#generation_require)（3 项）
+- [GENERATION_RHYTHM](#generation_rhythm)（5 项）
+- [GENERATION_SEED](#generation_seed)（1 项）
+- [GENERATION_STEP](#generation_step)（1 项）
+- [GENERATION_STEPS](#generation_steps)（1 项）
+- [GENERATION_TURNAROUND](#generation_turnaround)（1 项）
+- [GENERATION_VIDEO](#generation_video)（52 项）
+- [GENERATION_WIDTH](#generation_width)（1 项）
+- [GPU](#gpu)（1 项）
+- [HAILUO](#hailuo)（2 项）
+- [HTTP](#http)（17 项）
+- [JIMENG](#jimeng)（2 项）
+- [JWT](#jwt)（4 项）
+- [KLING](#kling)（2 项）
+- [LLM](#llm)（4 项）
+- [LOCAL](#local)（5 项）
+- [LOCALIZATION](#localization)（3 项）
+- [LOG](#log)（2 项）
+- [MAX](#max)（1 项）
+- [MODERATION](#moderation)（1 项）
+- [NEGATIVE](#negative)（1 项）
+- [OCCLUSION](#occlusion)（5 项）
+- [OCR](#ocr)（5 项）
+- [POSITIVE](#positive)（1 项）
+- [PROPINTER](#propinter)（1 项）
+- [READINESS](#readiness)（1 项）
+- [REDIS](#redis)（1 项）
+- [SEEDANCE](#seedance)（36 项）
+- [STORAGE](#storage)（1 项）
+- [SUBTITLE](#subtitle)（9 项）
+- [SVD](#svd)（3 项）
+- [TRANSLATION](#translation)（5 项）
+- [TTS](#tts)（2 项）
+- [VSR](#vsr)（1 项）
+
+## API
 
 | 变量 | 类型 | 默认值 |
 | --- | --- | --- |
@@ -13,6 +80,11 @@
 | `API_PORT` | `int` | `8000` |
 | `API_RATE_LIMIT` | `str` | `10/minute` |
 | `API_RELOAD` | `bool` | `False` |
+
+## ASR
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `ASR_BACKEND` | `str` | `faster_whisper` |
 | `ASR_COMMAND` | `str` | `""` |
 | `ASR_COMPUTE_TYPE` | `str` | `float16` |
@@ -21,10 +93,25 @@
 | `ASR_MODEL_PATH` | `str` | `./models/faster-whisper-large-v3` |
 | `ASR_MODEL_SIZE` | `str` | `small` |
 | `ASR_TIMEOUT_SECONDS` | `int` | `7200` |
+
+## AUTO
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `AUTO_VIDEO_INPAINT_COMMAND` | `str` | `""` |
+
+## CELERY
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `CELERY_BROKER_URL` | `str` | `redis://localhost:6379/1` |
 | `CELERY_RESULT_BACKEND` | `str` | `redis://localhost:6379/2` |
 | `CELERY_WORKER_CONCURRENCY` | `int` | `1` |
+
+## COMFYUI
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `COMFYUI_BASE_URL` | `str` | `http://127.0.0.1:8188` |
 | `COMFYUI_DEFAULT_WORKFLOW_TYPE` | `str` | `juggernaut` |
 | `COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH` | `str` | `""` |
@@ -34,19 +121,46 @@
 | `COMFYUI_VIDEO_OUTPUT_NODE` | `str` | `""` |
 | `COMFYUI_VIDEO_WORKFLOW_PATH` | `str` | `""` |
 | `COMFYUI_WORKFLOW_PATH` | `str` | `./configs/comfyui_workflow_juggernaut.json` |
+
+## CORS
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `CORS_ORIGINS` | `str` | `*` |
+
+## DATABASE
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `DATABASE_URL` | `str` | `sqlite:///./short_drama.db` |
+
+## DEEPSEEK
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `DEEPSEEK_API_KEY` | `str` | 通过环境变量设置，勿提交 |
 | `DEEPSEEK_BASE_URL` | `str` | `https://api.deepseek.com` |
 | `DEEPSEEK_MAX_RETRIES` | `int` | `2` |
 | `DEEPSEEK_MODEL` | `str` | `deepseek-chat` |
 | `DEEPSEEK_RETRY_BACKOFF_SECONDS` | `float` | `1.0` |
 | `DEEPSEEK_TIMEOUT_SECONDS` | `int` | `120` |
+
+## ENABLE
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `ENABLE_GPU_CACHE_CLEAR` | `bool` | `True` |
+
+## ENVIRONMENT
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `ENVIRONMENT` | `str` | `development` |
-| `FACEID_END_AT` | `float` | `1.0` |
-| `FACEID_START_AT` | `float` | `0.0` |
-| `FACEID_WEIGHT` | `float` | `0.85` |
+
+## FACE
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `FACE_DETAILER_CFG` | `float` | `5.0` |
 | `FACE_DETAILER_DENOISE` | `float` | `0.24` |
 | `FACE_DETAILER_ENABLED` | `bool` | `False` |
@@ -58,16 +172,54 @@
 | `FACE_DETAILER_SCHEDULER` | `str` | `karras` |
 | `FACE_DETAILER_STEPS` | `int` | `22` |
 | `FACE_DETAILER_TARGET` | `str` | `face` |
+
+## FACEID
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
+| `FACEID_END_AT` | `float` | `1.0` |
+| `FACEID_START_AT` | `float` | `0.0` |
+| `FACEID_WEIGHT` | `float` | `0.85` |
+
+## GENERATION_ALLOW
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK` | `bool` | `False` |
+
+## GENERATION_BLOCK
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_BLOCK_COMPLEX_SHOTS` | `bool` | `False` |
+
+## GENERATION_CFG
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_CFG` | `float` | `6.0` |
 | `GENERATION_CFG_VARIATION` | `float` | `0.0` |
+
+## GENERATION_CHARACTER
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_CHARACTER_DISTINCTIVENESS_MIN_SCORE` | `float` | `4.0` |
 | `GENERATION_CHARACTER_IDENTITY_MAX_SCORE_SPREAD` | `float` | `1.5` |
 | `GENERATION_CHARACTER_IDENTITY_MIN_OBSERVATIONS` | `int` | `2` |
 | `GENERATION_CHARACTER_IDENTITY_MIN_SCORE` | `float` | `4.0` |
+
+## GENERATION_ENABLE
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_ENABLE_PARAMETER_OPTIMIZATION` | `bool` | `True` |
 | `GENERATION_ENABLE_PROMPT_OPTIMIZATION` | `bool` | `True` |
+
+## GENERATION_EPISODE
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_EPISODE_STYLE_ASPECT_RATIO_BLOCKER` | `float` | `0.16` |
 | `GENERATION_EPISODE_STYLE_ASPECT_RATIO_WARNING` | `float` | `0.08` |
 | `GENERATION_EPISODE_STYLE_BRIGHTNESS_BLOCKER` | `float` | `45.0` |
@@ -78,8 +230,23 @@
 | `GENERATION_EPISODE_STYLE_SATURATION_WARNING` | `float` | `0.14` |
 | `GENERATION_EPISODE_STYLE_SHARPNESS_RATIO_BLOCKER` | `float` | `3.5` |
 | `GENERATION_EPISODE_STYLE_SHARPNESS_RATIO_WARNING` | `float` | `2.2` |
+
+## GENERATION_HEIGHT
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_HEIGHT` | `int` | `1344` |
+
+## GENERATION_HYBRID
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_HYBRID_LOCAL_SHOT_ROLES` | `str` | `establishing` |
+
+## GENERATION_IMAGE
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE` | `float` | `4.0` |
 | `GENERATION_IMAGE_CANDIDATES` | `int` | `5` |
 | `GENERATION_IMAGE_IDENTITY_MIN_SCORE` | `float` | `4.0` |
@@ -88,30 +255,100 @@
 | `GENERATION_IMAGE_POSTPROCESS_COMMAND` | `str` | `""` |
 | `GENERATION_IMAGE_POSTPROCESS_TIMEOUT_SECONDS` | `int` | `1800` |
 | `GENERATION_IMAGE_REFINEMENT_PASSES` | `int` | `2` |
+
+## GENERATION_MAX
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_MAX_IMAGE_CANDIDATES` | `int` | `12` |
 | `GENERATION_MAX_VIDEO_CANDIDATES` | `int` | `8` |
+
+## GENERATION_MIN
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_MIN_QUALITY_PASSES` | `int` | `2` |
+
+## GENERATION_PREFER
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_PREFER_NATIVE_VIDEO_AUDIO` | `bool` | `False` |
+
+## GENERATION_PRIMARY
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_PRIMARY_PROVIDER` | `str` | `jimeng_api` |
+
+## GENERATION_PROVIDER
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_PROVIDER` | `str` | `local_comfyui` |
+
+## GENERATION_QUALITY
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_QUALITY_NEGATIVE_APPEND` | `str` | `amateur snapshot, dull composition, muddy lighting, deformed face, deformed hands, broken fingers, extra people, random text, logo, watermark, bad crop, messy background` |
 | `GENERATION_QUALITY_PROFILE` | `str` | `seed_dance_reference` |
 | `GENERATION_QUALITY_PROMPT_APPEND` | `str` | `clean cinematic composition, coherent anatomy, readable main action, balanced lighting, polished short-drama keyframe` |
+
+## GENERATION_REPAIR
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES` | `int` | `1` |
 | `GENERATION_REPAIR_IMAGE_CANDIDATE_MULTIPLIER` | `float` | `1.5` |
 | `GENERATION_REPAIR_VIDEO_CANDIDATE_MULTIPLIER` | `float` | `1.5` |
+
+## GENERATION_REQUIRE
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_REQUIRE_IMAGE_POSTPROCESS` | `bool` | `False` |
 | `GENERATION_REQUIRE_IMAGE_REVIEW` | `bool` | `True` |
 | `GENERATION_REQUIRE_VIDEO_REVIEW` | `bool` | `True` |
+
+## GENERATION_RHYTHM
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_RHYTHM_MAX_DIALOGUE_MARGIN_SECONDS` | `float` | `0.3` |
 | `GENERATION_RHYTHM_MAX_HOOK_LATENCY_SECONDS` | `float` | `8.0` |
 | `GENERATION_RHYTHM_MAX_SILENT_SHOT_SECONDS` | `float` | `6.0` |
 | `GENERATION_RHYTHM_MIN_SHOT_SECONDS` | `float` | `1.2` |
 | `GENERATION_RHYTHM_SAME_ROLE_WARNING_RUN` | `int` | `3` |
+
+## GENERATION_SEED
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_SEED_DANCE_BASELINE_REGRESSION_TOLERANCE` | `float` | `0.05` |
-| `GENERATION_STEPS` | `int` | `40` |
+
+## GENERATION_STEP
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_STEP_VARIATION` | `int` | `0` |
+
+## GENERATION_STEPS
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
+| `GENERATION_STEPS` | `int` | `40` |
+
+## GENERATION_TURNAROUND
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_TURNAROUND_FEATURE_MIN_SCORE` | `float` | `4.0` |
+
+## GENERATION_VIDEO
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE` | `float` | `4.0` |
 | `GENERATION_VIDEO_AUDIO_CLIPPING_PEAK_DB` | `float` | `-0.1` |
 | `GENERATION_VIDEO_AUDIO_INTEGRATED_LUFS_MAX` | `float` | `-12.0` |
@@ -164,10 +401,30 @@
 | `GENERATION_VIDEO_TARGET_SECONDS` | `float` | `3.6` |
 | `GENERATION_VIDEO_TECHNICAL_MIN_SCORE` | `float` | `3.0` |
 | `GENERATION_VIDEO_TEMPORAL_MIN_SCORE` | `float` | `4.0` |
+
+## GENERATION_WIDTH
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GENERATION_WIDTH` | `int` | `768` |
+
+## GPU
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `GPU_MEMORY_FRACTION` | `float` | `0.95` |
+
+## HAILUO
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `HAILUO_API_KEY` | `str` | 通过环境变量设置，勿提交 |
 | `HAILUO_ENDPOINT` | `str` | `""` |
+
+## HTTP
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `HTTP_VIDEO_API_KEY` | `str` | 通过环境变量设置，勿提交 |
 | `HTTP_VIDEO_AUTH_HEADER` | `str` | `Authorization` |
 | `HTTP_VIDEO_AUTH_SCHEME` | `str` | `Bearer` |
@@ -185,45 +442,130 @@
 | `HTTP_VIDEO_RETRY_BACKOFF_SECONDS` | `float` | `1.0` |
 | `HTTP_VIDEO_STATUS_ENDPOINT` | `str` | `""` |
 | `HTTP_VIDEO_TIMEOUT_SECONDS` | `int` | `1800` |
+
+## JIMENG
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `JIMENG_API_KEY` | `str` | 通过环境变量设置，勿提交 |
 | `JIMENG_ENDPOINT` | `str` | `""` |
+
+## JWT
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `JWT_ALGORITHM` | `str` | `HS256` |
 | `JWT_EXPIRATION_HOURS` | `int` | `24` |
 | `JWT_REFRESH_EXPIRATION_DAYS` | `int` | `7` |
 | `JWT_SECRET_KEY` | `str` | 通过环境变量设置，勿提交 |
+
+## KLING
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `KLING_API_KEY` | `str` | 通过环境变量设置，勿提交 |
 | `KLING_ENDPOINT` | `str` | `""` |
+
+## LLM
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `LLM_MODEL_PATH` | `str` | `./models/qwen2.5-14b-instruct-q4_k_m.gguf` |
 | `LLM_N_CTX` | `int` | `4096` |
 | `LLM_N_GPU_LAYERS` | `int` | `20` |
 | `LLM_N_THREADS` | `int` | `8` |
-| `LOCALIZATION_CONCURRENCY` | `int` | `1` |
-| `LOCALIZATION_MAX_SOURCE_VIDEO_SIZE_MB` | `int` | `2048` |
-| `LOCALIZATION_TARGET_LANGUAGES` | `str` | `en,es,pt,ar,id,th,vi,ja,ko` |
+
+## LOCAL
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `LOCAL_REVIEW_BACKEND` | `str` | `llama_cpp` |
 | `LOCAL_REVIEW_BASE_URL` | `str` | `http://127.0.0.1:8080/v1` |
 | `LOCAL_REVIEW_MODEL` | `str` | `local-vlm` |
 | `LOCAL_REVIEW_PROBE_TIMEOUT` | `float` | `2.0` |
 | `LOCAL_REVIEW_TIMEOUT` | `int` | `300` |
+
+## LOCALIZATION
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
+| `LOCALIZATION_CONCURRENCY` | `int` | `1` |
+| `LOCALIZATION_MAX_SOURCE_VIDEO_SIZE_MB` | `int` | `2048` |
+| `LOCALIZATION_TARGET_LANGUAGES` | `str` | `en,es,pt,ar,id,th,vi,ja,ko` |
+
+## LOG
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `LOG_FILE_PATH` | `str` | `./logs/app.log` |
 | `LOG_LEVEL` | `str` | `INFO` |
+
+## MAX
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `MAX_STORAGE_SIZE_GB` | `int` | `500` |
+
+## MODERATION
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `MODERATION_BACKEND` | `str` | `rules` |
+
+## NEGATIVE
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `NEGATIVE_PROMPT_SUFFIX` | `str` | `""` |
+
+## OCCLUSION
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `OCCLUSION_AUTO_MASK_MIN_CONFIDENCE` | `float` | `0.65` |
 | `OCCLUSION_MASK_DETECTOR_COMMAND` | `str` | `""` |
 | `OCCLUSION_MIN_QUALITY_SCORE` | `float` | `0.92` |
 | `OCCLUSION_REMOVAL_BACKEND` | `str` | `detect_only` |
 | `OCCLUSION_REMOVAL_TIMEOUT_SECONDS` | `int` | `7200` |
+
+## OCR
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `OCR_ASR_MAX_GAP_SECONDS` | `float` | `0.35` |
 | `OCR_BACKEND` | `str` | `disabled` |
 | `OCR_COMMAND` | `str` | `""` |
 | `OCR_MIN_CONFIDENCE` | `float` | `0.55` |
 | `OCR_TIMEOUT_SECONDS` | `int` | `7200` |
+
+## POSITIVE
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `POSITIVE_PROMPT_SUFFIX` | `str` | `""` |
+
+## PROPINTER
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `PROPINTER_COMMAND` | `str` | `""` |
+
+## READINESS
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `READINESS_REQUIRE_REDIS` | `bool` | `False` |
+
+## REDIS
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `REDIS_URL` | `str` | `redis://localhost:6379/0` |
+
+## SEEDANCE
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `SEEDANCE_API_FORMAT` | `str` | `legacy` |
 | `SEEDANCE_API_KEY` | `str` | 通过环境变量设置，勿提交 |
 | `SEEDANCE_AUTH_HEADER` | `str` | `Authorization` |
@@ -260,7 +602,17 @@
 | `SEEDANCE_TIMEOUT_SECONDS` | `int` | `1800` |
 | `SEEDANCE_VALIDATE_OUTPUT` | `bool` | `True` |
 | `SEEDANCE_WATERMARK` | `bool` | `False` |
+
+## STORAGE
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `STORAGE_PATH` | `str` | `./storage` |
+
+## SUBTITLE
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `SUBTITLE_MAX_READING_UNITS_PER_SECOND` | `float` | `18.0` |
 | `SUBTITLE_REMOVAL_BACKEND` | `str` | `manual_mask` |
 | `SUBTITLE_RENDER_BOLD` | `bool` | `True` |
@@ -270,14 +622,34 @@
 | `SUBTITLE_RENDER_OUTLINE` | `int` | `3` |
 | `SUBTITLE_RENDER_SHADOW` | `int` | `1` |
 | `SUBTITLE_RENDER_TIMEOUT_SECONDS` | `int` | `7200` |
+
+## SVD
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `SVD_FPS` | `int` | `8` |
 | `SVD_MODEL_PATH` | `str` | `./models/stable-video-diffusion-img2vid-xt` |
 | `SVD_NUM_FRAMES` | `int` | `25` |
+
+## TRANSLATION
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `TRANSLATION_BACKEND` | `str` | `local_llm` |
 | `TRANSLATION_COMMAND` | `str` | `""` |
 | `TRANSLATION_MAX_CONCURRENCY` | `int` | `2` |
 | `TRANSLATION_MAX_SEGMENTS_PER_BATCH` | `int` | `30` |
 | `TRANSLATION_TIMEOUT_SECONDS` | `int` | `7200` |
+
+## TTS
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `TTS_API_KEY` | `str` | 通过环境变量设置，勿提交 |
 | `TTS_BASE_URL` | `str` | `https://mimo.xiaomi.com/api/v2/tts` |
+
+## VSR
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
 | `VSR_COMMAND` | `str` | `""` |
