@@ -41,7 +41,10 @@ from src.api.dependencies import get_current_user, require_project_access
 from src.services.project_manager import ProjectManager, get_project_manager
 from src.services.script_generator import ScriptGenerator, ScriptParseError, get_script_generator
 from src.services.task_orchestrator import TaskOrchestrator, get_task_orchestrator
-from src.services.production_readiness import ProductionReadinessService
+from src.services.production_readiness import (
+    ProductionReadinessService,
+    get_cached_production_readiness,
+)
 from src.services.spatial_control_assets import SpatialControlAssetService
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
@@ -1079,7 +1082,16 @@ async def get_production_readiness(
     if duration_override is not None:
         readiness_kwargs["duration_override"] = duration_override
     def build_report():
-        report = ProductionReadinessService(db_session).build_report(project_id, **readiness_kwargs)
+        report = get_cached_production_readiness(
+            db_session,
+            project_id,
+            project_version=(
+                project.updated_at.isoformat()
+                if getattr(project, "updated_at", None)
+                else ""
+            ),
+            **readiness_kwargs,
+        )
         report["delivery_evidence"] = _delivery_evidence_snapshot(project_id)
         return report
 

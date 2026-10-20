@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -35,6 +37,68 @@ from src.services.rhythm_audit import RhythmAuditService
 from src.services.video_director_service import get_video_director_service
 from src.services.video_engine_preflight import preflight_production_video_engine
 from src.utils.storage import storage_manager
+
+
+_READY_REPORT_TTL_SECONDS = 10.0
+_READY_REPORT_CACHE_MAX_ENTRIES = 64
+_READY_REPORT_CACHE: dict[tuple, tuple[float, dict]] = {}
+
+
+def clear_production_readiness_cache() -> None:
+    _READY_REPORT_CACHE.clear()
+
+
+def get_cached_production_readiness(
+    db_session: Session,
+    project_id: int,
+    *,
+    project_version: str = "",
+    include_engine_preflight: bool = True,
+    provider_override: str | None = None,
+    model_override: str | None = None,
+    request_mode_override: str | None = None,
+    resolution_override: str | None = None,
+    output_format_override: str | None = None,
+    duration_override: float | None = None,
+) -> dict:
+    """Return a readiness report, briefly reusing an unchanged ready result.
+
+    Only ``ready`` reports are cached: blocked projects keep recomputing so a
+    fix is reflected immediately, and task creation calls ``build_report``
+    directly instead of this helper. The project version and TTL bound how long
+    a previously ready report can be served.
+    """
+    key = (
+        project_id,
+        project_version,
+        bool(include_engine_preflight),
+        provider_override or "",
+        model_override or "",
+        request_mode_override or "",
+        resolution_override or "",
+        output_format_override or "",
+        duration_override,
+    )
+    now = time.monotonic()
+    cached = _READY_REPORT_CACHE.get(key)
+    if cached is not None and now - cached[0] < _READY_REPORT_TTL_SECONDS:
+        return copy.deepcopy(cached[1])
+
+    report = ProductionReadinessService(db_session).build_report(
+        project_id,
+        include_engine_preflight=include_engine_preflight,
+        provider_override=provider_override,
+        model_override=model_override,
+        request_mode_override=request_mode_override,
+        resolution_override=resolution_override,
+        output_format_override=output_format_override,
+        duration_override=duration_override,
+    )
+    if report.get("status") == "ready":
+        if len(_READY_REPORT_CACHE) >= _READY_REPORT_CACHE_MAX_ENTRIES:
+            _READY_REPORT_CACHE.clear()
+        _READY_REPORT_CACHE[key] = (now, copy.deepcopy(report))
+    return report
 
 
 @dataclass
