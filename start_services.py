@@ -9,6 +9,7 @@ AI 短剧系统服务启动脚本
 """
 
 import os
+import re
 import sys
 import subprocess
 import time
@@ -74,6 +75,21 @@ def check_virtualenv():
     return False
 
 
+LOG_DIR = Path(__file__).parent / "logs"
+
+
+def _service_log_path(name):
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "service"
+    return LOG_DIR / f"{slug}.log"
+
+
+def _tail(path, limit=2000):
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")[-limit:]
+    except OSError:
+        return ""
+
+
 def start_service(name, cmd, cwd=None, delay=3):
     """
     启动服务
@@ -87,19 +103,29 @@ def start_service(name, cmd, cwd=None, delay=3):
     print_info(f"启动 {name}...")
     
     try:
+        process = None
         # Windows 下使用 START 命令在新窗口启动
         if sys.platform == 'win32':
             # 构建完整的命令
             full_cmd = f'start "{name}" cmd /k "cd /d {cwd} && {" ".join(cmd)}"'
             subprocess.Popen(full_cmd, shell=True)
         else:
-            # Linux/Mac 使用 subprocess
-            process = subprocess.Popen(
-                cmd,
-                cwd=cwd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
+            # Redirect to a log file: an unread PIPE eventually blocks a
+            # long-running service once the OS buffer fills up.
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+            log_path = _service_log_path(name)
+            with log_path.open("a", encoding="utf-8") as log_file:
+                log_file.write(
+                    f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} starting {name} ===\n"
+                )
+                log_file.flush()
+                process = subprocess.Popen(
+                    cmd,
+                    cwd=cwd,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                )
+            print_info(f"{name} 日志: {log_path}")
         
         print_success(f"{name} 已启动")
         
@@ -107,6 +133,13 @@ def start_service(name, cmd, cwd=None, delay=3):
         if delay > 0:
             print_info(f"等待 {delay} 秒让服务初始化...")
             time.sleep(delay)
+
+        if process is not None and process.poll() is not None:
+            tail = _tail(_service_log_path(name))
+            print_error(f"{name} 启动后立即退出，退出码 {process.returncode}")
+            if tail.strip():
+                print_error(f"最近日志:\n{tail.strip()}")
+            return False
         
         return True
     
