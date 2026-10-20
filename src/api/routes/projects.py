@@ -38,13 +38,10 @@ from src.api.schemas import (
     HumanReviewDecisionRequest,
 )
 from src.api.dependencies import get_current_user, require_project_access
-from src.services.project_manager import ProjectManager, get_project_manager
-from src.services.script_generator import ScriptGenerator, ScriptParseError, get_script_generator
-from src.services.task_orchestrator import TaskOrchestrator, get_task_orchestrator
-from src.services.production_readiness import (
-    ProductionReadinessService,
-    get_cached_production_readiness,
-)
+from src.services.project_manager import ProjectManager
+from src.services.script_generator import ScriptGenerator, ScriptParseError
+from src.services.task_orchestrator import TaskOrchestrator
+from src.services.production_readiness import get_cached_production_readiness
 from src.services.spatial_control_assets import SpatialControlAssetService
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
@@ -76,7 +73,6 @@ from src.services.atomic_video_motion_audit import AtomicVideoMotionAuditService
 from src.services.first_frame_consistency_audit import FirstFrameConsistencyAuditService
 from src.database.session import get_db_session
 from src.database.models import Character, Project, ProjectStatus, Scene
-from src.services.llm_service import get_llm_service
 from src.config import settings
 from src.services.generation_provider import (
     _seedance_api_format,

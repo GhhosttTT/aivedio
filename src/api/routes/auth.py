@@ -3,7 +3,6 @@
 
 实现用户登录、注册、令牌刷新等功能
 """
-from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status

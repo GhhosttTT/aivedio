@@ -84,19 +84,19 @@ class CharacterReferenceAutoGenerator:
             logger.info(f"开始为角色 '{character_name}' 生成参考图")
             
             # 步骤 1: 使用 LLM 生成详细的角色描述
-            logger.info(f"步骤 1/4: LLM 生成角色描述...")
+            logger.info("步骤 1/4: LLM 生成角色描述...")
             character_data = self._character_data(character_name, role, personality, identity_spec)
             logger.info(f"角色描述生成成功: {json.dumps(character_data, ensure_ascii=False)[:200]}")
             
             # 步骤 2: 生成正面特写的提示词
-            logger.info(f"步骤 2/4: 生成正面特写提示词...")
+            logger.info("步骤 2/4: 生成正面特写提示词...")
             reference_prompts = self.generator.generate_reference_prompts(character_data)
             front_prompt = reference_prompts["front_closeup"]
             
             logger.info(f"正面特写提示词: {front_prompt['prompt'][:150]}...")
             
             # 步骤 3: 使用 ComfyUI 生成正面头像（不使用 IP-Adapter）
-            logger.info(f"步骤 3/4: 使用 ComfyUI 生成正面头像...")
+            logger.info("步骤 3/4: 使用 ComfyUI 生成正面头像...")
             
             # 构建高质量的正面头像提示词
             positive_prompt = front_prompt["prompt"]

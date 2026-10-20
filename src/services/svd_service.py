@@ -25,7 +25,6 @@ from src.utils.gpu_utils import (
     is_gpu_available,
     get_gpu_memory_info,
     clear_gpu_cache,
-    check_gpu_memory_threshold
 )
 
 

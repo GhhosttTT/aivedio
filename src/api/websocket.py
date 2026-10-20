@@ -9,7 +9,7 @@ import json
 from typing import Dict, Set
 from datetime import datetime
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket
 from loguru import logger
 
 

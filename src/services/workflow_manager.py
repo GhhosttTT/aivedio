@@ -4,7 +4,6 @@
 负责加载、切换、验证和管理多个 ComfyUI 工作流配置
 """
 
-import os
 import time
 from typing import Dict, List, Optional
 from pathlib import Path
@@ -123,7 +122,7 @@ class WorkflowManager:
             # 验证配置
             errors = config.validate()
             if errors:
-                error_msg = f"工作流配置验证失败:\n" + "\n".join(f"  - {err}" for err in errors)
+                error_msg = "工作流配置验证失败:\n" + "\n".join(f"  - {err}" for err in errors)
                 logger.error(error_msg)
                 raise WorkflowManagerError(error_msg)
             

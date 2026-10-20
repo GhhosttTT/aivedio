@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 from uuid import uuid4
 from celery import chain, group
-from celery.result import AsyncResult, GroupResult
+from celery.result import AsyncResult
 from sqlalchemy.orm import Session
 
 from src.config import settings

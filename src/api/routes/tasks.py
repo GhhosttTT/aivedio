@@ -11,7 +11,6 @@ from src.api.dependencies import require_task_access
 from src.services.task_orchestrator import TaskOrchestrator
 
 from src.api.schemas import TaskStatusResponse, MessageResponse
-from src.services.task_orchestrator import get_task_orchestrator
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)

@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from src.config import settings
 from src.services.asr_service import ASRSegment
-from src.services.translation_service import SubtitleTranslationService, TranslationContext
+from src.services.translation_service import SubtitleTranslationService
 
 
 @dataclass(frozen=True)

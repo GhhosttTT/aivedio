@@ -5,9 +5,8 @@
 """
 
 import os
-import shutil
 import json
-from typing import Optional, List, Dict
+from typing import Optional, List
 from datetime import datetime
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import desc

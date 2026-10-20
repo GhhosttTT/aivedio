@@ -429,7 +429,7 @@ def test_production_readiness_exposes_delivery_evidence_status(tmp_path, monkeyp
     from src.utils.storage import storage_manager
     monkeypatch.setattr(storage_manager, "base_path", tmp_path)
     monkeypatch.setattr(
-        "src.api.routes.projects.ProductionReadinessService.build_report",
+        "src.services.production_readiness.ProductionReadinessService.build_report",
         lambda _self, _project_id, **_kwargs: {"project_id": 1, "status": "ready", "checks": {}},
     )
     db = Mock()

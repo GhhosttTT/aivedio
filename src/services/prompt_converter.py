@@ -3,7 +3,7 @@ JSON 结构化提示词转换器
 将 JSON 格式的角色描述转换为专业的 Stable Diffusion 提示词
 """
 import json
-from typing import Dict, Optional
+from typing import Dict
 from loguru import logger
 
 
@@ -74,7 +74,7 @@ class PromptConverter:
             # 组合提示词
             prompt = ", ".join(prompt_parts)
             
-            logger.info(f"JSON 提示词转换成功")
+            logger.info("JSON 提示词转换成功")
             logger.debug(f"原始 JSON: {json.dumps(json_data, ensure_ascii=False)[:200]}")
             logger.debug(f"生成提示词: {prompt[:200]}...")
             
@@ -138,7 +138,7 @@ photorealistic short-drama frame, (25 year old asian male:1.2), short black hair
             )
             
             prompt = response.strip()
-            logger.info(f"LLM 提示词优化成功")
+            logger.info("LLM 提示词优化成功")
             logger.debug(f"LLM 生成提示词: {prompt[:200]}...")
             
             return prompt

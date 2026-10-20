@@ -5,7 +5,6 @@
 
 import hashlib
 import json
-import os
 from datetime import datetime, timezone
 from typing import Optional, List
 from pathlib import Path

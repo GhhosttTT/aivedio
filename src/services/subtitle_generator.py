@@ -8,7 +8,7 @@ import os
 import re
 import subprocess
 from functools import lru_cache
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 from pathlib import Path
 from datetime import timedelta
 from uuid import uuid4

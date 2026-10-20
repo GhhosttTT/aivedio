@@ -2717,13 +2717,9 @@ def _select_best_video_candidate(
     )
     best = ranked[0]
     gate_ok, gate_scores = _video_gate_passes(best)
-    aesthetic_gate_ok = _video_aesthetic_gate_passes(best)
     aesthetic_gate = best.get("video_aesthetic_gate")
-    reference_gate_ok = _platform_reference_gate_passes(best)
     reference_gate = best.get("platform_reference_gate")
-    distinctiveness_gate_ok = _video_character_distinctiveness_gate_passes(best)
     distinctiveness_gate = best.get("character_distinctiveness_gate")
-    performance_gate_ok = _video_performance_gate_passes(best)
     performance_gate = best.get("video_performance_gate")
     platform_score = best.get("platform_score")
     report = {

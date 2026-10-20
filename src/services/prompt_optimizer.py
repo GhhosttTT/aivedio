@@ -4,7 +4,7 @@
 自动优化提示词，增强真实感和质量
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from enum import Enum
 from dataclasses import dataclass
 import re

@@ -3,9 +3,6 @@
 
 从环境变量加载配置
 """
-import os
-from typing import Optional
-
 from pydantic_settings import BaseSettings
 from pydantic import ConfigDict
 

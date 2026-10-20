@@ -7,7 +7,6 @@ FastAPI 应用主文件
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import asyncio
 from sqlalchemy import text
@@ -123,7 +122,6 @@ def configure_middlewares(app: FastAPI):
     """
     # 配置速率限制中间件
     from src.api.rate_limiter import RateLimitMiddleware, get_redis_client
-    from src.config import settings
     
     redis_client = get_redis_client()
     app.add_middleware(

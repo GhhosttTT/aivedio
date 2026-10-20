@@ -38,7 +38,7 @@ jobs:
         run: |
           flake8 --select=F401,F811,F821,F841,F541 \
             start_services.py start_services_with_logs.py start_all_services.py \
-            scripts/
+            scripts/ src/
       - name: Run contract tests
         run: |
           pytest -q \

@@ -3,7 +3,7 @@
 使用 LLM 生成详细的角色描述，然后创建高质量参考图
 """
 import json
-from typing import Dict, Optional, List
+from typing import Dict
 from loguru import logger
 
 
