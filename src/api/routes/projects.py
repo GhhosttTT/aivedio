@@ -519,7 +519,7 @@ async def upload_seed_dance_baseline(
 
 
 @router.get("/video-engine/preflight")
-async def get_video_engine_preflight(current_user=Depends(get_current_user)):
+def get_video_engine_preflight(current_user=Depends(get_current_user)):
     from src.services.video_engine_preflight import preflight_production_video_engine
     return preflight_production_video_engine()
 
@@ -623,12 +623,6 @@ def _build_generation_review(
     from src.tasks.composition_tasks import composition_input_signature
     from src.services.task_recovery import load_production_video_options
     from src.services.generation_review import fingerprint, write_report
-    continuity_report = ContinuityAuditService().audit(project, getattr(project, "scenes", []) or []).to_dict()
-    if continuity_report.get("status") != "not_applicable":
-        reports["continuity_audit"] = continuity_report
-    rhythm_report = RhythmAuditService().audit(project, getattr(project, "scenes", []) or []).to_dict()
-    if rhythm_report.get("status") != "not_applicable":
-        reports["rhythm_audit"] = rhythm_report
     audit_scenes = sorted(getattr(project, "scenes", []) or [], key=lambda scene: scene.scene_number)
     audit_input_hash = fingerprint({
         "project_id": project_id,
@@ -677,6 +671,14 @@ def _build_generation_review(
             persisted_audits.add(name)
         return report
 
+    audit_with_reuse(
+        "continuity_audit",
+        lambda: ContinuityAuditService().audit(project, getattr(project, "scenes", []) or []),
+    )
+    audit_with_reuse(
+        "rhythm_audit",
+        lambda: RhythmAuditService().audit(project, getattr(project, "scenes", []) or []),
+    )
     audit_with_reuse(
         "episode_style_consistency",
         lambda: EpisodeStyleConsistencyService().audit(project, audit_scenes),
@@ -1538,7 +1540,7 @@ def _draft_evidence_status(project) -> dict:
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
-async def get_project(project_id: int, db_session: Session = Depends(get_db_session)):
+def get_project(project_id: int, db_session: Session = Depends(get_db_session)):
     """
     获取项目详情
 
@@ -1683,7 +1685,7 @@ async def delete_project(project_id: int, db_session: Session = Depends(get_db_s
 
 
 @router.get("", response_model=ProjectListResponse)
-async def list_projects(
+def list_projects(
     status_filter: Optional[str] = Query(None, description="按状态过滤"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(10, ge=1, le=100, description="每页数量"),

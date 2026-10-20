@@ -1003,16 +1003,31 @@ def test_review_reuses_audits_while_inputs_are_unchanged(tmp_path, monkeypatch):
                 to_dict=lambda: {"status": "passed", "score": 4.0}
             )
 
+    continuity_calls = []
+
+    class FakeContinuityService:
+        def audit(self, _project, _scenes):
+            continuity_calls.append(1)
+            return SimpleNamespace(
+                to_dict=lambda: {"status": "passed", "score": 3.0}
+            )
+
     monkeypatch.setattr(
         "src.api.routes.projects.EpisodeStyleConsistencyService",
         FakeStyleService,
+    )
+    monkeypatch.setattr(
+        "src.api.routes.projects.ContinuityAuditService",
+        FakeContinuityService,
     )
 
     first = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
     second = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
 
     assert len(calls) == 1
+    assert len(continuity_calls) == 1
     assert first["reports"]["episode_style_consistency"]["score"] == 4.0
     assert second["reports"]["episode_style_consistency"]["score"] == 4.0
     assert written.count("episode_style_consistency.json") == 1
+    assert written.count("continuity_audit.json") == 1
     assert written.count("story_room_quality.json") == 1
