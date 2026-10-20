@@ -12,7 +12,8 @@ flower==2.0.1
 # 数据库
 sqlalchemy==2.0.23
 alembic==1.12.1
-psycopg2-binary==2.9.9  # PostgreSQL（可选）
+# PostgreSQL（可选）
+psycopg2-binary==2.9.9
 
 # LLM 推理
 llama-cpp-python>=0.3.16,<0.4
@@ -66,7 +67,6 @@ pytest==7.4.3
 pytest-asyncio==0.21.1
 pytest-cov==4.1.0
 hypothesis==6.92.1
-httpx==0.25.2
 
 # 代码质量
 black==23.12.0
