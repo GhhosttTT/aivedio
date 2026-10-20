@@ -4,22 +4,78 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import subprocess
+from copy import deepcopy
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from src.config import settings
 
 
+class _MetricsUnavailable(Exception):
+    """Carries an unavailable metrics payload without caching it."""
+
+    def __init__(self, metrics: dict[str, Any]):
+        super().__init__(str(metrics.get("error") or "video metrics unavailable"))
+        self.metrics = metrics
+
+
+@lru_cache(maxsize=32)
+def _cached_video_candidate_metrics(
+    absolute_path: str,
+    mtime_ns: int,
+    size: int,
+    max_samples: int | None,
+) -> dict[str, Any]:
+    metrics = _compute_video_candidate_metrics(Path(absolute_path), max_samples)
+    if metrics.get("status") != "available":
+        # A transient decode failure should be retried on the next call rather
+        # than pinned in the cache until the file signature changes.
+        raise _MetricsUnavailable(metrics)
+    return metrics
+
+
+def clear_video_candidate_metrics_cache() -> None:
+    _cached_video_candidate_metrics.cache_clear()
+
+
 def video_candidate_metrics(path: str | Path, max_samples: int | None = None) -> dict[str, Any]:
     """Return bounded, local technical metrics for one candidate clip.
 
-    These metrics are a ranking signal only. VLM and human review remain the
-    authority for story meaning, acting quality, identity, and taste.
+    Metrics are cached by path, mtime, and size because the provider validation
+    and the candidate-ranking pass score the same freshly written clip. Callers
+    may enrich the returned dict, so cache hits are deep-copied.
     """
 
     video_path = Path(path)
+    try:
+        stat = video_path.stat()
+    except OSError:
+        return _compute_video_candidate_metrics(video_path, max_samples)
+    try:
+        metrics = deepcopy(
+            _cached_video_candidate_metrics(
+                os.path.abspath(video_path),
+                stat.st_mtime_ns,
+                stat.st_size,
+                max_samples,
+            )
+        )
+    except _MetricsUnavailable as exc:
+        metrics = deepcopy(exc.metrics)
+    if isinstance(metrics, dict) and "path" in metrics:
+        metrics["path"] = str(video_path)
+    return metrics
+
+
+def _compute_video_candidate_metrics(
+    video_path: Path, max_samples: int | None = None
+) -> dict[str, Any]:
+    """Run the expensive frame/audio analysis for one candidate clip."""
+
     try:
         cv2, np = _load_cv2_numpy()
         probe = _probe(video_path)
