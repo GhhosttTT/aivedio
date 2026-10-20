@@ -652,42 +652,48 @@ def _build_generation_review(
             for scene in audit_scenes
         ],
     })
-    style_report = EpisodeStyleConsistencyService().audit(project, audit_scenes).to_dict()
-    if style_report.get("status") != "not_applicable":
-        style_report["input_hash"] = audit_input_hash
-        style_report["evidence_schema_version"] = 1
-        reports["episode_style_consistency"] = style_report
-        write_report(root / "episode_style_consistency.json", style_report)
-    identity_report = CharacterIdentityConsistencyService().audit(audit_scenes, reports).to_dict()
-    if identity_report.get("status") != "not_applicable":
-        identity_report["input_hash"] = audit_input_hash
-        identity_report["evidence_schema_version"] = 1
-        reports["character_identity_consistency"] = identity_report
-        write_report(root / "character_identity_consistency.json", identity_report)
-    dialogue_report = DialogueDeliveryAuditService().audit(audit_scenes).to_dict()
-    if dialogue_report.get("status") != "not_applicable":
-        dialogue_report["input_hash"] = audit_input_hash
-        dialogue_report["evidence_schema_version"] = 1
-        reports["dialogue_delivery_audit"] = dialogue_report
-        write_report(root / "dialogue_delivery_audit.json", dialogue_report)
-    context_report = GenerationContextAuditService().audit(audit_scenes, reports).to_dict()
-    if context_report.get("status") != "not_applicable":
-        context_report["input_hash"] = audit_input_hash
-        context_report["evidence_schema_version"] = 1
-        reports["generation_context_audit"] = context_report
-        write_report(root / "generation_context_audit.json", context_report)
-    motion_report = AtomicVideoMotionAuditService().audit(audit_scenes).to_dict()
-    if motion_report.get("status") != "not_applicable":
-        motion_report["input_hash"] = audit_input_hash
-        motion_report["evidence_schema_version"] = 1
-        reports["atomic_video_motion_audit"] = motion_report
-        write_report(root / "atomic_video_motion_audit.json", motion_report)
-    first_frame_report = FirstFrameConsistencyAuditService().audit(audit_scenes).to_dict()
-    if first_frame_report.get("status") != "not_applicable":
-        first_frame_report["input_hash"] = audit_input_hash
-        first_frame_report["evidence_schema_version"] = 1
-        reports["first_frame_consistency_audit"] = first_frame_report
-        write_report(root / "first_frame_consistency_audit.json", first_frame_report)
+    def audit_with_reuse(name, compute):
+        existing = reports.get(name)
+        if (
+            isinstance(existing, dict)
+            and existing.get("input_hash") == audit_input_hash
+            and existing.get("evidence_schema_version") == 1
+        ):
+            # Polling the review endpoint must not rerun the same audits or
+            # rewrite identical evidence files while the inputs are unchanged.
+            return existing
+        report = compute().to_dict()
+        if report.get("status") != "not_applicable":
+            report["input_hash"] = audit_input_hash
+            report["evidence_schema_version"] = 1
+            reports[name] = report
+            write_report(root / f"{name}.json", report)
+        return report
+
+    style_report = audit_with_reuse(
+        "episode_style_consistency",
+        lambda: EpisodeStyleConsistencyService().audit(project, audit_scenes),
+    )
+    identity_report = audit_with_reuse(
+        "character_identity_consistency",
+        lambda: CharacterIdentityConsistencyService().audit(audit_scenes, reports),
+    )
+    dialogue_report = audit_with_reuse(
+        "dialogue_delivery_audit",
+        lambda: DialogueDeliveryAuditService().audit(audit_scenes),
+    )
+    context_report = audit_with_reuse(
+        "generation_context_audit",
+        lambda: GenerationContextAuditService().audit(audit_scenes, reports),
+    )
+    motion_report = audit_with_reuse(
+        "atomic_video_motion_audit",
+        lambda: AtomicVideoMotionAuditService().audit(audit_scenes),
+    )
+    first_frame_report = audit_with_reuse(
+        "first_frame_consistency_audit",
+        lambda: FirstFrameConsistencyAuditService().audit(audit_scenes),
+    )
     story_room_report = StoryRoomQualityService().evaluate(project, audit_scenes).to_dict()
     # The readiness gate owns story-room rewrite actions. Keep the report for
     # reproducibility, but do not enqueue the same actions a second time in the
