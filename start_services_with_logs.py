@@ -152,25 +152,17 @@ def start_service_in_new_window(name, cmd, cwd=None):
     Returns:
         True 如果启动成功
     """
+    if sys.platform != 'win32':
+        # Stream the output here instead of leaving an unread pipe behind:
+        # a chatty service would otherwise block once the OS buffer fills.
+        return start_service_with_logs(name, cmd, cwd) is not None
+
     print_info(f"启动 {name} (新窗口)...")
-    
     try:
-        if sys.platform == 'win32':
-            # Windows 下使用 START 命令在新窗口启动
-            full_cmd = f'start "{name}" cmd /k "cd /d {cwd} && {" ".join(cmd)}"'
-            subprocess.Popen(full_cmd, shell=True)
-        else:
-            # Linux/Mac 使用 subprocess
-            process = subprocess.Popen(
-                cmd,
-                cwd=cwd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT
-            )
-        
+        full_cmd = f'start "{name}" cmd /k "cd /d {cwd} && {" ".join(cmd)}"'
+        subprocess.Popen(full_cmd, shell=True)
         print_success(f"{name} 已在新窗口启动")
         return True
-    
     except Exception as e:
         print_error(f"启动 {name} 失败: {e}")
         return False
