@@ -177,6 +177,7 @@ aivedio/
 - [角色一致性指南](docs/character-consistency.md)
 - [用户手册](docs/user-manual.md)
 - [部署指南](docs/deployment-guide.md)
+- [缓存与失效语义](docs/caching-and-invalidation.md)
 
 ## 🔧 技术栈
 
