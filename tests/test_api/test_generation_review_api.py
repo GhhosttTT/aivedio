@@ -973,3 +973,46 @@ def test_seed_dance_baseline_upload_rejects_non_video(tmp_path, monkeypatch):
         asyncio.run(upload_seed_dance_baseline(1, upload, SimpleNamespace(id=2), db))
 
     assert exc.value.status_code == 400
+
+
+def test_review_reuses_audits_while_inputs_are_unchanged(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    project = SimpleNamespace(id=1, final_video_path=None, scenes=[])
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = project
+
+    calls = []
+    written = []
+    from pathlib import Path
+    from src.services.generation_review import write_report as real_write_report
+
+    def recording_write(path, payload, *args, **kwargs):
+        written.append(Path(path).name)
+        return real_write_report(path, payload, *args, **kwargs)
+
+    monkeypatch.setattr(
+        "src.services.generation_review.write_report", recording_write
+    )
+
+    class FakeStyleService:
+        def audit(self, _project, _scenes):
+            calls.append(1)
+            return SimpleNamespace(
+                to_dict=lambda: {"status": "passed", "score": 4.0}
+            )
+
+    monkeypatch.setattr(
+        "src.api.routes.projects.EpisodeStyleConsistencyService",
+        FakeStyleService,
+    )
+
+    first = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    second = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+
+    assert len(calls) == 1
+    assert first["reports"]["episode_style_consistency"]["score"] == 4.0
+    assert second["reports"]["episode_style_consistency"]["score"] == 4.0
+    assert written.count("episode_style_consistency.json") == 1
+    assert written.count("story_room_quality.json") == 1

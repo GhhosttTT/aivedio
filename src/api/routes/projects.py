@@ -652,6 +652,8 @@ def _build_generation_review(
             for scene in audit_scenes
         ],
     })
+    persisted_audits: set[str] = set()
+
     def audit_with_reuse(name, compute):
         existing = reports.get(name)
         if (
@@ -661,6 +663,7 @@ def _build_generation_review(
         ):
             # Polling the review endpoint must not rerun the same audits or
             # rewrite identical evidence files while the inputs are unchanged.
+            persisted_audits.add(name)
             return existing
         report = compute().to_dict()
         if report.get("status") != "not_applicable":
@@ -668,41 +671,50 @@ def _build_generation_review(
             report["evidence_schema_version"] = 1
             reports[name] = report
             write_report(root / f"{name}.json", report)
+            persisted_audits.add(name)
         return report
 
-    style_report = audit_with_reuse(
+    audit_with_reuse(
         "episode_style_consistency",
         lambda: EpisodeStyleConsistencyService().audit(project, audit_scenes),
     )
-    identity_report = audit_with_reuse(
+    audit_with_reuse(
         "character_identity_consistency",
         lambda: CharacterIdentityConsistencyService().audit(audit_scenes, reports),
     )
-    dialogue_report = audit_with_reuse(
+    audit_with_reuse(
         "dialogue_delivery_audit",
         lambda: DialogueDeliveryAuditService().audit(audit_scenes),
     )
-    context_report = audit_with_reuse(
+    audit_with_reuse(
         "generation_context_audit",
         lambda: GenerationContextAuditService().audit(audit_scenes, reports),
     )
-    motion_report = audit_with_reuse(
+    audit_with_reuse(
         "atomic_video_motion_audit",
         lambda: AtomicVideoMotionAuditService().audit(audit_scenes),
     )
-    first_frame_report = audit_with_reuse(
+    audit_with_reuse(
         "first_frame_consistency_audit",
         lambda: FirstFrameConsistencyAuditService().audit(audit_scenes),
     )
-    story_room_report = StoryRoomQualityService().evaluate(project, audit_scenes).to_dict()
-    # The readiness gate owns story-room rewrite actions. Keep the report for
-    # reproducibility, but do not enqueue the same actions a second time in the
-    # media-generation repair queue.
-    story_room_report["repair_queue"] = []
-    story_room_report["input_hash"] = audit_input_hash
-    story_room_report["evidence_schema_version"] = 1
-    reports["story_room_quality"] = story_room_report
-    write_report(root / "story_room_quality.json", story_room_report)
+    existing_story_room = reports.get("story_room_quality")
+    if (
+        isinstance(existing_story_room, dict)
+        and existing_story_room.get("input_hash") == audit_input_hash
+        and existing_story_room.get("evidence_schema_version") == 1
+    ):
+        story_room_report = existing_story_room
+    else:
+        story_room_report = StoryRoomQualityService().evaluate(project, audit_scenes).to_dict()
+        # The readiness gate owns story-room rewrite actions. Keep the report
+        # for reproducibility, but do not enqueue the same actions a second
+        # time in the media-generation repair queue.
+        story_room_report["repair_queue"] = []
+        story_room_report["input_hash"] = audit_input_hash
+        story_room_report["evidence_schema_version"] = 1
+        reports["story_room_quality"] = story_room_report
+        write_report(root / "story_room_quality.json", story_room_report)
     for audit_key in (
         "continuity_audit",
         "rhythm_audit",
@@ -713,6 +725,8 @@ def _build_generation_review(
         "atomic_video_motion_audit",
         "first_frame_consistency_audit",
     ):
+        if audit_key in persisted_audits:
+            continue
         audit_report = reports.get(audit_key)
         if isinstance(audit_report, dict):
             audit_report["input_hash"] = audit_input_hash
