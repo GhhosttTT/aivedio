@@ -257,55 +257,10 @@ def check_port(port, timeout=10):
 
 
 def check_database():
-    """检查并更新数据库结构"""
-    from sqlalchemy import text, inspect
-    from src.database.models import Base
-    from src.database.session import engine
-    
-    print_info("检查数据库结构...")
-    
-    try:
-        inspector = inspect(engine)
-        if 'characters' not in inspector.get_table_names():
-            print_info("数据库表不存在，正在初始化...")
-            Base.metadata.create_all(bind=engine)
-            inspector = inspect(engine)
-            print_success("数据库表已创建")
-        
-        columns = [col['name'] for col in inspector.get_columns('characters')]
-        
-        needs_update = False
-        if 'personality' not in columns:
-            print_info("添加 personality 字段...")
-            needs_update = True
-        
-        if 'appearance' not in columns:
-            print_info("添加 appearance 字段...")
-            needs_update = True
-        
-        if needs_update:
-            with engine.connect() as conn:
-                try:
-                    conn.execute(text('ALTER TABLE characters ADD COLUMN personality VARCHAR(200)'))
-                except Exception:
-                    pass
-                
-                try:
-                    conn.execute(text('ALTER TABLE characters ADD COLUMN appearance VARCHAR(500)'))
-                except Exception:
-                    pass
-                
-                conn.commit()
-            
-            print_success("数据库结构已更新")
-        else:
-            print_success("数据库结构正常")
-        
-        return True
-    
-    except Exception as e:
-        print_error(f"数据库检查失败: {e}")
-        return False
+    """检查并更新数据库结构（复用主启动脚本的实现）"""
+    from start_services import check_database as check_database_impl
+
+    return check_database_impl()
 
 
 def main():
