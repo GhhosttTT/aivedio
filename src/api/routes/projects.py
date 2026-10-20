@@ -527,6 +527,16 @@ async def get_generation_review(
     current_user=Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
 ):
+    return await run_in_threadpool(
+        _build_generation_review, project_id, current_user, db_session
+    )
+
+
+def _build_generation_review(
+    project_id: int,
+    current_user,
+    db_session: Session,
+):
     import json
     from src.database.models import Project
     from src.utils.storage import storage_manager
