@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from src.services.video_composer import (
     VideoComposer,
     VideoComposerError,
+    clear_video_probe_cache,
     get_video_composer,
     cleanup_video_composer
 )
@@ -640,6 +641,38 @@ class TestVideoComposer:
             duration = service._get_duration(str(video_file))
         
         assert duration == 0.0
+
+    def test_probe_results_are_cached_per_file_signature(self, service, tmp_path):
+        """相同文件签名只探测一次，文件变化后重新探测。"""
+        clear_video_probe_cache()
+        video_file = tmp_path / "cached.mp4"
+        video_file.write_text("fake video")
+        try:
+            with patch("src.services.video_composer.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="10.5\n")
+                assert service._get_duration(str(video_file)) == 10.5
+                assert service._get_duration(str(video_file)) == 10.5
+                assert mock_run.call_count == 1
+
+                video_file.write_text("fake video with a different size")
+                assert service._get_duration(str(video_file)) == 10.5
+                assert mock_run.call_count == 2
+
+            clear_video_probe_cache()
+            with patch("src.services.video_composer.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="1\n")
+                assert service.has_audio_stream(str(video_file)) is True
+                assert service.has_audio_stream(str(video_file)) is True
+                assert mock_run.call_count == 1
+
+            clear_video_probe_cache()
+            with patch("src.services.video_composer.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="yuv444p\n")
+                assert service.has_provider_chroma_fidelity(str(video_file)) is True
+                assert service.has_high_bit_depth(str(video_file)) is False
+                assert mock_run.call_count == 1
+        finally:
+            clear_video_probe_cache()
     
     def test_concat_audio_success(self, service, tmp_path):
         """测试：成功拼接音频"""

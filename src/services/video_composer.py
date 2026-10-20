@@ -9,6 +9,7 @@ import os
 import math
 import subprocess
 import tempfile
+from functools import lru_cache
 from typing import List, Optional, Tuple
 from pathlib import Path
 from uuid import uuid4
@@ -20,6 +21,70 @@ from src.utils.logger import logger
 class VideoComposerError(Exception):
     """视频合成错误"""
     pass
+
+
+def _probe_duration(file_path: str) -> float:
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            file_path,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return float(result.stdout.strip())
+
+
+def _probe_has_audio(video_path: str) -> bool:
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-select_streams", "a:0",
+            "-show_entries", "stream=index",
+            "-of", "csv=p=0", video_path,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return bool(result.stdout.strip())
+
+
+def _probe_pixel_format(video_path: str) -> str:
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=pix_fmt",
+            "-of", "default=noprint_wrappers=1:nokey=1", video_path,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip().lower()
+
+
+@lru_cache(maxsize=256)
+def _cached_probe_duration(absolute_path: str, mtime_ns: int, size: int) -> float:
+    return _probe_duration(absolute_path)
+
+
+@lru_cache(maxsize=256)
+def _cached_probe_has_audio(absolute_path: str, mtime_ns: int, size: int) -> bool:
+    return _probe_has_audio(absolute_path)
+
+
+@lru_cache(maxsize=256)
+def _cached_probe_pixel_format(absolute_path: str, mtime_ns: int, size: int) -> str:
+    return _probe_pixel_format(absolute_path)
+
+
+def clear_video_probe_cache() -> None:
+    _cached_probe_duration.cache_clear()
+    _cached_probe_has_audio.cache_clear()
+    _cached_probe_pixel_format.cache_clear()
 
 
 def _is_high_bit_depth_pixel_format(pixel_format: str) -> bool:
@@ -530,36 +595,28 @@ class VideoComposer:
             时长（秒）
         """
         try:
-            cmd = [
-                "ffprobe",
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                file_path
-            ]
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            
-            return float(result.stdout.strip())
-            
+            signature = self._file_signature(file_path)
+            if signature is None:
+                return _probe_duration(file_path)
+            return _cached_probe_duration(os.path.abspath(file_path), *signature)
         except Exception as e:
             logger.warning(f"获取文件时长失败: {e}")
             return 0.0
 
+    @staticmethod
+    def _file_signature(file_path: str) -> tuple[int, int] | None:
+        try:
+            stat = os.stat(file_path)
+        except OSError:
+            return None
+        return stat.st_mtime_ns, stat.st_size
+
     def has_audio_stream(self, video_path: str) -> bool:
         try:
-            result = subprocess.run(
-                ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=index", "-of", "csv=p=0", video_path],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            return bool(result.stdout.strip())
+            signature = self._file_signature(video_path)
+            if signature is None:
+                return _probe_has_audio(video_path)
+            return _cached_probe_has_audio(os.path.abspath(video_path), *signature)
         except Exception as exc:
             logger.warning("Cannot inspect audio stream for %s: %s", video_path, exc)
             return False
@@ -848,47 +905,29 @@ class VideoComposer:
         args.extend(["-c:a", "aac"] if preserve_audio else ["-an"])
         return args
 
+    def _pixel_format(self, video_path: str) -> str:
+        try:
+            signature = self._file_signature(video_path)
+            if signature is None:
+                return _probe_pixel_format(video_path)
+            return _cached_probe_pixel_format(os.path.abspath(video_path), *signature)
+        except Exception as exc:
+            logger.debug("Could not inspect pixel format for {}: {}", video_path, exc)
+            return ""
+
     def has_high_bit_depth(self, video_path: str) -> bool:
         """Return whether a video carries a 10/12-bit pixel format."""
-        try:
-            result = subprocess.run(
-                [
-                    "ffprobe", "-v", "error", "-select_streams", "v:0",
-                    "-show_entries", "stream=pix_fmt", "-of", "default=noprint_wrappers=1:nokey=1",
-                    video_path,
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            pixel_format = result.stdout.strip().lower()
-            return any(token in pixel_format for token in ("p10", "p12", "10le", "12le"))
-        except Exception as exc:
-            logger.debug("Could not inspect pixel depth for {}: {}", video_path, exc)
-            return False
+        pixel_format = self._pixel_format(video_path)
+        return any(token in pixel_format for token in ("p10", "p12", "10le", "12le"))
 
     def has_provider_chroma_fidelity(self, video_path: str) -> bool:
         """Return whether a provider clip needs 4:2:2/4:4:4 or high-bit preservation."""
-        try:
-            result = subprocess.run(
-                [
-                    "ffprobe", "-v", "error", "-select_streams", "v:0",
-                    "-show_entries", "stream=pix_fmt",
-                    "-of", "default=noprint_wrappers=1:nokey=1", video_path,
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            pixel_format = result.stdout.strip().lower()
-            return (
-                _is_high_bit_depth_pixel_format(pixel_format)
-                or "422" in pixel_format
-                or "444" in pixel_format
-            )
-        except Exception as exc:
-            logger.debug("Could not inspect provider chroma format for {}: {}", video_path, exc)
-            return False
+        pixel_format = self._pixel_format(video_path)
+        return (
+            _is_high_bit_depth_pixel_format(pixel_format)
+            or "422" in pixel_format
+            or "444" in pixel_format
+        )
     
     def compose_scene_audio(
         self,
