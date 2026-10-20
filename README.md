@@ -9,7 +9,8 @@
 ### 启动所有服务
 
 ```bash
-cd F:\study\aishortmovie\aivedio
+cd aivedio
+pip install -r requirements.txt
 python start_services.py
 ```
 
@@ -183,7 +184,7 @@ aivedio/
 ## 🔧 技术栈
 
 **后端**:
-- FastAPI + Python 3.12
+- FastAPI + Python 3.10+
 - SQLAlchemy + SQLite
 - Celery + Redis
 - llama-cpp-python (LLM)
@@ -201,7 +202,7 @@ aivedio/
 
 ## ⚙️ 环境要求
 
-- Python 3.12+
+- Python 3.10+（Docker 镜像与测试均使用 3.10）
 - Node.js 18+
 - Redis
 - NVIDIA GPU (推荐 RTX 3060+)
