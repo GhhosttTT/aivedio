@@ -40,6 +40,9 @@ FROM dependencies AS application
 # 复制应用代码
 COPY src/ ./src/
 COPY main.py .
+COPY configs/ ./configs/
+# Baseline comparison endpoints import scripts.compare_video_baseline at runtime.
+COPY scripts/ ./scripts/
 COPY .env.example .env
 
 # 创建必要的目录
