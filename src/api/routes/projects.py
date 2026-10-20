@@ -5,6 +5,7 @@
 """
 
 from fastapi import APIRouter, HTTPException, status, Query, Depends, UploadFile, File
+from starlette.concurrency import run_in_threadpool
 from typing import Optional
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -444,16 +445,22 @@ async def compare_seed_dance_baseline(
 
     review_root = storage_manager.get_project_path(project_id) / "reviews"
     from scripts.compare_video_baseline import compare
-    report = compare(candidate, baseline, artifact_dir=review_root)
-    report["candidate_video_path"] = str(candidate)
-    report["baseline_video_path"] = str(baseline)
-    report["candidate_signature"] = _video_version_signature(candidate)
-    report["baseline_signature"] = _video_version_signature(baseline)
-    report["candidate_sha256"] = file_hash(candidate)
-    report["baseline_sha256"] = file_hash(baseline)
-    _record_baseline_comparison(project_id, report)
-    write_report(review_root / "seed_dance_baseline_comparison.json", report)
-    return report
+
+    def run_comparison():
+        report = compare(candidate, baseline, artifact_dir=review_root)
+        report["candidate_video_path"] = str(candidate)
+        report["baseline_video_path"] = str(baseline)
+        report["candidate_signature"] = _video_version_signature(candidate)
+        report["baseline_signature"] = _video_version_signature(baseline)
+        report["candidate_sha256"] = file_hash(candidate)
+        report["baseline_sha256"] = file_hash(baseline)
+        _record_baseline_comparison(project_id, report)
+        write_report(review_root / "seed_dance_baseline_comparison.json", report)
+        return report
+
+    # Video probing and frame comparisons are CPU/IO heavy; running them in the
+    # event loop would stall progress polling and websocket updates.
+    return await run_in_threadpool(run_comparison)
 
 
 @router.post("/{project_id}/seed-dance-baseline/upload")
@@ -481,26 +488,30 @@ async def upload_seed_dance_baseline(
         raise HTTPException(status_code=400, detail="Baseline must be a video file")
 
     review_root = storage_manager.get_project_path(project_id) / "reviews"
-    baseline_dir = review_root / "baselines"
-    baseline_dir.mkdir(parents=True, exist_ok=True)
-    baseline = baseline_dir / f"seed_dance_baseline{suffix}"
-    with baseline.open("wb") as stream:
-        shutil.copyfileobj(file.file, stream)
-    if baseline.stat().st_size <= 0:
-        baseline.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail="Baseline video is empty")
 
-    report = compare(candidate, baseline, artifact_dir=review_root)
-    report["candidate_video_path"] = str(candidate)
-    report["baseline_video_path"] = str(baseline)
-    report["uploaded_baseline_path"] = str(baseline)
-    report["candidate_signature"] = _video_version_signature(candidate)
-    report["baseline_signature"] = _video_version_signature(baseline)
-    report["candidate_sha256"] = file_hash(candidate)
-    report["baseline_sha256"] = file_hash(baseline)
-    _record_baseline_comparison(project_id, report)
-    write_report(review_root / "seed_dance_baseline_comparison.json", report)
-    return report
+    def store_and_compare():
+        baseline_dir = review_root / "baselines"
+        baseline_dir.mkdir(parents=True, exist_ok=True)
+        baseline = baseline_dir / f"seed_dance_baseline{suffix}"
+        with baseline.open("wb") as stream:
+            shutil.copyfileobj(file.file, stream)
+        if baseline.stat().st_size <= 0:
+            baseline.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail="Baseline video is empty")
+
+        report = compare(candidate, baseline, artifact_dir=review_root)
+        report["candidate_video_path"] = str(candidate)
+        report["baseline_video_path"] = str(baseline)
+        report["uploaded_baseline_path"] = str(baseline)
+        report["candidate_signature"] = _video_version_signature(candidate)
+        report["baseline_signature"] = _video_version_signature(baseline)
+        report["candidate_sha256"] = file_hash(candidate)
+        report["baseline_sha256"] = file_hash(baseline)
+        _record_baseline_comparison(project_id, report)
+        write_report(review_root / "seed_dance_baseline_comparison.json", report)
+        return report
+
+    return await run_in_threadpool(store_and_compare)
 
 
 
@@ -886,7 +897,9 @@ async def create_delivery_package(
         )
     review = await get_generation_review(project_id, current_user, db_session)
     try:
-        return build_delivery_package(
+        # Packaging copies and hashes the whole delivery set.
+        return await run_in_threadpool(
+            build_delivery_package,
             project,
             storage_manager.get_project_path(project_id),
             review["reports"],
@@ -939,7 +952,10 @@ async def create_platform_export(
     if review["summary"].get("status") != "ready":
         raise HTTPException(status_code=409, detail="质量审核尚未 ready，不能导出平台版本")
     try:
-        return export_platform_video(
+        # Platform exports re-encode or remux a full episode; keep the event
+        # loop free for progress polling while ffmpeg runs.
+        return await run_in_threadpool(
+            export_platform_video,
             project.final_video_path,
             storage_manager.get_project_path(project_id),
             preset,
@@ -1032,9 +1048,15 @@ async def get_production_readiness(
         readiness_kwargs["output_format_override"] = output_format_override.strip().lower()
     if duration_override is not None:
         readiness_kwargs["duration_override"] = duration_override
-    report = ProductionReadinessService(db_session).build_report(project_id, **readiness_kwargs)
-    report["delivery_evidence"] = _delivery_evidence_snapshot(project_id)
-    return report
+    def build_report():
+        report = ProductionReadinessService(db_session).build_report(project_id, **readiness_kwargs)
+        report["delivery_evidence"] = _delivery_evidence_snapshot(project_id)
+        return report
+
+    # Readiness reads workflow files, hashes media, and may probe the local
+    # reviewer or ComfyUI. Keep that blocking work off the event loop so status
+    # and websocket traffic stay responsive while the checklist runs.
+    return await run_in_threadpool(build_report)
 
 
 @router.post("/{project_id}/approve-story-room", response_model=StoryRoomApprovalResponse)
