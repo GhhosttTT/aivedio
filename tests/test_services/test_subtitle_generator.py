@@ -400,3 +400,19 @@ class TestGlobalSubtitleGenerator:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_pixel_format_probe_is_shared_and_cached(tmp_path):
+    from src.services import subtitle_generator as sg
+
+    sg._cached_pixel_format.cache_clear()
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"video")
+    try:
+        with patch("subprocess.run") as run:
+            run.return_value = MagicMock(stdout="yuv420p10le\n")
+            assert SubtitleGenerator._has_high_bit_depth(str(video)) is True
+            assert SubtitleGenerator._get_pixel_format(str(video)) == "yuv420p10le"
+            assert run.call_count == 1
+    finally:
+        sg._cached_pixel_format.cache_clear()

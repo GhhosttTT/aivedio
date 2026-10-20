@@ -7,6 +7,7 @@
 import os
 import re
 import subprocess
+from functools import lru_cache
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 from datetime import timedelta
@@ -18,6 +19,50 @@ from src.utils.logger import logger
 class SubtitleError(Exception):
     """字幕生成错误"""
     pass
+
+
+@lru_cache(maxsize=128)
+def _cached_pixel_format(absolute_path: str, mtime_ns: int, size: int) -> str:
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=pix_fmt",
+            "-of", "default=noprint_wrappers=1:nokey=1", absolute_path,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return str(result.stdout).strip().lower()
+
+
+def _pixel_format(video_path: str) -> str:
+    """Probe pix_fmt once per file signature; depth and chroma share it."""
+    try:
+        stat = os.stat(video_path)
+    except OSError:
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "error", "-select_streams", "v:0",
+                    "-show_entries", "stream=pix_fmt",
+                    "-of", "default=noprint_wrappers=1:nokey=1", video_path,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return str(result.stdout).strip().lower()
+        except Exception as exc:
+            logger.debug("无法检测视频像素格式，使用兼容编码: {}", exc)
+            return ""
+    try:
+        return _cached_pixel_format(
+            os.path.abspath(video_path), stat.st_mtime_ns, stat.st_size
+        )
+    except Exception as exc:
+        logger.debug("无法检测视频像素格式，使用兼容编码: {}", exc)
+        return ""
 
 
 class SubtitleGenerator:
@@ -458,40 +503,12 @@ class SubtitleGenerator:
 
     @staticmethod
     def _has_high_bit_depth(video_path: str) -> bool:
-        try:
-            result = subprocess.run(
-                [
-                    "ffprobe", "-v", "error", "-select_streams", "v:0",
-                    "-show_entries", "stream=pix_fmt", "-of", "default=noprint_wrappers=1:nokey=1",
-                    video_path,
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            pixel_format = result.stdout.strip().lower()
-            return any(token in pixel_format for token in ("p10", "p12", "10le", "12le"))
-        except Exception as exc:
-            logger.debug("无法检测视频位深，使用兼容编码: {}", exc)
-            return False
+        pixel_format = _pixel_format(video_path)
+        return any(token in pixel_format for token in ("p10", "p12", "10le", "12le"))
 
     @staticmethod
     def _get_pixel_format(video_path: str) -> str:
-        try:
-            result = subprocess.run(
-                [
-                    "ffprobe", "-v", "error", "-select_streams", "v:0",
-                    "-show_entries", "stream=pix_fmt", "-of", "default=noprint_wrappers=1:nokey=1",
-                    video_path,
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            return str(result.stdout).strip().lower()
-        except Exception as exc:
-            logger.debug("无法检测视频色度格式，使用兼容编码: {}", exc)
-            return ""
+        return _pixel_format(video_path)
 
 
     def _color_to_ass(self, color: str) -> str:
