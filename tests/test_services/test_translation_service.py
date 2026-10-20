@@ -1,8 +1,12 @@
+import io
 import json
+import urllib.error
 from pathlib import Path
 
+import pytest
+
 from src.services.asr_service import ASRSegment
-from src.services.translation_service import SubtitleTranslationService
+from src.services.translation_service import SubtitleTranslationService, TranslationError
 
 
 def _write_source_transcript(path: Path):
@@ -281,3 +285,62 @@ def test_deepseek_batches_run_concurrently_and_keep_source_order(tmp_path, monke
         "EN-D1",
     ]
     assert [segment.start for segment in results["en"].segments] == [0.0, 1.0, 2.0, 3.0]
+
+
+def test_deepseek_retries_transient_failures(monkeypatch):
+    monkeypatch.setattr("src.services.translation_service.settings.DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr("src.services.translation_service.settings.DEEPSEEK_MAX_RETRIES", 2)
+    monkeypatch.setattr("src.services.translation_service.settings.DEEPSEEK_RETRY_BACKOFF_SECONDS", 0)
+    calls = []
+    sleeps = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {"choices": [{"message": {"content": "ok"}}]}
+            ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        calls.append(timeout)
+        if len(calls) < 3:
+            raise urllib.error.HTTPError(
+                request.full_url, 503, "busy", {}, io.BytesIO(b"busy")
+            )
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        "src.services.translation_service.urllib.request.urlopen", fake_urlopen
+    )
+    monkeypatch.setattr(
+        "src.services.translation_service.time.sleep", lambda seconds: sleeps.append(seconds)
+    )
+
+    assert SubtitleTranslationService()._call_deepseek("prompt") == "ok"
+    assert len(calls) == 3
+    assert sleeps == [0.0, 0.0]
+
+
+def test_deepseek_does_not_retry_permanent_failures(monkeypatch):
+    monkeypatch.setattr("src.services.translation_service.settings.DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr("src.services.translation_service.settings.DEEPSEEK_MAX_RETRIES", 3)
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(timeout)
+        raise urllib.error.HTTPError(
+            request.full_url, 401, "unauthorized", {}, io.BytesIO(b"bad key")
+        )
+
+    monkeypatch.setattr(
+        "src.services.translation_service.urllib.request.urlopen", fake_urlopen
+    )
+
+    with pytest.raises(TranslationError, match="HTTP 401"):
+        SubtitleTranslationService()._call_deepseek("prompt")
+    assert len(calls) == 1

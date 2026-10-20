@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -19,6 +20,9 @@ from src.services.asr_service import ASRSegment
 
 class TranslationError(RuntimeError):
     """Raised when subtitle localization cannot produce translated subtitles."""
+
+
+_RETRYABLE_DEEPSEEK_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 
 
 LANGUAGE_NAMES = {
@@ -217,14 +221,33 @@ class SubtitleTranslationService:
             },
             method="POST",
         )
-        try:
-            with urllib.request.urlopen(request, timeout=settings.DEEPSEEK_TIMEOUT_SECONDS) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            raise TranslationError(f"DeepSeek request failed with HTTP {exc.code}: {body}") from exc
-        except urllib.error.URLError as exc:
-            raise TranslationError(f"DeepSeek request failed: {exc}") from exc
+        attempts = max(0, int(settings.DEEPSEEK_MAX_RETRIES)) + 1
+        payload = None
+        for attempt in range(attempts):
+            should_retry = False
+            try:
+                with urllib.request.urlopen(
+                    request, timeout=settings.DEEPSEEK_TIMEOUT_SECONDS
+                ) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="replace")
+                if exc.code not in _RETRYABLE_DEEPSEEK_STATUSES or attempt + 1 >= attempts:
+                    raise TranslationError(
+                        f"DeepSeek request failed with HTTP {exc.code}: {body}"
+                    ) from exc
+                should_retry = True
+            except (urllib.error.URLError, TimeoutError) as exc:
+                if attempt + 1 >= attempts:
+                    raise TranslationError(f"DeepSeek request failed: {exc}") from exc
+                should_retry = True
+            if should_retry:
+                delay = min(8.0, max(0.0, settings.DEEPSEEK_RETRY_BACKOFF_SECONDS) * (2 ** attempt))
+                time.sleep(delay)
+
+        if payload is None:
+            raise TranslationError("DeepSeek request failed without a response")
 
         choices = payload.get("choices", [])
         if not choices:

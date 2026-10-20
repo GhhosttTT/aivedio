@@ -232,6 +232,8 @@ class Settings(BaseSettings):
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     DEEPSEEK_MODEL: str = "deepseek-chat"
     DEEPSEEK_TIMEOUT_SECONDS: int = 120
+    DEEPSEEK_MAX_RETRIES: int = 2
+    DEEPSEEK_RETRY_BACKOFF_SECONDS: float = 1.0
     SUBTITLE_RENDER_FONT: str = "Arial"
     SUBTITLE_RENDER_FONT_SIZE: int = 38
     SUBTITLE_RENDER_MARGIN_V: int = 64
