@@ -39,6 +39,7 @@ jobs:
             tests/test_config_reference.py \
             tests/test_env_example_contract.py \
             tests/test_packaging_metadata.py \
+            tests/test_import_dependencies.py \
             tests/test_celery_queue_contract.py \
             tests/test_startup_database.py \
             tests/test_database_engine.py \
