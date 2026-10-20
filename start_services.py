@@ -8,14 +8,12 @@ AI 短剧系统服务启动脚本
 4. Frontend (前端开发服务器)
 """
 
-import os
 import re
 import shutil
 import sys
 import subprocess
 import time
 from pathlib import Path
-import signal
 
 
 # 颜色输出
@@ -404,10 +402,10 @@ def main():
     print("访问地址")
     print("=" * 60)
     print()
-    print(f"  前端界面:     http://localhost:5173")
-    print(f"  后端 API:     http://localhost:8000")
-    print(f"  API 文档:     http://localhost:8000/docs")
-    print(f"  ComfyUI:      http://localhost:8188")
+    print("  前端界面:     http://localhost:5173")
+    print("  后端 API:     http://localhost:8000")
+    print("  API 文档:     http://localhost:8000/docs")
+    print("  ComfyUI:      http://localhost:8188")
     print()
     print("=" * 60)
     print("提示")

@@ -200,17 +200,17 @@ def main():
         else:
             print_warning(f"✗ {name:15} (端口 {port}) - 可能未就绪")
     
-    print_success(f"✓ Celery Worker   - 已启动")
+    print_success("✓ Celery Worker   - 已启动")
     print()
     
     print("=" * 70)
     print("访问地址")
     print("=" * 70)
     print()
-    print(f"  📱 前端界面:     http://localhost:5173")
-    print(f"  🔌 后端 API:     http://localhost:8000")
-    print(f"  📖 API 文档:     http://localhost:8000/docs")
-    print(f"  🎨 ComfyUI:      http://localhost:8188")
+    print("  📱 前端界面:     http://localhost:5173")
+    print("  🔌 后端 API:     http://localhost:8000")
+    print("  📖 API 文档:     http://localhost:8000/docs")
+    print("  🎨 ComfyUI:      http://localhost:8188")
     print()
     
     print("=" * 70)

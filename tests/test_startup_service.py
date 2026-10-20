@@ -59,3 +59,14 @@ def test_build_services_skips_missing_redis(tmp_path, monkeypatch):
 
     assert "Redis" not in names
     assert "ComfyUI" in names
+
+
+def test_build_services_names_and_ports_are_unique(tmp_path, monkeypatch):
+    monkeypatch.setattr(start_services.shutil, "which", lambda name: "/usr/bin/redis-server")
+
+    services = start_services.build_services(tmp_path)
+    names = [service["name"] for service in services]
+    ports = [service["port"] for service in services if service["port"]]
+
+    assert len(names) == len(set(names))
+    assert len(ports) == len(set(ports))

@@ -32,7 +32,12 @@ jobs:
             "loguru==0.7.2" \
             "psycopg2-binary==2.9.9" \
             "pytest==7.4.3" \
-            "pytest-asyncio==0.21.1"
+            "pytest-asyncio==0.21.1" \
+            "flake8==6.1.0"
+      - name: Lint launch scripts
+        run: |
+          flake8 --select=F401,F811,F821,F841,F541 \
+            start_services.py start_services_with_logs.py start_all_services.py
       - name: Run contract tests
         run: |
           pytest -q \
