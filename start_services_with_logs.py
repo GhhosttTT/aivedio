@@ -263,59 +263,31 @@ def main():
     print("=" * 60)
     print()
     
+    from start_services import build_services
+
     processes = []
-    
-    # 1. 启动 Redis
+    services = build_services(project_root)
+
+    # Redis has its own startup path because it may already be running.
     redis_started = start_redis()
     if redis_started:
         print_success("✓ Redis 已就绪")
     else:
         print_warning("✗ Redis 未启动，某些功能可能不可用")
-    
     print()
-    
-    # 2. 启动 ComfyUI (新窗口)
-    if start_service_in_new_window(
-        name='ComfyUI',
-        cmd=[sys.executable, 'main.py', '--listen', '127.0.0.1', '--port', '8188'],
-        cwd=str(project_root / 'ComfyUI')
-    ):
-        print_info("等待 ComfyUI 初始化...")
-        time.sleep(10)
-    
-    print()
-    
-    # 3. 启动 FastAPI Backend (新窗口)
-    if start_service_in_new_window(
-        name='FastAPI',
-        cmd=[sys.executable, 'main.py'],
-        cwd=str(project_root)
-    ):
-        print_info("等待 FastAPI 初始化...")
-        time.sleep(5)
-    
-    print()
-    
-    # 4. 启动 Celery Worker (新窗口)
-    if start_service_in_new_window(
-        name='Celery',
-        cmd=['celery', '-A', 'src.tasks.celery_app', 'worker', '--pool=solo', '--loglevel=info'],
-        cwd=str(project_root)
-    ):
-        print_info("等待 Celery 初始化...")
-        time.sleep(3)
-    
-    print()
-    
-    # 5. 启动 Frontend (新窗口)
-    if start_service_in_new_window(
-        name='Frontend',
-        cmd=['npm', 'run', 'dev'],
-        cwd=str(project_root / 'frontend')
-    ):
-        print_info("等待 Frontend 初始化...")
-        time.sleep(5)
-    
+
+    for service in services:
+        if service['name'] == 'Redis':
+            continue
+        if start_service_in_new_window(
+            name=service['name'],
+            cmd=service['cmd'],
+            cwd=service['cwd'],
+        ):
+            print_info(f"等待 {service['name']} 初始化...")
+            time.sleep(service['delay'])
+        print()
+
     print()
     print("=" * 60)
     print("服务启动完成")
@@ -327,10 +299,9 @@ def main():
     print()
     
     services_to_check = [
-        ('Redis', 6379),
-        ('ComfyUI', 8188),
-        ('FastAPI', 8000),
-        ('Frontend', 5173)
+        (service['name'], service['port'])
+        for service in services
+        if service['port']
     ]
     
     from start_services import describe_port_owner
@@ -343,7 +314,8 @@ def main():
             detail = f"，占用进程: {owner}" if owner else ""
             print_warning(f"✗ {name} (端口 {port}) - 可能未就绪{detail}")
     
-    print_success("✓ Celery Worker - 已在新窗口启动")
+    if any(service['name'] == 'Celery Worker' for service in services):
+        print_success("✓ Celery Worker - 已启动")
     
     print()
     print("=" * 60)
