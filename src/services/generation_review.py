@@ -7,8 +7,10 @@ import hashlib
 import io
 import json
 import math
+import os
 import subprocess
 import time
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -121,12 +123,24 @@ def fingerprint(data) -> str:
     return hashlib.sha256(json.dumps(data, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
-def file_hash(path: Path) -> str:
+@lru_cache(maxsize=512)
+def _file_hash_cached(absolute_path: str, mtime_ns: int, size: int) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as stream:
+    with open(absolute_path, "rb") as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def file_hash(path: Path) -> str:
+    """Hash a file, reusing the digest while its path, mtime, and size match.
+
+    Status and readiness endpoints hash every generated clip on each poll; the
+    stat signature keeps that cheap without serving a stale digest after a file
+    is replaced.
+    """
+    stat = path.stat()
+    return _file_hash_cached(os.path.abspath(path), stat.st_mtime_ns, stat.st_size)
 
 
 def invalidate_quality_reports_without_current_media(reports: dict, scenes: list) -> None:
