@@ -115,6 +115,50 @@ def start_service(name, cmd, cwd=None, delay=3):
         return False
 
 
+def port_in_use(port, host='127.0.0.1'):
+    """Return True when a listener already accepts TCP connections."""
+    import socket
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.5)
+            return sock.connect_ex((host, port)) == 0
+    except OSError:
+        return False
+
+
+def describe_port_owner(port):
+    """Best-effort process description for an occupied port, or None."""
+    try:
+        if sys.platform == 'win32':
+            result = subprocess.run(
+                ['netstat', '-ano'],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            for line in result.stdout.splitlines():
+                if f':{port}' in line and 'LISTENING' in line.upper():
+                    return f"PID {line.split()[-1]}"
+            return None
+
+        result = subprocess.run(
+            ['lsof', '-nP', f'-iTCP:{port}', '-sTCP:LISTEN'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        lines = [line for line in result.stdout.splitlines() if line.strip()]
+        if len(lines) < 2:
+            return None
+        fields = lines[1].split()
+        if len(fields) >= 2:
+            return f"{fields[0]} (PID {fields[1]})"
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return None
+
+
 def check_port(port, timeout=10):
     """
     检查端口是否已监听
@@ -259,6 +303,13 @@ def main():
     # 启动所有服务
     started_services = []
     for service in services:
+        port = service.get('port')
+        if port and port_in_use(port):
+            owner = describe_port_owner(port)
+            detail = f"，占用进程: {owner}" if owner else ""
+            print_warning(f"{service['name']} 端口 {port} 已被占用{detail}，跳过启动")
+            continue
+
         success = start_service(
             name=service['name'],
             cmd=service['cmd'],
@@ -286,7 +337,15 @@ def main():
             if check_port(service['port'], timeout=5):
                 print_success(f"✓ {service['name']} (端口 {service['port']}) - 运行中")
             else:
-                print_warning(f"✗ {service['name']} (端口 {service['port']}) - 可能未就绪")
+                owner = describe_port_owner(service['port'])
+                detail = f"，占用进程: {owner}" if owner else ""
+                print_warning(f"✗ {service['name']} (端口 {service['port']}) - 可能未就绪{detail}")
+                command = (
+                    f"netstat -ano | findstr :{service['port']}"
+                    if sys.platform == 'win32'
+                    else f"lsof -nP -iTCP:{service['port']} -sTCP:LISTEN"
+                )
+                print_info(f"  查看端口占用: {command}")
         else:
             print_success(f"✓ {service['name']} - 已启动")
     

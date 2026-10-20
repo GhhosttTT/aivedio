@@ -42,6 +42,7 @@ jobs:
             tests/test_import_dependencies.py \
             tests/test_celery_queue_contract.py \
             tests/test_startup_database.py \
+            tests/test_startup_ports.py \
             tests/test_database_engine.py \
             tests/test_utils/test_file_hash_cache.py \
             tests/test_services/test_video_metrics_cache.py \
