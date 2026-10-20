@@ -145,12 +145,21 @@ def check_port(port, timeout=10):
 def check_database():
     """检查并更新数据库结构"""
     from sqlalchemy import text, inspect
+    from src.database.models import Base
     from src.database.session import engine
     
     print_info("检查数据库结构...")
     
     try:
         inspector = inspect(engine)
+        if 'characters' not in inspector.get_table_names():
+            # A fresh checkout has no SQLite file yet; create the full schema
+            # instead of failing while inspecting a missing table.
+            print_info("数据库表不存在，正在初始化...")
+            Base.metadata.create_all(bind=engine)
+            inspector = inspect(engine)
+            print_success("数据库表已创建")
+        
         columns = [col['name'] for col in inspector.get_columns('characters')]
         
         needs_update = False
