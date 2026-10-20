@@ -178,6 +178,7 @@ aivedio/
 - [用户手册](docs/user-manual.md)
 - [部署指南](docs/deployment-guide.md)
 - [缓存与失效语义](docs/caching-and-invalidation.md)
+- [配置项参考](docs/configuration-reference.md)
 
 ## 🔧 技术栈
 

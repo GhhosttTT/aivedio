@@ -347,7 +347,8 @@ class Settings(BaseSettings):
 
     # 日志配置
     LOG_LEVEL: str = "INFO"
-    LOG_FILE: str = "./logs/app.log"
+    # src/utils/logger.py reads LOG_FILE_PATH directly; keep the field name in sync.
+    LOG_FILE_PATH: str = "./logs/app.log"
 
 
 # 全局配置实例
