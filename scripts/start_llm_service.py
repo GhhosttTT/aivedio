@@ -272,7 +272,7 @@ def test_stream_generation(service: LLMService):
         
         start_time = time.time()
         
-        response = service.generate(
+        service.generate(
             prompt=prompt,
             max_tokens=100,
             temperature=0.8,

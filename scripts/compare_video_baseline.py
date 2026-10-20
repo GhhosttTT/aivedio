@@ -15,6 +15,10 @@ import re
 import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
 
 from src.config import settings
 

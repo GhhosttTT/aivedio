@@ -64,7 +64,7 @@ def list_characters(db: Session, project_id: int):
         print(f"❌ 项目 {project_id} 中没有角色")
         return None
     
-    print(f"\n👥 项目中的角色列表：")
+    print("\n👥 项目中的角色列表：")
     print("-" * 80)
     for char in characters:
         appearance_status = "✅ 已设置" if char.appearance else "❌ 未设置"

@@ -23,11 +23,8 @@ from src.services.generation_provider import ImageGenerationRequest, LocalComfyU
 from src.services.comfyui_service import ComfyUIService
 from src.services.image_quality_service import ImageQualitySelector
 from src.services.video_engine_preflight import (
-    VIDEO_WORKFLOW_PLACEHOLDERS,
-    likely_video_outputs as _likely_video_outputs,
     preflight_production_video_engine,
     preflight_video_workflow,
-    scan_placeholders as _scan_placeholders,
 )
 from src.services.generation_review import GenerationReviewService, platform_video_score, write_report
 from src.services.generation_run_evidence import build_generation_run_evidence

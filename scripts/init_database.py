@@ -11,7 +11,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.database.database import (
-    init_database,
     check_database_connection,
     drop_tables,
     create_tables

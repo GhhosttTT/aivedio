@@ -54,7 +54,7 @@ def optimize_image_task():
             f.write(content)
         print(f"\n✅ 文件已更新: {file_path}")
     else:
-        print(f"\n⚠️  未找到需要修改的内容")
+        print("\n⚠️  未找到需要修改的内容")
 
 
 def optimize_prompt_enhancer():
@@ -114,7 +114,7 @@ def optimize_prompt_enhancer():
             f.write(content)
         print(f"\n✅ 文件已更新: {file_path}")
     else:
-        print(f"\n⚠️  未找到 system_prompt")
+        print("\n⚠️  未找到 system_prompt")
 
 
 def optimize_comfyui_config():

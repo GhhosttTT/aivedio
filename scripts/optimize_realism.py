@@ -2,7 +2,6 @@
 
 import json
 import shutil
-import re
 from pathlib import Path
 
 def backup_file(file_path):

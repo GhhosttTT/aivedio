@@ -43,9 +43,9 @@ def create_default_admin():
         db.refresh(admin_user)
         
         print("✅ 默认管理员账户创建成功！")
-        print(f"   用户名: admin")
-        print(f"   密码: admin123")
-        print(f"   邮箱: admin@example.com")
+        print("   用户名: admin")
+        print("   密码: admin123")
+        print("   邮箱: admin@example.com")
         print("=" * 50)
         
     except Exception as e:
