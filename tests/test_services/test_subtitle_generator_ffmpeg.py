@@ -79,3 +79,19 @@ def test_burn_subtitle_produces_video_and_keeps_audio(tmp_path, require_ffmpeg):
     assert output.is_file() and output.stat().st_size > 0
     assert _duration(output) == pytest.approx(2.0, abs=0.3)
     assert _has_audio(output) is True
+
+
+def test_burn_subtitle_handles_apostrophe_in_project_path(tmp_path, require_ffmpeg):
+    work = tmp_path / "it's a dir"
+    work.mkdir()
+    video = _make_video(work / "input.mp4", with_audio=False)
+    srt = SubtitleGenerator().generate_srt(
+        [{"text": "Apostrophe Test", "start_time": 0.1, "duration": 0.8}],
+        str(work / "subtitle.srt"),
+    )
+    output = work / "subtitled.mp4"
+
+    result = SubtitleGenerator().burn_subtitle(str(video), srt, str(output))
+
+    assert Path(result) == output
+    assert output.is_file() and output.stat().st_size > 0

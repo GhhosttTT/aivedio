@@ -6,7 +6,9 @@
 
 import os
 import re
+import shutil
 import subprocess
+import tempfile
 from functools import lru_cache
 from typing import List, Dict, Optional
 from pathlib import Path
@@ -414,7 +416,15 @@ class SubtitleGenerator:
         
         logger.info(f"开始烧录字幕: video={video_path}, subtitle={subtitle_path}")
         
+        subtitle_temp_dir = None
         try:
+            # FFmpeg's filter parser treats an apostrophe in the filter filename
+            # as a quote delimiter, so a project path like "it's a dir" cannot
+            # be escaped reliably. Burn from a temp copy with a simple path.
+            subtitle_temp_dir = tempfile.TemporaryDirectory(prefix="aivideo_sub_")
+            safe_subtitle = Path(subtitle_temp_dir.name) / "subtitle.srt"
+            shutil.copyfile(subtitle_path, safe_subtitle)
+
             # 确定输出路径
             if not output_path:
                 video_dir = Path(video_path).parent
@@ -428,8 +438,7 @@ class SubtitleGenerator:
             # 构建 FFmpeg 命令
             # 使用 subtitles 滤镜烧录字幕
             escaped_subtitle_path = (
-                Path(subtitle_path)
-                .as_posix()
+                safe_subtitle.as_posix()
                 .replace(":", "\\:")
                 .replace("'", "\\'")
             )
@@ -495,6 +504,8 @@ class SubtitleGenerator:
             logger.error(error_msg)
             raise SubtitleError(error_msg) from e
         finally:
+            if subtitle_temp_dir is not None:
+                subtitle_temp_dir.cleanup()
             try:
                 if "temporary_path" in locals():
                     temporary_path.unlink(missing_ok=True)
