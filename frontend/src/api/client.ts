@@ -70,15 +70,24 @@ apiClient.interceptors.response.use(
         ) {
             originalRequest._authRetry = true;
             try {
-                if (!refreshInFlight) refreshInFlight = authApi.refreshToken();
+                if (!refreshInFlight) {
+                    // A refresh token is single-use after rotation. All 401s
+                    // must share one refresh; update the store before the
+                    // shared promise resolves so retries never read the old token.
+                    refreshInFlight = authApi.refreshToken()
+                        .then((tokens) => {
+                            useAuthStore.getState().updateTokens(tokens.access_token, tokens.refresh_token);
+                            return tokens;
+                        })
+                        .finally(() => {
+                            refreshInFlight = null;
+                        });
+                }
                 const tokens = await refreshInFlight;
-                refreshInFlight = null;
-                useAuthStore.getState().updateTokens(tokens.access_token, tokens.refresh_token);
                 originalRequest.headers = originalRequest.headers || {};
                 originalRequest.headers.Authorization = `Bearer ${tokens.access_token}`;
                 return apiClient(originalRequest);
             } catch (refreshError) {
-                refreshInFlight = null;
                 useAuthStore.getState().logout();
                 if (!window.location.pathname.includes('/login')) window.location.href = '/login';
                 return Promise.reject(refreshError);
