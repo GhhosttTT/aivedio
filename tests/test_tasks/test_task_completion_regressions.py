@@ -175,3 +175,14 @@ def test_before_start_swallows_database_failures(monkeypatch):
     task = BaseTask()
 
     task.before_start("task-1", (), {})
+
+
+def test_sequence_video_task_is_tracked_as_a_production_record():
+    record = SimpleNamespace(id=42)
+    query = SimpleNamespace(filter=lambda *_args: query, first=lambda: record)
+    db = SimpleNamespace(query=lambda *_args: query)
+    task = BaseTask()
+    task.name = "generate_sequence_video"
+    task.run = lambda scene_ids, project_id, task_id, **kwargs: None
+
+    assert task._production_record(([1, 2], 7, 42), {}, db) is record
