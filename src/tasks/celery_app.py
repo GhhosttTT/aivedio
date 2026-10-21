@@ -17,6 +17,19 @@ from src.services.generation_provider import GenerationCancelledError, Generatio
 
 logger = logging.getLogger(__name__)
 
+# Task names whose first-class ``task_id`` maps to a production Task row.
+PRODUCTION_TASK_NAMES = frozenset({
+    "prepare_generation",
+    "generate_image",
+    "generate_video",
+    "generate_sequence_video",
+    "generate_audio",
+    "generate_subtitle",
+    "review_generation",
+    "compose_final_video",
+    "finalize_draft_generation",
+})
+
 
 def _broadcast_task_event(project_id: int, message: dict) -> None:
     """Best-effort cross-process bridge from synchronous Celery hooks to WebSockets."""
@@ -128,7 +141,7 @@ class BaseTask(celery_app.Task):
     retry_jitter = True
 
     def _production_record(self, args, kwargs, db):
-        if self.name not in {"prepare_generation", "generate_image", "generate_video", "generate_sequence_video", "generate_audio", "generate_subtitle", "review_generation", "compose_final_video", "finalize_draft_generation"}:
+        if self.name not in PRODUCTION_TASK_NAMES:
             return None
         from src.database.models import Task as TaskModel
         values = inspect.signature(self.run).bind(*args, **kwargs).arguments
