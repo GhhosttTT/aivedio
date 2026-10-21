@@ -178,16 +178,12 @@ IP-Adapter 会增加显存使用。对于 RTX 3060 12GB：
 运行测试脚本验证 IP-Adapter 配置：
 
 ```bash
-cd F:\study\aishortmovie\aivedio
+cd aivedio
 pytest -q tests/test_services/test_comfyui_generation_regressions.py -k ipadapter
 ```
 
-预期输出：
-```
-✓ 工作流配置测试: 通过
-✓ 服务连接测试: 通过
-✓ 所有测试通过！IP-Adapter 已准备好使用。
-```
+预期输出包含 `passed`；该命令运行 IP-Adapter 相关工作流回归用例。
+
 
 ## 高级用法
 
