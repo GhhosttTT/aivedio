@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.services.video_composer import VideoComposer
+from src.services.video_composer import VideoComposer, VideoComposerError
 
 
 def _make_clip(path: Path, *, with_audio: bool = True) -> Path:
@@ -122,3 +122,39 @@ def test_compose_scene_audio_applies_crossfade_overlap(tmp_path, require_ffmpeg)
     assert Path(result) == output
     duration = VideoComposer()._get_duration(str(output))
     assert 3.3 <= duration <= 3.5
+
+
+def test_sync_audio_video_pads_short_dialogue(tmp_path, require_ffmpeg):
+    video = _make_clip(tmp_path / "video.mp4", with_audio=False)
+    dialogue = _make_audio(tmp_path / "short.wav", seconds=0.8)
+    output = tmp_path / "synced.mp4"
+
+    result = VideoComposer().sync_audio_video(str(video), str(dialogue), str(output))
+
+    assert Path(result) == output
+    composer = VideoComposer()
+    assert composer._get_duration(str(output)) == pytest.approx(1.0, abs=0.2)
+    assert composer.has_audio_stream(str(output)) is True
+
+
+def test_sync_audio_video_rejects_dialogue_longer_than_video(tmp_path, require_ffmpeg):
+    video = _make_clip(tmp_path / "video.mp4", with_audio=False)
+    dialogue = _make_audio(tmp_path / "long.wav", seconds=3.0)
+
+    with pytest.raises(VideoComposerError, match="longer than the video"):
+        VideoComposer().sync_audio_video(
+            str(video), str(dialogue), str(tmp_path / "synced.mp4")
+        )
+
+
+def test_add_bgm_without_dialogue_source(tmp_path, require_ffmpeg):
+    video = _make_clip(tmp_path / "silent.mp4", with_audio=False)
+    bgm = _make_audio(tmp_path / "bgm.mp3", seconds=1.0, frequency=220)
+    output = tmp_path / "with-bgm.mp4"
+
+    result = VideoComposer().add_bgm(str(video), str(bgm), str(output))
+
+    assert Path(result) == output
+    composer = VideoComposer()
+    assert composer._get_duration(str(output)) == pytest.approx(1.0, abs=0.3)
+    assert composer.has_audio_stream(str(output)) is True
