@@ -782,7 +782,7 @@ for task_id in task_ids:
 如果您在使用过程中遇到问题，可以：
 
 1. 查看 [快速开始指南](quick-start.md)
-2. 查看 [常见问题解答（FAQ）](faq.md)
+2. 查看 [常见问题与修复](QUICK_FIX_GUIDE.md)
 3. 查看 [API 文档](http://localhost:8000/docs)
 4. 提交 [GitHub Issue](https://github.com/your-org/ai-short-drama-production/issues)
 5. 加入社区讨论

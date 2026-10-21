@@ -469,7 +469,7 @@ A: 解决方案：
 
 - [LLM 服务使用指南](./llm-service-guide.md)
 - [模型设置指南](./model-setup-guide.md)
-- [GPU 优化指南](./gpu-optimization-guide.md)
+- [GPU 优化指南](./deployment-guide.md)
 
 ---
 

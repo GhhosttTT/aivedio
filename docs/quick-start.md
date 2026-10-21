@@ -516,7 +516,7 @@ curl -X GET "http://localhost:8000/api/projects/{project_id}" \
 ## 下一步
 
 - 阅读 [用户手册](user-manual.md) 了解更多功能
-- 查看 [API 文档](api-documentation.md) 了解所有 API 端点
+- 查看 [API 文档](http://localhost:8000/docs) 了解所有 API 端点
 - 阅读 [最佳实践指南](best-practices.md) 优化生成质量
 - 加入社区讨论：[GitHub Discussions](https://github.com/your-org/ai-short-drama-production/discussions)
 
@@ -524,7 +524,7 @@ curl -X GET "http://localhost:8000/api/projects/{project_id}" \
 
 如果遇到问题，可以：
 
-1. 查看 [常见问题解答（FAQ）](faq.md)
+1. 查看 [常见问题与修复](QUICK_FIX_GUIDE.md)
 2. 搜索 [GitHub Issues](https://github.com/your-org/ai-short-drama-production/issues)
 3. 提交新的 Issue
 4. 加入 Discord 社区

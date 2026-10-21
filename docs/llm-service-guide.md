@@ -401,7 +401,7 @@ response = service.generate(prompt)
 
 - [模型设置指南](./model-setup-guide.md)
 - [API 文档](../README.md)
-- [性能优化指南](./performance-optimization.md)
+- [性能优化指南](./best-practices.md)
 
 ## 许可证
 

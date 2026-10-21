@@ -233,7 +233,7 @@ image_path = service.generate_image(
 
 ## 相关文档
 
-- [ComfyUI IP-Adapter 插件文档](../ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus/README.md)
+- [ComfyUI IP-Adapter 插件文档](https://github.com/cubiq/ComfyUI_IPAdapter_plus)
 - [角色一致性最佳实践](../docs/character-consistency.md)
 - [ComfyUI 设置指南](../docs/comfyui-setup-guide.md)
 
