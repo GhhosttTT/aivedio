@@ -7,12 +7,16 @@ echo "========================================="
 echo "AI 短剧自动化生产平台 - 服务状态"
 echo "========================================="
 
-# 检查 Docker Compose 服务状态
+# 检查 Docker Compose 服务状态（Docker 不可用时不影响其余检查）
 echo "Docker Compose 服务状态："
-if docker compose version &> /dev/null; then
-    docker compose ps
+if ! command -v docker &> /dev/null; then
+    echo "未安装 Docker，跳过容器状态"
+elif docker compose version &> /dev/null; then
+    docker compose ps 2>/dev/null || echo "Docker 守护进程未运行或无权限访问"
+elif command -v docker-compose &> /dev/null; then
+    docker-compose ps 2>/dev/null || echo "Docker 守护进程未运行或无权限访问"
 else
-    docker-compose ps
+    echo "未安装 Docker Compose，跳过容器状态"
 fi
 
 echo ""
