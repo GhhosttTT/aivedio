@@ -23,6 +23,7 @@ from src.config import settings
 from src.database.database import engine
 
 logger = get_logger(__name__)
+READINESS_TIMEOUT_SECONDS = 5.0
 
 
 @asynccontextmanager
@@ -239,43 +240,19 @@ def register_routes(app: FastAPI):
             "version": "1.0.0"
         }
 
-    def collect_readiness_checks() -> dict[str, str]:
-        """Run blocking DB/Redis probes outside the event loop."""
-        checks: dict[str, str] = {}
-        try:
-            with engine.connect() as connection:
-                connection.execute(text("SELECT 1"))
-            checks["database"] = "ok"
-        except Exception as exc:
-            logger.warning("Readiness database check failed: {}", exc)
-            checks["database"] = "unavailable"
-
-        environment = str(getattr(settings, "ENVIRONMENT", "development")).strip().lower()
-        require_redis = bool(
-            getattr(settings, "READINESS_REQUIRE_REDIS", False)
-            or environment in {"production", "prod"}
-        )
-        if require_redis:
-            try:
-                from src.api.rate_limiter import get_redis_client
-
-                redis_client = get_redis_client()
-                if redis_client is None or not redis_client.ping():
-                    raise RuntimeError("Redis ping failed")
-                checks["redis"] = "ok"
-            except Exception as exc:
-                logger.warning("Readiness Redis check failed: {}", exc)
-                checks["redis"] = "unavailable"
-        else:
-            checks["redis"] = "not_required"
-        return checks
-
     @app.get("/ready", tags=["健康检查"])
     async def readiness_check():
         """Report whether core dependencies can accept production work."""
         from starlette.concurrency import run_in_threadpool
 
-        checks = await run_in_threadpool(collect_readiness_checks)
+        try:
+            checks = await asyncio.wait_for(
+                run_in_threadpool(collect_readiness_checks),
+                timeout=READINESS_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Readiness probe timed out")
+            checks = {"database": "timeout", "redis": "timeout"}
         ready = all(value in {"ok", "not_required"} for value in checks.values())
         response = {
             "status": "ready" if ready else "not_ready",
@@ -319,6 +296,37 @@ def _safe_error_detail(exc: Exception) -> str:
     detail = _WINDOWS_PATH_RE.sub(lambda match: f"…\\{match.group(1)}", detail)
     return detail
 
+
+def collect_readiness_checks() -> dict[str, str]:
+    """Run blocking DB/Redis probes outside the event loop."""
+    checks: dict[str, str] = {}
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception as exc:
+        logger.warning("Readiness database check failed: {}", exc)
+        checks["database"] = "unavailable"
+
+    environment = str(getattr(settings, "ENVIRONMENT", "development")).strip().lower()
+    require_redis = bool(
+        getattr(settings, "READINESS_REQUIRE_REDIS", False)
+        or environment in {"production", "prod"}
+    )
+    if require_redis:
+        try:
+            from src.api.rate_limiter import get_redis_client
+
+            redis_client = get_redis_client()
+            if redis_client is None or not redis_client.ping():
+                raise RuntimeError("Redis ping failed")
+            checks["redis"] = "ok"
+        except Exception as exc:
+            logger.warning("Readiness Redis check failed: {}", exc)
+            checks["redis"] = "unavailable"
+    else:
+        checks["redis"] = "not_required"
+    return checks
 
 def configure_exception_handlers(app: FastAPI):
     """

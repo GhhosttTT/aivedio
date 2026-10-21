@@ -191,3 +191,24 @@ def test_app_metadata(client):
     assert data["info"]["title"] == "AI 短剧自动化生产平台"
     assert data["info"]["description"] == "基于 AI 的短剧自动化生产系统 API"
     assert data["info"]["version"] == "1.0.0"
+
+
+def test_readiness_probe_timeout_returns_503(client, monkeypatch):
+    import time
+
+    import src.api.app as app_module
+
+    monkeypatch.setattr(app_module, "READINESS_TIMEOUT_SECONDS", 0.01)
+
+    def slow_probe():
+        time.sleep(0.2)
+        return {"database": "ok", "redis": "not_required"}
+
+    monkeypatch.setattr(app_module, "collect_readiness_checks", slow_probe)
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "not_ready"
+    assert body["checks"]["database"] == "timeout"
