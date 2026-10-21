@@ -164,16 +164,16 @@
 
 | 变量 | 类型 | 默认值 |
 | --- | --- | --- |
-| `FACE_DETAILER_CFG` | `float` | `5.0`（预留，当前代码未读取） |
-| `FACE_DETAILER_DENOISE` | `float` | `0.24`（预留，当前代码未读取） |
+| `FACE_DETAILER_CFG` | `float` | `5.0` |
+| `FACE_DETAILER_DENOISE` | `float` | `0.24` |
 | `FACE_DETAILER_ENABLED` | `bool` | `False`（预留，当前代码未读取） |
 | `FACE_DETAILER_FACEID_END_AT` | `float` | `0.65`（预留，当前代码未读取） |
 | `FACE_DETAILER_FACEID_WEIGHT` | `float` | `0.35`（预留，当前代码未读取） |
-| `FACE_DETAILER_GUIDE_SIZE` | `int` | `768`（预留，当前代码未读取） |
-| `FACE_DETAILER_MAX_SIZE` | `int` | `1024`（预留，当前代码未读取） |
-| `FACE_DETAILER_SAMPLER` | `str` | `dpmpp_2m_sde`（预留，当前代码未读取） |
-| `FACE_DETAILER_SCHEDULER` | `str` | `karras`（预留，当前代码未读取） |
-| `FACE_DETAILER_STEPS` | `int` | `22`（预留，当前代码未读取） |
+| `FACE_DETAILER_GUIDE_SIZE` | `int` | `768` |
+| `FACE_DETAILER_MAX_SIZE` | `int` | `1024` |
+| `FACE_DETAILER_SAMPLER` | `str` | `dpmpp_2m_sde` |
+| `FACE_DETAILER_SCHEDULER` | `str` | `karras` |
+| `FACE_DETAILER_STEPS` | `int` | `22` |
 | `FACE_DETAILER_TARGET` | `str` | `face`（预留，当前代码未读取） |
 
 ## FACEID

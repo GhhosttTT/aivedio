@@ -143,3 +143,21 @@ def test_faceid_weight_setting_fills_missing_workflow_default(service, tmp_path,
 
     adapter = next(node for node in graph.values() if node["class_type"] == "IPAdapterFaceID")
     assert adapter["inputs"]["weight"] == 0.42
+
+
+def test_face_detailer_settings_override_workflow_defaults(service, monkeypatch):
+    service.workflow_manager.load_workflow(
+        workflow_path="configs/comfyui_workflow_juggernaut_facedetailer.json"
+    )
+    monkeypatch.setattr(settings, "FACE_DETAILER_STEPS", 30)
+    monkeypatch.setattr(settings, "FACE_DETAILER_CFG", 4.5)
+    monkeypatch.setattr(settings, "FACE_DETAILER_DENOISE", 0.31)
+    monkeypatch.setattr(settings, "FACE_DETAILER_GUIDE_SIZE", 896)
+
+    graph = service._build_workflow("subject", "blurry", 1024, 576, 28, 6, 42)
+
+    detailer = next(node for node in graph.values() if node["class_type"] == "FaceDetailer")
+    assert detailer["inputs"]["steps"] == 30
+    assert detailer["inputs"]["cfg"] == 4.5
+    assert detailer["inputs"]["denoise"] == 0.31
+    assert detailer["inputs"]["guide_size"] == 896

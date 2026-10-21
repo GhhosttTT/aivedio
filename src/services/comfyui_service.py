@@ -508,6 +508,15 @@ class ComfyUIService:
             for nodes, value in ((positive_nodes, prompt), (negative_nodes, negative_prompt)):
                 for node_id in nodes:
                     workflow[node_id]["inputs"]["text"] = value
+            face_detailer_overrides = {
+                "guide_size": getattr(settings, "FACE_DETAILER_GUIDE_SIZE", None),
+                "max_size": getattr(settings, "FACE_DETAILER_MAX_SIZE", None),
+                "steps": getattr(settings, "FACE_DETAILER_STEPS", None),
+                "cfg": getattr(settings, "FACE_DETAILER_CFG", None),
+                "sampler_name": getattr(settings, "FACE_DETAILER_SAMPLER", None),
+                "scheduler": getattr(settings, "FACE_DETAILER_SCHEDULER", None),
+                "denoise": getattr(settings, "FACE_DETAILER_DENOISE", None),
+            }
             for node_name, node_id in node_name_to_id.items():
                 if node_id not in active:
                     continue
@@ -516,6 +525,11 @@ class ComfyUIService:
                     node["inputs"].update({"width": width, "height": height, "batch_size": 1})
                 if node["class_type"] in {"KSampler", "FaceDetailer"}:
                     node["inputs"]["seed"] = seed if node_id == ksampler_id else stage_seed(seed, node_name)
+                if node["class_type"] == "FaceDetailer":
+                    node["inputs"].update({
+                        key: value for key, value in face_detailer_overrides.items()
+                        if value is not None
+                    })
             workflow[ksampler_id]["inputs"].update({"steps": steps, "cfg": cfg_scale})
             sampling_stages = {
                 node_id for node_id in active
