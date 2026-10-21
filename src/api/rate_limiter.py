@@ -66,11 +66,15 @@ class RateLimiter:
         
         # 本地内存存储（用于单机限流）
         self._local_storage = {}
+        # 低频清理空/过期 key，避免长期运行后按 IP 无限累积
+        self.cleanup_interval = 300
+        self._last_cleanup = 0.0
         self._instances.add(self)
 
     def reset(self) -> None:
         """Clear local in-memory counters."""
         self._local_storage.clear()
+        self._last_cleanup = 0.0
 
     @classmethod
     def reset_all(cls) -> None:
@@ -102,6 +106,15 @@ class RateLimiter:
         """
         now = time.time()
         key = identifier
+
+        if now - self._last_cleanup >= self.cleanup_interval:
+            cutoff = now - self.period
+            self._local_storage = {
+                stored_key: stored_requests
+                for stored_key, stored_requests in self._local_storage.items()
+                if any(timestamp > cutoff for timestamp in stored_requests)
+            }
+            self._last_cleanup = now
         
         # 获取或初始化请求记录
         if key not in self._local_storage:

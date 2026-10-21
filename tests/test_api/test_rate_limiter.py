@@ -73,6 +73,26 @@ class TestRateLimiter:
         allowed, retry_after = limiter._check_rate_limit_local("test_user")
         assert allowed is True
     
+    def test_local_storage_prunes_stale_identifiers(self):
+        """长期运行时清理过期/空的 IP key，避免内存无限增长"""
+        import time
+
+        limiter = RateLimiter(rate=5, period=10)
+        limiter.cleanup_interval = 0
+        now = time.time()
+        limiter._local_storage = {
+            "ip:stale": [now - 60],
+            "ip:active": [now - 1],
+            "ip:empty": [],
+        }
+
+        limiter._check_rate_limit_local("ip:new")
+
+        assert "ip:stale" not in limiter._local_storage
+        assert "ip:empty" not in limiter._local_storage
+        assert "ip:active" in limiter._local_storage
+        assert "ip:new" in limiter._local_storage
+
     def test_check_rate_limit_redis_fallback(self):
         """测试 Redis 速率限制 - 回退到本地"""
         # 创建一个会抛出异常的 Mock Redis 客户端
