@@ -350,6 +350,7 @@ def main():
     
     # 启动所有服务
     started_services = []
+    failed_services = []
     for service in services:
         port = service.get('port')
         if port and port_in_use(port):
@@ -368,6 +369,7 @@ def main():
         if success:
             started_services.append(service)
         else:
+            failed_services.append(service["name"])
             print_warning(f"跳过 {service['name']}")
     
     print()
@@ -385,6 +387,7 @@ def main():
             if check_port(service['port'], timeout=5):
                 print_success(f"✓ {service['name']} (端口 {service['port']}) - 运行中")
             else:
+                failed_services.append(service["name"])
                 owner = describe_port_owner(service['port'])
                 detail = f"，占用进程: {owner}" if owner else ""
                 print_warning(f"✗ {service['name']} (端口 {service['port']}) - 可能未就绪{detail}")
@@ -397,6 +400,9 @@ def main():
         else:
             print_success(f"✓ {service['name']} - 已启动")
     
+    if failed_services:
+        print_error(f"以下服务未成功启动: {', '.join(failed_services)}")
+
     print()
     print("=" * 60)
     print("访问地址")
@@ -416,7 +422,7 @@ def main():
     print("  - 查看日志请在对应窗口中查看")
     print()
     
-    return True
+    return not failed_services
 
 
 if __name__ == '__main__':

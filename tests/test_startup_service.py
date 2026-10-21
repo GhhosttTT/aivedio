@@ -70,3 +70,15 @@ def test_build_services_names_and_ports_are_unique(tmp_path, monkeypatch):
 
     assert len(names) == len(set(names))
     assert len(ports) == len(set(ports))
+
+
+def test_main_reports_failure_when_a_service_does_not_start(monkeypatch):
+    monkeypatch.setattr(start_services, "check_python", lambda: True)
+    monkeypatch.setattr(start_services, "check_virtualenv", lambda: True)
+    monkeypatch.setattr(start_services, "check_database", lambda: True)
+    monkeypatch.setattr(start_services, "build_services", lambda root: [
+        {"name": "Broken", "cmd": ["broken"], "cwd": None, "delay": 0, "port": None},
+    ])
+    monkeypatch.setattr(start_services, "start_service", lambda **kwargs: False)
+
+    assert start_services.main() is False
