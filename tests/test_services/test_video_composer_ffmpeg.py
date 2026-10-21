@@ -48,3 +48,46 @@ def test_audio_stream_detection_on_real_clips(tmp_path, require_ffmpeg):
 
     assert composer.has_audio_stream(str(with_audio)) is True
     assert composer.has_audio_stream(str(without_audio)) is False
+
+
+def _make_audio(path: Path, seconds: float = 1.0, frequency: int = 330) -> Path:
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", f"sine=frequency={frequency}:duration={seconds}",
+            str(path),
+        ],
+        check=True,
+    )
+    return path
+
+
+def test_concat_audio_reencodes_wav_inputs_to_mp3(tmp_path, require_ffmpeg):
+    audio = [_make_audio(tmp_path / f"a{index}.wav") for index in range(2)]
+    output = tmp_path / "merged.mp3"
+
+    result = VideoComposer()._concat_audio([str(path) for path in audio], str(output))
+
+    assert Path(result) == output
+    assert output.is_file() and output.stat().st_size > 0
+    assert VideoComposer()._get_duration(str(output)) == pytest.approx(2.0, abs=0.3)
+
+
+def test_compose_video_end_to_end_keeps_audio(tmp_path, require_ffmpeg):
+    clips = [_make_clip(tmp_path / f"clip{index}.mp4") for index in range(2)]
+    audio = [_make_audio(tmp_path / f"a{index}.wav") for index in range(2)]
+    bgm = _make_audio(tmp_path / "bgm.mp3", seconds=2.0, frequency=220)
+    output = tmp_path / "final.mp4"
+
+    result = VideoComposer().compose_video(
+        [str(clip) for clip in clips],
+        [str(path) for path in audio],
+        bgm_path=str(bgm),
+        output_path=str(output),
+    )
+
+    assert Path(result) == output
+    assert output.is_file() and output.stat().st_size > 0
+    composer = VideoComposer()
+    assert composer._get_duration(str(output)) == pytest.approx(2.0, abs=0.4)
+    assert composer.has_audio_stream(str(output)) is True

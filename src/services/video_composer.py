@@ -1003,6 +1003,17 @@ class VideoComposer:
                 return 0.001
         return 0.001 if mode in {"hard_cut", "none"} else 0.0
 
+    @staticmethod
+    def _audio_concat_codec_args(output_path: str) -> list[str]:
+        suffix = Path(output_path).suffix.lower()
+        if suffix == ".wav":
+            return ["-c:a", "pcm_s16le"]
+        if suffix == ".mp3":
+            return ["-c:a", "libmp3lame", "-q:a", "2"]
+        if suffix in {".m4a", ".aac", ".mp4"}:
+            return ["-c:a", "aac", "-b:a", "192k"]
+        return ["-c:a", "copy"]
+
     def _concat_audio(
         self,
         audio_files: List[str],
@@ -1048,13 +1059,16 @@ class VideoComposer:
                     current = output_label
                 cmd = [
                     "ffmpeg", *inputs, "-filter_complex", ";".join(filters),
-                    "-map", f"[{current}]", "-c:a", "pcm_s16le", "-y", output_path,
+                    "-map", f"[{current}]",
+                    *self._audio_concat_codec_args(output_path),
+                    "-y", output_path,
                 ]
             else:
                 # Plain concat remains stream-copy based for the common path.
                 cmd = [
                     "ffmpeg", "-f", "concat", "-safe", "0", "-i", str(concat_list_path),
-                    "-c", "copy", "-y", output_path,
+                    *self._audio_concat_codec_args(output_path),
+                    "-y", output_path,
                 ]
             
             subprocess.run(cmd, capture_output=True, text=True, check=True)
