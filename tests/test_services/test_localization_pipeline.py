@@ -325,3 +325,61 @@ def test_source_video_upload_enforces_configured_size_limit(monkeypatch, tmp_pat
         )
 
     assert not list((tmp_path / "project_7" / "source_videos").glob("*"))
+
+
+def test_run_rendering_produces_localized_videos(db_session, tmp_path, monkeypatch):
+    import shutil
+    import subprocess
+
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        pytest.skip("ffmpeg/ffprobe are required")
+
+    monkeypatch.setattr("src.services.localization_pipeline.settings.STORAGE_PATH", str(tmp_path / "storage"))
+    user = User(username="render-user", email="render@example.com", hashed_password="x")
+    db_session.add(user)
+    db_session.commit()
+    project = Project(name="render project", user_id=user.id)
+    db_session.add(project)
+    db_session.commit()
+
+    video_path = tmp_path / "clean.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc=size=320x180:rate=24:duration=2",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", str(video_path),
+        ],
+        check=True,
+    )
+    source_video = SourceVideo(
+        project_id=project.id,
+        original_filename="clean.mp4",
+        file_path=str(video_path),
+        clean_video_path=str(video_path),
+    )
+    db_session.add(source_video)
+    db_session.commit()
+
+    subtitles = tmp_path / "subtitles"
+    subtitles.mkdir()
+    (subtitles / "en.srt").write_text(
+        "1\n00:00:00,200 --> 00:00:01,200\nHello\n", encoding="utf-8"
+    )
+    job = LocalizationJob(
+        source_video_id=source_video.id,
+        target_languages=json.dumps(["en"]),
+        translated_subtitle_dir=str(subtitles),
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    output_dir = LocalizationPipeline(db_session).run_rendering(job)
+
+    assert Path(output_dir) == (
+        tmp_path / "storage" / f"project_{project.id}" / "localization" / f"job_{job.id}" / "rendered"
+    )
+    assert (Path(output_dir) / "en.mp4").is_file()
+    assert (Path(output_dir) / "rendered_videos.json").is_file()
+    assert job.rendered_video_dir == output_dir
