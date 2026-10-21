@@ -49,3 +49,25 @@ def test_unhandled_exception_is_generic_and_keeps_request_id():
     assert body["request_id"] == "req-123"
     assert "database password" not in response.text
     assert response.headers["X-Request-ID"] == "req-123"
+
+
+def test_production_4xx_detail_hides_absolute_paths(monkeypatch):
+    from src.api import app as app_module
+
+    monkeypatch.setattr(app_module.settings, "ENVIRONMENT", "production")
+    response = _get("/__test/missing")
+
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert "/srv/private" not in detail
+    assert "secret.mp4" in detail
+    assert "…/" in detail
+
+
+def test_development_4xx_detail_keeps_full_path(monkeypatch):
+    from src.api import app as app_module
+
+    monkeypatch.setattr(app_module.settings, "ENVIRONMENT", "development")
+    response = _get("/__test/missing")
+
+    assert "/srv/private/secret.mp4" in response.json()["detail"]

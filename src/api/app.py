@@ -12,6 +12,7 @@ import asyncio
 from sqlalchemy import text
 import time
 import os
+import re
 from uuid import uuid4
 
 from src.utils.logger import get_logger
@@ -302,6 +303,21 @@ def register_routes(app: FastAPI):
     logger.info("路由注册完成")
 
 
+_POSIX_PATH_RE = re.compile(r"(?<![\w:/])/(?:[^\s,;:]+/)*([^\s,;:]+)")
+_WINDOWS_PATH_RE = re.compile(r"(?<![\w])[A-Za-z]:\\(?:[^\\\s]+\\)*([^\\\s]+)")
+
+
+def _safe_error_detail(exc: Exception) -> str:
+    """Hide absolute filesystem paths in production 4xx messages."""
+    detail = str(exc)
+    environment = str(getattr(settings, "ENVIRONMENT", "development")).strip().lower()
+    if environment not in {"production", "prod"}:
+        return detail
+    detail = _POSIX_PATH_RE.sub(lambda match: f"…/{match.group(1)}", detail)
+    detail = _WINDOWS_PATH_RE.sub(lambda match: f"…\\{match.group(1)}", detail)
+    return detail
+
+
 def configure_exception_handlers(app: FastAPI):
     """
     配置全局异常处理器
@@ -320,7 +336,7 @@ def configure_exception_handlers(app: FastAPI):
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
                 "error": "输入验证失败",
-                "detail": str(exc),
+                "detail": _safe_error_detail(exc),
                 "path": request.url.path
             }
         )
@@ -337,7 +353,7 @@ def configure_exception_handlers(app: FastAPI):
             status_code=status.HTTP_404_NOT_FOUND,
             content={
                 "error": "资源不存在",
-                "detail": str(exc),
+                "detail": _safe_error_detail(exc),
                 "path": request.url.path
             }
         )
