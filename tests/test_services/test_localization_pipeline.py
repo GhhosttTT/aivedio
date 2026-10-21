@@ -383,3 +383,65 @@ def test_run_rendering_produces_localized_videos(db_session, tmp_path, monkeypat
     assert (Path(output_dir) / "en.mp4").is_file()
     assert (Path(output_dir) / "rendered_videos.json").is_file()
     assert job.rendered_video_dir == output_dir
+
+
+def _make_localization_job(db_session, tmp_path):
+    user = User(username=f"state-{tmp_path.name}", email=f"{tmp_path.name}@example.com", hashed_password="x")
+    db_session.add(user)
+    db_session.commit()
+    project = Project(name="state project", user_id=user.id)
+    db_session.add(project)
+    db_session.commit()
+    source_video = SourceVideo(
+        project_id=project.id,
+        original_filename="source.mp4",
+        file_path=str(tmp_path / "source.mp4"),
+    )
+    db_session.add(source_video)
+    db_session.commit()
+    job = LocalizationJob(
+        source_video_id=source_video.id,
+        target_languages=json.dumps(["en"]),
+    )
+    db_session.add(job)
+    db_session.commit()
+    return job
+
+
+def test_update_stage_clamps_progress_and_clears_completed_error(db_session, tmp_path):
+    job = _make_localization_job(db_session, tmp_path)
+    pipeline = LocalizationPipeline(db_session)
+
+    running = pipeline.update_stage(job.id, LocalizationStage.RENDERING, 140.0)
+    assert running.status == LocalizationJobStatus.RUNNING
+    assert running.current_stage == LocalizationStage.RENDERING
+    assert running.progress == 100.0
+
+    running.error_message = "previous failure"
+    db_session.commit()
+    completed = pipeline.update_stage(
+        job.id, LocalizationStage.COMPLETED, -5.0, LocalizationJobStatus.COMPLETED
+    )
+    assert completed.status == LocalizationJobStatus.COMPLETED
+    assert completed.progress == 0.0
+    assert completed.error_message is None
+
+
+def test_mark_failed_and_needs_review_persist_status_and_error(db_session, tmp_path):
+    job = _make_localization_job(db_session, tmp_path)
+    pipeline = LocalizationPipeline(db_session)
+
+    pipeline.mark_failed(job.id, "asr failed")
+    db_session.refresh(job)
+    assert job.status == LocalizationJobStatus.FAILED
+    assert job.error_message == "asr failed"
+
+    pipeline.mark_needs_review(job.id, "translation needs review")
+    db_session.refresh(job)
+    assert job.status == LocalizationJobStatus.NEEDS_REVIEW
+    assert job.error_message == "translation needs review"
+
+
+def test_get_job_rejects_unknown_id(db_session):
+    with pytest.raises(ValueError, match="does not exist"):
+        LocalizationPipeline(db_session).get_job(99999)
