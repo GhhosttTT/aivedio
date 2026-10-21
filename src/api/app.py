@@ -5,6 +5,8 @@ FastAPI 应用主文件
 """
 
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
@@ -324,6 +326,18 @@ def configure_exception_handlers(app: FastAPI):
     
     统一处理各种异常，返回标准错误格式
     """
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(request: Request, exc: RequestValidationError):
+        """Wrap FastAPI validation errors while keeping the detail list shape."""
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={
+                "error": "请求参数校验失败",
+                "detail": jsonable_encoder(exc.errors()),
+                "path": request.url.path,
+            },
+        )
+
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError):
         """

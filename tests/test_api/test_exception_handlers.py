@@ -1,6 +1,7 @@
 """Global exception handler and request-id contract tests."""
 
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
 from src.api.app import create_app
 
@@ -19,6 +20,13 @@ def _client_with_routes():
     @app.get("/__test/boom")
     def boom():
         raise RuntimeError("database password leaked at /srv/private")
+
+    class Payload(BaseModel):
+        name: str
+
+    @app.post("/__test/validate")
+    def validate(payload: Payload):
+        return {"name": payload.name}
 
     return TestClient(app, raise_server_exceptions=False)
 
@@ -71,3 +79,15 @@ def test_development_4xx_detail_keeps_full_path(monkeypatch):
     response = _get("/__test/missing")
 
     assert "/srv/private/secret.mp4" in response.json()["detail"]
+
+
+def test_validation_errors_keep_detail_list_and_add_error_code():
+    response = _client_with_routes().post("/__test/validate", json={})
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"] == "请求参数校验失败"
+    assert isinstance(body["detail"], list)
+    assert body["detail"][0]["loc"][-1] == "name"
+    assert "msg" in body["detail"][0]
+    assert body["path"] == "/__test/validate"
