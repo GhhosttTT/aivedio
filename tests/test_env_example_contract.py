@@ -9,6 +9,9 @@ ENV_EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
 
 # Read directly by scripts or provider adapters rather than the Settings model.
 RUNTIME_ONLY_KEYS = {
+    "DEFAULT_ADMIN_EMAIL",
+    "DEFAULT_ADMIN_PASSWORD",
+    "DEFAULT_ADMIN_USERNAME",
     "ENCRYPTION_KEY",
     "ENABLE_DRAFT_MEDIA_FALLBACK",
     "HTTP_VIDEO_IDEMPOTENCY_ENABLED",

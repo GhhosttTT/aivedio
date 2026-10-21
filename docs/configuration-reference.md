@@ -5,6 +5,8 @@
 
 加载优先级：进程环境变量 > `.env` > 代码默认值。
 
+另有少量由脚本或适配器直接读取、不属于 `Settings` 的变量（如 `DEFAULT_ADMIN_*`、`ENCRYPTION_KEY`），见 `.env.example`。
+
 共 272 项，按变量前缀分组。
 
 ## 目录
