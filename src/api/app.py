@@ -12,6 +12,7 @@ import asyncio
 from sqlalchemy import text
 import time
 import os
+from uuid import uuid4
 
 from src.utils.logger import get_logger
 from src.api.auth import validate_auth_configuration
@@ -143,10 +144,12 @@ def configure_middlewares(app: FastAPI):
         记录每个请求的基本信息和响应时间
         """
         start_time = time.time()
-        
+        request_id = (request.headers.get("X-Request-ID") or "").strip()[:64] or uuid4().hex
+        request.state.request_id = request_id
+
         # 记录请求信息
         logger.info(
-            f"请求开始: {request.method} {request.url.path} "
+            f"[{request_id}] 请求开始: {request.method} {request.url.path} "
             f"client={request.client.host if request.client else 'unknown'}"
         )
         
@@ -158,13 +161,14 @@ def configure_middlewares(app: FastAPI):
         
         # 记录响应信息
         logger.info(
-            f"请求完成: {request.method} {request.url.path} "
+            f"[{request_id}] 请求完成: {request.method} {request.url.path} "
             f"status={response.status_code} "
             f"duration={process_time:.3f}s"
         )
         
         # 添加响应头
         response.headers["X-Process-Time"] = str(process_time)
+        response.headers["X-Request-ID"] = request_id
         
         return response
     
@@ -345,14 +349,17 @@ def configure_exception_handlers(app: FastAPI):
         
         记录错误日志并返回通用错误响应
         """
-        logger.error(f"未捕获的异常: {exc}", exc_info=True)
+        request_id = getattr(request.state, "request_id", None)
+        logger.error(f"[{request_id}] 未捕获的异常: {exc}", exc_info=True)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "error": "服务器内部错误",
                 "detail": "处理请求时发生错误，请稍后重试",
-                "path": request.url.path
-            }
+                "path": request.url.path,
+                "request_id": request_id,
+            },
+            headers={"X-Request-ID": request_id} if request_id else None,
         )
     
     logger.info("异常处理器配置完成")
