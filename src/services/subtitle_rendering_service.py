@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List
@@ -91,31 +92,36 @@ class SubtitleRenderingService:
         if not shutil.which("ffmpeg"):
             raise SubtitleRenderingError("ffmpeg executable not found")
 
-        filter_expr = self._build_subtitle_filter(subtitle_path, language)
-        command = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            clean_video_path,
-            "-vf",
-            filter_expr,
-            "-c:v",
-            "libx264",
-            "-preset",
-            "medium",
-            "-crf",
-            "18",
-            "-c:a",
-            "copy",
-            output_path,
-        ]
-        completed = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=settings.SUBTITLE_RENDER_TIMEOUT_SECONDS,
-        )
+        # FFmpeg treats an apostrophe in the filter filename as a quote, so a
+        # project path cannot be escaped reliably. Render from a safe temp copy.
+        with tempfile.TemporaryDirectory(prefix="aivideo_subs_") as temp_dir:
+            safe_subtitle = Path(temp_dir) / "subtitle.srt"
+            shutil.copyfile(subtitle_path, safe_subtitle)
+            filter_expr = self._build_subtitle_filter(str(safe_subtitle), language)
+            command = [
+                "ffmpeg",
+                "-y",
+                "-i",
+                clean_video_path,
+                "-vf",
+                filter_expr,
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "18",
+                "-c:a",
+                "copy",
+                output_path,
+            ]
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=settings.SUBTITLE_RENDER_TIMEOUT_SECONDS,
+            )
         if completed.returncode != 0:
             raise SubtitleRenderingError(
                 f"ffmpeg subtitle rendering failed with code {completed.returncode}: {completed.stderr}"
