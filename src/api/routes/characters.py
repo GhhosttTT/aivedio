@@ -44,7 +44,7 @@ router = APIRouter(prefix="/api/projects/{project_id}/characters", tags=["角色
 
 
 @router.post("", response_model=CharacterResponse, status_code=status.HTTP_201_CREATED)
-async def create_character(
+def create_character(
     project_id: int,
     character: CharacterCreate,
     db_session: Session = Depends(get_db_session)
@@ -99,7 +99,7 @@ async def create_character(
 
 
 @router.get("", response_model=List[CharacterResponse])
-async def list_characters(
+def list_characters(
     project_id: int,
     db_session: Session = Depends(get_db_session)
 ):
@@ -131,7 +131,7 @@ async def list_characters(
 
 
 @router.get("/{character_id}", response_model=CharacterResponse)
-async def get_character(
+def get_character(
     project_id: int,
     character_id: int,
     db_session: Session = Depends(get_db_session)
@@ -174,7 +174,7 @@ async def get_character(
 
 
 @router.patch("/{character_id}", response_model=CharacterResponse)
-async def update_character(
+def update_character(
     project_id: int,
     character_id: int,
     character_update: CharacterUpdate,
@@ -200,7 +200,7 @@ async def update_character(
 
 
 @router.post("/{character_id}/identity-plan", response_model=CharacterIdentityPlanResponse)
-async def plan_character_identity(
+def plan_character_identity(
     project_id: int,
     character_id: int,
     request: CharacterIdentityPlanRequest,
@@ -259,7 +259,7 @@ async def plan_character_identity(
 
 
 @router.post("/{character_id}/identity-score", response_model=CharacterIdentityScoreResponse)
-async def score_character_identity(
+def score_character_identity(
     project_id: int,
     character_id: int,
     request: CharacterIdentityScoreRequest,
@@ -282,7 +282,7 @@ async def score_character_identity(
 
 
 @router.post("/{character_id}/generate-reference", response_model=CharacterReferenceGenerateResponse)
-async def generate_reference_image(
+def generate_reference_image(
     project_id: int,
     character_id: int,
     request: CharacterReferenceGenerateRequest,
@@ -340,7 +340,7 @@ async def generate_reference_image(
 
 
 @router.post("/{character_id}/generate-turnaround-album", response_model=CharacterTurnaroundGenerateResponse)
-async def generate_turnaround_album(
+def generate_turnaround_album(
     project_id: int,
     character_id: int,
     request: CharacterTurnaroundGenerateRequest,
@@ -398,7 +398,7 @@ async def generate_turnaround_album(
 
 
 @router.post("/{character_id}/freeze-asset-pack", response_model=CharacterAssetPackResponse)
-async def freeze_character_asset_pack(
+def freeze_character_asset_pack(
     project_id: int,
     character_id: int,
     request: CharacterAssetFreezeRequest,
@@ -455,7 +455,7 @@ async def freeze_character_asset_pack(
 
 
 @router.get("/{character_id}/asset-pack", response_model=CharacterAssetPackResponse)
-async def get_character_asset_pack(
+def get_character_asset_pack(
     project_id: int,
     character_id: int,
     db_session: Session = Depends(get_db_session),
@@ -476,7 +476,7 @@ async def get_character_asset_pack(
 
 
 @router.post("/{character_id}/freeze-turnaround-album", response_model=CharacterTurnaroundAlbumResponse)
-async def freeze_character_turnaround_album(
+def freeze_character_turnaround_album(
     project_id: int,
     character_id: int,
     request: CharacterTurnaroundAlbumFreezeRequest,
@@ -601,7 +601,7 @@ async def upload_reference_image(
 
 
 @router.get("/{character_id}/references", response_model=List[CharacterReferenceResponse])
-async def list_reference_images(
+def list_reference_images(
     project_id: int,
     character_id: int,
     db_session: Session = Depends(get_db_session)
@@ -658,7 +658,7 @@ async def list_reference_images(
 
 
 @router.delete("/{character_id}", response_model=MessageResponse)
-async def delete_character(
+def delete_character(
     project_id: int,
     character_id: int,
     db_session: Session = Depends(get_db_session)

@@ -384,7 +384,7 @@ def _draft_expired(created_at: object, expires_at: object = None, *, now: dateti
 
 
 @router.post("/workflow-profile/freeze", response_model=WorkflowProfileResponse)
-async def freeze_workflow_profile(
+def freeze_workflow_profile(
     request: WorkflowProfileFreezeRequest,
     current_user=Depends(get_current_user),
 ):
@@ -941,7 +941,7 @@ async def create_delivery_package(
 
 
 @router.get("/{project_id}/delivery-package/verify")
-async def verify_project_delivery_package(
+def verify_project_delivery_package(
     project_id: int,
     current_user=Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
@@ -1100,7 +1100,7 @@ async def get_production_readiness(
 
 
 @router.post("/{project_id}/approve-story-room", response_model=StoryRoomApprovalResponse)
-async def approve_story_room(
+def approve_story_room(
     project_id: int,
     request: StoryRoomApprovalRequest,
     current_user=Depends(get_current_user),
@@ -1131,7 +1131,7 @@ async def approve_story_room(
 
 
 @router.post("/{project_id}/freeze-spatial-plan", response_model=SpatialAssetPackResponse)
-async def freeze_spatial_plan(
+def freeze_spatial_plan(
     project_id: int,
     request: SpatialAssetFreezeRequest,
     current_user=Depends(get_current_user),
@@ -1165,7 +1165,7 @@ async def freeze_spatial_plan(
 
 
 @router.post("/{project_id}/freeze-visual-style", response_model=VisualStyleAssetPackResponse)
-async def freeze_visual_style(
+def freeze_visual_style(
     project_id: int,
     request: VisualStyleFreezeRequest,
     current_user=Depends(get_current_user),
@@ -1449,7 +1449,7 @@ def _repair_queue_summary(reports: dict) -> dict:
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-async def create_project(
+def create_project(
     project: ProjectCreate,
     current_user = Depends(get_current_user),
     db_session: Session = Depends(get_db_session)
@@ -1577,7 +1577,7 @@ def get_project(project_id: int, db_session: Session = Depends(get_db_session)):
 
 
 @router.put("/{project_id}", response_model=ProjectResponse)
-async def update_project(project_id: int, project: ProjectUpdate, db_session: Session = Depends(get_db_session)):
+def update_project(project_id: int, project: ProjectUpdate, db_session: Session = Depends(get_db_session)):
     """
     更新项目信息
 
@@ -1638,7 +1638,7 @@ async def update_project(project_id: int, project: ProjectUpdate, db_session: Se
 
 
 @router.delete("/{project_id}", response_model=MessageResponse)
-async def delete_project(project_id: int, db_session: Session = Depends(get_db_session)):
+def delete_project(project_id: int, db_session: Session = Depends(get_db_session)):
     """
     删除项目
 
@@ -1951,7 +1951,7 @@ def regenerate_scene(project_id: int, request: RegenerateSceneRequest, db_sessio
 
 
 @router.post("/{project_id}/bgm")
-async def upload_project_bgm(
+def upload_project_bgm(
     project_id: int,
     file: UploadFile = File(...),
     current_user=Depends(get_current_user),
@@ -1986,7 +1986,7 @@ async def upload_project_bgm(
 
 
 @router.post("/{project_id}/produce", response_model=ProductionTaskResponse)
-async def produce_video(
+def produce_video(
     project_id: int,
     request: ProductionOptions | None = None,
     db_session: Session = Depends(get_db_session)
@@ -2103,7 +2103,7 @@ async def produce_video(
 
 
 @router.post("/{project_id}/promote-drafts", response_model=ProductionTaskResponse)
-async def promote_seedance_drafts(
+def promote_seedance_drafts(
     project_id: int,
     db_session: Session = Depends(get_db_session),
 ):
@@ -2237,7 +2237,7 @@ async def promote_seedance_drafts(
 
 
 @router.post("/{project_id}/regenerate-images", response_model=ProductionTaskResponse)
-async def regenerate_images(
+def regenerate_images(
     project_id: int,
     db_session: Session = Depends(get_db_session)
 ):
@@ -2328,7 +2328,7 @@ async def regenerate_images(
 
 
 @router.post("/{project_id}/repair-scene", response_model=ProductionTaskResponse)
-async def repair_scene_generation(
+def repair_scene_generation(
     project_id: int,
     request: RepairSceneRequest,
     db_session: Session = Depends(get_db_session),

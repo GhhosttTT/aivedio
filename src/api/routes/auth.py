@@ -73,7 +73,7 @@ class UserResponse(BaseModel):
 # ==================== API 端点 ====================
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(
+def register(
     user_data: UserRegister,
     db: Session = Depends(get_db_session)
 ):
@@ -126,7 +126,7 @@ async def register(
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(
+def login(
     login_data: UserLogin,
     db: Session = Depends(get_db_session)
 ):
@@ -188,7 +188,7 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(
+def refresh_token(
     token_data: TokenRefresh,
     db: Session = Depends(get_db_session)
 ):
@@ -305,7 +305,7 @@ def logout(token_data: TokenRefresh, db: Session = Depends(get_db_session)):
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_current_user_info(
+def get_current_user_info(
     current_user: User = Depends(get_current_user)
 ):
     """

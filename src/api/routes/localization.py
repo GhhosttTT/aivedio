@@ -95,7 +95,7 @@ def _job_response(job: LocalizationJob) -> LocalizationJobResponse:
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_project_access)],
 )
-async def upload_source_video(
+def upload_source_video(
     project_id: int,
     file: UploadFile = File(...),
     db_session: Session = Depends(get_db_session),
@@ -112,7 +112,7 @@ async def upload_source_video(
 
 
 @router.post("/jobs", response_model=LocalizationJobResponse, status_code=status.HTTP_201_CREATED)
-async def create_localization_job(
+def create_localization_job(
     request: CreateLocalizationJobRequest,
     current_user=Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
@@ -141,7 +141,7 @@ async def create_localization_job(
 
 
 @router.get("/jobs/{job_id}", response_model=LocalizationJobResponse, dependencies=[Depends(require_localization_job_access)])
-async def get_localization_job(job_id: int, db_session: Session = Depends(get_db_session)):
+def get_localization_job(job_id: int, db_session: Session = Depends(get_db_session)):
     job = db_session.query(LocalizationJob).filter(LocalizationJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="译制任务不存在")
@@ -162,7 +162,7 @@ def _load_quality_report(job: LocalizationJob) -> tuple[dict, LocalizationReview
 
 
 @router.get("/jobs/{job_id}/quality", dependencies=[Depends(require_localization_job_access)])
-async def get_localization_quality(job_id: int, db_session: Session = Depends(get_db_session)):
+def get_localization_quality(job_id: int, db_session: Session = Depends(get_db_session)):
     job = db_session.query(LocalizationJob).filter(LocalizationJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="译制任务不存在")
@@ -171,7 +171,7 @@ async def get_localization_quality(job_id: int, db_session: Session = Depends(ge
 
 
 @router.post("/jobs/{job_id}/quality-review", dependencies=[Depends(require_localization_job_access)])
-async def record_localization_quality_review(
+def record_localization_quality_review(
     job_id: int,
     request: LocalizationReviewRequest,
     current_user=Depends(get_current_user),
@@ -204,7 +204,7 @@ async def record_localization_quality_review(
 
 
 @router.get("/projects/{project_id}/source-videos", response_model=List[SourceVideoResponse], dependencies=[Depends(require_project_access)])
-async def list_source_videos(project_id: int, db_session: Session = Depends(get_db_session)):
+def list_source_videos(project_id: int, db_session: Session = Depends(get_db_session)):
     return (
         db_session.query(SourceVideo)
         .filter(SourceVideo.project_id == project_id)
@@ -214,7 +214,7 @@ async def list_source_videos(project_id: int, db_session: Session = Depends(get_
 
 
 @router.get("/projects/{project_id}/jobs", response_model=List[LocalizationJobResponse], dependencies=[Depends(require_project_access)])
-async def list_project_localization_jobs(project_id: int, db_session: Session = Depends(get_db_session)):
+def list_project_localization_jobs(project_id: int, db_session: Session = Depends(get_db_session)):
     jobs = (
         db_session.query(LocalizationJob)
         .join(SourceVideo, LocalizationJob.source_video_id == SourceVideo.id)

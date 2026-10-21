@@ -1,4 +1,3 @@
-import asyncio
 import json
 from types import SimpleNamespace
 
@@ -12,12 +11,12 @@ def test_localization_quality_review_records_operator(tmp_path):
     query = SimpleNamespace(filter=lambda *_args: query, first=lambda: job)
     db = SimpleNamespace(query=lambda *_args: query, commit=lambda: None)
 
-    result = asyncio.run(record_localization_quality_review(
+    result = record_localization_quality_review(
         4,
         SimpleNamespace(decision="approved", note="人工确认"),
         SimpleNamespace(id=12),
         db,
-    ))
+    )
 
     assert result["human_review"]["reviewed_by"] == 12
     assert job.status.value == "completed"
@@ -32,12 +31,12 @@ def test_localization_human_approval_cannot_bypass_failed_qa(tmp_path):
     query = SimpleNamespace(filter=lambda *_args: query, first=lambda: job)
     db = SimpleNamespace(query=lambda *_args: query, commit=lambda: None)
 
-    asyncio.run(record_localization_quality_review(
+    record_localization_quality_review(
         5,
         SimpleNamespace(decision="approved", note="人工认为可接受"),
         SimpleNamespace(id=12),
         db,
-    ))
+    )
 
     assert job.status.value == "needs_review"
     assert "不能覆盖" in job.error_message
