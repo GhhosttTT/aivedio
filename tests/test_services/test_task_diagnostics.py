@@ -144,3 +144,24 @@ def test_cli_reports_and_applies_stale_tasks(tmp_path):
     finally:
         db.close()
         engine.dispose()
+
+
+def test_cli_rejects_non_positive_threshold(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[2]
+    env = os.environ.copy()
+    env["DATABASE_URL"] = f"sqlite:///{tmp_path / 'unused.db'}"
+    result = subprocess.run(
+        [sys.executable, str(repo / "scripts" / "recover_stale_tasks.py"), "--older-than-hours", "0"],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=repo,
+    )
+
+    assert result.returncode == 2
+    assert "greater than 0" in result.stderr

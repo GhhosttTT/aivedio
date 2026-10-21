@@ -23,11 +23,21 @@ from src.services.task_diagnostics import (  # noqa: E402
 )
 
 
+def _positive_hours(value: str) -> float:
+    try:
+        hours = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a number") from exc
+    if hours <= 0:
+        raise argparse.ArgumentTypeError("must be greater than 0")
+    return hours
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--older-than-hours",
-        type=float,
+        type=_positive_hours,
         default=DEFAULT_STALE_TASK_HOURS,
         help="age threshold based on task.updated_at (default: 6)",
     )
