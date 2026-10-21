@@ -165,3 +165,13 @@ def test_task_callbacks_swallow_database_failures(monkeypatch):
 
     task.on_failure(RuntimeError("original"), "task-1", (), {}, None)
     task.on_success({}, "task-1", (), {})
+
+
+def test_before_start_swallows_database_failures(monkeypatch):
+    def broken_session():
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr("src.database.session.get_db_session", broken_session)
+    task = BaseTask()
+
+    task.before_start("task-1", (), {})

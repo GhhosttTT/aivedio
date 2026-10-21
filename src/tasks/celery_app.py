@@ -139,9 +139,10 @@ class BaseTask(celery_app.Task):
         from celery.exceptions import Ignore
         from src.database.session import get_db_session
         from src.database.models import TaskStatus, ProjectStatus
-        db = next(get_db_session())
+        db = None
         event = None
         try:
+            db = next(get_db_session())
             record = self._production_record(args, kwargs, db)
             if record and record.status == TaskStatus.PENDING:
                 record.status = TaskStatus.RUNNING
@@ -172,8 +173,15 @@ class BaseTask(celery_app.Task):
                     )
                     db.commit()
                 raise Ignore()
+        except Ignore:
+            raise
+        except Exception:
+            # A tracking failure must not turn an otherwise runnable task into
+            # a hard failure; on_failure will still record real task errors.
+            logger.exception("Failed to initialize task state for %s", task_id)
         finally:
-            db.close()
+            if db is not None:
+                db.close()
         if event:
             _broadcast_task_event(event["project_id"], event)
 
