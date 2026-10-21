@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/tasks", tags=["任务管理"], dependencies=[Dep
 
 
 @router.get("/{task_id}/status", response_model=TaskStatusResponse)
-async def get_task_status(task_id: str, db_session: Session = Depends(get_db_session)):
+def get_task_status(task_id: str, db_session: Session = Depends(get_db_session)):
     """
     查询任务状态
     
@@ -73,7 +73,7 @@ async def get_task_status(task_id: str, db_session: Session = Depends(get_db_ses
 
 
 @router.post("/{task_id}/cancel", response_model=MessageResponse)
-async def cancel_task(task_id: str, db_session: Session = Depends(get_db_session)):
+def cancel_task(task_id: str, db_session: Session = Depends(get_db_session)):
     """
     取消任务
     
@@ -116,7 +116,7 @@ async def cancel_task(task_id: str, db_session: Session = Depends(get_db_session
 
 
 @router.post("/{task_id}/retry", response_model=MessageResponse)
-async def retry_task(task_id: str, db_session: Session = Depends(get_db_session)):
+def retry_task(task_id: str, db_session: Session = Depends(get_db_session)):
     """
     重试失败的任务
     

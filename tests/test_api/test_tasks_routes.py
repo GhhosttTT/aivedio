@@ -76,3 +76,17 @@ def test_retry_task_success(client):
         
         response = client.post("/api/tasks/task-123/retry")
         assert response.status_code == 200
+
+
+def test_task_routes_are_sync_so_fastapi_uses_the_threadpool():
+    """Sync endpoints keep SQLite waits (busy timeout) off the event loop."""
+    import inspect
+
+    from src.api.routes import tasks as task_routes
+
+    for endpoint in (
+        task_routes.get_task_status,
+        task_routes.cancel_task,
+        task_routes.retry_task,
+    ):
+        assert not inspect.iscoroutinefunction(endpoint)
