@@ -43,7 +43,8 @@ jobs:
             tests/test_services/test_video_metrics_cache.py \
             tests/test_services/test_production_readiness_cache.py \
             tests/test_services/test_workflow_manager.py \
-            tests/test_services/test_best_practice_library.py
+            tests/test_services/test_best_practice_library.py \
+            tests/test_services/test_task_diagnostics.py
 
   media-metrics:
     runs-on: ubuntu-latest
