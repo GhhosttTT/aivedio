@@ -91,3 +91,34 @@ def test_compose_video_end_to_end_keeps_audio(tmp_path, require_ffmpeg):
     composer = VideoComposer()
     assert composer._get_duration(str(output)) == pytest.approx(2.0, abs=0.4)
     assert composer.has_audio_stream(str(output)) is True
+
+
+def test_compose_scene_audio_pads_segments_to_timeline(tmp_path, require_ffmpeg):
+    first = _make_audio(tmp_path / "a0.wav", seconds=1.0)
+    second = _make_audio(tmp_path / "a1.wav", seconds=1.2)
+    output = tmp_path / "scene.wav"
+
+    result = VideoComposer().compose_scene_audio(
+        [(str(first), 2.0), (str(second), 1.5)],
+        str(output),
+    )
+
+    assert Path(result) == output
+    assert output.is_file() and output.stat().st_size > 0
+    assert VideoComposer()._get_duration(str(output)) == pytest.approx(3.5, abs=0.15)
+
+
+def test_compose_scene_audio_applies_crossfade_overlap(tmp_path, require_ffmpeg):
+    first = _make_audio(tmp_path / "a0.wav", seconds=1.0)
+    second = _make_audio(tmp_path / "a1.wav", seconds=1.2)
+    output = tmp_path / "scene-crossfade.wav"
+
+    result = VideoComposer().compose_scene_audio(
+        [(str(first), 2.0), (str(second), 1.5)],
+        str(output),
+        editing_plan=[{}, {"transition": {"video": "crossfade", "duration_seconds": 0.1}}],
+    )
+
+    assert Path(result) == output
+    duration = VideoComposer()._get_duration(str(output))
+    assert 3.3 <= duration <= 3.5
