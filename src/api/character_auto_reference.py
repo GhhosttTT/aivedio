@@ -36,7 +36,7 @@ class AutoGenerateResponse(BaseModel):
 
 
 @router.post("/generate", response_model=AutoGenerateResponse)
-async def auto_generate_character_reference(request: AutoGenerateRequest):
+def auto_generate_character_reference(request: AutoGenerateRequest):
     """
     自动生成角色参考图
     
@@ -96,7 +96,7 @@ async def auto_generate_character_reference(request: AutoGenerateRequest):
 
 
 @router.post("/generate-batch", response_model=AutoGenerateResponse)
-async def batch_generate_character_reference(request: AutoGenerateRequest):
+def batch_generate_character_reference(request: AutoGenerateRequest):
     """
     批量生成角色参考图（多张不同角度）
     

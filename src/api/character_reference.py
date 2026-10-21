@@ -61,7 +61,7 @@ class CharacterResponse(BaseModel):
 
 
 @router.post("/generate-description", response_model=CharacterResponse)
-async def generate_character_description(request: CharacterRequest):
+def generate_character_description(request: CharacterRequest):
     """
     使用 LLM 生成详细的角色描述
     
@@ -162,7 +162,7 @@ async def generate_reference_images(request: CharacterRequest):
 
 
 @router.get("/template/{character_name}")
-async def get_character_template(character_name: str):
+def get_character_template(character_name: str):
     """
     获取角色模板（不使用 LLM）
     

@@ -225,7 +225,7 @@ def register_routes(app: FastAPI):
     
     # 健康检查端点
     @app.get("/health", tags=["健康检查"])
-    async def health_check():
+    def health_check():
         """
         健康检查端点
         
@@ -266,7 +266,7 @@ def register_routes(app: FastAPI):
     
     # 根路径
     @app.get("/", tags=["根路径"])
-    async def root():
+    def root():
         """
         根路径端点
         

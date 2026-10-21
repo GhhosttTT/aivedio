@@ -29,7 +29,7 @@ def test_localization_job_access_accepts_owned_job():
     )
     db = SimpleNamespace(query=lambda *_args: query)
 
-    result = __import__("asyncio").run(require_localization_job_access(_request("7"), SimpleNamespace(id=3), db))
+    result = require_localization_job_access(_request("7"), SimpleNamespace(id=3), db)
 
     assert result is None
 
@@ -43,6 +43,6 @@ def test_localization_job_access_hides_unowned_job():
     db = SimpleNamespace(query=lambda *_args: query)
 
     with pytest.raises(HTTPException) as exc:
-        __import__("asyncio").run(require_localization_job_access(_request("7"), SimpleNamespace(id=3), db))
+        require_localization_job_access(_request("7"), SimpleNamespace(id=3), db)
 
     assert exc.value.status_code == 404
