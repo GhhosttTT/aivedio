@@ -119,6 +119,21 @@ class TestGPUUtils:
             assert result is True
             assert mock_torch.cuda.empty_cache.call_count == 2
     
+    def test_clear_gpu_cache_respects_disabled_setting(self, monkeypatch):
+        """ENABLE_GPU_CACHE_CLEAR=false 时不应触碰 CUDA"""
+        from src.config import settings
+
+        monkeypatch.setattr(settings, "ENABLE_GPU_CACHE_CLEAR", False)
+        with patch('src.utils.gpu_utils.torch') as mock_torch:
+            mock_torch.cuda.is_available.return_value = True
+
+            from src.utils.gpu_utils import clear_gpu_cache
+
+            result = clear_gpu_cache(0)
+
+            assert result is False
+            mock_torch.cuda.empty_cache.assert_not_called()
+
     def test_clear_gpu_cache_no_cuda(self):
         """测试清理 GPU 缓存（CUDA 不可用）"""
         with patch('src.utils.gpu_utils.torch') as mock_torch:

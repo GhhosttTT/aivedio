@@ -124,6 +124,12 @@ def clear_gpu_cache(device_id: Optional[int] = None) -> bool:
     Returns:
         是否清理成功
     """
+    from src.config import settings
+
+    if not getattr(settings, "ENABLE_GPU_CACHE_CLEAR", True):
+        logger.info("ENABLE_GPU_CACHE_CLEAR=false，跳过缓存清理")
+        return False
+
     if _torch_missing():
         logger.warning("PyTorch 未安装，跳过缓存清理")
         return False
