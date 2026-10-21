@@ -21,3 +21,19 @@ def test_shell_scripts_are_executable():
     non_executable = [path.name for path in sorted(SCRIPTS.glob("*.sh")) if not os.access(path, os.X_OK)]
 
     assert non_executable == []
+
+
+def test_comfyui_launcher_reports_missing_directory(tmp_path):
+    env = os.environ.copy()
+    env["COMFYUI_DIR"] = str(tmp_path / "missing-comfyui")
+
+    result = subprocess.run(
+        ["bash", str(SCRIPTS / "start_comfyui.sh")],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=SCRIPTS.parent,
+    )
+
+    assert result.returncode == 1
+    assert "未找到 ComfyUI 目录" in result.stdout
