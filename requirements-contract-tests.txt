@@ -1,0 +1,15 @@
+# Minimal dependencies for the contract-tests CI job.
+pydantic==2.5.0
+pydantic-settings==2.1.0
+SQLAlchemy==2.0.23
+celery==5.3.4
+httpx==0.25.2
+Pillow==10.1.0
+PyYAML==6.0.1
+python-dotenv==1.0.0
+psutil>=5.9
+loguru==0.7.2
+psycopg2-binary==2.9.9
+pytest==7.4.3
+pytest-asyncio==0.21.1
+flake8==6.1.0
