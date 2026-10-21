@@ -47,7 +47,10 @@ export function LocalizationDashboard() {
     useEffect(() => {
         if (!jobId || !['queued','running'].includes(jobStatus || '')) return;
         let active = true;
-        const timer = window.setInterval(() => localizationApi.getJob(jobId).then(data => {if(active) setJob(data);}).catch(e => {if(active) setError(errorText(e));}), 3000);
+        const timer = window.setInterval(() => {
+            if (document.visibilityState === 'hidden') return;
+            localizationApi.getJob(jobId).then(data => {if(active) setJob(data);}).catch(e => {if(active) setError(errorText(e));});
+        }, 3000);
         return () => {active = false; window.clearInterval(timer);};
     }, [jobId, jobStatus]);
     const run = async (upload: boolean) => {

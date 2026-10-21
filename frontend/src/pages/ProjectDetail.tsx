@@ -104,7 +104,9 @@ export function ProjectDetail() {
     }, [latestMessage, reload]);
     useEffect(() => {
         if (project?.status !== 'in_production') return;
-        const timer = window.setInterval(reload, progressSocketConnected ? 10000 : 3000);
+        const timer = window.setInterval(() => {
+            if (document.visibilityState !== 'hidden') void reload();
+        }, progressSocketConnected ? 10000 : 3000);
         return () => window.clearInterval(timer);
     }, [project?.status, progressSocketConnected, reload]);
     const run = async (operation: string) => {
