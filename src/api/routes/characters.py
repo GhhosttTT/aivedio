@@ -513,7 +513,7 @@ def freeze_character_turnaround_album(
 
 
 @router.post("/{character_id}/reference", response_model=CharacterReferenceResponse)
-async def upload_reference_image(
+def upload_reference_image(
     project_id: int,
     character_id: int,
     file: UploadFile = File(...),
@@ -558,7 +558,7 @@ async def upload_reference_image(
         from uuid import uuid4
         from io import BytesIO
         from PIL import Image
-        content = await file.read(10 * 1024 * 1024 + 1)
+        content = file.file.read(10 * 1024 * 1024 + 1)
         if len(content) > 10 * 1024 * 1024:
             raise HTTPException(413, "参考图不能超过 10 MB")
         try:
