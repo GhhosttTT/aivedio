@@ -561,3 +561,57 @@ def test_legacy_refresh_token_without_jti_can_still_refresh():
 
     assert response.status_code == 200
     assert response.json()["refresh_token"]
+
+
+def test_logout_revokes_refresh_token():
+    client.post(
+        "/api/auth/register",
+        json={"username": "logout-user", "email": "logout@example.com", "password": "password123"},
+    )
+    login = client.post(
+        "/api/auth/login",
+        json={"username": "logout-user", "password": "password123"},
+    )
+    refresh_token = login.json()["refresh_token"]
+
+    logout = client.post("/api/auth/logout", json={"refresh_token": refresh_token})
+    assert logout.status_code == 204
+
+    replay = client.post("/api/auth/refresh", json={"refresh_token": refresh_token})
+    assert replay.status_code == 401
+
+
+def test_logout_is_idempotent_for_invalid_token():
+    response = client.post("/api/auth/logout", json={"refresh_token": "invalid.token.here"})
+
+    assert response.status_code == 204
+
+
+def test_login_prunes_expired_refresh_tokens():
+    from src.database.models import RefreshToken
+
+    db = TestSessionLocal()
+    try:
+        user = User(username="prune-user", email="prune@example.com", hashed_password=hash_password("password123"))
+        db.add(user)
+        db.commit()
+        db.add(RefreshToken(
+            jti="expired-jti",
+            user_id=user.id,
+            expires_at=datetime.utcnow() - timedelta(days=1),
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+    login = client.post(
+        "/api/auth/login",
+        json={"username": "prune-user", "password": "password123"},
+    )
+
+    assert login.status_code == 200
+    db = TestSessionLocal()
+    try:
+        assert db.query(RefreshToken).filter(RefreshToken.jti == "expired-jti").first() is None
+    finally:
+        db.close()

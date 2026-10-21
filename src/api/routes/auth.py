@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,10 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
+
+
+def _prune_expired_refresh_tokens(db: Session) -> None:
+    db.query(RefreshToken).filter(RefreshToken.expires_at < datetime.utcnow()).delete()
 
 
 # ==================== Pydantic 模型 ====================
@@ -168,6 +172,7 @@ async def login(
     access_token = create_access_token(data={"sub": user.id, "username": user.username})
     jti = uuid4().hex
     refresh_token = create_refresh_token(data={"sub": user.id}, jti=jti)
+    _prune_expired_refresh_tokens(db)
     db.add(RefreshToken(
         jti=jti,
         user_id=user.id,
@@ -272,6 +277,7 @@ async def refresh_token(
     access_token = create_access_token(data={"sub": user.id, "username": user.username})
     jti = uuid4().hex
     refresh_token = create_refresh_token(data={"sub": user.id}, jti=jti)
+    _prune_expired_refresh_tokens(db)
     db.add(RefreshToken(
         jti=jti,
         user_id=user.id,
@@ -284,6 +290,18 @@ async def refresh_token(
         access_token=access_token,
         refresh_token=refresh_token
     )
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(token_data: TokenRefresh, db: Session = Depends(get_db_session)):
+    """Revoke the presented refresh token; always idempotent."""
+    payload = decode_access_token(token_data.refresh_token)
+    if payload and payload.get("token_type") == "refresh":
+        jti = payload.get("jti")
+        if jti:
+            db.query(RefreshToken).filter(RefreshToken.jti == jti).delete()
+            db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/me", response_model=UserResponse)

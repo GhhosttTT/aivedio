@@ -107,6 +107,23 @@ export const authApi = {
     },
 
     /**
+     * 撤销当前刷新令牌
+     */
+    logout: async (): Promise<void> => {
+        const refreshToken = useAuthStore.getState().refreshTokenValue || localStorage.getItem('refresh_token');
+        if (!refreshToken) return;
+        try {
+            await axios.post(
+                `${apiBase}/auth/logout`,
+                { refresh_token: refreshToken },
+                { headers: { 'Content-Type': 'application/json' } },
+            );
+        } catch {
+            // The local session is cleared regardless; the server token expires naturally.
+        }
+    },
+
+    /**
      * 刷新 Token
      */
     refreshToken: async (): Promise<{ access_token: string; refresh_token: string }> => {
