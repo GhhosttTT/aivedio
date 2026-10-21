@@ -144,7 +144,9 @@ python3 scripts/validate_seedance_gateway.py --dry-run --api-format ark_v3 \
 
 ```
 aivedio/
-├── start_services.py          # 服务启动脚本（唯一入口）
+├── start_services.py          # 主启动脚本（本机各服务）
+├── start_services_with_logs.py # 当前终端实时日志启动
+├── start_all_services.py      # 备用启动脚本
 ├── main.py                    # FastAPI 应用入口
 ├── src/                       # 后端源代码
 │   ├── api/                   # API 路由
@@ -152,10 +154,29 @@ aivedio/
 │   ├── tasks/                 # Celery 任务
 │   └── database/              # 数据库模型
 ├── frontend/                  # 前端代码
-├── ComfyUI/                   # ComfyUI 图像生成
-├── configs/                   # 配置文件
+├── configs/                   # ComfyUI 工作流与质量配置
+├── scripts/                   # 运维、校验与辅助脚本
+├── tests/                     # 单元/契约/真实媒体测试
 ├── docs/                      # 文档
-└── storage/                   # 数据存储
+├── storage/                   # 生成的媒体与报告
+└── data/                      # Docker 部署时共享的 SQLite 数据
+```
+
+> ComfyUI 需要单独安装（默认监听 8188），不属于本仓库内容。
+
+## 🧪 测试
+
+```bash
+# 全量测试（需要按 requirements.txt 安装依赖）
+pytest -q
+
+# 只需轻量契约环境
+pip install -r requirements-contract-tests.txt
+pytest -q tests/test_config_reference.py tests/test_celery_queue_contract.py
+
+# 真实 ffmpeg 媒体测试（需要系统 ffmpeg）
+pip install -r requirements-media-tests.txt
+pytest -q tests/test_services/test_video_quality_metrics.py
 ```
 
 ## 🎯 核心功能
