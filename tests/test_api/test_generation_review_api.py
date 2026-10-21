@@ -1,5 +1,4 @@
 import json
-import asyncio
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -30,7 +29,7 @@ def test_review_requires_owned_project():
     db = Mock()
     db.query.return_value.filter.return_value.first.return_value = None
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+        get_generation_review(1, SimpleNamespace(id=2), db)
     assert exc.value.status_code == 404
     conditions = db.query.return_value.filter.call_args.args
     assert len(conditions) == 2
@@ -43,7 +42,7 @@ def test_review_api_returns_score_evidence(tmp_path, monkeypatch):
     write_report(root / "story.json", {"status": "needs_review", "average": 2.5, "reason": "prop continuity"})
     db = Mock()
     db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(id=1)
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
     assert result["reports"]["story"]["status"] == "needs_review"
     assert result["reports"]["story"]["average"] == 2.5
     assert result["summary"]["status"] == "blocked"
@@ -61,14 +60,14 @@ def test_review_api_audit_fingerprint_changes_when_quality_gate_changes(tmp_path
         "src.api.routes.projects.settings.GENERATION_RHYTHM_MAX_HOOK_LATENCY_SECONDS",
         8.0,
     )
-    first = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    first = get_generation_review(1, SimpleNamespace(id=2), db)
     first_hash = first["reports"]["story_room_quality"]["input_hash"]
 
     monkeypatch.setattr(
         "src.api.routes.projects.settings.GENERATION_RHYTHM_MAX_HOOK_LATENCY_SECONDS",
         6.0,
     )
-    second = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    second = get_generation_review(1, SimpleNamespace(id=2), db)
     second_hash = second["reports"]["story_room_quality"]["input_hash"]
 
     assert first_hash != second_hash
@@ -89,7 +88,7 @@ def test_review_api_includes_final_composition_report(tmp_path, monkeypatch):
         id=1, final_video_path=str(final_video), scenes=[],
     )
 
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
 
     assert result["reports"]["final_composition"]["average"] == 3.1
     assert result["summary"]["status"] == "blocked"
@@ -107,7 +106,7 @@ def test_review_api_blocks_final_video_without_composition_evidence(tmp_path, mo
         id=1, final_video_path=str(final_video), scenes=[],
     )
 
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
 
     assert result["reports"]["final_composition"]["status"] == "needs_review"
     assert result["summary"]["status"] == "blocked"
@@ -184,7 +183,7 @@ def test_review_api_persists_version_bound_project_audits(tmp_path, monkeypatch)
         id=1, user_id=2, script="{}", scenes=scenes, final_video_path=None,
     )
 
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
 
     assert result["reports"]["continuity_audit"]["evidence_schema_version"] == 1
     assert result["reports"]["rhythm_audit"]["input_hash"]
@@ -224,7 +223,7 @@ def test_review_api_marks_final_composition_stale_after_video_changes(tmp_path, 
         id=1, final_video_path=str(final_video), scenes=[],
     )
 
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
 
     assert result["reports"]["final_composition"]["status"] == "stale"
     assert any("final composition quality gate" in item for item in result["summary"]["action_items"])
@@ -252,7 +251,7 @@ def test_review_api_marks_final_composition_stale_when_content_hash_changes(tmp_
         id=1, final_video_path=str(final_video), scenes=[],
     )
 
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
 
     assert result["reports"]["final_composition"]["status"] == "stale"
 
@@ -282,7 +281,7 @@ def test_review_api_revalidates_manually_approved_final_composition(tmp_path, mo
         id=1, final_video_path=str(final_video), scenes=[],
     )
 
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
 
     assert result["reports"]["final_composition"]["status"] == "stale"
 
@@ -313,7 +312,7 @@ def test_review_api_marks_old_final_composition_stale_without_temporal_evidence(
         id=1, final_video_path=str(final_video), scenes=[],
     )
 
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
 
     assert result["reports"]["final_composition"]["status"] == "stale"
 
@@ -328,15 +327,15 @@ def test_human_review_endpoint_records_decision_for_owned_report(tmp_path, monke
         id=1, user_id=2, final_video_path=None, scenes=[],
     )
 
-    result = asyncio.run(record_human_review(
+    result = record_human_review(
         1,
         SimpleNamespace(report_key="generation", decision="approved", note="人工通过"),
         SimpleNamespace(id=2),
         db,
-    ))
+    )
 
     assert result["decision"]["decision"] == "approved"
-    review = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    review = get_generation_review(1, SimpleNamespace(id=2), db)
     assert review["human_decisions"]["generation"]["note"] == "人工通过"
 
 
@@ -375,7 +374,7 @@ def test_delivery_package_endpoint_exports_approved_project(tmp_path, monkeypatc
         id=1, user_id=2, name="Pilot", theme="悬疑", outline="outline", script="{}",
         final_video_path=str(final_video), scenes=[],
     )
-    async def approved_review(*_args, **_kwargs):
+    def approved_review(*_args, **_kwargs):
         return {
                 "reports": {
                     "production_story": {"status": "passed"},
@@ -402,9 +401,9 @@ def test_delivery_package_endpoint_exports_approved_project(tmp_path, monkeypatc
             },
         }
 
-    monkeypatch.setattr("src.api.routes.projects.get_generation_review", approved_review)
+    monkeypatch.setattr("src.api.routes.projects._build_generation_review", approved_review)
 
-    result = asyncio.run(create_delivery_package(1, SimpleNamespace(id=2), db))
+    result = create_delivery_package(1, SimpleNamespace(id=2), db)
 
     assert result["status"] == "ready"
     assert (project_root / "delivery" / "delivery_package.zip").is_file()
@@ -419,7 +418,7 @@ def test_delivery_package_endpoint_requires_production_readiness_snapshot(tmp_pa
     )
 
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(create_delivery_package(1, SimpleNamespace(id=2), db))
+        create_delivery_package(1, SimpleNamespace(id=2), db)
 
     assert exc.value.status_code == 409
     assert "readiness snapshot" in exc.value.detail
@@ -435,10 +434,10 @@ def test_production_readiness_exposes_delivery_evidence_status(tmp_path, monkeyp
     db = Mock()
     db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(id=1, user_id=2)
 
-    missing = asyncio.run(get_production_readiness(
+    missing = get_production_readiness(
         1, False, None, None, None, None, None, None,
         current_user=SimpleNamespace(id=2), db_session=db,
-    ))
+    )
     assert missing["delivery_evidence"]["status"] == "missing"
 
     snapshot = storage_manager.get_project_path(1) / "reviews" / "production_readiness_latest.json"
@@ -449,10 +448,10 @@ def test_production_readiness_exposes_delivery_evidence_status(tmp_path, monkeyp
         "task_record_id": 4,
         "readiness": {"status": "ready", "video_engine": {"status": "ready_for_production_video_test"}},
     }), encoding="utf-8")
-    ready = asyncio.run(get_production_readiness(
+    ready = get_production_readiness(
         1, False, None, None, None, None, None, None,
         current_user=SimpleNamespace(id=2), db_session=db,
-    ))
+    )
     assert ready["delivery_evidence"]["status"] == "ready"
     assert ready["delivery_evidence"]["task_record_id"] == 4
 
@@ -476,7 +475,7 @@ def test_review_api_marks_old_seedance_baseline_stale_after_candidate_changes(tm
         id=1, final_video_path=str(candidate), scenes=[],
     )
 
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
 
     assert result["reports"]["seed_dance_baseline_comparison"]["status"] == "stale"
     assert any("Seed Dance baseline comparison" in item for item in result["summary"]["action_items"])
@@ -497,7 +496,7 @@ def test_review_api_rejects_mismatched_accepted_video_evidence(tmp_path, monkeyp
         id=1, final_video_path=None, scenes=[],
     )
 
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
 
     report = result["reports"]["quality_scene_1"]
     assert report["status"] == "needs_review"
@@ -517,7 +516,7 @@ def test_review_api_contains_corrupt_report_as_unavailable(tmp_path, monkeypatch
         id=1, final_video_path=None, scenes=[],
     )
 
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
 
     report = result["reports"]["generation"]
     assert report["status"] == "review_unavailable"
@@ -546,7 +545,7 @@ def test_review_api_marks_baseline_stale_when_project_has_no_current_candidate(t
         id=1, final_video_path=None, scenes=[],
     )
 
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
 
     assert result["reports"]["seed_dance_baseline_comparison"]["status"] == "stale"
 
@@ -575,7 +574,7 @@ def test_review_api_rejects_incomplete_passed_baseline_evidence(tmp_path, monkey
         id=1, final_video_path=str(candidate), scenes=[],
     )
 
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
 
     assert result["reports"]["seed_dance_baseline_comparison"]["status"] == "stale"
 
@@ -601,7 +600,7 @@ def test_review_api_summarizes_repair_queue_from_quality_reports(tmp_path, monke
     db = Mock()
     db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(id=1)
 
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
 
     assert result["summary"]["repair_queue"]["total"] == 1
     assert result["summary"]["repair_queue"]["actions"] == {"refine_prompt_composition": 1}
@@ -869,7 +868,7 @@ def test_generation_review_api_loads_sequence_manifest(tmp_path, monkeypatch):
         id=1, scenes=[], final_video_path=None,
     )
 
-    result = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    result = get_generation_review(1, SimpleNamespace(id=2), db)
 
     assert result["reports"]["sequence_source_videos_sequence_42"]["status"] == "completed"
     assert result["summary"]["sequence_source"] == {"status": "passed", "reports": 1}
@@ -897,12 +896,12 @@ def test_seed_dance_baseline_endpoint_writes_project_review(tmp_path, monkeypatc
         final_video_path=str(candidate),
     )
 
-    result = asyncio.run(compare_seed_dance_baseline(
+    result = compare_seed_dance_baseline(
         1,
         SeedDanceBaselineRequest(baseline_path=str(baseline)),
         SimpleNamespace(id=2),
         db,
-    ))
+    )
 
     assert result["status"] == "passed"
     assert result["candidate_video_path"] == str(candidate)
@@ -939,7 +938,7 @@ def test_seed_dance_baseline_upload_writes_project_review(tmp_path, monkeypatch)
     )
     upload = UploadFile(filename="baseline.mp4", file=BytesIO(b"baseline-video"))
 
-    result = asyncio.run(upload_seed_dance_baseline(1, upload, SimpleNamespace(id=2), db))
+    result = upload_seed_dance_baseline(1, upload, SimpleNamespace(id=2), db)
 
     assert result["status"] == "passed"
     saved_baseline = storage_manager.get_project_path(1) / "reviews" / "baselines" / "seed_dance_baseline.mp4"
@@ -970,7 +969,7 @@ def test_seed_dance_baseline_upload_rejects_non_video(tmp_path, monkeypatch):
     upload = UploadFile(filename="baseline.txt", file=BytesIO(b"not-video"))
 
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(upload_seed_dance_baseline(1, upload, SimpleNamespace(id=2), db))
+        upload_seed_dance_baseline(1, upload, SimpleNamespace(id=2), db)
 
     assert exc.value.status_code == 400
 
@@ -1021,8 +1020,8 @@ def test_review_reuses_audits_while_inputs_are_unchanged(tmp_path, monkeypatch):
         FakeContinuityService,
     )
 
-    first = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
-    second = asyncio.run(get_generation_review(1, SimpleNamespace(id=2), db))
+    first = get_generation_review(1, SimpleNamespace(id=2), db)
+    second = get_generation_review(1, SimpleNamespace(id=2), db)
 
     assert len(calls) == 1
     assert len(continuity_calls) == 1

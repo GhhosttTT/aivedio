@@ -5,7 +5,6 @@
 """
 
 from fastapi import APIRouter, HTTPException, status, Query, Depends, UploadFile, File
-from starlette.concurrency import run_in_threadpool
 from typing import Optional
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -421,7 +420,7 @@ def _production_error_status(message: str) -> int:
 
 
 @router.post("/{project_id}/seed-dance-baseline")
-async def compare_seed_dance_baseline(
+def compare_seed_dance_baseline(
     project_id: int,
     request: SeedDanceBaselineRequest,
     current_user=Depends(get_current_user),
@@ -459,11 +458,11 @@ async def compare_seed_dance_baseline(
 
     # Video probing and frame comparisons are CPU/IO heavy; running them in the
     # event loop would stall progress polling and websocket updates.
-    return await run_in_threadpool(run_comparison)
+    return run_comparison()
 
 
 @router.post("/{project_id}/seed-dance-baseline/upload")
-async def upload_seed_dance_baseline(
+def upload_seed_dance_baseline(
     project_id: int,
     file: UploadFile = File(...),
     current_user=Depends(get_current_user),
@@ -510,7 +509,7 @@ async def upload_seed_dance_baseline(
         write_report(review_root / "seed_dance_baseline_comparison.json", report)
         return report
 
-    return await run_in_threadpool(store_and_compare)
+    return store_and_compare()
 
 
 
@@ -521,14 +520,12 @@ def get_video_engine_preflight(current_user=Depends(get_current_user)):
 
 
 @router.get("/{project_id}/generation-review")
-async def get_generation_review(
+def get_generation_review(
     project_id: int,
     current_user=Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
 ):
-    return await run_in_threadpool(
-        _build_generation_review, project_id, current_user, db_session
-    )
+    return _build_generation_review(project_id, current_user, db_session)
 
 
 def _build_generation_review(
@@ -882,7 +879,7 @@ def _build_generation_review(
 
 
 @router.post("/{project_id}/human-review")
-async def record_human_review(
+def record_human_review(
     project_id: int,
     request: HumanReviewDecisionRequest,
     current_user=Depends(get_current_user),
@@ -891,7 +888,7 @@ async def record_human_review(
     project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    review = await get_generation_review(project_id, current_user, db_session)
+    review = _build_generation_review(project_id, current_user, db_session)
     report = review["reports"].get(request.report_key)
     if not isinstance(report, dict):
         raise HTTPException(status_code=404, detail="审核报告不存在")
@@ -909,7 +906,7 @@ async def record_human_review(
 
 
 @router.post("/{project_id}/delivery-package")
-async def create_delivery_package(
+def create_delivery_package(
     project_id: int,
     current_user=Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
@@ -926,11 +923,10 @@ async def create_delivery_package(
             status_code=409,
             detail="Production readiness snapshot is missing; run a production task through the readiness gate before delivery",
         )
-    review = await get_generation_review(project_id, current_user, db_session)
+    review = _build_generation_review(project_id, current_user, db_session)
     try:
         # Packaging copies and hashes the whole delivery set.
-        return await run_in_threadpool(
-            build_delivery_package,
+        return build_delivery_package(
             project,
             storage_manager.get_project_path(project_id),
             review["reports"],
@@ -968,7 +964,7 @@ def list_platform_export_presets(project_id: int, current_user=Depends(get_curre
 
 
 @router.post("/{project_id}/platform-export/{preset}")
-async def create_platform_export(
+def create_platform_export(
     project_id: int,
     preset: str,
     current_user=Depends(get_current_user),
@@ -979,14 +975,13 @@ async def create_platform_export(
     project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    review = await get_generation_review(project_id, current_user, db_session)
+    review = _build_generation_review(project_id, current_user, db_session)
     if review["summary"].get("status") != "ready":
         raise HTTPException(status_code=409, detail="质量审核尚未 ready，不能导出平台版本")
     try:
         # Platform exports re-encode or remux a full episode; keep the event
         # loop free for progress polling while ffmpeg runs.
-        return await run_in_threadpool(
-            export_platform_video,
+        return export_platform_video(
             project.final_video_path,
             storage_manager.get_project_path(project_id),
             preset,
@@ -1049,7 +1044,7 @@ def update_market_signals(
 
 
 @router.get("/{project_id}/production-readiness")
-async def get_production_readiness(
+def get_production_readiness(
     project_id: int,
     include_engine_preflight: bool = Query(True, description="是否执行视频引擎预检"),
     provider_override: Optional[str] = Query(None, description="本次生产使用的视频 provider 覆盖"),
@@ -1096,7 +1091,7 @@ async def get_production_readiness(
     # Readiness reads workflow files, hashes media, and may probe the local
     # reviewer or ComfyUI. Keep that blocking work off the event loop so status
     # and websocket traffic stay responsive while the checklist runs.
-    return await run_in_threadpool(build_report)
+    return build_report()
 
 
 @router.post("/{project_id}/approve-story-room", response_model=StoryRoomApprovalResponse)
@@ -2375,7 +2370,7 @@ def repair_scene_generation(
 
 
 @router.post("/{project_id}/repair-queue/auto", response_model=RepairQueueAutoRunResponse)
-async def run_auto_repair_queue(
+def run_auto_repair_queue(
     project_id: int,
     request: RepairQueueAutoRunRequest,
     current_user=Depends(get_current_user),
@@ -2386,7 +2381,7 @@ async def run_auto_repair_queue(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"指定返修动作不可自动执行: {request.action}",
         )
-    review = await get_generation_review(project_id, current_user, db_session)
+    review = _build_generation_review(project_id, current_user, db_session)
     budget = RepairBudget(project_id)
     if review.get("summary", {}).get("status") in {"ready", "ready_for_seed_dance_candidate"}:
         budget.reset()
@@ -2479,7 +2474,7 @@ async def run_auto_repair_queue(
 
 
 @router.get("/{project_id}/quality-loop/plan")
-async def get_quality_loop_plan(
+def get_quality_loop_plan(
     project_id: int,
     max_actions: int = Query(5, ge=1, le=20, description="本轮最多规划的自动返工任务数"),
     action: str | None = Query(None, min_length=1, max_length=100, description="只预览指定的自动返工动作"),
@@ -2491,7 +2486,7 @@ async def get_quality_loop_plan(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"指定返修动作不可自动执行: {action}",
         )
-    review = await get_generation_review(project_id, current_user, db_session)
+    review = _build_generation_review(project_id, current_user, db_session)
     summary = review.get("summary", {})
     return {
         "project_id": project_id,
