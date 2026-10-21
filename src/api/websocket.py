@@ -32,6 +32,8 @@ class ConnectionManager:
         self.heartbeat_interval = 30
         # 心跳超时（秒）
         self.heartbeat_timeout = 60
+        # 单条消息发送上限（秒），避免慢客户端阻塞整个广播
+        self.send_timeout = 5.0
     
     async def connect(self, websocket: WebSocket, project_id: int):
         """
@@ -99,7 +101,10 @@ class ConnectionManager:
             message: 消息内容（字典）
         """
         try:
-            await websocket.send_json(message)
+            await asyncio.wait_for(
+                websocket.send_json(message),
+                timeout=self.send_timeout,
+            )
             return True
         except Exception as e:
             logger.error(f"发送个人消息失败: {e}")
@@ -117,20 +122,15 @@ class ConnectionManager:
             logger.debug(f"项目 {project_id} 没有活跃连接，跳过广播")
             return
         
-        # 记录断开的连接
-        disconnected = []
-        
-        # 广播给所有连接
-        for websocket in self.active_connections[project_id]:
-            try:
-                await websocket.send_json(message)
-            except Exception as e:
-                logger.error(f"广播消息失败: {e}")
-                disconnected.append(websocket)
-        
-        # 清理断开的连接
-        for websocket in disconnected:
-            self.disconnect(websocket, project_id)
+        # 并发发送，避免一个慢连接阻塞同一项目的其他客户端。
+        targets = list(self.active_connections[project_id])
+        results = await asyncio.gather(
+            *(self.send_personal_message(websocket, message) for websocket in targets),
+            return_exceptions=False,
+        )
+        for websocket, delivered in zip(targets, results):
+            if not delivered:
+                self.disconnect(websocket, project_id)
         
         logger.debug(f"广播消息到项目 {project_id}: {len(self.active_connections.get(project_id, []))} 个连接")
     

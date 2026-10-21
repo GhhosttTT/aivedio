@@ -407,3 +407,25 @@ async def test_websocket_accepts_active_project_owner(monkeypatch):
 
     connect.assert_awaited_once_with(websocket, 1)
     websocket.close.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_broadcast_does_not_block_on_slow_connection(connection_manager):
+    project_id = 1
+    fast = AsyncMock()
+    slow = AsyncMock()
+
+    async def slow_send(message):
+        await asyncio.sleep(2)
+
+    slow.send_json = slow_send
+    connection_manager.active_connections[project_id] = {fast, slow}
+    connection_manager.send_timeout = 0.01
+
+    started = asyncio.get_running_loop().time()
+    await connection_manager.broadcast(project_id, {"type": "progress"})
+    elapsed = asyncio.get_running_loop().time() - started
+
+    fast.send_json.assert_called_once_with({"type": "progress"})
+    assert slow not in connection_manager.active_connections.get(project_id, set())
+    assert elapsed < 0.5
