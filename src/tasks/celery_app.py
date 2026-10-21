@@ -180,9 +180,10 @@ class BaseTask(celery_app.Task):
     def on_failure(self, exc, task_id, args, kwargs, einfo):
         from src.database.session import get_db_session
         from src.database.models import TaskStatus, ProjectStatus
-        db = next(get_db_session())
+        db = None
         event = None
         try:
+            db = next(get_db_session())
             record = self._production_record(args, kwargs, db)
             if record and record.status == TaskStatus.CANCELLED:
                 if record.project.status == ProjectStatus.IN_PRODUCTION:
@@ -209,8 +210,12 @@ class BaseTask(celery_app.Task):
                     "current_step": self.name,
                     "error": str(exc),
                 }
+        except Exception:
+            # Callback failures must not mask the task's original exception.
+            logger.exception("Failed to persist failure state for task %s", task_id)
         finally:
-            db.close()
+            if db is not None:
+                db.close()
         if event:
             _broadcast_task_event(event["project_id"], event)
         print(f"Task failed: {task_id}")
@@ -225,9 +230,10 @@ class BaseTask(celery_app.Task):
     def on_success(self, retval, task_id, args, kwargs):
         from src.database.session import get_db_session
         from src.database.models import TaskStatus, ProjectStatus
-        db = next(get_db_session())
+        db = None
         event = None
         try:
+            db = next(get_db_session())
             record = self._production_record(args, kwargs, db)
             if record and record.status == TaskStatus.CANCELLED:
                 record.project.status = ProjectStatus.SCRIPT_GENERATED
@@ -265,12 +271,14 @@ class BaseTask(celery_app.Task):
                     "current_step": record.current_step,
                     "progress": float(record.progress or 0.0) / 100.0,
                 }
+        except Exception:
+            logger.exception("Failed to persist success state for task %s", task_id)
         finally:
-            db.close()
+            if db is not None:
+                db.close()
         if event:
             _broadcast_task_event(event["project_id"], event)
         print(f"Task succeeded: {task_id}")
-
 
 celery_app.Task = BaseTask
 

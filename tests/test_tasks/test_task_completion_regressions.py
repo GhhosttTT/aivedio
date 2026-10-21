@@ -154,3 +154,14 @@ def test_project_event_publisher_reuses_redis_connection(monkeypatch):
     assert publish_project_event(7, {"type": "a"}) is True
     assert publish_project_event(7, {"type": "b"}) is True
     assert len(created) == 1
+
+
+def test_task_callbacks_swallow_database_failures(monkeypatch):
+    def broken_session():
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr("src.database.session.get_db_session", broken_session)
+    task = BaseTask()
+
+    task.on_failure(RuntimeError("original"), "task-1", (), {}, None)
+    task.on_success({}, "task-1", (), {})
