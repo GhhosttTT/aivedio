@@ -17,7 +17,6 @@ SECRET_MARKERS = ("SECRET", "PASSWORD", "TOKEN", "API_KEY", "ENCRYPTION_KEY")
 # Declared for planned features or external tooling but not read by this codebase.
 RESERVED_PREFIXES = ()
 RESERVED_SETTINGS = {
-    "FACE_DETAILER_ENABLED",
     "FACE_DETAILER_FACEID_END_AT",
     "FACE_DETAILER_FACEID_WEIGHT",
     "FACE_DETAILER_TARGET",

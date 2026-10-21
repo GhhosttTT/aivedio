@@ -166,7 +166,7 @@
 | --- | --- | --- |
 | `FACE_DETAILER_CFG` | `float` | `5.0` |
 | `FACE_DETAILER_DENOISE` | `float` | `0.24` |
-| `FACE_DETAILER_ENABLED` | `bool` | `False`（预留，当前代码未读取） |
+| `FACE_DETAILER_ENABLED` | `bool` | `False` |
 | `FACE_DETAILER_FACEID_END_AT` | `float` | `0.65`（预留，当前代码未读取） |
 | `FACE_DETAILER_FACEID_WEIGHT` | `float` | `0.35`（预留，当前代码未读取） |
 | `FACE_DETAILER_GUIDE_SIZE` | `int` | `768` |

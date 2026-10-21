@@ -496,6 +496,13 @@ class ComfyUIService:
             save_image_id = graph.output_node(node_name_to_id.get(configured_output))
             ksampler_id = graph.base_sampler(save_image_id)
             active = graph.ancestors(save_image_id)
+            if getattr(settings, "FACE_DETAILER_ENABLED", False) and not any(
+                workflow[node_id]["class_type"] == "FaceDetailer" for node_id in active
+            ):
+                raise ComfyUIError(
+                    "FACE_DETAILER_ENABLED=true, but the selected workflow has no FaceDetailer node; "
+                    "select a face-detailer workflow or disable the option"
+                )
             positive_nodes: set[str] = set()
             negative_nodes: set[str] = set()
             for node_id in active:

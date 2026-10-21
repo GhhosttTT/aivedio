@@ -161,3 +161,16 @@ def test_face_detailer_settings_override_workflow_defaults(service, monkeypatch)
     assert detailer["inputs"]["cfg"] == 4.5
     assert detailer["inputs"]["denoise"] == 0.31
     assert detailer["inputs"]["guide_size"] == 896
+
+
+def test_face_detailer_enabled_requires_supporting_workflow(service, monkeypatch):
+    monkeypatch.setattr(settings, "FACE_DETAILER_ENABLED", True)
+
+    with pytest.raises(ComfyUIError, match="FaceDetailer"):
+        service._build_workflow("subject", "blurry", 1024, 576, 28, 6, 42)
+
+    service.workflow_manager.load_workflow(
+        workflow_path="configs/comfyui_workflow_juggernaut_facedetailer.json"
+    )
+    graph = service._build_workflow("subject", "blurry", 1024, 576, 28, 6, 42)
+    assert any(node["class_type"] == "FaceDetailer" for node in graph.values())
