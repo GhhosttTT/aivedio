@@ -229,9 +229,8 @@ def register_routes(app: FastAPI):
             "version": "1.0.0"
         }
 
-    @app.get("/ready", tags=["健康检查"])
-    async def readiness_check():
-        """Report whether core dependencies can accept production work."""
+    def collect_readiness_checks() -> dict[str, str]:
+        """Run blocking DB/Redis probes outside the event loop."""
         checks: dict[str, str] = {}
         try:
             with engine.connect() as connection:
@@ -259,7 +258,14 @@ def register_routes(app: FastAPI):
                 checks["redis"] = "unavailable"
         else:
             checks["redis"] = "not_required"
+        return checks
 
+    @app.get("/ready", tags=["健康检查"])
+    async def readiness_check():
+        """Report whether core dependencies can accept production work."""
+        from starlette.concurrency import run_in_threadpool
+
+        checks = await run_in_threadpool(collect_readiness_checks)
         ready = all(value in {"ok", "not_required"} for value in checks.values())
         response = {
             "status": "ready" if ready else "not_ready",
