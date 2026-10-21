@@ -100,3 +100,30 @@ def test_platform_export_rejects_stale_approval(tmp_path, require_ffmpeg):
         )
 
     assert not (tmp_path / "project" / "exports" / "square.mp4").exists()
+
+
+def test_platform_export_is_idempotent_for_unchanged_source(tmp_path, require_ffmpeg):
+    source = _make_source(tmp_path / "final.mp4")
+    root = tmp_path / "project"
+    first = export_platform_video(source, root, "square", approval_report=_approval(source))
+    export_path = Path(first["output_path"])
+    mtime = export_path.stat().st_mtime_ns
+
+    second = export_platform_video(source, root, "square", approval_report=_approval(source))
+
+    assert second["created_at"] == first["created_at"]
+    assert second["output_sha256"] == first["output_sha256"]
+    assert export_path.stat().st_mtime_ns == mtime
+
+
+def test_platform_export_invalidates_when_source_changes(tmp_path, require_ffmpeg):
+    source = _make_source(tmp_path / "final.mp4", seconds=1.0)
+    root = tmp_path / "project"
+    first = export_platform_video(source, root, "square", approval_report=_approval(source))
+
+    _make_source(source, seconds=1.5)
+    second = export_platform_video(source, root, "square", approval_report=_approval(source))
+
+    assert second["created_at"] != first["created_at"]
+    assert second["source_sha256"] != first["source_sha256"]
+    assert second["output_sha256"] != first["output_sha256"]
