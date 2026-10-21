@@ -132,3 +132,25 @@ def test_cancelled_task_failure_releases_project_and_broadcasts_terminal_state(t
     assert events[0][1]["status"] == "cancelled"
     db.close()
     engine.dispose()
+
+
+def test_project_event_publisher_reuses_redis_connection(monkeypatch):
+    created = []
+
+    class FakeRedis:
+        def publish(self, channel, payload):
+            return 1
+
+        def close(self):
+            pass
+
+    def from_url(*args, **kwargs):
+        client = FakeRedis()
+        created.append(client)
+        return client
+
+    monkeypatch.setitem(sys.modules, "redis", SimpleNamespace(from_url=from_url))
+
+    assert publish_project_event(7, {"type": "a"}) is True
+    assert publish_project_event(7, {"type": "b"}) is True
+    assert len(created) == 1

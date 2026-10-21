@@ -6,6 +6,7 @@ WebSocket 实时通信
 
 import asyncio
 import json
+import os
 from typing import Dict, Set
 from datetime import datetime
 
@@ -190,6 +191,58 @@ manager = ConnectionManager()
 TASK_EVENT_CHANNEL = "aivideo:project-events"
 
 
+_event_redis_client = None
+_event_redis_module = None
+_event_redis_url = None
+_event_redis_pid = None
+
+
+def _get_event_redis_client(redis_module, url: str):
+    """Reuse one publish connection per process instead of connecting per event."""
+    global _event_redis_client, _event_redis_module, _event_redis_url, _event_redis_pid
+    pid = os.getpid()
+    if (
+        _event_redis_client is None
+        or _event_redis_module is not redis_module
+        or _event_redis_url != url
+        or _event_redis_pid != pid
+    ):
+        previous = _event_redis_client
+        if previous is not None:
+            close = getattr(previous, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+        _event_redis_client = redis_module.from_url(
+            url,
+            decode_responses=True,
+            socket_connect_timeout=1,
+            socket_timeout=1,
+        )
+        _event_redis_module = redis_module
+        _event_redis_url = url
+        _event_redis_pid = pid
+    return _event_redis_client
+
+
+def _reset_event_redis_client() -> None:
+    global _event_redis_client, _event_redis_module, _event_redis_url, _event_redis_pid
+    client = _event_redis_client
+    if client is not None:
+        close = getattr(client, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+    _event_redis_client = None
+    _event_redis_module = None
+    _event_redis_url = None
+    _event_redis_pid = None
+
+
 def publish_project_event(project_id: int, message: dict) -> bool:
     """Publish a task event through Redis so worker and API processes can share it."""
     payload = json.dumps({"project_id": project_id, "message": message}, ensure_ascii=False)
@@ -197,20 +250,14 @@ def publish_project_event(project_id: int, message: dict) -> bool:
         import redis
         from src.config import settings
 
-        client = redis.from_url(
+        client = _get_event_redis_client(
+            redis,
             getattr(settings, "REDIS_URL", "redis://localhost:6379/0"),
-            decode_responses=True,
-            socket_connect_timeout=1,
-            socket_timeout=1,
         )
-        try:
-            client.publish(TASK_EVENT_CHANNEL, payload)
-        finally:
-            close = getattr(client, "close", None)
-            if callable(close):
-                close()
+        client.publish(TASK_EVENT_CHANNEL, payload)
         return True
     except Exception as exc:
+        _reset_event_redis_client()
         # Preserve local development behavior when Redis is intentionally absent.
         logger.debug(f"Redis 任务事件发布失败，回退到本地连接: {exc}")
         try:
