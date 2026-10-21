@@ -182,7 +182,7 @@
 | --- | --- | --- |
 | `FACEID_END_AT` | `float` | `1.0`（预留，当前代码未读取） |
 | `FACEID_START_AT` | `float` | `0.0`（预留，当前代码未读取） |
-| `FACEID_WEIGHT` | `float` | `0.85`（预留，当前代码未读取） |
+| `FACEID_WEIGHT` | `float` | `0.85` |
 
 ## GENERATION_ALLOW
 

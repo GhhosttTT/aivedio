@@ -15,8 +15,10 @@ from src.config import Settings
 
 SECRET_MARKERS = ("SECRET", "PASSWORD", "TOKEN", "API_KEY", "ENCRYPTION_KEY")
 # Declared for planned features or external tooling but not read by this codebase.
-RESERVED_PREFIXES = ("FACEID_", "FACE_DETAILER_")
+RESERVED_PREFIXES = ("FACE_DETAILER_",)
 RESERVED_SETTINGS = {
+    "FACEID_START_AT",
+    "FACEID_END_AT",
     "GPU_MEMORY_FRACTION",
     "SUBTITLE_REMOVAL_BACKEND",
     "MODERATION_BACKEND",

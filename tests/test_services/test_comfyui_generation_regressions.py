@@ -126,3 +126,20 @@ def test_completed_error_is_still_error(service):
     })))
     with pytest.raises(ComfyUIError, match="OOM"):
         service._wait_for_completion("123", poll_interval=0)
+
+
+def test_faceid_weight_setting_fills_missing_workflow_default(service, tmp_path, monkeypatch):
+    reference = tmp_path / "ref.png"
+    reference.write_bytes(b"a reference")
+    service.workflow_manager.load_workflow(workflow_path="configs/comfyui_workflow_ipadapter_sdxl.json")
+    config = service.workflow_manager.get_current_workflow()
+    config.parameters.default.pop("ipadapter_weight", None)
+    monkeypatch.setattr(settings, "FACEID_WEIGHT", 0.42)
+    monkeypatch.setattr(service, "_upload_reference_image", lambda path: "ref.png")
+
+    graph = service._build_workflow(
+        "subject", "blurry", 1344, 768, 28, 6, 42, str(reference), True
+    )
+
+    adapter = next(node for node in graph.values() if node["class_type"] == "IPAdapterFaceID")
+    assert adapter["inputs"]["weight"] == 0.42

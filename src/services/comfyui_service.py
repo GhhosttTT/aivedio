@@ -532,6 +532,8 @@ class ComfyUIService:
                 graph.require_identity_stages(sampling_stages, {adapter_id})
                 workflow[loader_id]["inputs"]["image"] = self._upload_reference_image(reference_image)
                 weight = workflow_config.parameters.default.get("ipadapter_weight")
+                if weight is None:
+                    weight = getattr(settings, "FACEID_WEIGHT", None)
                 if weight is not None:
                     workflow[adapter_id]["inputs"]["weight"] = weight
             workflow[save_image_id]["inputs"]["filename_prefix"] = f"short_drama_{uuid.uuid4().hex[:8]}"
