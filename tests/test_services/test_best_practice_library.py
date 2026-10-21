@@ -446,3 +446,17 @@ class TestBestPracticeLibrary:
         assert stats["average_score"] == 0.0
         assert stats["by_source"] == {}
         assert stats["by_scene"] == {}
+
+
+def test_shipped_best_practice_configs_all_load(library):
+    config_dir = Path(__file__).resolve().parents[2] / "configs" / "best_practices"
+    expected = len(list(config_dir.glob("*.json")))
+
+    loaded = library.load_from_directory(config_dir)
+
+    assert loaded == expected == 10
+    practices = library.get_all_practices()
+    assert len(practices) == expected
+    for practice in practices:
+        assert practice.id and practice.name
+        assert 0.0 <= practice.overall_score <= 100.0
