@@ -3,8 +3,9 @@
 创建默认管理员账户
 """
 
-import sys
 import os
+import secrets
+import sys
 
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -15,39 +16,44 @@ from src.api.auth import hash_password
 
 
 def create_default_admin():
-    """创建默认管理员账户"""
+    """创建初始管理员账户；密码优先取环境变量，否则生成随机密码。"""
     print("=" * 50)
-    print("创建默认管理员账户")
+    print("创建初始管理员账户")
     print("=" * 50)
-    
+
+    username = (os.getenv("DEFAULT_ADMIN_USERNAME") or "admin").strip() or "admin"
+    email = (os.getenv("DEFAULT_ADMIN_EMAIL") or "admin@example.com").strip() or "admin@example.com"
+    supplied_password = os.getenv("DEFAULT_ADMIN_PASSWORD") or ""
+    password = supplied_password or secrets.token_urlsafe(12)
+
     db = next(get_db_session())
-    
+
     try:
-        # 检查是否已存在 admin 用户
-        existing_user = db.query(User).filter(User.username == "admin").first()
+        existing_user = db.query(User).filter(User.username == username).first()
         if existing_user:
-            print("⚠️  admin 用户已存在")
+            print(f"⚠️  用户 {username} 已存在")
             return
-        
-        # 创建 admin 用户
-        hashed_pwd = hash_password("admin123")
+
         admin_user = User(
-            username="admin",
-            email="admin@example.com",
-            hashed_password=hashed_pwd,
-            is_active=True
+            username=username,
+            email=email,
+            hashed_password=hash_password(password),
+            is_active=True,
         )
-        
         db.add(admin_user)
         db.commit()
         db.refresh(admin_user)
-        
-        print("✅ 默认管理员账户创建成功！")
-        print("   用户名: admin")
-        print("   密码: admin123")
-        print("   邮箱: admin@example.com")
+
+        print("✅ 管理员账户创建成功！")
+        print(f"   用户名: {username}")
+        print(f"   邮箱: {email}")
+        if supplied_password:
+            print("   密码: 来自 DEFAULT_ADMIN_PASSWORD（未回显）")
+        else:
+            print(f"   初始密码: {password}")
+            print("   请登录后立即修改此密码。")
         print("=" * 50)
-        
+
     except Exception as e:
         db.rollback()
         print(f"❌ 创建失败: {e}")

@@ -194,30 +194,15 @@ redis-cli ping
 ### 5. 创建管理员用户
 
 ```bash
-# 进入 API 容器
-docker-compose exec api bash
+# 推荐：通过环境变量提供初始密码（不会打印到日志）
+docker-compose exec -e DEFAULT_ADMIN_PASSWORD='替换为强密码' api \
+  python scripts/create_default_admin.py
 
-# 创建管理员用户
-python -c "
-from src.database.session import get_db_session
-from src.database.models import User
-from src.api.auth import hash_password
-
-db = next(get_db_session())
-admin = User(
-    username='admin',
-    email='admin@example.com',
-    hashed_password=hash_password('admin123'),
-    is_active=1
-)
-db.add(admin)
-db.commit()
-print('Admin user created: admin / admin123')
-"
-
-# 退出容器
-exit
+# 不提供密码时会生成随机初始密码并打印一次
+docker-compose exec api python scripts/create_default_admin.py
 ```
+
+可选环境变量：`DEFAULT_ADMIN_USERNAME`、`DEFAULT_ADMIN_EMAIL`。
 
 ---
 
