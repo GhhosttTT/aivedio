@@ -864,6 +864,24 @@ celery -A src.tasks.celery_app purge
 docker-compose restart celery-worker
 ```
 
+#### 任务长期停在 running / pending
+
+Worker 崩溃或重启后，数据库里的任务可能一直停在 `pending` / `running`，前端会持续轮询且无法重试。先只读检查超过 6 小时未更新的任务：
+
+```bash
+python scripts/recover_stale_tasks.py --older-than-hours 6
+# Docker 部署
+docker-compose exec api python scripts/recover_stale_tasks.py --older-than-hours 6
+```
+
+确认供应商侧没有仍在执行的任务后，再把它们标记为失败（之后可在界面重试）：
+
+```bash
+python scripts/recover_stale_tasks.py --older-than-hours 6 --apply
+```
+
+脚本不会自动重新入队，避免同一供应商任务被重复计费。数据库未初始化或连接失败时返回退出码 2。
+
 #### GPU 显存不足
 
 ```bash

@@ -705,6 +705,11 @@ sqlalchemy.exc.OperationalError: could not connect to server
 2. 检查 Redis 连接：`redis-cli ping`
 3. 查看 Worker 日志：`docker-compose logs celery-worker`
 4. 检查任务队列：`celery -A src.tasks.celery_app inspect active`
+5. Worker 崩溃后残留的 `pending` / `running` 任务可先诊断、再显式标记失败：
+   ```bash
+   docker-compose exec api python scripts/recover_stale_tasks.py --older-than-hours 6
+   docker-compose exec api python scripts/recover_stale_tasks.py --older-than-hours 6 --apply
+   ```
 
 ### 问题 5：磁盘空间不足
 
