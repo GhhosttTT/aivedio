@@ -12,8 +12,17 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# ComfyUI 目录
-COMFYUI_DIR="./comfyui"
+# ComfyUI 目录（兼容 ComfyUI/ 与 comfyui/，可用 COMFYUI_DIR 覆盖）
+COMFYUI_DIR="${COMFYUI_DIR:-}"
+if [ -z "$COMFYUI_DIR" ]; then
+    for candidate in ./ComfyUI ./comfyui; do
+        if [ -d "$candidate" ]; then
+            COMFYUI_DIR="$candidate"
+            break
+        fi
+    done
+fi
+COMFYUI_DIR="${COMFYUI_DIR:-./ComfyUI}"
 MODELS_DIR="./models"
 
 echo -e "${GREEN}=== ComfyUI 安装和配置脚本 ===${NC}"
@@ -30,14 +39,15 @@ check_dependencies() {
     fi
     
     # 检查 Python
-    if ! command -v python3 &> /dev/null && ! command -v python &> /dev/null; then
+    PYTHON_BIN="$(command -v python3 || command -v python || true)"
+    if [ -z "$PYTHON_BIN" ]; then
         echo -e "${RED}错误: 需要安装 Python 3.10+${NC}"
         exit 1
     fi
-    
-    # 检查 Python 版本
-    python_version=$(python3 --version 2>&1 | awk '{print $2}' | cut -d. -f1,2)
-    if (( $(echo "$python_version < 3.10" | bc -l) )); then
+
+    # 检查 Python 版本（避免依赖 bc）
+    python_version="$("$PYTHON_BIN" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+    if ! "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
         echo -e "${RED}错误: Python 版本需要 >= 3.10，当前版本: $python_version${NC}"
         exit 1
     fi
@@ -78,7 +88,7 @@ install_dependencies() {
     # 检查是否有虚拟环境
     if [ ! -d "venv" ]; then
         echo "创建 Python 虚拟环境..."
-        python3 -m venv venv
+        "${PYTHON_BIN:-python3}" -m venv venv
     fi
     
     # 激活虚拟环境
@@ -176,39 +186,34 @@ create_startup_script() {
     
     cat > "$startup_script" << 'EOF'
 #!/bin/bash
-
 # ComfyUI 启动脚本
+PORT="${COMFYUI_PORT:-8188}"
+COMFYUI_DIR="${COMFYUI_DIR:-}"
 
-# 颜色输出
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+if [ -z "$COMFYUI_DIR" ]; then
+    for candidate in ./ComfyUI ./comfyui ../ComfyUI; do
+        if [ -d "$candidate" ]; then
+            COMFYUI_DIR="$candidate"
+            break
+        fi
+    done
+fi
 
-COMFYUI_DIR="./comfyui"
-PORT=8188
-
-echo -e "${GREEN}=== 启动 ComfyUI 服务 ===${NC}"
-echo "端口: $PORT"
-echo ""
-
-# 检查 ComfyUI 是否已安装
-if [ ! -d "$COMFYUI_DIR" ]; then
-    echo -e "${YELLOW}ComfyUI 未安装，请先运行 scripts/setup_comfyui.sh${NC}"
+if [ -z "$COMFYUI_DIR" ] || [ ! -d "$COMFYUI_DIR" ]; then
+    echo "错误: 未找到 ComfyUI 目录（可通过 COMFYUI_DIR 指定）"
     exit 1
 fi
 
-cd "$COMFYUI_DIR"
+cd "$COMFYUI_DIR" || exit 1
 
-# 激活虚拟环境
 if [ -d "venv" ]; then
-    echo "激活虚拟环境..."
-    source venv/bin/activate || source venv/Scripts/activate
+    # shellcheck disable=SC1091
+    source venv/bin/activate 2>/dev/null || source venv/Scripts/activate
 fi
 
-# 启动 ComfyUI
-echo "启动 ComfyUI..."
-echo ""
-python main.py --listen 0.0.0.0 --port $PORT
+PYTHON_BIN="python3"
+command -v python3 >/dev/null 2>&1 || PYTHON_BIN="python"
+exec "$PYTHON_BIN" main.py --listen 0.0.0.0 --port "$PORT"
 EOF
     
     chmod +x "$startup_script"
