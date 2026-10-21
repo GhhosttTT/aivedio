@@ -8,6 +8,8 @@
 
 set -e  # 遇到错误立即退出
 
+PYTHON_BIN="$(command -v python3 || command -v python || true)"
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -61,18 +63,18 @@ check_environment() {
     print_info "模型路径: $LLM_MODEL_PATH"
     
     # 检查 Python
-    if ! command -v python &> /dev/null; then
+    if [ -z "$PYTHON_BIN" ]; then
         print_error "未找到 Python，请先安装 Python 3.10+"
         return 1
     fi
-    
-    print_info "Python 版本: $(python --version)"
+
+    print_info "Python 版本: $("$PYTHON_BIN" --version)"
     
     # 检查依赖
-    if ! python -c "import llama_cpp" &> /dev/null; then
+    if ! "$PYTHON_BIN" -c "import llama_cpp" &> /dev/null; then
         print_warn "llama-cpp-python 未安装"
         print_info "正在安装依赖..."
-        pip install llama-cpp-python==0.2.20
+        "$PYTHON_BIN" -m pip install llama-cpp-python==0.2.20
     fi
     
     print_info "✓ 环境检查通过"
@@ -106,7 +108,7 @@ start_service() {
     done
     
     # 运行 Python 脚本
-    python scripts/start_llm_service.py $TEST_FLAG $VERBOSE_FLAG
+    "$PYTHON_BIN" scripts/start_llm_service.py $TEST_FLAG $VERBOSE_FLAG
 }
 
 # 主函数
