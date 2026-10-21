@@ -537,6 +537,11 @@ class ComfyUIService:
                         key: value for key, value in face_detailer_overrides.items()
                         if value is not None
                     })
+                    target = str(getattr(settings, "FACE_DETAILER_TARGET", "") or "").strip()
+                    detector_id = graph.link(node["inputs"].get("bbox_detector"))
+                    detector = workflow.get(detector_id) if detector_id else None
+                    if target and detector and detector["class_type"] == "CLIPSegDetectorProvider":
+                        detector["inputs"]["text"] = target
             workflow[ksampler_id]["inputs"].update({"steps": steps, "cfg": cfg_scale})
             sampling_stages = {
                 node_id for node_id in active

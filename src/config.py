@@ -76,7 +76,7 @@ class Settings(BaseSettings):
 
     # FaceDetailer配置
     FACE_DETAILER_ENABLED: bool = False
-    FACE_DETAILER_TARGET: str = "face"
+    FACE_DETAILER_TARGET: str = "face, eyes"
     FACE_DETAILER_GUIDE_SIZE: int = 768
     FACE_DETAILER_MAX_SIZE: int = 1024
     FACE_DETAILER_STEPS: int = 22

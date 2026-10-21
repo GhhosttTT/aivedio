@@ -174,7 +174,7 @@
 | `FACE_DETAILER_SAMPLER` | `str` | `dpmpp_2m_sde` |
 | `FACE_DETAILER_SCHEDULER` | `str` | `karras` |
 | `FACE_DETAILER_STEPS` | `int` | `22` |
-| `FACE_DETAILER_TARGET` | `str` | `face`（预留，当前代码未读取） |
+| `FACE_DETAILER_TARGET` | `str` | `face, eyes` |
 
 ## FACEID
 
