@@ -10,7 +10,7 @@ import type { LocalizationJob, Project, SourceVideo } from '../types';
 /**
  * API 客户端配置
  */
-const apiClient = axios.create({
+export const apiClient = axios.create({
     baseURL: apiBase,
     timeout: 30000,
     headers: {
