@@ -7,7 +7,7 @@
 
 另有少量由脚本或适配器直接读取、不属于 `Settings` 的变量（如 `DEFAULT_ADMIN_*`、`ENCRYPTION_KEY`），见 `.env.example`。
 
-共 272 项，按变量前缀分组。
+共 273 项，按变量前缀分组。
 
 ## 目录
 
@@ -71,6 +71,7 @@
 - [SUBTITLE](#subtitle)（9 项）
 - [SVD](#svd)（3 项）
 - [TRANSLATION](#translation)（5 项）
+- [TRUST](#trust)（1 项）
 - [TTS](#tts)（2 项）
 - [VSR](#vsr)（1 项）
 
@@ -642,6 +643,12 @@
 | `TRANSLATION_MAX_CONCURRENCY` | `int` | `2` |
 | `TRANSLATION_MAX_SEGMENTS_PER_BATCH` | `int` | `30` |
 | `TRANSLATION_TIMEOUT_SECONDS` | `int` | `7200` |
+
+## TRUST
+
+| 变量 | 类型 | 默认值 |
+| --- | --- | --- |
+| `TRUST_X_FORWARDED_FOR` | `bool` | `False` |
 
 ## TTS
 

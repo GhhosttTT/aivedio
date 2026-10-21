@@ -341,6 +341,9 @@ class Settings(BaseSettings):
 
     # 速率限制配置
     API_RATE_LIMIT: str = "10/minute"
+    # 仅当 API 确实位于可信反向代理之后时才信任 X-Forwarded-For，
+    # 否则客户端可伪造该头绕过登录/注册限流。
+    TRUST_X_FORWARDED_FOR: bool = False
 
     # 日志配置
     LOG_LEVEL: str = "INFO"

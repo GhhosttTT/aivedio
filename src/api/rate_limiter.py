@@ -249,8 +249,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if user and hasattr(user, "id"):
             return f"user:{user.id}"
         
-        # 使用 IP 地址
-        forwarded = request.headers.get("X-Forwarded-For")
+        # 使用 IP 地址；只有显式信任代理时才采用 X-Forwarded-For，
+        # 否则直连客户端可以伪造该头绕过限流。
+        forwarded = (
+            request.headers.get("X-Forwarded-For")
+            if getattr(settings, "TRUST_X_FORWARDED_FOR", False)
+            else None
+        )
         if forwarded:
             ip = forwarded.split(",")[0].strip()
         else:

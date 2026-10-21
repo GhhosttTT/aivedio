@@ -194,8 +194,9 @@ class TestRateLimitMiddleware:
         identifier = middleware._get_identifier(request)
         assert identifier == "ip:192.168.1.1"
     
-    def test_get_identifier_with_forwarded_ip(self):
-        """测试获取标识符 - 使用 X-Forwarded-For"""
+    def test_get_identifier_with_forwarded_ip(self, monkeypatch):
+        """测试获取标识符 - 信任代理时使用 X-Forwarded-For"""
+        monkeypatch.setattr("src.api.rate_limiter.settings.TRUST_X_FORWARDED_FOR", True)
         app = FastAPI()
         middleware = RateLimitMiddleware(app)
         
@@ -203,10 +204,28 @@ class TestRateLimitMiddleware:
         request = Mock(spec=Request)
         request.state = Mock()
         request.state.user = None
+        request.client = Mock()
+        request.client.host = "192.168.1.1"
         request.headers = {"X-Forwarded-For": "10.0.0.1, 192.168.1.1"}
         
         identifier = middleware._get_identifier(request)
         assert identifier == "ip:10.0.0.1"
+
+    def test_get_identifier_ignores_forwarded_ip_by_default(self, monkeypatch):
+        """直连部署下不能信任可伪造的 X-Forwarded-For，否则可绕过登录限流"""
+        monkeypatch.setattr("src.api.rate_limiter.settings.TRUST_X_FORWARDED_FOR", False)
+        app = FastAPI()
+        middleware = RateLimitMiddleware(app)
+        request = Mock(spec=Request)
+        request.state = Mock()
+        request.state.user = None
+        request.client = Mock()
+        request.client.host = "192.168.1.1"
+        request.headers = {"X-Forwarded-For": "10.0.0.1"}
+
+        identifier = middleware._get_identifier(request)
+
+        assert identifier == "ip:192.168.1.1"
     
     def test_get_limiter_exact_match(self):
         """测试获取限制器 - 精确匹配"""
