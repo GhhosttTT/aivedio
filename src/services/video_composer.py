@@ -384,12 +384,15 @@ class VideoComposer:
             )
             source_has_audio = self.has_audio_stream(video_path)
             if source_has_audio:
+                # A filter output pad may only feed one input, and FFmpeg 6.x
+                # also misreads reused/underscored labels as stream specifiers.
+                # Split dialogue explicitly and keep labels underscore-free.
                 audio_filter = (
-                    f"[0:a]aresample=48000,volume=1.0[dialogue];"
-                    f"[1:a]{music_filter}[music];"
-                    "[music][dialogue]sidechaincompress=threshold=0.08:ratio=8:"
-                    "attack=20:release=250:makeup=1[ducked];"
-                    "[dialogue][ducked]amix=inputs=2:duration=longest:"
+                    f"[0:a]aresample=48000,volume=1.0,asplit=2[dlg][dlgsc];"
+                    f"[1:a]{music_filter}[mus];"
+                    "[mus][dlgsc]sidechaincompress=threshold=0.08:ratio=8:"
+                    "attack=20:release=250:makeup=1[duck];"
+                    "[dlg][duck]amix=inputs=2:duration=longest:"
                     "dropout_transition=2:normalize=0,alimiter=limit=0.95,"
                     "loudnorm=I=-16:TP=-1.5:LRA=11:linear=true[aout]"
                 )
