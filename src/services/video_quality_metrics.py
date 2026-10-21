@@ -417,7 +417,7 @@ def _audio_signal_metrics(path: Path, duration_seconds: float) -> dict[str, Any]
         result = subprocess.run(
             [
                 "ffmpeg", "-v", "info", "-i", str(path), "-vn",
-                "-af", "silencedetect=noise=-45dB:d=0.25,astats=metadata=1:reset=1,ebur128=peak=true:framelog=verbose",
+                "-af", "silencedetect=noise=-45dB:d=0.25,astats=metadata=1,ebur128=peak=true:framelog=verbose",
                 "-f", "null", "-",
             ],
             capture_output=True,
@@ -437,12 +437,12 @@ def _audio_signal_metrics(path: Path, duration_seconds: float) -> dict[str, Any]
         peak_values = [
             float(value) for value in re.findall(
                 r"Peak level dB:\s*(-?(?:\d+(?:\.\d+)?|inf))", output, re.I
-            ) if value.lower() != "inf"
+            ) if value.lower() not in {"inf", "-inf"}
         ]
         rms_values = [
             float(value) for value in re.findall(
                 r"RMS level dB:\s*(-?(?:\d+(?:\.\d+)?|inf))", output, re.I
-            ) if value.lower() != "inf"
+            ) if value.lower() not in {"inf", "-inf"}
         ]
         if not peak_values and not rms_values:
             raise ValueError("ffmpeg audio analysis produced no measurable signal")
@@ -452,12 +452,12 @@ def _audio_signal_metrics(path: Path, duration_seconds: float) -> dict[str, Any]
         integrated_lufs_values = [
             float(value) for value in re.findall(
                 r"\bI:\s*(-?(?:\d+(?:\.\d+)?|inf))\s*LUFS", output, re.I
-            ) if value.lower() != "inf"
+            ) if value.lower() not in {"inf", "-inf"}
         ]
         true_peak_values = [
             float(value) for value in re.findall(
                 r"\bPeak:\s*(-?(?:\d+(?:\.\d+)?|inf))\s*dBFS", output, re.I
-            ) if value.lower() != "inf"
+            ) if value.lower() not in {"inf", "-inf"}
         ]
         near_silent = bool(
             (

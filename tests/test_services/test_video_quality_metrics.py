@@ -485,3 +485,28 @@ def test_video_boundary_continuity_reports_adjacent_clip_boundary(tmp_path):
     assert report["status"] == "available"
     assert report["boundary_count"] == 1
     assert len(report["boundaries"]) == 1
+
+
+def test_audio_signal_metrics_ignores_negative_inf_values(monkeypatch, tmp_path):
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = """
+        Peak level dB: -inf
+        RMS level dB: -inf
+        Peak level dB: -6.80
+        RMS level dB: -13.20
+        I: -14.0 LUFS
+        Peak: -1.0 dBFS
+        """
+
+    monkeypatch.setattr(
+        "src.services.video_quality_metrics.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    metrics = _audio_signal_metrics(tmp_path / "clip.mp4", 2.0)
+
+    assert metrics["audio_signal_status"] == "usable"
+    assert metrics["audio_peak_db"] == -6.80
+    assert metrics["audio_rms_db"] == -13.20

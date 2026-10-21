@@ -75,4 +75,4 @@ jobs:
             "loguru==0.7.2" \
             "pytest==7.4.3"
       - name: Run media metric tests
-        run: pytest -q tests/test_services/test_video_quality_metrics.py tests/test_services/test_video_composer_ffmpeg.py tests/test_services/test_subtitle_generator_ffmpeg.py
+        run: pytest -q tests/test_services/test_video_quality_metrics.py tests/test_services/test_video_composer_ffmpeg.py tests/test_services/test_subtitle_generator_ffmpeg.py tests/test_services/test_platform_export_ffmpeg.py
