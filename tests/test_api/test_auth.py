@@ -3,8 +3,11 @@
 
 测试用户注册、登录、令牌刷新等功能
 """
+from datetime import datetime, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
+from jose import jwt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from unittest.mock import patch
@@ -462,3 +465,56 @@ def test_refresh_token_cannot_be_used_as_access_token():
 
     assert response.status_code == 401
     assert "无效的认证凭证" in response.json()["detail"]
+
+
+def test_expired_access_token_is_rejected():
+    token = create_access_token({"sub": 1}, expires_delta=timedelta(seconds=-1))
+
+    response = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_expired_refresh_token_is_rejected():
+    token = jwt.encode(
+        {
+            "sub": "1",
+            "token_type": "refresh",
+            "exp": datetime.utcnow() - timedelta(seconds=1),
+        },
+        auth_settings.JWT_SECRET_KEY,
+        algorithm=auth_settings.JWT_ALGORITHM,
+    )
+
+    response = client.post("/api/auth/refresh", json={"refresh_token": token})
+
+    assert response.status_code == 401
+    assert "无效的刷新令牌" in response.json()["detail"]
+
+
+def test_refresh_rejects_deactivated_user():
+    client.post(
+        "/api/auth/register",
+        json={"username": "disabled-user", "email": "disabled@example.com", "password": "password123"},
+    )
+    login = client.post(
+        "/api/auth/login",
+        json={"username": "disabled-user", "password": "password123"},
+    )
+    refresh_token = login.json()["refresh_token"]
+
+    db = TestSessionLocal()
+    try:
+        user = db.query(User).filter(User.username == "disabled-user").one()
+        user.is_active = False
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.post("/api/auth/refresh", json={"refresh_token": refresh_token})
+
+    assert response.status_code == 403
+    assert "用户已禁用" in response.json()["detail"]
