@@ -434,3 +434,16 @@ def test_all_predefined_workflows_load():
             allow_fallback=False,
         )
         assert config.workflow.name
+
+
+def test_all_structured_workflow_configs_validate():
+    config_dir = Path(__file__).resolve().parents[2] / "configs"
+    checked = 0
+    for path in sorted(config_dir.glob("comfyui_workflow*.json")):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if "nodes" not in data:
+            continue
+        config = WorkflowConfig.from_dict(data)
+        assert config.validate() == [], path.name
+        checked += 1
+    assert checked >= 10
