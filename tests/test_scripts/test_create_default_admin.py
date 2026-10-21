@@ -24,7 +24,7 @@ def _prepare_db(db_path: Path) -> None:
     engine.dispose()
 
 
-def _run(db_path: Path, **env_extra):
+def _run(db_path: Path, *args, **env_extra):
     env = os.environ.copy()
     env.pop("DEFAULT_ADMIN_PASSWORD", None)
     env.pop("DEFAULT_ADMIN_USERNAME", None)
@@ -32,7 +32,7 @@ def _run(db_path: Path, **env_extra):
     env["DATABASE_URL"] = f"sqlite:///{db_path}"
     env.update(env_extra)
     return subprocess.run(
-        [sys.executable, str(SCRIPT)],
+        [sys.executable, str(SCRIPT), *args],
         cwd=REPO,
         env=env,
         capture_output=True,
@@ -86,3 +86,36 @@ def test_reports_existing_admin_without_overwriting(tmp_path):
     assert result.returncode == 0
     assert "已存在" in result.stdout
     assert _admin(db_path).hashed_password == first_hash
+
+
+def test_help_exits_without_touching_database(tmp_path):
+    db_path = tmp_path / "unused.db"
+
+    result = _run(db_path, "--help")
+
+    assert result.returncode == 0
+    assert "usage" in result.stdout.lower()
+    assert not db_path.exists()
+
+
+def test_custom_username_and_email_from_arguments(tmp_path):
+    db_path = tmp_path / "custom.db"
+    _prepare_db(db_path)
+
+    result = _run(
+        db_path,
+        "--username", "ops",
+        "--email", "ops@example.com",
+        DEFAULT_ADMIN_PASSWORD="S3cure-Admin-Pass",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+    db = sessionmaker(bind=engine)()
+    try:
+        user = db.query(User).filter(User.username == "ops").one()
+        assert user.email == "ops@example.com"
+        assert verify_password("S3cure-Admin-Pass", user.hashed_password)
+    finally:
+        db.close()
+        engine.dispose()

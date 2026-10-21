@@ -3,6 +3,7 @@
 创建默认管理员账户
 """
 
+import argparse
 import os
 import secrets
 import sys
@@ -15,14 +16,21 @@ from src.database.models import User
 from src.api.auth import hash_password
 
 
-def create_default_admin():
+def _parse_args():
+    parser = argparse.ArgumentParser(description="创建初始管理员账户")
+    parser.add_argument("--username", default=None, help="默认取 DEFAULT_ADMIN_USERNAME 或 admin")
+    parser.add_argument("--email", default=None, help="默认取 DEFAULT_ADMIN_EMAIL 或 admin@example.com")
+    return parser.parse_args()
+
+
+def create_default_admin(username: str | None = None, email: str | None = None):
     """创建初始管理员账户；密码优先取环境变量，否则生成随机密码。"""
     print("=" * 50)
     print("创建初始管理员账户")
     print("=" * 50)
 
-    username = (os.getenv("DEFAULT_ADMIN_USERNAME") or "admin").strip() or "admin"
-    email = (os.getenv("DEFAULT_ADMIN_EMAIL") or "admin@example.com").strip() or "admin@example.com"
+    username = (username or os.getenv("DEFAULT_ADMIN_USERNAME") or "admin").strip() or "admin"
+    email = (email or os.getenv("DEFAULT_ADMIN_EMAIL") or "admin@example.com").strip() or "admin@example.com"
     supplied_password = os.getenv("DEFAULT_ADMIN_PASSWORD") or ""
     password = supplied_password or secrets.token_urlsafe(12)
 
@@ -63,8 +71,9 @@ def create_default_admin():
 
 
 if __name__ == "__main__":
+    args = _parse_args()
     try:
-        create_default_admin()
+        create_default_admin(args.username, args.email)
     except KeyboardInterrupt:
         print("\n\n已取消")
         sys.exit(1)
