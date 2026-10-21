@@ -108,6 +108,9 @@ ls -lh models/svd/
 
 ## Docker 部署（推荐）
 
+> API 与 Celery Worker 通过 `./data` 卷共享同一个 SQLite 数据库
+> （容器内 `/app/data/short_drama.db`）。删除该目录会同时丢失项目、任务和历史记录。
+
 ### 1. 配置环境变量
 
 ```bash
@@ -123,6 +126,7 @@ nano .env
 ```bash
 # JWT 密钥（生成随机密钥）
 JWT_SECRET_KEY=$(openssl rand -hex 32)
+# 预留：当前版本未读取，保留给后续敏感字段加密实现
 ENCRYPTION_KEY=$(openssl rand -hex 32)
 
 # TTS API 密钥（从 MiMo 平台获取）
@@ -174,8 +178,8 @@ docker-compose logs -f
 ### 4. 验证部署
 
 ```bash
-# 检查 API 健康状态
-curl http://localhost:8000/health
+# 检查 API 就绪状态（数据库/Redis 可用时返回 200）
+curl -f http://localhost:8000/ready
 
 # 检查 API 文档
 curl http://localhost:8000/docs
@@ -374,6 +378,7 @@ JWT_ALGORITHM=HS256
 JWT_EXPIRATION_HOURS=24
 
 # 加密密钥
+# 预留：当前版本未读取
 ENCRYPTION_KEY=your-encryption-key-here
 
 # 密码策略
@@ -502,8 +507,10 @@ ps aux | grep celery
 #### 备份数据库
 
 ```bash
-# SQLite 备份
-cp short_drama.db backups/short_drama_$(date +%Y%m%d).db
+# SQLite 备份（Docker 部署的数据库位于共享卷 data/）
+DB_PATH=short_drama.db
+[ -f data/short_drama.db ] && DB_PATH=data/short_drama.db
+cp "$DB_PATH" backups/short_drama_$(date +%Y%m%d).db
 
 # PostgreSQL 备份
 pg_dump -U username -d short_drama > backups/short_drama_$(date +%Y%m%d).sql
@@ -531,8 +538,10 @@ DATE=$(date +%Y%m%d_%H%M%S)
 # 创建备份目录
 mkdir -p $BACKUP_DIR
 
-# 备份数据库
-cp short_drama.db $BACKUP_DIR/db_$DATE.db
+# 备份数据库（Docker 部署使用 data/short_drama.db）
+DB_PATH=short_drama.db
+[ -f data/short_drama.db ] && DB_PATH=data/short_drama.db
+cp "$DB_PATH" $BACKUP_DIR/db_$DATE.db
 
 # 备份存储文件
 tar -czf $BACKUP_DIR/storage_$DATE.tar.gz storage/

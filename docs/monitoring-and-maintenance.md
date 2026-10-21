@@ -470,15 +470,19 @@ sentry_sdk.init(
 #### SQLite 备份
 
 ```bash
-# 手动备份
-cp short_drama.db backups/short_drama_$(date +%Y%m%d_%H%M%S).db
+# 手动备份（Docker 部署的数据库位于 data/short_drama.db）
+DB_PATH=short_drama.db
+[ -f data/short_drama.db ] && DB_PATH=data/short_drama.db
+cp "$DB_PATH" backups/short_drama_$(date +%Y%m%d_%H%M%S).db
 
 # 自动备份脚本
 #!/bin/bash
 BACKUP_DIR="/backup/short-drama/db"
 DATE=$(date +%Y%m%d_%H%M%S)
 mkdir -p $BACKUP_DIR
-cp short_drama.db $BACKUP_DIR/short_drama_$DATE.db
+DB_PATH=short_drama.db
+[ -f data/short_drama.db ] && DB_PATH=data/short_drama.db
+cp "$DB_PATH" $BACKUP_DIR/short_drama_$DATE.db
 # 删除 30 天前的备份
 find $BACKUP_DIR -name "*.db" -mtime +30 -delete
 ```
@@ -546,8 +550,8 @@ crontab -e
 # 停止服务
 docker-compose down
 
-# 恢复数据库
-cp backups/short_drama_20260429.db short_drama.db
+# 恢复数据库（Docker 部署写入共享卷 data/）
+cp backups/short_drama_20260429.db data/short_drama.db
 
 # 启动服务
 docker-compose up -d
@@ -795,7 +799,7 @@ decrypted = cipher.decrypt(encrypted)
 # 更新 JWT 密钥
 JWT_SECRET_KEY=$(openssl rand -hex 32)
 
-# 更新加密密钥
+# 预留：当前版本未读取加密密钥
 ENCRYPTION_KEY=$(openssl rand -hex 32)
 ```
 

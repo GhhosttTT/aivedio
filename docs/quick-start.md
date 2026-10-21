@@ -204,7 +204,8 @@ python main.py
 
 服务启动后，访问：
 - **API 文档**: http://localhost:8000/docs
-- **健康检查**: http://localhost:8000/health
+- **存活检查**: http://localhost:8000/health
+- **就绪检查**: http://localhost:8000/ready
 
 ## 创建第一个项目
 

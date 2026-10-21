@@ -740,7 +740,8 @@ for task_id in task_ids:
 | `/api/tasks/{id}/status` | GET | 查询任务状态 |
 | `/api/tasks/{id}/cancel` | POST | 取消任务 |
 | `/api/tasks/{id}/retry` | POST | 重试任务 |
-| `/health` | GET | 健康检查 |
+| `/health` | GET | 存活检查 |
+| `/ready` | GET | 就绪检查（数据库/Redis） |
 | `/ws/{project_id}` | WebSocket | 实时通知 |
 
 ### 状态码说明
