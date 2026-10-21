@@ -73,6 +73,8 @@ jobs:
             "pydantic==2.5.0" \
             "pydantic-settings==2.1.0" \
             "loguru==0.7.2" \
+            "Pillow==10.1.0" \
+            "psutil>=5.9" \
             "pytest==7.4.3"
       - name: Run media metric tests
-        run: pytest -q tests/test_services/test_video_quality_metrics.py tests/test_services/test_video_composer_ffmpeg.py tests/test_services/test_subtitle_generator_ffmpeg.py tests/test_services/test_platform_export_ffmpeg.py tests/test_services/test_cover_generator_ffmpeg.py
+        run: pytest -q tests/test_services/test_video_quality_metrics.py tests/test_services/test_video_composer_ffmpeg.py tests/test_services/test_subtitle_generator_ffmpeg.py tests/test_services/test_platform_export_ffmpeg.py tests/test_services/test_cover_generator_ffmpeg.py tests/test_services/test_delivery_package_ffmpeg.py

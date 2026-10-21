@@ -38,7 +38,10 @@ def _version_signature(path: Path) -> str | None:
 def _technical_metric_mismatches(declared: dict, observed: dict, label: str) -> list[str]:
     """Return evidence mismatches between a declared report and decoded media."""
     mismatches = []
-    for key in ("width", "height", "sampled_frames"):
+    # sampled_frames reflects the caller's sampling budget (the final review
+    # uses adaptive sampling while verification uses max_samples=8), not the
+    # media content, so it must not be treated as tamper evidence.
+    for key in ("width", "height"):
         expected = declared.get(key)
         actual = observed.get(key)
         if expected is not None and actual is not None and expected != actual:
