@@ -21,7 +21,7 @@
 bash scripts/download_models.sh
 
 # 2. 验证模型文件
-python scripts/verify_models.py
+ls -lh models/qwen models/sdxl models/svd
 
 # 3. 检查 .env 文件配置
 cat .env
@@ -100,7 +100,7 @@ SVD_MODEL_PATH=./models/stable-video-diffusion-img2vid-xt
 运行验证脚本检查模型文件是否完整：
 
 ```bash
-python scripts/verify_models.py
+ls -lh models/qwen models/sdxl models/svd
 ```
 
 验证脚本会检查：

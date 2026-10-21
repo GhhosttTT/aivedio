@@ -210,7 +210,7 @@ python scripts/setup_character_appearances.py
 在开始生产前，可以测试角色外貌特征生成是否正常：
 
 ```bash
-python scripts/test_character_appearance_generation.py
+pytest -q tests/test_services/test_character_identity_service.py
 ```
 
 这个脚本会：

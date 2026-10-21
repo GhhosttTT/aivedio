@@ -59,7 +59,7 @@ python scripts/setup_character_appearances.py
 ## 🧪 测试功能
 
 ```bash
-python scripts/test_character_appearance_generation.py
+pytest -q tests/test_services/test_character_identity_service.py
 ```
 
 ## 📚 详细文档

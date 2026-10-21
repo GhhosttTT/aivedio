@@ -179,7 +179,7 @@ IP-Adapter 会增加显存使用。对于 RTX 3060 12GB：
 
 ```bash
 cd F:\study\aishortmovie\aivedio
-python scripts/test_ipadapter.py
+pytest -q tests/test_services/test_comfyui_generation_regressions.py -k ipadapter
 ```
 
 预期输出：

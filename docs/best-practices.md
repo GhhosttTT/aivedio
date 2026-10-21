@@ -308,8 +308,8 @@ LLM_N_THREADS=8
 
 **定期清理**:
 ```bash
-# 清理旧项目文件
-python scripts/cleanup_old_projects.py --days 30
+# 先列出 30 天未修改的项目目录，确认后再删除
+find storage/projects -mindepth 1 -maxdepth 1 -type d -mtime +30 -print
 ```
 
 ### 4. 网络优化
@@ -402,11 +402,14 @@ LOG_FILE=./logs/app.log
 
 **定期备份**:
 ```bash
-# 备份数据库
-python scripts/backup_database.py
+# 备份数据库（Docker 部署位于 data/）
+DB_PATH=short_drama.db
+[ -f data/short_drama.db ] && DB_PATH=data/short_drama.db
+mkdir -p backups
+cp "$DB_PATH" "backups/short_drama_$(date +%Y%m%d).db"
 
 # 备份生成文件
-python scripts/backup_storage.py
+tar -czf "backups/storage_$(date +%Y%m%d).tar.gz" storage/
 ```
 
 **恢复策略**:

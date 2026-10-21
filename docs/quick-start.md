@@ -127,7 +127,7 @@ JWT_SECRET_KEY=your_jwt_secret_key_here
 ### 6. 初始化数据库
 
 ```bash
-python scripts/init_db.py
+python scripts/init_database.py --create
 ```
 
 ### 7. 安装和配置 ComfyUI
