@@ -65,7 +65,7 @@ echo ""
 echo "========================================="
 echo "磁盘使用："
 echo "========================================="
-df -h | grep -E "Filesystem|/app|models|storage"
+df -h | grep -E "Filesystem|/app|models|storage" || true
 
 echo ""
 echo "========================================="
