@@ -267,6 +267,7 @@ def main():
     services = build_services(project_root)
 
     # Redis has its own startup path because it may already be running.
+    failed_services = []
     redis_started = start_redis()
     if redis_started:
         print_success("✓ Redis 已就绪")
@@ -284,6 +285,9 @@ def main():
         ):
             print_info(f"等待 {service['name']} 初始化...")
             time.sleep(service['delay'])
+        else:
+            failed_services.append(service["name"])
+            print_warning(f"✗ {service['name']} 未能启动")
         print()
 
     print()
@@ -308,6 +312,7 @@ def main():
         if check_port(port, timeout=5):
             print_success(f"✓ {name} (端口 {port}) - 运行中")
         else:
+            failed_services.append(name)
             owner = describe_port_owner(port)
             detail = f"，占用进程: {owner}" if owner else ""
             print_warning(f"✗ {name} (端口 {port}) - 可能未就绪{detail}")
@@ -334,7 +339,10 @@ def main():
     print("  - 关闭服务请关闭对应的窗口")
     print()
     
-    return True
+    if failed_services:
+        print_error(f"以下服务未成功启动: {', '.join(failed_services)}")
+
+    return not failed_services
 
 
 if __name__ == '__main__':

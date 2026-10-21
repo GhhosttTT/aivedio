@@ -82,3 +82,19 @@ def test_main_reports_failure_when_a_service_does_not_start(monkeypatch):
     monkeypatch.setattr(start_services, "start_service", lambda **kwargs: False)
 
     assert start_services.main() is False
+
+
+def test_log_launcher_reports_failure_when_window_start_fails(monkeypatch):
+    import start_services_with_logs
+
+    monkeypatch.setattr(start_services_with_logs, "check_python", lambda: True)
+    monkeypatch.setattr(start_services_with_logs, "check_virtualenv", lambda: True)
+    monkeypatch.setattr(start_services_with_logs, "check_database", lambda: True)
+    monkeypatch.setattr(start_services_with_logs, "start_redis", lambda: False)
+    monkeypatch.setattr(
+        "start_services.build_services",
+        lambda root: [{"name": "Broken", "cmd": ["broken"], "cwd": None, "delay": 0, "port": None}],
+    )
+    monkeypatch.setattr(start_services_with_logs, "start_service_in_new_window", lambda **kwargs: False)
+
+    assert start_services_with_logs.main() is False
