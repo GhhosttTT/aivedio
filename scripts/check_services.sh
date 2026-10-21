@@ -28,12 +28,19 @@ else
     echo "✗ 未运行"
 fi
 
-# 检查 API
-echo -n "API: "
+# 检查 API 进程与依赖就绪状态
+echo -n "API 进程: "
 if curl -s http://localhost:8000/health > /dev/null 2>&1; then
     echo "✓ 运行中"
 else
     echo "✗ 未运行"
+fi
+
+echo -n "API 就绪: "
+if curl -fsS http://localhost:8000/ready > /dev/null 2>&1; then
+    echo "✓ 数据库/Redis 就绪"
+else
+    echo "✗ 未就绪（检查 /ready 返回详情）"
 fi
 
 # 检查 ComfyUI
