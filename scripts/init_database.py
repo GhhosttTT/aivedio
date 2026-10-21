@@ -4,6 +4,7 @@
 创建所有数据库表并执行初始化操作
 """
 
+import argparse
 import sys
 import os
 
@@ -17,8 +18,18 @@ from src.database.database import (
 )
 
 
+def _parse_args():
+    parser = argparse.ArgumentParser(description="初始化或重置 AI 短剧数据库")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--create", action="store_true", help="创建缺失的表，保留现有数据")
+    action.add_argument("--reset", action="store_true", help="删除全部表后重建（危险）")
+    parser.add_argument("--yes", action="store_true", help="跳过重置确认，供自动化使用")
+    return parser.parse_args()
+
+
 def main():
     """主函数"""
+    args = _parse_args()
     print("=" * 50)
     print("AI 短剧自动化生产平台 - 数据库初始化")
     print("=" * 50)
@@ -39,7 +50,16 @@ def main():
     print("   c) 取消")
     print()
     
-    choice = input("请选择 (a/b/c): ").strip().lower()
+    if args.reset:
+        choice = "b"
+    elif args.create:
+        choice = "a"
+    else:
+        try:
+            choice = input("请选择 (a/b/c): ").strip().lower()
+        except EOFError:
+            print("\n未检测到交互输入；请使用 --create 或 --reset --yes")
+            sys.exit(2)
     print()
     
     if choice == "c":
@@ -47,7 +67,13 @@ def main():
         sys.exit(0)
     elif choice == "b":
         # 确认重置
-        confirm = input("警告：此操作将删除所有数据！确认重置？(yes/no): ").strip().lower()
+        confirm = "yes" if args.yes else ""
+        if not args.yes:
+            try:
+                confirm = input("警告：此操作将删除所有数据！确认重置？(yes/no): ").strip().lower()
+            except EOFError:
+                print("\n未确认重置；如需自动化请加 --yes")
+                sys.exit(2)
         if confirm != "yes":
             print("已取消")
             sys.exit(0)

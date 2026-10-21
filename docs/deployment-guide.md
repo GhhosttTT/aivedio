@@ -287,13 +287,8 @@ API_PORT=8000
 ### 4. 初始化数据库
 
 ```bash
-# 创建数据库表
-python -c "
-from src.database.session import engine
-from src.database.models import Base
-Base.metadata.create_all(engine)
-print('Database initialized')
-"
+# 创建数据库表（保留现有数据；自动化可用 --create）
+python scripts/init_database.py --create
 ```
 
 ### 5. 启动 ComfyUI
