@@ -38,6 +38,7 @@ class WorkflowMetadata:
     description: str = ""
     author: Optional[str] = None
     tags: List[str] = field(default_factory=list)
+    features: List[str] = field(default_factory=list)
     适用场景: List[str] = field(default_factory=list)
 
     def validate(self) -> List[str]:

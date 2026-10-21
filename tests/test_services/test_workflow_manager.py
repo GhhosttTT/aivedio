@@ -423,3 +423,14 @@ class TestSingletonPattern:
         # 清理后再次获取应该是新实例
         new_manager = get_workflow_manager()
         assert new_manager is not manager
+
+
+def test_all_predefined_workflows_load():
+    manager = WorkflowManager()
+    for workflow_type in WorkflowManager.PREDEFINED_WORKFLOWS:
+        config = manager.load_workflow(
+            workflow_type=workflow_type,
+            use_cache=False,
+            allow_fallback=False,
+        )
+        assert config.workflow.name
