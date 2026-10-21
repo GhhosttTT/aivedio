@@ -14,6 +14,14 @@ if str(ROOT) not in sys.path:
 from src.config import Settings
 
 SECRET_MARKERS = ("SECRET", "PASSWORD", "TOKEN", "API_KEY", "ENCRYPTION_KEY")
+# Declared for planned features or external tooling but not read by this codebase.
+RESERVED_PREFIXES = ("FACEID_", "FACE_DETAILER_")
+RESERVED_SETTINGS = {
+    "GPU_MEMORY_FRACTION",
+    "SUBTITLE_REMOVAL_BACKEND",
+    "MODERATION_BACKEND",
+    "LOCALIZATION_CONCURRENCY",
+}
 OUTPUT_PATH = ROOT / "docs/configuration-reference.md"
 
 
@@ -21,14 +29,22 @@ def _cell(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", " ")
 
 
+def _is_reserved(name: str) -> bool:
+    return name in RESERVED_SETTINGS or name.startswith(RESERVED_PREFIXES)
+
+
 def _default_text(name: str, field) -> str:
     if any(marker in name for marker in SECRET_MARKERS):
         return "通过环境变量设置，勿提交"
     default = field.default
     if default is None:
-        return "`null`"
-    text = str(default)
-    return f"`{text}`" if text else '`""`'
+        text = "`null`"
+    else:
+        value = str(default)
+        text = f"`{value}`" if value else '`""`'
+    if _is_reserved(name):
+        text += "（预留，当前代码未读取）"
+    return text
 
 
 def _group_name(name: str) -> str:

@@ -164,25 +164,25 @@
 
 | 变量 | 类型 | 默认值 |
 | --- | --- | --- |
-| `FACE_DETAILER_CFG` | `float` | `5.0` |
-| `FACE_DETAILER_DENOISE` | `float` | `0.24` |
-| `FACE_DETAILER_ENABLED` | `bool` | `False` |
-| `FACE_DETAILER_FACEID_END_AT` | `float` | `0.65` |
-| `FACE_DETAILER_FACEID_WEIGHT` | `float` | `0.35` |
-| `FACE_DETAILER_GUIDE_SIZE` | `int` | `768` |
-| `FACE_DETAILER_MAX_SIZE` | `int` | `1024` |
-| `FACE_DETAILER_SAMPLER` | `str` | `dpmpp_2m_sde` |
-| `FACE_DETAILER_SCHEDULER` | `str` | `karras` |
-| `FACE_DETAILER_STEPS` | `int` | `22` |
-| `FACE_DETAILER_TARGET` | `str` | `face` |
+| `FACE_DETAILER_CFG` | `float` | `5.0`（预留，当前代码未读取） |
+| `FACE_DETAILER_DENOISE` | `float` | `0.24`（预留，当前代码未读取） |
+| `FACE_DETAILER_ENABLED` | `bool` | `False`（预留，当前代码未读取） |
+| `FACE_DETAILER_FACEID_END_AT` | `float` | `0.65`（预留，当前代码未读取） |
+| `FACE_DETAILER_FACEID_WEIGHT` | `float` | `0.35`（预留，当前代码未读取） |
+| `FACE_DETAILER_GUIDE_SIZE` | `int` | `768`（预留，当前代码未读取） |
+| `FACE_DETAILER_MAX_SIZE` | `int` | `1024`（预留，当前代码未读取） |
+| `FACE_DETAILER_SAMPLER` | `str` | `dpmpp_2m_sde`（预留，当前代码未读取） |
+| `FACE_DETAILER_SCHEDULER` | `str` | `karras`（预留，当前代码未读取） |
+| `FACE_DETAILER_STEPS` | `int` | `22`（预留，当前代码未读取） |
+| `FACE_DETAILER_TARGET` | `str` | `face`（预留，当前代码未读取） |
 
 ## FACEID
 
 | 变量 | 类型 | 默认值 |
 | --- | --- | --- |
-| `FACEID_END_AT` | `float` | `1.0` |
-| `FACEID_START_AT` | `float` | `0.0` |
-| `FACEID_WEIGHT` | `float` | `0.85` |
+| `FACEID_END_AT` | `float` | `1.0`（预留，当前代码未读取） |
+| `FACEID_START_AT` | `float` | `0.0`（预留，当前代码未读取） |
+| `FACEID_WEIGHT` | `float` | `0.85`（预留，当前代码未读取） |
 
 ## GENERATION_ALLOW
 
@@ -415,7 +415,7 @@
 
 | 变量 | 类型 | 默认值 |
 | --- | --- | --- |
-| `GPU_MEMORY_FRACTION` | `float` | `0.95` |
+| `GPU_MEMORY_FRACTION` | `float` | `0.95`（预留，当前代码未读取） |
 
 ## HAILUO
 
@@ -492,7 +492,7 @@
 
 | 变量 | 类型 | 默认值 |
 | --- | --- | --- |
-| `LOCALIZATION_CONCURRENCY` | `int` | `1` |
+| `LOCALIZATION_CONCURRENCY` | `int` | `1`（预留，当前代码未读取） |
 | `LOCALIZATION_MAX_SOURCE_VIDEO_SIZE_MB` | `int` | `2048` |
 | `LOCALIZATION_TARGET_LANGUAGES` | `str` | `en,es,pt,ar,id,th,vi,ja,ko` |
 
@@ -513,7 +513,7 @@
 
 | 变量 | 类型 | 默认值 |
 | --- | --- | --- |
-| `MODERATION_BACKEND` | `str` | `rules` |
+| `MODERATION_BACKEND` | `str` | `rules`（预留，当前代码未读取） |
 
 ## NEGATIVE
 
@@ -617,7 +617,7 @@
 | 变量 | 类型 | 默认值 |
 | --- | --- | --- |
 | `SUBTITLE_MAX_READING_UNITS_PER_SECOND` | `float` | `18.0` |
-| `SUBTITLE_REMOVAL_BACKEND` | `str` | `manual_mask` |
+| `SUBTITLE_REMOVAL_BACKEND` | `str` | `manual_mask`（预留，当前代码未读取） |
 | `SUBTITLE_RENDER_BOLD` | `bool` | `True` |
 | `SUBTITLE_RENDER_FONT` | `str` | `Arial` |
 | `SUBTITLE_RENDER_FONT_SIZE` | `int` | `38` |
