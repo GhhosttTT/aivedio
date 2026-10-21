@@ -133,17 +133,20 @@ def decode_access_token(token: str) -> Optional[dict]:
         return None
 
 
-def create_refresh_token(data: dict) -> str:
+def create_refresh_token(data: dict, jti: Optional[str] = None) -> str:
     """
     创建 JWT 刷新令牌
 
     Args:
         data: 要编码的数据（通常包含用户 ID）
+        jti: 可选的令牌唯一标识，用于服务端轮换/撤销
 
     Returns:
         JWT 刷新令牌字符串
     """
     to_encode = data.copy()
+    if jti:
+        to_encode["jti"] = jti
     
     # 确保 sub 字段是字符串（JWT 标准要求）
     if "sub" in to_encode and not isinstance(to_encode["sub"], str):

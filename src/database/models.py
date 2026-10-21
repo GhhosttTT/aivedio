@@ -201,3 +201,15 @@ class LocalizationJob(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     source_video = relationship("SourceVideo", back_populates="localization_jobs")
+
+
+class RefreshToken(Base):
+    """已签发且仍可用的刷新令牌（jti），用于轮换与撤销。"""
+
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    jti = Column(String(64), unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

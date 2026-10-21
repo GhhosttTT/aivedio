@@ -3,7 +3,9 @@
 
 实现用户登录、注册、令牌刷新等功能
 """
+from datetime import datetime, timedelta
 from typing import Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
@@ -17,7 +19,8 @@ from src.api.auth import (
     verify_password,
 )
 from src.api.dependencies import get_current_user
-from src.database.models import User
+from src.config import settings
+from src.database.models import RefreshToken, User
 from src.database.session import get_db_session
 from src.utils.logger import get_logger
 
@@ -161,10 +164,17 @@ async def login(
             detail="用户已禁用"
         )
     
-    # 创建令牌
+    # 创建令牌，并记录 refresh jti 以支持服务端轮换/撤销
     access_token = create_access_token(data={"sub": user.id, "username": user.username})
-    refresh_token = create_refresh_token(data={"sub": user.id})
-    
+    jti = uuid4().hex
+    refresh_token = create_refresh_token(data={"sub": user.id}, jti=jti)
+    db.add(RefreshToken(
+        jti=jti,
+        user_id=user.id,
+        expires_at=datetime.utcnow() + timedelta(days=settings.JWT_REFRESH_EXPIRATION_DAYS),
+    ))
+    db.commit()
+
     logger.info(f"用户登录成功：{user.username} (ID: {user.id})")
     return TokenResponse(
         access_token=access_token,
@@ -242,10 +252,33 @@ async def refresh_token(
             detail="用户已禁用"
         )
     
+    # 轮换：旧 jti 必须仍在库中，使用一次后立即失效。
+    # 没有 jti 的旧版令牌仍允许刷新一次，以兼容升级前的会话。
+    previous_jti = payload.get("jti")
+    if previous_jti:
+        deleted = (
+            db.query(RefreshToken)
+            .filter(RefreshToken.jti == previous_jti, RefreshToken.user_id == user.id)
+            .delete()
+        )
+        if not deleted:
+            logger.warning(f"刷新令牌已失效：user_id={user.id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="刷新令牌已失效",
+            )
+
     # 创建新令牌
     access_token = create_access_token(data={"sub": user.id, "username": user.username})
-    refresh_token = create_refresh_token(data={"sub": user.id})
-    
+    jti = uuid4().hex
+    refresh_token = create_refresh_token(data={"sub": user.id}, jti=jti)
+    db.add(RefreshToken(
+        jti=jti,
+        user_id=user.id,
+        expires_at=datetime.utcnow() + timedelta(days=settings.JWT_REFRESH_EXPIRATION_DAYS),
+    ))
+    db.commit()
+
     logger.info(f"令牌刷新成功：{user.username} (ID: {user.id})")
     return TokenResponse(
         access_token=access_token,

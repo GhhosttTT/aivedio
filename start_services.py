@@ -228,12 +228,12 @@ def check_database():
     
     try:
         inspector = inspect(engine)
-        if 'characters' not in inspector.get_table_names():
-            # A fresh checkout has no SQLite file yet; create the full schema
-            # instead of failing while inspecting a missing table.
-            print_info("数据库表不存在，正在初始化...")
-            Base.metadata.create_all(bind=engine)
-            inspector = inspect(engine)
+        existing_tables = set(inspector.get_table_names())
+        # create_all is idempotent: it adds newly introduced tables without
+        # touching existing data, so upgrades do not need a manual migration.
+        Base.metadata.create_all(bind=engine)
+        inspector = inspect(engine)
+        if 'characters' not in existing_tables:
             print_success("数据库表已创建")
         
         columns = [col['name'] for col in inspector.get_columns('characters')]

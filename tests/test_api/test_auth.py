@@ -518,3 +518,46 @@ def test_refresh_rejects_deactivated_user():
 
     assert response.status_code == 403
     assert "用户已禁用" in response.json()["detail"]
+
+
+def test_refresh_token_rotation_revokes_previous_token():
+    client.post(
+        "/api/auth/register",
+        json={"username": "rotate-user", "email": "rotate@example.com", "password": "password123"},
+    )
+    login = client.post(
+        "/api/auth/login",
+        json={"username": "rotate-user", "password": "password123"},
+    )
+    original = login.json()["refresh_token"]
+
+    first = client.post("/api/auth/refresh", json={"refresh_token": original})
+    assert first.status_code == 200
+    rotated = first.json()["refresh_token"]
+    assert rotated != original
+
+    replay = client.post("/api/auth/refresh", json={"refresh_token": original})
+    assert replay.status_code == 401
+    assert "已失效" in replay.json()["detail"]
+
+    second = client.post("/api/auth/refresh", json={"refresh_token": rotated})
+    assert second.status_code == 200
+
+
+def test_legacy_refresh_token_without_jti_can_still_refresh():
+    client.post(
+        "/api/auth/register",
+        json={"username": "legacy-user", "email": "legacy@example.com", "password": "password123"},
+    )
+    db = TestSessionLocal()
+    try:
+        user = db.query(User).filter(User.username == "legacy-user").one()
+        user_id = user.id
+    finally:
+        db.close()
+    legacy = create_refresh_token({"sub": user_id})
+
+    response = client.post("/api/auth/refresh", json={"refresh_token": legacy})
+
+    assert response.status_code == 200
+    assert response.json()["refresh_token"]

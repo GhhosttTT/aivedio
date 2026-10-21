@@ -18,7 +18,7 @@ def test_check_database_creates_missing_schema(tmp_path, monkeypatch, module):
     try:
         assert module.check_database() is True
         tables = set(inspect(engine).get_table_names())
-        assert {"characters", "projects", "scenes", "tasks"} <= tables
+        assert {"characters", "projects", "scenes", "tasks", "refresh_tokens"} <= tables
         assert {"personality", "appearance"} <= _columns(engine, "characters")
     finally:
         engine.dispose()
@@ -40,5 +40,6 @@ def test_check_database_adds_legacy_character_columns(tmp_path, monkeypatch, mod
         columns = _columns(engine, "characters")
         assert "personality" in columns
         assert "appearance" in columns
+        assert "refresh_tokens" in set(inspect(engine).get_table_names())
     finally:
         engine.dispose()
