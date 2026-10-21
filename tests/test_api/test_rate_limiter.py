@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse
 
 from src.api.rate_limiter import (
+    parse_rate_limit,
     RateLimiter,
     RateLimitMiddleware,
     RateLimitExceeded,
@@ -344,3 +345,17 @@ class TestRateLimitExceeded:
         assert exc.status_code == 429
         assert "30" in exc.detail
         assert exc.retry_after == 30
+
+
+def test_parse_rate_limit_supports_seconds_minutes_hours():
+    assert parse_rate_limit("10/minute") == (10, 60)
+    assert parse_rate_limit("100/hour") == (100, 3600)
+    assert parse_rate_limit("5/second") == (5, 1)
+    assert parse_rate_limit(" 120 / minutes ") == (120, 60)
+
+
+def test_parse_rate_limit_falls_back_on_invalid_values():
+    assert parse_rate_limit("") == (60, 60)
+    assert parse_rate_limit("fast") == (60, 60)
+    assert parse_rate_limit("0/minute") == (60, 60)
+    assert parse_rate_limit("10/day") == (60, 60)

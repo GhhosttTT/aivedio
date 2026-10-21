@@ -124,10 +124,13 @@ def configure_middlewares(app: FastAPI):
     from src.api.rate_limiter import RateLimitMiddleware, get_redis_client
     
     redis_client = get_redis_client()
+    from src.api.rate_limiter import parse_rate_limit
+
+    default_rate, default_period = parse_rate_limit(settings.API_RATE_LIMIT)
     app.add_middleware(
         RateLimitMiddleware,
-        default_rate=60,  # 默认 60 次/分钟
-        default_period=60,
+        default_rate=default_rate,
+        default_period=default_period,
         redis_client=redis_client
     )
     logger.info("速率限制中间件配置完成")

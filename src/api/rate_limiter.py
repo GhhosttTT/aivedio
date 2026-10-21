@@ -3,9 +3,10 @@ API 速率限制中间件
 
 使用 Redis 实现基于令牌桶算法的速率限制
 """
+import math
+import re
 import time
 import weakref
-import math
 from typing import Callable, Optional
 from uuid import uuid4
 
@@ -17,6 +18,19 @@ from src.config import settings
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def parse_rate_limit(value: str, default: tuple[int, int] = (60, 60)) -> tuple[int, int]:
+    """Parse an ``N/minute`` style setting into (rate, period_seconds)."""
+    match = re.fullmatch(r"\s*(\d+)\s*/\s*(second|minute|hour)s?\s*", str(value or "").lower())
+    if not match:
+        return default
+    amount = int(match.group(1))
+    unit = match.group(2)
+    period = {"second": 1, "minute": 60, "hour": 3600}[unit]
+    if amount <= 0:
+        return default
+    return amount, period
 
 
 class RateLimitExceeded(HTTPException):

@@ -81,7 +81,7 @@
 | --- | --- | --- |
 | `API_HOST` | `str` | `0.0.0.0` |
 | `API_PORT` | `int` | `8000` |
-| `API_RATE_LIMIT` | `str` | `10/minute` |
+| `API_RATE_LIMIT` | `str` | `60/minute` |
 | `API_RELOAD` | `bool` | `False` |
 
 ## ASR

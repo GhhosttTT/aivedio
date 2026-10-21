@@ -340,7 +340,7 @@ class Settings(BaseSettings):
     JWT_REFRESH_EXPIRATION_DAYS: int = 7
 
     # 速率限制配置
-    API_RATE_LIMIT: str = "10/minute"
+    API_RATE_LIMIT: str = "60/minute"
     # 仅当 API 确实位于可信反向代理之后时才信任 X-Forwarded-For，
     # 否则客户端可伪造该头绕过登录/注册限流。
     TRUST_X_FORWARDED_FOR: bool = False
