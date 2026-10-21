@@ -81,3 +81,5 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Type-check and build frontend
         run: npm run build
+      - name: Test frontend
+        run: npm test

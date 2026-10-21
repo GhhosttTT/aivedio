@@ -1,36 +1,10 @@
 import axios from 'axios';
+import { createSingleFlight } from './singleFlight';
 import { useAuthStore } from '../store/authStore';
 export const apiBase = (import.meta as any).env?.VITE_API_BASE_URL || `${window.location.protocol}//${window.location.hostname}:8000/api`;
 export const apiOrigin = new URL(apiBase, window.location.href).origin;
-const detailText = (value: any): string => {
-    if (typeof value === 'string') return value;
-    if (typeof value?.msg === 'string') return value.msg;
-    if (typeof value?.message === 'string') return value.message;
-    return '';
-};
+export { errorText } from './errorText';
 
-export const errorText = (error: any) => {
-    const detail = error?.response?.data?.detail;
-    if (typeof detail === 'string') return detail;
-    if (Array.isArray(detail)) {
-        const parts = detail.map(detailText).filter(Boolean);
-        return parts.length ? parts.join('; ') : '请求失败';
-    }
-    if (detail && typeof detail === 'object') {
-        if (Array.isArray(detail.errors)) {
-            const parts = detail.errors.map(detailText).filter(Boolean);
-            if (parts.length) return parts.join('; ');
-        }
-        if (typeof detail.message === 'string') return detail.message;
-        if (typeof detail.detail === 'string') return detail.detail;
-        try {
-            return JSON.stringify(detail);
-        } catch {
-            return '请求失败';
-        }
-    }
-    return error?.message || '请求失败';
-};
 import type { LocalizationJob, Project, SourceVideo } from '../types';
 
 /**
@@ -43,8 +17,6 @@ const apiClient = axios.create({
         'Content-Type': 'application/json'
     }
 });
-
-let refreshInFlight: Promise<{access_token: string; refresh_token: string}> | null = null;
 
 // 请求拦截器 - 添加认证 Token
 apiClient.interceptors.request.use((config) => {
@@ -70,20 +42,10 @@ apiClient.interceptors.response.use(
         ) {
             originalRequest._authRetry = true;
             try {
-                if (!refreshInFlight) {
-                    // A refresh token is single-use after rotation. All 401s
-                    // must share one refresh; update the store before the
-                    // shared promise resolves so retries never read the old token.
-                    refreshInFlight = authApi.refreshToken()
-                        .then((tokens) => {
-                            useAuthStore.getState().updateTokens(tokens.access_token, tokens.refresh_token);
-                            return tokens;
-                        })
-                        .finally(() => {
-                            refreshInFlight = null;
-                        });
-                }
-                const tokens = await refreshInFlight;
+                // A refresh token is single-use after rotation. All 401s must
+                // share one refresh; the shared task updates the store before
+                // resolving so retries never read the old token.
+                const tokens = await refreshSession();
                 originalRequest.headers = originalRequest.headers || {};
                 originalRequest.headers.Authorization = `Bearer ${tokens.access_token}`;
                 return apiClient(originalRequest);
@@ -146,6 +108,12 @@ export const authApi = {
         return response.data;
     },
 };
+
+const refreshSession = createSingleFlight(async () => {
+    const tokens = await authApi.refreshToken();
+    useAuthStore.getState().updateTokens(tokens.access_token, tokens.refresh_token);
+    return tokens;
+});
 
 /**
  * 项目 API
