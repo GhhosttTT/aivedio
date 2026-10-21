@@ -1,4 +1,6 @@
 import shutil
+import subprocess
+import sys
 from types import SimpleNamespace
 from pathlib import Path
 
@@ -432,3 +434,15 @@ def test_compare_video_baseline_uses_configured_temporal_limits(monkeypatch, tmp
     report = compare(tmp_path / "candidate.mp4", tmp_path / "baseline.mp4", max_samples=6)
 
     assert report["gates"]["no_prolonged_static_run"] is True
+
+
+def test_script_runs_as_file_from_repo_root():
+    repo = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [sys.executable, str(repo / "scripts" / "compare_video_baseline.py"), "--help"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "usage" in result.stdout.lower()

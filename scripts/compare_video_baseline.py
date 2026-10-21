@@ -13,9 +13,12 @@ import json
 import math
 import re
 import subprocess
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 if TYPE_CHECKING:
     import numpy as np
