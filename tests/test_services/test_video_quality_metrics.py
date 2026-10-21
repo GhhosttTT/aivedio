@@ -416,3 +416,72 @@ def test_video_candidate_metrics_returns_available_metrics(tmp_path):
     assert metrics["sampled_frames"] > 0
     assert metrics["duration_seconds"] > 0
     assert metrics["technical_score"] is not None
+
+
+def _make_clip_and_reference(tmp_path):
+    import shutil
+    import subprocess
+
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg is required for the frame reference test")
+    clip = tmp_path / "clip.mp4"
+    reference = tmp_path / "reference.png"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc=size=160x96:rate=12:duration=1",
+            "-c:v", "mpeg4", "-q:v", "5", "-pix_fmt", "yuv420p", str(clip),
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(clip), "-frames:v", "1", str(reference),
+        ],
+        check=True,
+    )
+    return clip, reference
+
+
+def test_video_frame_reference_metrics_compare_boundaries(tmp_path):
+    from src.services.video_quality_metrics import (
+        video_continuity_reference_metrics,
+        video_end_frame_reference_metrics,
+        video_start_frame_reference_metrics,
+    )
+
+    clip, reference = _make_clip_and_reference(tmp_path)
+
+    start = video_start_frame_reference_metrics(clip, reference)
+    end = video_end_frame_reference_metrics(clip, reference)
+    continuity = video_continuity_reference_metrics(clip, reference)
+
+    assert start["status"] == "available"
+    assert start["boundary"] == "start"
+    assert 0.0 <= start["score"] <= 5.0
+    assert end["status"] == "available"
+    assert end["boundary"] == "end"
+    assert continuity["boundary"] == "continuity_start"
+
+
+def test_video_frame_reference_metrics_without_reference_are_not_applicable(tmp_path):
+    from src.services.video_quality_metrics import video_start_frame_reference_metrics
+
+    clip, _reference = _make_clip_and_reference(tmp_path)
+
+    assert video_start_frame_reference_metrics(clip, None) == {"status": "not_applicable"}
+
+
+def test_video_boundary_continuity_reports_adjacent_clip_boundary(tmp_path):
+    from src.services.video_quality_metrics import video_boundary_continuity
+
+    clip, _reference = _make_clip_and_reference(tmp_path)
+    second = tmp_path / "second.mp4"
+    second.write_bytes(clip.read_bytes())
+
+    report = video_boundary_continuity([clip, second])
+
+    assert report["status"] == "available"
+    assert report["boundary_count"] == 1
+    assert len(report["boundaries"]) == 1
