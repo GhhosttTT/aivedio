@@ -3,6 +3,7 @@
 管理项目文件的存储、路径生成和清理
 """
 
+import logging
 import os
 import shutil
 import stat
@@ -15,6 +16,8 @@ import psutil
 # 存储配置
 STORAGE_PATH = os.getenv("STORAGE_PATH", "./storage")
 MAX_STORAGE_SIZE_GB = int(os.getenv("MAX_STORAGE_SIZE_GB", "500"))
+
+logger = logging.getLogger(__name__)
 
 
 class StorageManager:
@@ -209,22 +212,30 @@ class StorageManager:
         Returns:
             int: 清理的文件数
         """
-        import time
-        
+        if days < 0:
+            raise ValueError("days must be non-negative")
+
         current_time = time.time()
         cutoff_time = current_time - (days * 24 * 60 * 60)
         cleaned_count = 0
-        
-        for dirpath, dirnames, filenames in os.walk(self.base_path):
+
+        for dirpath, _dirnames, filenames in os.walk(self.base_path):
             for filename in filenames:
                 filepath = Path(dirpath) / filename
-                if filepath.stat().st_mtime < cutoff_time:
-                    try:
-                        filepath.unlink()
-                        cleaned_count += 1
-                    except Exception:
-                        pass
-        
+                try:
+                    modified = filepath.stat().st_mtime
+                except OSError as exc:
+                    # Files can disappear between os.walk and stat.
+                    logger.debug("跳过无法读取的文件 %s: %s", filepath, exc)
+                    continue
+                if modified >= cutoff_time:
+                    continue
+                try:
+                    filepath.unlink()
+                    cleaned_count += 1
+                except OSError as exc:
+                    logger.warning("无法清理旧文件 %s: %s", filepath, exc)
+
         return cleaned_count
 
 
