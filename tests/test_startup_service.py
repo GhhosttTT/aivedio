@@ -114,3 +114,20 @@ def test_build_services_skips_missing_celery_and_npm(tmp_path, monkeypatch):
 
     assert "Celery Worker" not in names
     assert "Frontend (Vite)" not in names
+
+
+def test_main_treats_occupied_port_as_already_running(monkeypatch):
+    monkeypatch.setattr(start_services, "check_python", lambda: True)
+    monkeypatch.setattr(start_services, "check_virtualenv", lambda: True)
+    monkeypatch.setattr(start_services, "check_database", lambda: True)
+    monkeypatch.setattr(start_services, "build_services", lambda root: [
+        {"name": "FastAPI Backend", "cmd": ["python", "main.py"], "cwd": None, "delay": 0, "port": 8000},
+    ])
+    monkeypatch.setattr(start_services, "port_in_use", lambda port: True)
+    monkeypatch.setattr(
+        start_services,
+        "start_service",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("should not start an occupied service")),
+    )
+
+    assert start_services.main() is True
