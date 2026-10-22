@@ -226,19 +226,25 @@ class ProjectManager:
             raise ValueError(f"项目不存在: id={project_id}")
         
         try:
-            # 删除项目文件
             storage_path = get_project_storage_path(project_id)
-            if os.path.exists(storage_path):
-                if not cleanup_project_files(storage_path):
-                    raise RuntimeError(f"项目文件清理失败: path={storage_path}")
-                logger.info(f"删除项目文件: path={storage_path}")
-            
-            # 删除数据库记录（级联删除关联的角色、分镜、任务）
+
+            # Commit the database deletion first. Assets are recoverable
+            # orphans if cleanup fails, whereas deleting files before a failed
+            # commit would leave a project row pointing at missing media.
             self.db.delete(project)
             self.db.commit()
-            
+
+            if os.path.exists(storage_path):
+                try:
+                    if cleanup_project_files(storage_path):
+                        logger.info(f"删除项目文件: path={storage_path}")
+                    else:
+                        logger.warning(f"项目已删除但文件清理失败，可稍后重试: path={storage_path}")
+                except Exception as exc:
+                    logger.warning(f"项目已删除但文件清理异常: path={storage_path}, error={exc}")
+
             logger.info(f"删除项目成功: id={project_id}, name='{project.name}'")
-            
+
             return True
             
         except Exception as e:

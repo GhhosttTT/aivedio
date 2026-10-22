@@ -399,3 +399,12 @@ class TestProjectManager:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_delete_project_survives_file_cleanup_failure(project_manager, test_user, temp_storage, monkeypatch):
+    project = project_manager.create_project(name="清理失败项目", user_id=test_user.id)
+    project_id = project.id
+    monkeypatch.setattr("src.services.project_manager.cleanup_project_files", lambda path: False)
+
+    assert project_manager.delete_project(project_id) is True
+    assert project_manager.get_project(project_id) is None
