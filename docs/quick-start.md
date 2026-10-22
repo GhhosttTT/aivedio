@@ -16,7 +16,7 @@
 
 - **CPU**: 8 核心或以上（推荐）
 - **内存**: 32GB 或以上（推荐）
-- **GPU**: NVIDIA RTX 4090 24GB 或同等性能（必需）
+- **GPU**: NVIDIA RTX 3060 12GB 或以上（推荐；更低显存需降低分辨率/时长）
 - **存储**: 500GB 可用空间（用于模型和生成文件）
 
 ### 软件要求
@@ -32,8 +32,8 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/your-org/ai-short-drama-production.git
-cd ai-short-drama-production
+git clone https://github.com/GhhosttTT/aivedio.git
+cd aivedio
 ```
 
 ### 2. 创建虚拟环境
@@ -518,14 +518,14 @@ curl -X GET "http://localhost:8000/api/projects/{project_id}" \
 - 阅读 [用户手册](user-manual.md) 了解更多功能
 - 查看 [API 文档](http://localhost:8000/docs) 了解所有 API 端点
 - 阅读 [最佳实践指南](best-practices.md) 优化生成质量
-- 加入社区讨论：[GitHub Discussions](https://github.com/your-org/ai-short-drama-production/discussions)
+- 加入社区讨论：[GitHub Discussions](https://github.com/GhhosttTT/aivedio/discussions)
 
 ## 获取帮助
 
 如果遇到问题，可以：
 
 1. 查看 [常见问题与修复](QUICK_FIX_GUIDE.md)
-2. 搜索 [GitHub Issues](https://github.com/your-org/ai-short-drama-production/issues)
+2. 搜索 [GitHub Issues](https://github.com/GhhosttTT/aivedio/issues)
 3. 提交新的 Issue
 4. 加入 Discord 社区
 

@@ -784,7 +784,7 @@ for task_id in task_ids:
 1. 查看 [快速开始指南](quick-start.md)
 2. 查看 [常见问题与修复](QUICK_FIX_GUIDE.md)
 3. 查看 [API 文档](http://localhost:8000/docs)
-4. 提交 [GitHub Issue](https://github.com/your-org/ai-short-drama-production/issues)
+4. 提交 [GitHub Issue](https://github.com/GhhosttTT/aivedio/issues)
 5. 加入社区讨论
 
 祝您使用愉快！🎬

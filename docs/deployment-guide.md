@@ -81,13 +81,13 @@ docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-org/ai-short-drama-production.git
-cd ai-short-drama-production
+git clone https://github.com/GhhosttTT/aivedio.git
+cd aivedio
 
 # 或下载发布版本
-wget https://github.com/your-org/ai-short-drama-production/archive/v1.0.0.tar.gz
-tar -xzf v1.0.0.tar.gz
-cd ai-short-drama-production-1.0.0
+wget https://github.com/GhhosttTT/aivedio/archive/refs/heads/master.tar.gz
+tar -xzf master.tar.gz
+cd aivedio-master
 ```
 
 ### 4. 下载 AI 模型
