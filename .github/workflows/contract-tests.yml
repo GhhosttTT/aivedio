@@ -20,8 +20,8 @@ jobs:
           cache-dependency-path: requirements-contract-tests.txt
       - name: Install contract-test dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements-contract-tests.txt
+          python -m pip install --timeout 30 --retries 3 --upgrade pip
+          python -m pip install --timeout 30 --retries 3 -r requirements-contract-tests.txt
       - name: Lint launch scripts
         run: |
           flake8 --select=F401,F811,F821,F841,F541 \
@@ -61,8 +61,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements-media-tests.txt
+          python -m pip install --timeout 30 --retries 3 --upgrade pip
+          python -m pip install --timeout 30 --retries 3 -r requirements-media-tests.txt
       - name: Run media metric tests
         run: pytest -q tests/test_services/test_video_quality_metrics.py tests/test_services/test_video_composer_ffmpeg.py tests/test_services/test_subtitle_generator_ffmpeg.py tests/test_services/test_platform_export_ffmpeg.py tests/test_services/test_cover_generator_ffmpeg.py tests/test_services/test_delivery_package_ffmpeg.py tests/test_services/test_subtitle_rendering_ffmpeg.py
 
