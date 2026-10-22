@@ -700,7 +700,7 @@ OSError: [Errno 28] No space left on device
 
 **解决方案**：
 1. 检查磁盘使用：`df -h`
-2. 清理旧的生成文件：`rm -rf storage/projects/*/`
+2. 清理旧的生成文件（先 dry-run 确认）：`python scripts/cleanup_old_files.py --days 30`，确认后再加 `--apply`
 3. 清理 Docker 镜像：`docker system prune -a`
 4. 清理日志文件：`rm -rf logs/*.log`
 5. 配置日志轮转

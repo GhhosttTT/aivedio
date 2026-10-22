@@ -576,8 +576,8 @@ docker-compose up -d
 # 停止服务
 docker-compose down
 
-# 恢复存储文件
-rm -rf storage/
+# 恢复存储文件（先保留旧目录，确认后可手动删除）
+mv storage storage.before-restore
 tar -xzf backups/storage_20260429.tar.gz
 
 # 启动服务
@@ -916,8 +916,9 @@ CREATE INDEX idx_scene_project_id ON scenes(project_id);
 #### 磁盘空间不足
 
 ```bash
-# 清理旧文件
-find storage/ -type f -mtime +30 -delete
+# 先 dry-run 确认范围，再加 --apply 清理 30 天前的文件
+python scripts/cleanup_old_files.py --days 30
+python scripts/cleanup_old_files.py --days 30 --apply
 
 # 清理 Docker 镜像
 docker system prune -a
