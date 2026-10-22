@@ -1,5 +1,5 @@
 # Web 框架
-fastapi==0.104.1
+fastapi==0.115.14
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
@@ -19,7 +19,7 @@ psycopg2-binary==2.9.9
 llama-cpp-python>=0.3.16,<0.4
 
 # 图像处理
-Pillow==10.1.0
+Pillow==12.3.0
 opencv-python==4.8.1.78
 rapidocr-onnxruntime==1.2.3
 # OpenCV/RapidOCR wheels currently require the NumPy 1.x ABI.
@@ -31,8 +31,10 @@ ffmpeg-python==0.2.0
 # AI 模型
 torch>=2.2.0
 torchvision>=0.17.0
-diffusers==0.24.0
-transformers==4.35.2
+diffusers==0.35.1
+# diffusers 0.35 removed the cached_download import that broke with newer hubs.
+huggingface-hub>=0.34,<1.0
+transformers==4.57.6
 accelerate==0.25.0
 # Optional CUDA/Linux performance optimization. It is not available on all
 # platforms (for example, the default macOS toolchain lacks OpenMP).
@@ -40,7 +42,7 @@ accelerate==0.25.0
 
 # HTTP 客户端
 httpx==0.25.2
-requests==2.31.0
+requests==2.34.2
 
 # WebSocket
 websockets==12.0
@@ -48,8 +50,8 @@ websockets==12.0
 # 认证和安全
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.6
-cryptography==41.0.7
+python-multipart==0.0.32
+cryptography==50.0.2
 email-validator==2.1.0.post1
 
 # 监控
@@ -60,7 +62,7 @@ psutil>=5.9
 loguru==0.7.2
 
 # 工具
-python-dotenv==1.0.0
+python-dotenv==1.2.4
 pyyaml==6.0.1
 
 # 测试
