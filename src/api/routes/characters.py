@@ -570,17 +570,22 @@ def upload_reference_image(
         with open(temp_path, "wb") as buffer:
             buffer.write(content)
         
-        # 保存到角色参考目录
-        reference_path = character_manager.save_character_reference(
-            character_id=character_id,
-            project_id=project_id,
-            image_path=str(temp_path),
-            description=description or ""
-        )
-        
-        # 删除临时文件
-        os.remove(temp_path)
-        
+        # 保存到角色参考目录；无论成功与否都清理临时文件
+        try:
+            reference_path = character_manager.save_character_reference(
+                character_id=character_id,
+                project_id=project_id,
+                image_path=str(temp_path),
+                description=description or ""
+            )
+        finally:
+            try:
+                os.remove(temp_path)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                logger.warning(f"清理参考图临时文件失败: {temp_path}, {exc}")
+
         logger.info(f"参考图像保存成功: {reference_path}")
         
         return CharacterReferenceResponse(
