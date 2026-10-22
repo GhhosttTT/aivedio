@@ -20,7 +20,7 @@ export function ProjectImage({projectId, path, alt}: {projectId: number; path: s
 
 export function ProjectVideo({projectId, path, label}: {projectId: number; path: string; label: string}) {
     const {url, error} = useMediaUrl(projectId, path);
-    if (error) return <span role="alert">{label}加载失败</span>;
+    if (error) return <span role="alert">{label}加载失败：{error}</span>;
     if (!url) return <span role="status">{label}加载中</span>;
     return <video className="wb-video" controls preload="metadata" src={url} aria-label={label}/>;
 }
