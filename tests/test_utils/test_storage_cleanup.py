@@ -73,6 +73,7 @@ def test_cleanup_cli_defaults_to_dry_run(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert "dry run" in result.stdout
+    assert "old.txt" in result.stdout
     assert old.exists()
 
 

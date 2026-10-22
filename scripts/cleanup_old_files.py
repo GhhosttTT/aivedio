@@ -22,9 +22,12 @@ def main() -> int:
     parser.add_argument("--days", type=int, default=30, help="retention days (default: 30)")
     parser.add_argument("--path", default=None, help="storage root (default: STORAGE_PATH)")
     parser.add_argument("--apply", action="store_true", help="delete files instead of listing")
+    parser.add_argument("--limit", type=int, default=10, help="files to show during dry run (default: 10)")
     args = parser.parse_args()
     if args.days < 0:
         parser.error("--days must be non-negative")
+    if args.limit < 0:
+        parser.error("--limit must be non-negative")
 
     storage_path = Path(args.path or settings.STORAGE_PATH)
     if not storage_path.is_dir():
@@ -44,6 +47,14 @@ def main() -> int:
         f"({total_bytes / (1024 * 1024):.1f} MiB)"
     )
     if not args.apply:
+        for path in old_files[: args.limit]:
+            try:
+                relative = path.relative_to(manager.base_path)
+            except ValueError:
+                relative = path
+            print(f"  {relative}")
+        if len(old_files) > args.limit:
+            print(f"  ... and {len(old_files) - args.limit} more")
         print("dry run; add --apply to delete")
         return 0
     print(f"deleted: {manager.cleanup_old_files(args.days)}")
