@@ -156,7 +156,7 @@ class StorageManager:
             bool: 删除成功返回 True，否则返回 False
         """
         try:
-            project_path = self.get_project_path(project_id)
+            project_path = self.base_path / f"projects/{project_id}"
             if project_path.exists():
                 shutil.rmtree(project_path)
                 return True
@@ -175,7 +175,9 @@ class StorageManager:
         Returns:
             int: 文件总大小（字节）
         """
-        project_path = self.get_project_path(project_id)
+        project_path = self.base_path / f"projects/{project_id}"
+        if not project_path.exists():
+            return 0
         total_size = 0
         
         for dirpath, _dirnames, filenames in os.walk(project_path):

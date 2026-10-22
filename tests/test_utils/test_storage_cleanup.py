@@ -134,3 +134,17 @@ def test_project_size_skips_broken_symlinks(tmp_path):
         pytest.skip(f"cannot create symlink: {exc}")
 
     assert manager.get_project_size(1) == 0
+
+
+def test_delete_missing_project_does_not_create_directory(tmp_path):
+    manager = StorageManager(base_path=tmp_path / "storage")
+
+    assert manager.delete_project_files(99) is False
+    assert not (manager.base_path / "projects" / "99").exists()
+
+
+def test_project_size_of_missing_project_is_zero_without_side_effect(tmp_path):
+    manager = StorageManager(base_path=tmp_path / "storage")
+
+    assert manager.get_project_size(99) == 0
+    assert not (manager.base_path / "projects" / "99").exists()
