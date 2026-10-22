@@ -492,11 +492,19 @@ def upload_seed_dance_baseline(
         baseline_dir = review_root / "baselines"
         baseline_dir.mkdir(parents=True, exist_ok=True)
         baseline = baseline_dir / f"seed_dance_baseline{suffix}"
-        with baseline.open("wb") as stream:
-            shutil.copyfileobj(file.file, stream)
-        if baseline.stat().st_size <= 0:
-            baseline.unlink(missing_ok=True)
-            raise HTTPException(status_code=400, detail="Baseline video is empty")
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{baseline.name}.", suffix=".tmp", dir=baseline_dir,
+        )
+        temporary_path = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                shutil.copyfileobj(file.file, stream)
+            if temporary_path.stat().st_size <= 0:
+                raise HTTPException(status_code=400, detail="Baseline video is empty")
+            os.replace(temporary_path, baseline)
+        except BaseException:
+            temporary_path.unlink(missing_ok=True)
+            raise
 
         report = compare(candidate, baseline, artifact_dir=review_root)
         report["candidate_video_path"] = str(candidate)

@@ -1030,3 +1030,27 @@ def test_review_reuses_audits_while_inputs_are_unchanged(tmp_path, monkeypatch):
     assert written.count("episode_style_consistency.json") == 1
     assert written.count("continuity_audit.json") == 1
     assert written.count("story_room_quality.json") == 1
+
+
+def test_seed_dance_baseline_upload_failure_leaves_no_partial_file(tmp_path, monkeypatch):
+    from src.utils.storage import storage_manager
+
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path / "storage")
+    candidate = tmp_path / "candidate.mp4"
+    candidate.write_bytes(b"candidate")
+    db = Mock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+        id=1,
+        user_id=2,
+        final_video_path=str(candidate),
+    )
+    upload = UploadFile(filename="baseline.mp4", file=BytesIO(b"baseline-video"))
+
+    def fail_copy(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("src.api.routes.projects.shutil.copyfileobj", fail_copy)
+    with pytest.raises(OSError):
+        upload_seed_dance_baseline(1, upload, SimpleNamespace(id=2), db)
+
+    assert not (storage_manager.get_project_path(1) / "reviews" / "baselines" / "seed_dance_baseline.mp4").exists()
