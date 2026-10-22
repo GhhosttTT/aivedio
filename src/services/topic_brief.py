@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from src.utils.atomic_json import write_json_atomic
 from src.utils.storage import storage_manager
 
 
@@ -53,7 +54,7 @@ class TopicBriefService:
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         path = self.path(project_id)
-        path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        write_json_atomic(path, result)
         return result
 
     def load(self, project_id: int) -> dict | None:
@@ -121,9 +122,7 @@ class TopicBriefService:
     def save_market_signals(self, project_id: int, payload: dict) -> dict:
         normalized = self.normalize_market_signals(payload)
         result = {**normalized, "updated_at": datetime.now(timezone.utc).isoformat()}
-        self.market_signal_path(project_id).write_text(
-            json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
+        write_json_atomic(self.market_signal_path(project_id), result)
         return result
 
     def load_market_signals(self, project_id: int) -> dict | None:

@@ -7,6 +7,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from src.utils.atomic_json import write_json_atomic
 
 class LocalizationReviewStore:
     def __init__(self, report_path: str | Path):
@@ -46,8 +47,7 @@ class LocalizationReviewStore:
         payload = self._read()
         history = [item for item in payload.get("history", []) if isinstance(item, dict)]
         history.append(entry)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps({"version": 1, "decision": entry, "history": history}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        write_json_atomic(self.path, {"version": 1, "decision": entry, "history": history})
         return entry
 
     def apply(self, report: dict) -> dict:

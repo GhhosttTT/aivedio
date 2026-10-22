@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 
 from src.config import settings
+from src.utils.atomic_json import write_json_atomic
 from src.utils.storage import storage_manager
 
 
@@ -45,8 +46,7 @@ class BaselineComparisonHistoryStore:
         ]
         entries.append(entry)
         entries = entries[-self.MAX_ENTRIES:]
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps({"version": 1, "entries": entries}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        write_json_atomic(self.path, {"version": 1, "entries": entries})
         return self.summary(entries)
 
     def summary(self, entries: list[dict] | None = None) -> dict:

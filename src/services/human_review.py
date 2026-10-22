@@ -6,6 +6,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
+from src.utils.atomic_json import write_json_atomic
 from src.utils.storage import storage_manager
 
 
@@ -43,8 +44,7 @@ class HumanReviewStore:
             "reviewed_at": datetime.now(timezone.utc).isoformat(),
         }
         payload["decisions"][report_key] = entry
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        write_json_atomic(self.path, payload)
         return entry
 
     def apply(self, reports: dict[str, dict]) -> dict[str, dict]:
