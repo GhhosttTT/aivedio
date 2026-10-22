@@ -308,8 +308,9 @@ LLM_N_THREADS=8
 
 **定期清理**:
 ```bash
-# 先列出 30 天未修改的项目目录，确认后再删除
-find storage/projects -mindepth 1 -maxdepth 1 -type d -mtime +30 -print
+# 先 dry-run 查看 30 天未修改的文件，确认后再加 --apply 删除
+python scripts/cleanup_old_files.py --days 30
+python scripts/cleanup_old_files.py --days 30 --apply
 ```
 
 ### 4. 网络优化

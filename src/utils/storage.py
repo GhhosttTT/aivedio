@@ -202,6 +202,26 @@ class StorageManager:
             "available": disk_usage.free / (1024 ** 3) > 10  # 至少保留 10GB
         }
     
+    def find_old_files(self, days: int = 30) -> list[Path]:
+        """List files older than ``days`` without deleting anything."""
+        if days < 0:
+            raise ValueError("days must be non-negative")
+
+        cutoff_time = time.time() - (days * 24 * 60 * 60)
+        old_files: list[Path] = []
+        for dirpath, _dirnames, filenames in os.walk(self.base_path):
+            for filename in filenames:
+                filepath = Path(dirpath) / filename
+                try:
+                    modified = filepath.stat().st_mtime
+                except OSError as exc:
+                    # Files can disappear between os.walk and stat.
+                    logger.debug("跳过无法读取的文件 %s: %s", filepath, exc)
+                    continue
+                if modified < cutoff_time:
+                    old_files.append(filepath)
+        return old_files
+
     def cleanup_old_files(self, days: int = 30) -> int:
         """
         清理旧文件
@@ -212,29 +232,13 @@ class StorageManager:
         Returns:
             int: 清理的文件数
         """
-        if days < 0:
-            raise ValueError("days must be non-negative")
-
-        current_time = time.time()
-        cutoff_time = current_time - (days * 24 * 60 * 60)
         cleaned_count = 0
-
-        for dirpath, _dirnames, filenames in os.walk(self.base_path):
-            for filename in filenames:
-                filepath = Path(dirpath) / filename
-                try:
-                    modified = filepath.stat().st_mtime
-                except OSError as exc:
-                    # Files can disappear between os.walk and stat.
-                    logger.debug("跳过无法读取的文件 %s: %s", filepath, exc)
-                    continue
-                if modified >= cutoff_time:
-                    continue
-                try:
-                    filepath.unlink()
-                    cleaned_count += 1
-                except OSError as exc:
-                    logger.warning("无法清理旧文件 %s: %s", filepath, exc)
+        for filepath in self.find_old_files(days):
+            try:
+                filepath.unlink()
+                cleaned_count += 1
+            except OSError as exc:
+                logger.warning("无法清理旧文件 %s: %s", filepath, exc)
 
         return cleaned_count
 

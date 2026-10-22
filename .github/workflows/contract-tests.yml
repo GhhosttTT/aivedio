@@ -39,6 +39,7 @@ jobs:
             tests/test_startup_ports.py \
             tests/test_startup_service.py \
             tests/test_scripts/test_shell_scripts.py \
+            tests/test_utils/test_storage_cleanup.py \
             tests/test_scripts/test_init_database_cli.py \
             tests/test_database_engine.py \
             tests/test_utils/test_file_hash_cache.py \
