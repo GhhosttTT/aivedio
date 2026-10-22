@@ -59,8 +59,10 @@ jobs:
           cache-dependency-path: requirements-media-tests.txt
       - name: Install media test dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo timeout 120 apt-get update
+            sudo timeout 180 apt-get install -y ffmpeg
+          fi
           python -m pip install --timeout 30 --retries 3 --upgrade pip
           python -m pip install --timeout 30 --retries 3 -r requirements-media-tests.txt
       - name: Run media metric tests
