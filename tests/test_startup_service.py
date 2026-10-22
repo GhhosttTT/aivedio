@@ -41,6 +41,8 @@ def test_new_window_streams_logs_on_posix(monkeypatch):
 
 
 def test_build_services_adds_redis_when_available(tmp_path, monkeypatch):
+    (tmp_path / "ComfyUI").mkdir()
+    (tmp_path / "ComfyUI" / "main.py").write_text("", encoding="utf-8")
     monkeypatch.setattr(start_services.shutil, "which", lambda name: "/usr/bin/redis-server")
 
     services = start_services.build_services(tmp_path)
@@ -58,7 +60,7 @@ def test_build_services_skips_missing_redis(tmp_path, monkeypatch):
     names = [service["name"] for service in start_services.build_services(tmp_path)]
 
     assert "Redis" not in names
-    assert "ComfyUI" in names
+    assert "FastAPI Backend" in names
 
 
 def test_build_services_names_and_ports_are_unique(tmp_path, monkeypatch):
@@ -98,3 +100,9 @@ def test_log_launcher_reports_failure_when_window_start_fails(monkeypatch):
     monkeypatch.setattr(start_services_with_logs, "start_service_in_new_window", lambda **kwargs: False)
 
     assert start_services_with_logs.main() is False
+
+
+def test_build_services_skips_missing_comfyui(tmp_path):
+    names = [service["name"] for service in start_services.build_services(tmp_path)]
+
+    assert "ComfyUI" not in names

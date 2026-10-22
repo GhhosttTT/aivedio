@@ -274,14 +274,16 @@ def check_database():
 
 def build_services(project_root):
     """Return the local development service list."""
-    services = [
-        {
+    services = []
+    if (project_root / 'ComfyUI' / 'main.py').is_file():
+        services.append({
             'name': 'ComfyUI',
             'cmd': [sys.executable, 'main.py', '--listen', '127.0.0.1', '--port', '8188'],
             'cwd': str(project_root / 'ComfyUI'),
             'port': 8188,
             'delay': 10
-        },
+        })
+    services.extend([
         {
             'name': 'FastAPI Backend',
             'cmd': [sys.executable, 'main.py'],
@@ -303,7 +305,7 @@ def build_services(project_root):
             'port': 5173,
             'delay': 5
         }
-    ]
+    ])
     if shutil.which('redis-server'):
         services.insert(0, {
             'name': 'Redis',
