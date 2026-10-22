@@ -121,3 +121,16 @@ def test_cleanup_does_not_follow_symlinked_directories(tmp_path):
 
     assert outside_file.exists()
     assert (manager.base_path / "linked").is_symlink()
+
+
+def test_project_size_skips_broken_symlinks(tmp_path):
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are unavailable")
+    manager = StorageManager(base_path=tmp_path / "storage")
+    project_path = manager.get_project_path(1)
+    try:
+        (project_path / "broken").symlink_to(tmp_path / "does-not-exist")
+    except OSError as exc:
+        pytest.skip(f"cannot create symlink: {exc}")
+
+    assert manager.get_project_size(1) == 0

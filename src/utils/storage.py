@@ -178,11 +178,15 @@ class StorageManager:
         project_path = self.get_project_path(project_id)
         total_size = 0
         
-        for dirpath, dirnames, filenames in os.walk(project_path):
+        for dirpath, _dirnames, filenames in os.walk(project_path):
             for filename in filenames:
                 filepath = Path(dirpath) / filename
-                total_size += filepath.stat().st_size
-        
+                try:
+                    total_size += filepath.stat().st_size
+                except OSError as exc:
+                    # Broken symlinks or files removed while walking.
+                    logger.debug("跳过无法统计的文件 %s: %s", filepath, exc)
+
         return total_size
     
     def check_disk_space(self) -> dict:
