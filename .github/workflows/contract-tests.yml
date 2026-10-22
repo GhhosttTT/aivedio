@@ -61,9 +61,16 @@ jobs:
           cache-dependency-path: requirements-media-tests.txt
       - name: Install media test dependencies
         run: |
-          if ! command -v ffmpeg >/dev/null 2>&1; then
-            sudo timeout 120 apt-get update
-            sudo timeout 180 apt-get install -y ffmpeg
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            # The apt mirror on hosted runners is occasionally unreachable;
+            # use the static build instead of blocking on apt-get update.
+            curl -fsSL --retry 3 --max-time 300 \
+              -o /tmp/ffmpeg-static.tar.xz \
+              https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+            mkdir -p /tmp/ffmpeg-static
+            tar -xJf /tmp/ffmpeg-static.tar.xz -C /tmp/ffmpeg-static --strip-components=1
+            sudo install -m 755 /tmp/ffmpeg-static/ffmpeg /usr/local/bin/ffmpeg
+            sudo install -m 755 /tmp/ffmpeg-static/ffprobe /usr/local/bin/ffprobe
           fi
           python -m pip install --timeout 30 --retries 3 --upgrade pip
           python -m pip install --timeout 30 --retries 3 -r requirements-media-tests.txt
