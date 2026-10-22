@@ -13,37 +13,23 @@
 
 ## 🚀 快速开始
 
-### 1. 初始化项目
+### 1. 安装依赖
 
-**Windows (PowerShell)**:
-```powershell
-.\scripts\init-frontend.ps1
-```
-
-**Linux/Mac (Bash)**:
-```bash
-bash scripts/init-frontend.sh
-```
-
-### 2. 手动初始化（如果脚本失败）
+仓库已经包含前端源码和 `package.json`，不要重新执行 `npm create vite` 覆盖现有项目。
 
 ```bash
-# 创建项目
-npm create vite@latest frontend -- --template react-ts
 cd frontend
-
-# 安装依赖
 npm install
-
-# 安装 UI 库和工具
-npm install antd @ant-design/icons axios zustand react-router-dom
-npm install -D tailwindcss postcss autoprefixer @types/node
-
-# 初始化 Tailwind
-npx tailwindcss init -p
 ```
 
-### 3. 启动开发服务器
+CI 或需要完全按锁文件安装时使用：
+
+```bash
+cd frontend
+npm ci
+```
+
+### 2. 启动开发服务器
 
 ```bash
 cd frontend

@@ -527,6 +527,11 @@ tar -czf backups/config_$(date +%Y%m%d).tar.gz .env docker-compose.yml configs/
 
 #### 使用 cron 定时备份
 
+下面的 cron 假设你已把上面的数据库、存储、配置备份命令分别保存为
+`scripts/backup_database.sh`、`scripts/backup_storage.sh`、`scripts/backup_config.sh`
+并执行了 `chmod +x scripts/backup_*.sh`。这些脚本不在仓库内，因为备份目录、
+数据库类型和保留策略取决于你的部署环境。
+
 ```bash
 # 编辑 crontab
 crontab -e
