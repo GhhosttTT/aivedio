@@ -59,8 +59,7 @@ def test_build_services_skips_missing_redis(tmp_path, monkeypatch):
 
     names = [service["name"] for service in start_services.build_services(tmp_path)]
 
-    assert "Redis" not in names
-    assert "FastAPI Backend" in names
+    assert names == ["FastAPI Backend"]
 
 
 def test_build_services_names_and_ports_are_unique(tmp_path, monkeypatch):
@@ -106,3 +105,12 @@ def test_build_services_skips_missing_comfyui(tmp_path):
     names = [service["name"] for service in start_services.build_services(tmp_path)]
 
     assert "ComfyUI" not in names
+
+
+def test_build_services_skips_missing_celery_and_npm(tmp_path, monkeypatch):
+    monkeypatch.setattr(start_services.shutil, "which", lambda name: None)
+
+    names = [service["name"] for service in start_services.build_services(tmp_path)]
+
+    assert "Celery Worker" not in names
+    assert "Frontend (Vite)" not in names

@@ -283,29 +283,29 @@ def build_services(project_root):
             'port': 8188,
             'delay': 10
         })
-    services.extend([
-        {
-            'name': 'FastAPI Backend',
-            'cmd': [sys.executable, 'main.py'],
-            'cwd': str(project_root),
-            'port': 8000,
-            'delay': 5
-        },
-        {
+    services.append({
+        'name': 'FastAPI Backend',
+        'cmd': [sys.executable, 'main.py'],
+        'cwd': str(project_root),
+        'port': 8000,
+        'delay': 5
+    })
+    if shutil.which('celery'):
+        services.append({
             'name': 'Celery Worker',
             'cmd': ['celery', '-A', 'src.tasks.celery_app', 'worker', '--pool=solo', '--loglevel=info'],
             'cwd': str(project_root),
             'port': None,  # Celery 不监听端口
             'delay': 3
-        },
-        {
+        })
+    if shutil.which('npm'):
+        services.append({
             'name': 'Frontend (Vite)',
             'cmd': ['npm', 'run', 'dev'],
             'cwd': str(project_root / 'frontend'),
             'port': 5173,
             'delay': 5
-        }
-    ])
+        })
     if shutil.which('redis-server'):
         services.insert(0, {
             'name': 'Redis',
@@ -349,6 +349,10 @@ def main():
     services = build_services(project_root)
     if not any(service['name'] == 'Redis' for service in services):
         print_info("未找到 redis-server，跳过本地 Redis；可用 Docker 启动 redis 服务")
+    if not shutil.which('celery'):
+        print_warning("未找到 celery，跳过 Celery Worker")
+    if not shutil.which('npm'):
+        print_warning("未找到 npm，跳过前端开发服务器")
     
     # 启动所有服务
     started_services = []
