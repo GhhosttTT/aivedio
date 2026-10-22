@@ -50,13 +50,19 @@ class CharacterManager:
         char_dir = self.base_dir / str(project_id) / str(character_id)
         char_dir.mkdir(parents=True, exist_ok=True)
         
-        # 复制参考图像
+        # 复制参考图像；先写临时文件，避免中断留下半张参考图
         from shutil import copy2
+        from uuid import uuid4
         existing_refs = list(char_dir.glob('*.png'))
         ref_number = len(existing_refs) + 1
         dest_path = char_dir / f"reference_{ref_number}.png"
-        copy2(image_path, dest_path)
-        
+        temporary_path = char_dir / f".{dest_path.name}.{uuid4().hex}.part"
+        try:
+            copy2(image_path, temporary_path)
+            temporary_path.replace(dest_path)
+        finally:
+            temporary_path.unlink(missing_ok=True)
+
         logger.info(f"角色参考图像已保存: {dest_path}")
         return str(dest_path)
     
