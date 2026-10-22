@@ -342,8 +342,8 @@ REDIS_URL=redis+sentinel://host:26379/mymaster/0
 API_HOST=0.0.0.0
 API_PORT=8000
 
-# CORS 配置（允许的前端域名）
-CORS_ORIGINS=http://localhost:3000,https://yourdomain.com
+# CORS 配置（允许的前端域名；开发默认 Vite 5173，生产替换为实际域名）
+CORS_ORIGINS=http://localhost:5173,http://localhost:3000,https://yourdomain.com
 
 # API 速率限制
 API_RATE_LIMIT=60/minute
