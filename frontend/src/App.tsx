@@ -5,12 +5,13 @@ import { VideoPreview } from './pages/VideoPreview';
 import { LocalizationDashboard } from './pages/LocalizationDashboard';
 import { Login } from './pages/Login';
 import { Navigation } from './components/Navigation';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useAuthStore } from './store/authStore';
 import './workbench.css';
 
 export default function App() {
     const {isAuthenticated} = useAuthStore();
-    return <BrowserRouter><div style={{minHeight: '100vh', background: '#191b1d'}}>
+    return <ErrorBoundary><BrowserRouter><div style={{minHeight: '100vh', background: '#191b1d'}}>
         {isAuthenticated && <Navigation/>}
         <Routes>
             <Route path="/login" element={isAuthenticated ? <Navigate to="/projects" replace/> : <Login/>}/>
@@ -20,5 +21,5 @@ export default function App() {
             <Route path="/localization" element={isAuthenticated ? <LocalizationDashboard/> : <Navigate to="/login" replace/>}/>
             <Route path="*" element={<Navigate to="/projects" replace/>}/>
         </Routes>
-    </div></BrowserRouter>;
+    </div></BrowserRouter></ErrorBoundary>;
 }
