@@ -123,7 +123,7 @@ export const projectApi = {
     latestTask: (id: number) => apiClient.get<any, ProductionTask | null>(`/projects/${id}/production-task`),
     reviews: (id: number) => apiClient.get<any, GenerationReviewResponse>(`/projects/${id}/generation-review`),
     humanReview: (id: number, data: {report_key: string; decision: 'approved' | 'rejected'; note?: string}) => apiClient.post<any, {decision: Record<string, any>}>(`/projects/${id}/human-review`, data),
-    deliveryPackage: (id: number) => apiClient.post<any, {package_path: string; manifest_path: string; files?: Array<{path: string; size: number; sha256: string}>; cover?: {status?: string}}>(`/projects/${id}/delivery-package`),
+    deliveryPackage: (id: number) => apiClient.post<any, {package_path: string; manifest_path: string; files?: Array<{path: string; size: number; sha256: string}>; cover?: {status?: string}}>(`/projects/${id}/delivery-package`, undefined, {timeout: 600000}),
     verifyDeliveryPackage: (id: number) => apiClient.get<any, {status: string; checked_files: number; errors: string[]}>(`/projects/${id}/delivery-package/verify`),
     topicBrief: (id: number) => apiClient.get<any, {status: string; missing: string[]; brief: Record<string, string>}>(`/projects/${id}/topic-brief`),
     updateTopicBrief: (id: number, data: Record<string, string>) => apiClient.put<any, Record<string, string>>(`/projects/${id}/topic-brief`, data),
@@ -137,7 +137,7 @@ export const projectApi = {
             timeout: 300000,
         });
     },
-    platformExport: (id: number, preset: string) => apiClient.post<any, {output_path: string; preset: string; label: string; width: number; height: number; fps: number; technical_metrics?: {status?: string}}>(`/projects/${id}/platform-export/${preset}`),
+    platformExport: (id: number, preset: string) => apiClient.post<any, {output_path: string; preset: string; label: string; width: number; height: number; fps: number; technical_metrics?: {status?: string}}>(`/projects/${id}/platform-export/${preset}`, undefined, {timeout: 600000}),
     qualityLoopPlan: (id: number, maxActions = 5, action?: string) => apiClient.get<any, QualityLoopPlanResponse>(`/projects/${id}/quality-loop/plan`, {params: {max_actions: maxActions, ...(action ? {action} : {})}}),
     runAutoRepairQueue: (id: number, data: {max_actions?: number; dry_run?: boolean; action?: string}) => apiClient.post<any, RepairQueueAutoRunResponse>(`/projects/${id}/repair-queue/auto`, data),
     productionReadiness: (id: number, includeEnginePreflight = true, providerOverride?: string, modelOverride?: string, requestModeOverride?: string, resolutionOverride?: string, outputFormatOverride?: string, durationOverride?: number | null) => apiClient.get<any, ProductionReadinessReport>(`/projects/${id}/production-readiness`, {params: {include_engine_preflight: includeEnginePreflight, ...(providerOverride ? {provider_override: providerOverride} : {}), ...(modelOverride ? {model_override: modelOverride} : {}), ...(requestModeOverride ? {request_mode_override: requestModeOverride} : {}), ...(resolutionOverride ? {resolution_override: resolutionOverride} : {}), ...(outputFormatOverride ? {output_format_override: outputFormatOverride} : {}), ...(durationOverride !== null && durationOverride !== undefined ? {duration_override: durationOverride} : {})}}),
