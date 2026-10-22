@@ -4,6 +4,7 @@ API 测试的共享 fixtures
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker, Session
 
 from src.api.app import app
@@ -13,8 +14,12 @@ from src.database import Base
 
 
 # 创建测试数据库（使用文件数据库而不是内存数据库）
-TEST_DATABASE_URL = "sqlite:///./test_short_drama.db"
-test_engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+TEST_DATABASE_URL = "sqlite://"
+test_engine = create_engine(
+    TEST_DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
 TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
 

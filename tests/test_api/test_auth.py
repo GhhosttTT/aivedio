@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
 from unittest.mock import patch
 
@@ -29,8 +30,12 @@ from src.database import Base, User, Project, Character, Scene, Task
 
 
 # 创建测试数据库（使用文件数据库而不是内存数据库）
-TEST_DATABASE_URL = "sqlite:///./test_short_drama.db"
-test_engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+TEST_DATABASE_URL = "sqlite://"
+test_engine = create_engine(
+    TEST_DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
 TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
 
