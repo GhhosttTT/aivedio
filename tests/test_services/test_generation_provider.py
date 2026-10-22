@@ -4266,3 +4266,23 @@ def test_hybrid_provider_does_not_fallback_after_remote_output_validation_failur
         HybridGenerationProvider(Primary(), Fallback()).generate_video(
             VideoGenerationRequest(prompt="hero turns", output_path="scene.mp4")
         )
+
+
+def test_atomic_write_video_publishes_complete_file(tmp_path):
+    target = tmp_path / "nested" / "out.mp4"
+
+    result = generation_provider._atomic_write_video(b"video-bytes", str(target))
+
+    assert result == str(target)
+    assert target.read_bytes() == b"video-bytes"
+    assert not list(target.parent.glob("*.part"))
+
+
+def test_atomic_write_video_rejects_empty_payload(tmp_path):
+    target = tmp_path / "out.mp4"
+
+    with pytest.raises(GenerationProviderError):
+        generation_provider._atomic_write_video(b"", str(target))
+
+    assert not target.exists()
+    assert not list(tmp_path.glob("*.part"))
