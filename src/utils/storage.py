@@ -209,9 +209,14 @@ class StorageManager:
 
         cutoff_time = time.time() - (days * 24 * 60 * 60)
         old_files: list[Path] = []
-        for dirpath, _dirnames, filenames in os.walk(self.base_path):
+        # followlinks=False keeps a symlinked directory from pulling files
+        # outside the configured storage root into reach.
+        for dirpath, _dirnames, filenames in os.walk(self.base_path, followlinks=False):
             for filename in filenames:
                 filepath = Path(dirpath) / filename
+                if filepath.is_symlink():
+                    logger.debug("跳过符号链接 %s", filepath)
+                    continue
                 try:
                     modified = filepath.stat().st_mtime
                 except OSError as exc:

@@ -100,3 +100,24 @@ def test_cleanup_cli_rejects_missing_storage_root(tmp_path):
     assert result.returncode == 2
     assert "does not exist" in result.stderr
     assert not storage.exists()
+
+
+def test_cleanup_does_not_follow_symlinked_directories(tmp_path):
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are unavailable")
+    manager = StorageManager(base_path=tmp_path / "storage")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_file = outside / "keep.txt"
+    outside_file.write_text("outside", encoding="utf-8")
+    old_time = time.time() - 40 * 24 * 60 * 60
+    os.utime(outside_file, (old_time, old_time))
+    try:
+        (manager.base_path / "linked").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"cannot create symlink: {exc}")
+
+    manager.cleanup_old_files(days=30)
+
+    assert outside_file.exists()
+    assert (manager.base_path / "linked").is_symlink()
