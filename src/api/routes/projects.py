@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 import shutil
 import json
+import tempfile
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -1967,16 +1968,25 @@ def upload_project_bgm(
     music_dir = storage_manager.get_project_path(project_id) / "music"
     music_dir.mkdir(parents=True, exist_ok=True)
     destination = music_dir / f"bgm{suffix}"
-    with destination.open("wb") as stream:
-        shutil.copyfileobj(file.file, stream)
-    if destination.stat().st_size <= 0:
-        destination.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail="BGM 文件为空")
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.", suffix=".tmp", dir=music_dir,
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            shutil.copyfileobj(file.file, stream)
+        size = temporary_path.stat().st_size
+        if size <= 0:
+            raise HTTPException(status_code=400, detail="BGM 文件为空")
+        os.replace(temporary_path, destination)
+    except BaseException:
+        temporary_path.unlink(missing_ok=True)
+        raise
     return {
         "project_id": project_id,
         "bgm_path": str(destination),
         "filename": Path(file.filename or destination.name).name,
-        "size": destination.stat().st_size,
+        "size": size,
     }
 
 

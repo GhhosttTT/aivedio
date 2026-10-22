@@ -2246,3 +2246,19 @@ def test_reference_upload_and_signed_media_access(setup):
     malformed_media = create_access_token({"kind": "media", "project_id": "not-an-int", "path": response.json()["image_path"]})
     assert client.get("/api/media", params={"token": malformed_media}).status_code == 401
     assert client.post(f"/api/projects/1/characters/{c['id']}/reference", files={"file": ("bad.png", b"bad", "image/png")}).status_code == 400
+
+
+def test_upload_bgm_failure_leaves_no_partial_file(setup, monkeypatch):
+    client, _, root = setup
+
+    def fail_copy(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("src.api.routes.projects.shutil.copyfileobj", fail_copy)
+    with pytest.raises(OSError):
+        client.post(
+            "/api/projects/1/bgm",
+            files={"file": ("tension.mp3", io.BytesIO(b"fake music"), "audio/mpeg")},
+        )
+
+    assert not (root / "storage" / "projects" / "1" / "music" / "bgm.mp3").exists()
