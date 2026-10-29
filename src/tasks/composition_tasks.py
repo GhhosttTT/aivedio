@@ -10,7 +10,8 @@ import re
 from pathlib import Path
 from typing import Optional
 from uuid import uuid4
-from src.tasks.celery_app import celery_app
+from celery.exceptions import Ignore
+from src.tasks.celery_app import celery_app, _claim_task_completion
 from src.database.database import get_db
 from src.database.models import Project, ProjectStatus, Scene, Task as TaskModel, TaskStatus
 from src.config import settings
@@ -334,6 +335,11 @@ def compose_final_video_task(
         project = db.query(Project).filter(Project.id == project_id).first()
         if not project:
             raise ValueError(f"项目不存在: {project_id}")
+        task_model = db.query(TaskModel).filter(
+            TaskModel.id == task_id, TaskModel.project_id == project_id,
+        ).first()
+        if task_model is None:
+            raise ValueError("Composition requires the exact project task record")
         
         # 查询所有分镜（按顺序）
         scenes = db.query(Scene).filter(
@@ -484,6 +490,7 @@ def compose_final_video_task(
             bgm_volume=bgm_volume,
             native_audio_expected=preserve_native_audio,
         )
+        task_model = _claim_task_completion(db, project_id, task_id)
         composition_review = _publish_composition_candidate(
             composition_candidate_path,
             final_video_path,
@@ -493,19 +500,9 @@ def compose_final_video_task(
         # 更新项目状态
         project.final_video_path = final_video_path
         project.status = ProjectStatus.COMPLETED
-        task_model = db.query(TaskModel).filter(TaskModel.id == task_id).first()
-        if task_model is None:
-            task_model = (
-                db.query(TaskModel)
-                .filter(TaskModel.project_id == project_id)
-                .order_by(TaskModel.created_at.desc())
-                .first()
-            )
-        if task_model:
-            task_model.status = TaskStatus.COMPLETED
-            task_model.progress = 100.0
-            task_model.current_step = task_model.total_steps
-            task_model.result_path = final_video_path
+        task_model.progress = 100.0
+        task_model.current_step = task_model.total_steps
+        task_model.result_path = final_video_path
         db.commit()
         
         logger.info(f"视频合成成功: project_id={project_id}, path={final_video_path}")
@@ -519,20 +516,28 @@ def compose_final_video_task(
             result["composition_review_path"] = composition_review.get("path")
         return result
     
+    except Ignore:
+        if db is not None:
+            db.rollback()
+        raise
     except Exception as e:
         logger.error(f"视频合成失败: project_id={project_id}, error={e}")
         
         # 更新项目状态为失败
         if db is not None:
             db.rollback()
-            project = db.query(Project).filter(Project.id == project_id).first()
-            if project:
-                project.status = ProjectStatus.FAILED
-                project.final_video_path = None
-            task_model = db.query(TaskModel).filter(TaskModel.id == task_id).first()
-            if task_model and task_model.project_id == project_id:
-                task_model.status = TaskStatus.FAILED
-                task_model.error_message = str(e)
+            failed = db.query(TaskModel).filter(
+                TaskModel.id == task_id, TaskModel.project_id == project_id,
+                TaskModel.status.in_([TaskStatus.PENDING, TaskStatus.RUNNING]),
+            ).update({TaskModel.status: TaskStatus.FAILED, TaskModel.error_message: str(e)}, synchronize_session=False)
+            if failed:
+                newer_task = db.query(TaskModel.id).filter(
+                    TaskModel.project_id == project_id, TaskModel.id > task_id,
+                ).exists()
+                db.query(Project).filter(
+                    Project.id == project_id, ~newer_task,
+                    Project.status.in_([ProjectStatus.IN_PRODUCTION, ProjectStatus.SCRIPT_GENERATED]),
+                ).update({Project.status: ProjectStatus.FAILED}, synchronize_session=False)
             db.commit()
         
         raise

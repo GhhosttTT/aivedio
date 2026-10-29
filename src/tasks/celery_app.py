@@ -49,6 +49,40 @@ def _update_current_project_state(db, record, project_status, *, require_missing
     query.update({Project.status: project_status}, synchronize_session=False)
 
 
+def _claim_task_completion(db, project_id, task_id):
+    """Reserve publication in the same transaction that completes the task.
+
+    Do not commit here: a concurrent cancellation must wait for publication to
+    finish, or win before this conditional update and prevent publication.
+    """
+    from celery.exceptions import Ignore
+    from src.database.models import Project, ProjectStatus, Task as TaskModel, TaskStatus
+
+    newer_task = db.query(TaskModel.id).filter(
+        TaskModel.project_id == project_id, TaskModel.id > task_id,
+    ).exists()
+    producing_project = db.query(Project.id).filter(
+        Project.id == project_id, Project.status == ProjectStatus.IN_PRODUCTION,
+    ).exists()
+    claimed = db.query(TaskModel).filter(
+        TaskModel.id == task_id, TaskModel.project_id == project_id,
+        TaskModel.status.in_([TaskStatus.PENDING, TaskStatus.RUNNING]),
+        ~newer_task, producing_project,
+    ).update({TaskModel.status: TaskStatus.COMPLETED}, synchronize_session=False)
+    record = db.query(TaskModel).filter(
+        TaskModel.id == task_id, TaskModel.project_id == project_id,
+    ).populate_existing().first()
+    if record is None:
+        raise ValueError("Finalization requires the exact project task record")
+    if not claimed:
+        db.rollback()
+        if record.status == TaskStatus.CANCELLED:
+            _update_current_project_state(db, record, ProjectStatus.SCRIPT_GENERATED)
+            db.commit()
+        raise Ignore()
+    return record
+
+
 def _broadcast_task_event(project_id: int, message: dict) -> None:
     """Best-effort cross-process bridge from synchronous Celery hooks to WebSockets."""
     try:

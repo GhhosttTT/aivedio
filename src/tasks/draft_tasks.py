@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.database.database import get_db
-from src.database.models import Project, ProjectStatus, Scene, Task, TaskStatus
-from src.services.generation_review import file_hash
-from src.tasks.celery_app import celery_app
+from src.database.models import Project, ProjectStatus, Scene, Task
+from src.services.generation_review import file_hash, write_report
+from src.tasks.celery_app import celery_app, _claim_task_completion
 from src.utils.storage import storage_manager
 
 
@@ -65,11 +65,10 @@ def finalize_draft_generation_task(self, project_id: int, task_id: int):
             })
 
         report_path = storage_manager.get_project_path(project_id) / "reviews" / "draft_generation.json"
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        task = _claim_task_completion(db, project_id, task_id)
+        write_report(report_path, report)
         project.final_video_path = None
         project.status = ProjectStatus.SCRIPT_GENERATED
-        task.status = TaskStatus.COMPLETED
         task.progress = 100.0
         task.current_step = task.total_steps
         task.result_path = str(report_path)

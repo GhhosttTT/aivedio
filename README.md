@@ -128,6 +128,8 @@ python3 scripts/validate_seedance_gateway.py --dry-run --api-format ark_v3 \
 会尝试向该地址发送 `DELETE`，避免远端任务继续占用额度；未配置时原生 Ark 仍默认对状态
 地址执行取消。
 
+取消请求先被确认后，最终合成与 Draft 收尾不会再覆盖已有结果；如果收尾已完成，取消接口会保留结果并返回无法取消。
+
 拿到真实样片后，可用 `scripts/compare_video_baseline.py` 对候选视频和 Seedance
 基准视频做本地证据对比；除了分辨率、时长、清晰度和运动量，还会拦截黑帧、冻结段、
 曝光跳变和运动节奏失稳。该报告是技术门禁，不替代角色一致性、表演和叙事的人工/VLM审核。
