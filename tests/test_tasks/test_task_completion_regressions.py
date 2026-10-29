@@ -121,6 +121,29 @@ def test_previously_recorded_failure_keeps_diagnosis_and_still_broadcasts(task_s
     assert events[0][1]["error"] == old.error_message
 
 
+def test_worker_cannot_reactivate_task_cancelled_after_pending_read(task_state_case):
+    db, project, old, task = task_state_case
+    old.status = TaskStatus.PENDING
+    db.commit()
+
+    def cancelled_after_read(_args, _kwargs, session):
+        record = session.get(Task, old.id)
+        assert record.status == TaskStatus.PENDING
+        # Simulate the cancellation becoming visible after the initial read;
+        # keep the worker's ORM instance stale until its guarded claim refreshes.
+        session.query(Task).filter(Task.id == old.id).update(
+            {Task.status: TaskStatus.CANCELLED}, synchronize_session=False,
+        )
+        return record
+
+    task._production_record = cancelled_after_read
+    with pytest.raises(Ignore):
+        task.before_start("cancelled-before-claim", (), {})
+    db.expire_all()
+    assert old.status == TaskStatus.CANCELLED
+    assert project.status == ProjectStatus.SCRIPT_GENERATED
+
+
 def test_task_event_bridge_delivers_without_leaking_asyncio_state(monkeypatch):
     publish = Mock(return_value=True)
     monkeypatch.setattr("src.api.websocket.publish_project_event", publish)

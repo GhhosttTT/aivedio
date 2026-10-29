@@ -169,7 +169,7 @@ class BaseTask(celery_app.Task):
     def before_start(self, task_id, args, kwargs):
         from celery.exceptions import Ignore
         from src.database.session import get_db_session
-        from src.database.models import TaskStatus, ProjectStatus
+        from src.database.models import TaskStatus, ProjectStatus, Task as TaskModel
         db = None
         event = None
         terminal_record = False
@@ -180,7 +180,15 @@ class BaseTask(celery_app.Task):
                 TaskStatus.CANCELLED, TaskStatus.FAILED, TaskStatus.COMPLETED,
             })
             if record and record.status == TaskStatus.PENDING:
-                record.status = TaskStatus.RUNNING
+                # Cancellation can win after this worker read PENDING. Claim
+                # only a row that is still pending, then re-read its status.
+                db.query(TaskModel).filter(
+                    TaskModel.id == record.id, TaskModel.status == TaskStatus.PENDING,
+                ).update({TaskModel.status: TaskStatus.RUNNING}, synchronize_session=False)
+                db.refresh(record)
+                terminal_record = record.status in {
+                    TaskStatus.CANCELLED, TaskStatus.FAILED, TaskStatus.COMPLETED,
+                }
                 db.commit()
             if record and record.status == TaskStatus.RUNNING:
                 event = {
