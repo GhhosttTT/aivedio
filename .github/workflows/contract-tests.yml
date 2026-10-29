@@ -51,6 +51,9 @@ jobs:
             tests/test_scripts/test_init_database_cli.py \
             tests/test_database_engine.py \
             tests/test_utils/test_file_hash_cache.py \
+            tests/test_utils/test_atomic_json.py \
+            tests/test_services/test_repair_budget.py \
+            tests/test_services/test_concurrent_review_storage.py \
             tests/test_services/test_video_metrics_cache.py \
             tests/test_services/test_production_readiness_cache.py \
             tests/test_services/test_workflow_manager.py \

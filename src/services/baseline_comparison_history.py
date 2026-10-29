@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 
 from src.config import settings
-from src.utils.atomic_json import write_json_atomic
+from src.utils.atomic_json import json_update_lock, write_json_atomic
 from src.utils.storage import storage_manager
 
 
@@ -24,7 +24,6 @@ class BaselineComparisonHistoryStore:
         return [item for item in payload.get("entries", []) if isinstance(item, dict)] if isinstance(payload, dict) else []
 
     def record(self, report: dict) -> dict:
-        entries = self._read()
         entry = {
             "recorded_at": datetime.now(timezone.utc).isoformat(),
             "status": report.get("status"),
@@ -40,13 +39,14 @@ class BaselineComparisonHistoryStore:
             "differences": dict(report.get("differences") or {}),
         }
         identity = (entry.get("candidate_sha256"), entry.get("baseline_sha256"))
-        entries = [
-            item for item in entries
-            if (item.get("candidate_sha256"), item.get("baseline_sha256")) != identity
-        ]
-        entries.append(entry)
-        entries = entries[-self.MAX_ENTRIES:]
-        write_json_atomic(self.path, {"version": 1, "entries": entries})
+        with json_update_lock(self.path):
+            entries = [
+                item for item in self._read()
+                if (item.get("candidate_sha256"), item.get("baseline_sha256")) != identity
+            ]
+            entries.append(entry)
+            entries = entries[-self.MAX_ENTRIES:]
+            write_json_atomic(self.path, {"version": 1, "entries": entries})
         return self.summary(entries)
 
     def summary(self, entries: list[dict] | None = None) -> dict:

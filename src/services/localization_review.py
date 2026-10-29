@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.utils.atomic_json import write_json_atomic
+from src.utils.atomic_json import json_update_lock, write_json_atomic
 
 class LocalizationReviewStore:
     def __init__(self, report_path: str | Path):
@@ -44,10 +44,11 @@ class LocalizationReviewStore:
             "reviewed_by": user_id,
             "reviewed_at": datetime.now(timezone.utc).isoformat(),
         }
-        payload = self._read()
-        history = [item for item in payload.get("history", []) if isinstance(item, dict)]
-        history.append(entry)
-        write_json_atomic(self.path, {"version": 1, "decision": entry, "history": history})
+        with json_update_lock(self.path):
+            payload = self._read()
+            history = [item for item in payload.get("history", []) if isinstance(item, dict)]
+            history.append(entry)
+            write_json_atomic(self.path, {"version": 1, "decision": entry, "history": history})
         return entry
 
     def apply(self, report: dict) -> dict:

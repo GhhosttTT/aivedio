@@ -6,7 +6,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
-from src.utils.atomic_json import write_json_atomic
+from src.utils.atomic_json import json_update_lock, write_json_atomic
 from src.utils.storage import storage_manager
 
 
@@ -34,7 +34,6 @@ class HumanReviewStore:
             raise ValueError("Report key is required")
         if len(note) > 1000:
             raise ValueError("Human review note must be 1000 characters or fewer")
-        payload = self._read()
         entry = {
             "report_key": report_key,
             "decision": decision,
@@ -43,8 +42,10 @@ class HumanReviewStore:
             "reviewed_by": user_id,
             "reviewed_at": datetime.now(timezone.utc).isoformat(),
         }
-        payload["decisions"][report_key] = entry
-        write_json_atomic(self.path, payload)
+        with json_update_lock(self.path):
+            payload = self._read()
+            payload["decisions"][report_key] = entry
+            write_json_atomic(self.path, payload)
         return entry
 
     def apply(self, reports: dict[str, dict]) -> dict[str, dict]:
