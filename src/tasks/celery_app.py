@@ -31,6 +31,24 @@ PRODUCTION_TASK_NAMES = frozenset({
 })
 
 
+def _update_current_project_state(db, record, project_status, *, require_missing_final=False):
+    """An old task callback must never release or fail a newer project run."""
+    from src.database.models import Project, ProjectStatus, Task as TaskModel
+
+    newer_task = db.query(TaskModel.id).filter(
+        TaskModel.project_id == record.project_id,
+        TaskModel.id > record.id,
+    ).exists()
+    query = db.query(Project).filter(
+        Project.id == record.project_id,
+        Project.status == ProjectStatus.IN_PRODUCTION,
+        ~newer_task,
+    )
+    if require_missing_final:
+        query = query.filter((Project.final_video_path.is_(None)) | (Project.final_video_path == ""))
+    query.update({Project.status: project_status}, synchronize_session=False)
+
+
 def _broadcast_task_event(project_id: int, message: dict) -> None:
     """Best-effort cross-process bridge from synchronous Celery hooks to WebSockets."""
     try:
@@ -154,9 +172,13 @@ class BaseTask(celery_app.Task):
         from src.database.models import TaskStatus, ProjectStatus
         db = None
         event = None
+        terminal_record = False
         try:
             db = next(get_db_session())
             record = self._production_record(args, kwargs, db)
+            terminal_record = bool(record and record.status in {
+                TaskStatus.CANCELLED, TaskStatus.FAILED, TaskStatus.COMPLETED,
+            })
             if record and record.status == TaskStatus.PENDING:
                 record.status = TaskStatus.RUNNING
                 db.commit()
@@ -177,12 +199,12 @@ class BaseTask(celery_app.Task):
                     "celery_task_id": record.celery_task_id, "stage": self.name,
                     "scene_id": values.get("scene_id"), "state": "running",
                 })
-            if record and record.status in {TaskStatus.CANCELLED, TaskStatus.FAILED}:
-                if record.project.status == ProjectStatus.IN_PRODUCTION:
-                    record.project.status = (
+            if record and record.status in {TaskStatus.CANCELLED, TaskStatus.FAILED, TaskStatus.COMPLETED}:
+                if record.status != TaskStatus.COMPLETED:
+                    _update_current_project_state(db, record,
                         ProjectStatus.SCRIPT_GENERATED
                         if record.status == TaskStatus.CANCELLED
-                        else ProjectStatus.FAILED
+                        else ProjectStatus.FAILED,
                     )
                     db.commit()
                 raise Ignore()
@@ -192,6 +214,8 @@ class BaseTask(celery_app.Task):
             # A tracking failure must not turn an otherwise runnable task into
             # a hard failure; on_failure will still record real task errors.
             logger.exception("Failed to initialize task state for %s", task_id)
+            if terminal_record:
+                raise Ignore()
         finally:
             if db is not None:
                 db.close()
@@ -207,8 +231,7 @@ class BaseTask(celery_app.Task):
             db = next(get_db_session())
             record = self._production_record(args, kwargs, db)
             if record and record.status == TaskStatus.CANCELLED:
-                if record.project.status == ProjectStatus.IN_PRODUCTION:
-                    record.project.status = ProjectStatus.SCRIPT_GENERATED
+                _update_current_project_state(db, record, ProjectStatus.SCRIPT_GENERATED)
                 db.commit()
                 event = {
                     "type": "status_update",
@@ -218,10 +241,13 @@ class BaseTask(celery_app.Task):
                     "current_step": self.name,
                     "progress": float(record.progress or 0.0) / 100.0,
                 }
-            elif record:
-                record.status = TaskStatus.FAILED
-                record.error_message = f"{self.name}: {exc}"
-                record.project.status = ProjectStatus.FAILED
+            elif record and record.status != TaskStatus.COMPLETED:
+                # Some tasks persist their failure before Celery invokes this
+                # hook. Keep that diagnosis and still publish the failure event.
+                if record.status != TaskStatus.FAILED:
+                    record.status = TaskStatus.FAILED
+                    record.error_message = f"{self.name}: {exc}"
+                _update_current_project_state(db, record, ProjectStatus.FAILED)
                 db.commit()
                 event = {
                     "type": "error",
@@ -229,7 +255,7 @@ class BaseTask(celery_app.Task):
                     "task_id": str(record.celery_task_id),
                     "status": "failed",
                     "current_step": self.name,
-                    "error": str(exc),
+                    "error": record.error_message or str(exc),
                 }
         except Exception:
             # Callback failures must not mask the task's original exception.
@@ -257,7 +283,7 @@ class BaseTask(celery_app.Task):
             db = next(get_db_session())
             record = self._production_record(args, kwargs, db)
             if record and record.status == TaskStatus.CANCELLED:
-                record.project.status = ProjectStatus.SCRIPT_GENERATED
+                _update_current_project_state(db, record, ProjectStatus.SCRIPT_GENERATED)
                 db.commit()
             elif record and record.status == TaskStatus.RUNNING:
                 # Audio/subtitle groups finish concurrently; increment in the database.
@@ -281,8 +307,8 @@ class BaseTask(celery_app.Task):
                     ),
                 }, synchronize_session=False)
                 db.refresh(record)
-                if record.status == TaskStatus.COMPLETED and record.project.status == ProjectStatus.IN_PRODUCTION and not record.project.final_video_path:
-                    record.project.status = ProjectStatus.SCRIPT_GENERATED
+                if record.status == TaskStatus.COMPLETED:
+                    _update_current_project_state(db, record, ProjectStatus.SCRIPT_GENERATED, require_missing_final=True)
                 db.commit()
                 event = {
                     "type": "progress_update" if record.status != TaskStatus.COMPLETED else "completion",

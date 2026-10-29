@@ -6,6 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 from celery.app.autoretry import add_autoretry_behaviour
+from celery.exceptions import Ignore
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -15,6 +16,109 @@ from src.services.generation_review import ReviewError
 from src.services.generation_provider import GenerationProviderError
 from src.api.websocket import TASK_EVENT_CHANNEL, publish_project_event
 from src.tasks.celery_app import BaseTask, _broadcast_task_event
+
+
+@pytest.fixture
+def task_state_case(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'state.db'}")
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine)
+    db = sessions()
+    user = User(username="state", email="state@example.com", hashed_password="test")
+    db.add(user)
+    db.flush()
+    project = Project(name="state", user_id=user.id, status=ProjectStatus.IN_PRODUCTION)
+    db.add(project)
+    db.flush()
+    old = Task(project_id=project.id, celery_task_id="old", status=TaskStatus.CANCELLED, total_steps=2)
+    db.add(old)
+    db.commit()
+    monkeypatch.setattr("src.database.session.get_db_session", lambda: iter([sessions()]))
+    monkeypatch.setattr("src.tasks.celery_app._broadcast_task_event", lambda *_args: None)
+    task = BaseTask()
+    task._production_record = lambda _args, _kwargs, session: session.get(Task, old.id)
+    yield db, project, old, task
+    db.close()
+    engine.dispose()
+
+
+@pytest.mark.parametrize("old_status", [TaskStatus.CANCELLED, TaskStatus.FAILED, TaskStatus.COMPLETED])
+@pytest.mark.parametrize("hook", ["before_start", "on_failure", "on_success"])
+def test_old_terminal_callbacks_cannot_change_new_project_run(task_state_case, old_status, hook):
+    db, project, old, task = task_state_case
+    old.status = old_status
+    current = Task(project_id=project.id, celery_task_id="new", status=TaskStatus.RUNNING, total_steps=2)
+    db.add(current)
+    db.commit()
+    if hook == "before_start":
+        with pytest.raises(Ignore):
+            task.before_start("old-step", (), {})
+    elif hook == "on_failure":
+        task.on_failure(RuntimeError("late failure"), "old-step", (), {}, None)
+    else:
+        task.on_success({}, "old-step", (), {})
+    db.expire_all()
+    assert db.get(Project, project.id).status == ProjectStatus.IN_PRODUCTION
+    assert db.get(Task, current.id).status == TaskStatus.RUNNING
+    assert db.get(Task, old.id).status == old_status
+
+
+@pytest.mark.parametrize("hook", ["on_success", "on_failure"])
+def test_late_running_callback_cannot_release_or_fail_new_project(task_state_case, hook):
+    db, project, old, task = task_state_case
+    old.status = TaskStatus.RUNNING
+    old.current_step = 1
+    current = Task(project_id=project.id, celery_task_id="new", status=TaskStatus.RUNNING, total_steps=2)
+    db.add(current)
+    db.commit()
+    if hook == "on_success":
+        task.on_success({}, "old-step", (), {})
+    else:
+        task.on_failure(RuntimeError("late failure"), "old-step", (), {}, None)
+    db.expire_all()
+    assert project.status == ProjectStatus.IN_PRODUCTION
+    assert current.status == TaskStatus.RUNNING
+    assert old.status == (TaskStatus.COMPLETED if hook == "on_success" else TaskStatus.FAILED)
+
+
+def test_completed_redelivery_and_late_failure_preserve_completed_status(task_state_case):
+    db, project, old, task = task_state_case
+    old.status = TaskStatus.COMPLETED
+    project.status = ProjectStatus.COMPLETED
+    db.commit()
+
+    with pytest.raises(Ignore):
+        task.before_start("duplicate-completed-step", (), {})
+    task.on_failure(RuntimeError("late exception"), "duplicate-completed-step", (), {}, None)
+    db.expire_all()
+    assert old.status == TaskStatus.COMPLETED
+    assert project.status == ProjectStatus.COMPLETED
+
+
+def test_cancelled_task_does_not_execute_when_project_release_fails(task_state_case, monkeypatch):
+    _db, _project, _old, task = task_state_case
+    def failed_update(*args, **kwargs):
+        raise RuntimeError("database unavailable during release")
+    monkeypatch.setattr("src.tasks.celery_app._update_current_project_state", failed_update)
+    with pytest.raises(Ignore):
+        task.before_start("cancelled-step", (), {})
+
+
+def test_previously_recorded_failure_keeps_diagnosis_and_still_broadcasts(task_state_case, monkeypatch):
+    db, project, old, task = task_state_case
+    old.status = TaskStatus.FAILED
+    old.error_message = "Detailed media validation failure"
+    project.status = ProjectStatus.FAILED
+    db.commit()
+    events = []
+    monkeypatch.setattr("src.tasks.celery_app._broadcast_task_event", lambda *_args: events.append(_args))
+
+    task.on_failure(RuntimeError("wrapper failed"), "old-step", (), {}, None)
+
+    db.expire_all()
+    assert old.error_message == "Detailed media validation failure"
+    assert events[0][1]["status"] == "failed"
+    assert events[0][1]["error"] == old.error_message
 
 
 def test_task_event_bridge_delivers_without_leaking_asyncio_state(monkeypatch):
