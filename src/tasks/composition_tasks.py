@@ -101,6 +101,7 @@ def composition_input_signature(
                 "image": _video_version_signature(getattr(scene, "image_path", "")) if isinstance(getattr(scene, "image_path", None), (str, Path)) else None,
                 "video": _video_version_signature(getattr(scene, "video_path", "")) if isinstance(getattr(scene, "video_path", None), (str, Path)) else None,
                 "audio": _video_version_signature(getattr(scene, "audio_path", "")) if isinstance(getattr(scene, "audio_path", None), (str, Path)) else None,
+                "audio_quality": _video_version_signature(existing_audio_quality_report_path(scene.audio_path)) if isinstance(getattr(scene, "audio_path", None), (str, Path)) else None,
                 "subtitle": _video_version_signature(getattr(scene, "subtitle_path", "")) if isinstance(getattr(scene, "subtitle_path", None), (str, Path)) else None,
             }
             for scene in sorted(scenes, key=lambda item: int(getattr(item, "scene_number", 0) or 0))
@@ -147,6 +148,46 @@ def _native_audio_is_ready_for_video_paths(video_paths: list[str], video_compose
         ):
             return False
     return True
+
+
+def _composition_audio_plan(scenes: list[Scene], video_composer, preserve_native: bool):
+    """Choose validated audio per shot, honoring explicitly repaired dialogue."""
+    if not preserve_native:
+        _require_passed_scene_audio(scenes)
+        return False, _require_audio_video_duration_alignment(scenes, video_composer)
+    repaired = []
+    for scene in scenes:
+        if not scene.audio_path or not has_spoken_dialogue(scene.dialogue):
+            continue
+        try:
+            report = json.loads(existing_audio_quality_report_path(scene.audio_path).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        profile = report.get("audio_profile") if isinstance(report, dict) else None
+        if isinstance(profile, dict) and profile.get("profile") == "short_drama_repair":
+            repaired.append(scene)
+    if not repaired:
+        _require_native_scene_audio(scenes, video_composer)
+        return True, None
+
+    # Keep the native audio of untouched shots, while replacing the complete
+    # track of each repaired shot with its approved TTS delivery. The existing
+    # timeline renderer handles padding and editorial overlaps for both sources.
+    _require_passed_scene_audio(repaired)
+    repaired_segments = _require_audio_video_duration_alignment(repaired, video_composer)
+    replacements = {scene.id: segment for scene, segment in zip(repaired, repaired_segments)}
+    untouched = [scene for scene in scenes if scene.id not in replacements]
+    _require_native_scene_audio(untouched, video_composer)
+    segments = []
+    for scene in scenes:
+        if scene.id in replacements:
+            segments.append(replacements[scene.id])
+        else:
+            duration = video_composer._get_duration(scene.video_path)
+            if not math.isfinite(duration) or duration <= 0:
+                raise ValueError(f"Scene {scene.scene_number}: native audio duration is unreadable")
+            segments.append((scene.video_path, duration))
+    return False, segments
 
 
 def _scene_audio_expected(scene: Scene) -> bool:
@@ -313,13 +354,11 @@ def compose_final_video_task(
         preserve_native_audio = bool(settings.GENERATION_PREFER_NATIVE_VIDEO_AUDIO) or _native_audio_is_ready_for_video_paths(
             scene_video_candidates, video_composer,
         )
-        if preserve_native_audio:
-            _require_native_scene_audio(scenes, video_composer)
-        else:
-            _require_passed_scene_audio(scenes)
+        preserve_native_audio, audio_segments = _composition_audio_plan(
+            scenes, video_composer, preserve_native_audio,
+        )
         _require_scene_subtitles(scenes, video_composer)
         editing_plan = _require_editing_plan(project, scenes)
-        audio_segments = None if preserve_native_audio else _require_audio_video_duration_alignment(scenes, video_composer)
 
         # 收集所有分镜的视频和音频路径
         video_paths = []
