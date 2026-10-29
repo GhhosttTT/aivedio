@@ -481,6 +481,36 @@ def test_repair_queue_auto_dry_run_prioritizes_image_and_dedupes_scene(setup):
     assert any(item["reason"] == "scene_already_selected" for item in payload["skipped"])
     assert any(item["reason"] == "missing_scene_number" for item in payload["skipped"])
     assert db.query(Task).count() == 0
+    assert not (project_root / "repair_attempts.json").exists()
+
+    for _ in range(3):
+        preview = client.post(
+            "/api/projects/1/repair-queue/auto",
+            json={"dry_run": True, "max_actions": 5},
+        )
+        assert preview.status_code == 200
+        assert preview.json()["status"] == "planned"
+        assert preview.json()["considered"] == payload["considered"]
+    assert not (project_root / "repair_attempts.json").exists()
+
+
+def test_repair_queue_auto_ready_preview_preserves_retry_history(setup, monkeypatch):
+    from src.services.repair_budget import RepairBudget
+
+    client, _db, _ = setup
+    budget = RepairBudget(1)
+    budget.record([{"scene_number": 1, "action": "repair", "reason": "flicker"}])
+    original = budget.path.read_bytes()
+    monkeypatch.setattr(
+        "src.api.routes.projects._build_generation_review",
+        lambda *args: {"summary": {"status": "ready", "repair_queue": {}}},
+    )
+
+    response = client.post("/api/projects/1/repair-queue/auto", json={"dry_run": True})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "no_auto_actions"
+    assert budget.path.read_bytes() == original
 
 
 def test_repair_queue_auto_submits_batch_repair_tasks(setup, monkeypatch):

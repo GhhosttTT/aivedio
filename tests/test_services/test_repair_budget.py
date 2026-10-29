@@ -1,6 +1,31 @@
 from src.services.repair_budget import RepairBudget
 
 
+def test_preview_does_not_consume_budget_or_change_existing_reservations(monkeypatch, tmp_path):
+    from src.utils.storage import storage_manager
+    monkeypatch.setattr(storage_manager, "base_path", tmp_path)
+    budget = RepairBudget(1, max_attempts=2, max_total_attempts=2)
+    item = {"scene_number": 1, "stage": "video", "action": "repair", "reason": "flicker"}
+
+    for _ in range(3):
+        accepted, exhausted = budget.filter([item, item, item], reserve=False)
+        assert len(accepted) == 2
+        assert len(exhausted) == 1
+        assert not budget.path.exists()
+
+    budget.filter([item])
+    original = budget.path.read_bytes()
+    for _ in range(3):
+        accepted, exhausted = budget.filter([item, item], reserve=False)
+        assert len(accepted) == 1
+        assert accepted[0]["retry_attempts"] == 1
+        assert len(exhausted) == 1
+        assert budget.path.read_bytes() == original
+
+    accepted, exhausted = budget.filter([item])
+    assert len(accepted) == 1 and not exhausted
+
+
 def test_repair_budget_accepts_then_exhausts_repeated_evidence(monkeypatch, tmp_path):
     from src.utils.storage import storage_manager
     monkeypatch.setattr(storage_manager, "base_path", tmp_path)

@@ -2401,12 +2401,12 @@ def run_auto_repair_queue(
         )
     review = _build_generation_review(project_id, current_user, db_session)
     budget = RepairBudget(project_id)
-    if review.get("summary", {}).get("status") in {"ready", "ready_for_seed_dance_candidate"}:
+    if not request.dry_run and review.get("summary", {}).get("status") in {"ready", "ready_for_seed_dance_candidate"}:
         budget.reset()
     loop_plan = build_quality_loop_plan(
         review.get("summary", {}), request.max_actions, request.action,
     )
-    selected, exhausted = budget.filter(loop_plan["selected"])
+    selected, exhausted = budget.filter(loop_plan["selected"], reserve=not request.dry_run)
     skipped = loop_plan["skipped"] + exhausted
     if request.dry_run:
         return RepairQueueAutoRunResponse(

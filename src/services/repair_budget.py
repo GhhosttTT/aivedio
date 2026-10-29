@@ -124,7 +124,12 @@ class RepairBudget:
         item["count"] = max(0, int(item.get("count", 0))) + 1
         item["updated_at"] = time.time()
 
-    def filter(self, items: list[dict]) -> tuple[list[dict], list[dict]]:
+    def filter(self, items: list[dict], *, reserve: bool = True) -> tuple[list[dict], list[dict]]:
+        """Check a batch, reserving capacity only for actual submissions.
+
+        Preview uses the same in-memory accounting, including outstanding
+        reservations, without persisting its hypothetical allocations.
+        """
         with self._locked():
             payload = self._read()
             self._prune_reservations(payload)
@@ -170,7 +175,8 @@ class RepairBudget:
                     })
                     self._reserve(payload, key)
                     total_attempts += 1
-            self._write(payload)
+            if reserve:
+                self._write(payload)
             return accepted, exhausted
 
     def record(self, items: list[dict]) -> None:
