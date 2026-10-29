@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import tempfile
 from contextlib import contextmanager
@@ -11,6 +12,7 @@ from typing import Iterable
 
 from src.utils.storage import get_scene_video_path
 from src.utils.storage import storage_manager
+from src.utils.atomic_json import write_json_atomic
 
 try:
     import fcntl
@@ -58,6 +60,13 @@ def _production_options_path(project_id: int) -> Path:
     return storage_manager.get_project_path(project_id) / "production_options.json"
 
 
+def _task_options_path(project_id: int, task_id: int | str) -> Path:
+    # Task identifiers may come from Celery as well as the database. Hash them
+    # so identifiers can never escape the project snapshot directory.
+    key = hashlib.sha256(str(task_id).encode("utf-8")).hexdigest()
+    return storage_manager.get_project_path(project_id) / "production_runs" / f"{key}.json"
+
+
 @contextmanager
 def _options_lock(path: Path):
     lock_path = path.with_name(f".{path.name}.lock")
@@ -88,6 +97,9 @@ def save_production_video_options(project_id: int, task_id: int | str, options: 
     }
     path = _production_options_path(project_id)
     with _options_lock(path):
+        # Keep exact per-task controls even after a newer production or repair
+        # replaces the project defaults used for subsequent scene repairs.
+        write_json_atomic(_task_options_path(project_id, task_id), payload)
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{path.name}.", suffix=".tmp", dir=path.parent,
         )
@@ -114,6 +126,10 @@ def load_production_video_options(
     models or Draft IDs across paid provider requests.
     """
     path = _production_options_path(project_id)
+    if task_id is not None:
+        task_path = _task_options_path(project_id, task_id)
+        if task_path.is_file():
+            path = task_path
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):

@@ -136,6 +136,29 @@ def test_production_video_options_normalize_task_aliases(tmp_path, monkeypatch):
     }
 
 
+def test_old_task_snapshot_survives_new_production_settings(tmp_path, monkeypatch):
+    monkeypatch.setattr(task_recovery.storage_manager, "get_project_path", lambda _project_id: tmp_path)
+    original = {"provider": "seedance_api", "model": "paid-model", "bgm_volume": 0.15}
+    newer = {"provider": "comfyui", "model": "new-model", "bgm_volume": 0.4}
+    task_recovery.save_production_video_options(7, 42, original)
+    task_recovery.save_production_video_options(7, 43, newer)
+
+    assert task_recovery.load_production_video_options(7) == newer
+    assert task_recovery.load_production_video_options(7, task_id=42) == original
+    assert task_recovery.load_production_video_options(7, task_id=43) == newer
+    assert task_recovery.load_production_video_options(7, task_id=44) is None
+
+
+def test_exact_snapshot_reads_legacy_latest_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(task_recovery.storage_manager, "get_project_path", lambda _project_id: tmp_path)
+    (tmp_path / "production_options.json").write_text(json.dumps({
+        "task_id": "legacy", "options": {"model": "legacy-model"},
+    }), encoding="utf-8")
+
+    assert task_recovery.load_production_video_options(7, task_id="legacy") == {"model": "legacy-model"}
+    assert task_recovery.load_production_video_options(7, task_id="other") is None
+
+
 def test_production_video_options_concurrent_writes_leave_one_complete_snapshot(tmp_path, monkeypatch):
     monkeypatch.setattr(task_recovery.storage_manager, "get_project_path", lambda _project_id: tmp_path)
 
@@ -156,3 +179,5 @@ def test_production_video_options_concurrent_writes_leave_one_complete_snapshot(
     assert snapshot["model"].startswith("model-")
     assert snapshot["draft_task_id"].startswith("draft-")
     assert not list(tmp_path.glob("*.tmp"))
+    for task_id in range(6):
+        assert task_recovery.load_production_video_options(7, task_id=task_id)["model"] == f"model-{task_id}"

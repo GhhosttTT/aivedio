@@ -53,6 +53,7 @@ jobs:
             tests/test_utils/test_file_hash_cache.py \
             tests/test_utils/test_atomic_json.py \
             tests/test_services/test_repair_budget.py \
+            tests/test_services/test_task_recovery.py \
             tests/test_services/test_concurrent_review_storage.py \
             tests/test_services/test_video_metrics_cache.py \
             tests/test_services/test_production_readiness_cache.py \
