@@ -25,7 +25,7 @@ from src.services.task_recovery import (
     load_production_video_options,
     save_production_video_options,
 )
-from src.tasks.celery_app import celery_app
+from src.tasks.celery_app import celery_app, _broadcast_task_event, _update_current_project_state
 from src.tasks.image_tasks import generate_image_task, prepare_generation_task
 from src.tasks.review_tasks import review_generation_task
 from src.tasks.video_tasks import generate_video_task, generate_sequence_video_task
@@ -851,17 +851,41 @@ class TaskOrchestrator:
             logger.warning(f"任务已结束，无法取消: {celery_task_id}, status={task_model.status}")
             return False
         
-        # 撤销 Celery 任务
-        celery_app.control.revoke(celery_task_id, terminate=False)
-        
-        # 更新任务状态
-        was_pending = task_model.status == TaskStatus.PENDING
-        task_model.status = TaskStatus.CANCELLED
+        # Claim cancellation against the durable state, not this request's
+        # cached ORM status. A worker may have started or finished meanwhile.
+        cancellation = {
+            TaskModel.status: TaskStatus.CANCELLED,
+            TaskModel.error_message: "已请求取消，当前步骤结束后停止后续生成",
+        }
+        task_query = self.db.query(TaskModel).filter(TaskModel.id == task_model.id)
+        was_pending = task_query.filter(TaskModel.status == TaskStatus.PENDING).update(
+            cancellation, synchronize_session=False,
+        )
+        if not was_pending:
+            cancelled_running = task_query.filter(TaskModel.status == TaskStatus.RUNNING).update(
+                cancellation, synchronize_session=False,
+            )
+            if not cancelled_running:
+                self.db.refresh(task_model)
+                return False
+        self.db.refresh(task_model)
         if was_pending:
-            task_model.project.status = ProjectStatus.SCRIPT_GENERATED
-        task_model.error_message = "已请求取消，当前步骤结束后停止后续生成"
+            _update_current_project_state(self.db, task_model, ProjectStatus.SCRIPT_GENERATED)
+        event = {
+            "type": "status_update", "project_id": task_model.project_id,
+            "task_id": str(task_model.celery_task_id), "status": "cancelled",
+            "progress": float(task_model.progress or 0.0) / 100.0,
+        }
         self.db.commit()
-        
+
+        # The database gate also stops queued workers and provider polling.
+        # A broker outage must not erase an already accepted cancellation.
+        try:
+            celery_app.control.revoke(celery_task_id, terminate=False)
+        except Exception as exc:
+            logger.warning("Task cancellation persisted but broker revoke failed: {}: {}", celery_task_id, exc)
+        _broadcast_task_event(event["project_id"], event)
+
         logger.info(f"任务已取消: {celery_task_id}")
         
         return True

@@ -7,9 +7,9 @@ import json
 
 import pytest
 from unittest.mock import ANY, Mock, patch
-from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.attributes import set_committed_value
 
 from src.database.models import (
     Base, Project, Scene, Task as TaskModel,
@@ -553,6 +553,86 @@ class TestGetTaskStatus:
 
 class TestCancelTask:
     """测试取消任务"""
+
+    @pytest.fixture(autouse=True)
+    def cancel_events(self, monkeypatch):
+        events = []
+        monkeypatch.setattr("src.services.task_orchestrator._broadcast_task_event", lambda _project, message: events.append(message))
+        return events
+
+    @patch('src.services.task_orchestrator.celery_app')
+    def test_cancel_does_not_unlock_worker_that_started_after_pending_read(
+        self, mock_celery_app, orchestrator, sample_project, cancel_events
+    ):
+        sample_project.status = ProjectStatus.IN_PRODUCTION
+        task = TaskModel(project_id=sample_project.id, status=TaskStatus.RUNNING, celery_task_id="started", total_steps=2)
+        orchestrator.db.add(task)
+        orchestrator.db.commit()
+        orchestrator.db.refresh(task)
+        set_committed_value(task, "status", TaskStatus.PENDING)
+
+        assert orchestrator.cancel_task(task.celery_task_id) is True
+
+        orchestrator.db.refresh(task)
+        orchestrator.db.refresh(sample_project)
+        assert task.status == TaskStatus.CANCELLED
+        assert sample_project.status == ProjectStatus.IN_PRODUCTION
+        assert cancel_events[0]["status"] == "cancelled"
+
+    @pytest.mark.parametrize("terminal", [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED])
+    @patch('src.services.task_orchestrator.celery_app')
+    def test_cancel_does_not_overwrite_task_that_ended_after_request_read(
+        self, mock_celery_app, orchestrator, sample_project, terminal, cancel_events
+    ):
+        task = TaskModel(project_id=sample_project.id, status=terminal, celery_task_id="finished", total_steps=2)
+        orchestrator.db.add(task)
+        orchestrator.db.commit()
+        orchestrator.db.refresh(task)
+        set_committed_value(task, "status", TaskStatus.RUNNING)
+
+        assert orchestrator.cancel_task(task.celery_task_id) is False
+
+        orchestrator.db.refresh(task)
+        assert task.status == terminal
+        mock_celery_app.control.revoke.assert_not_called()
+        assert cancel_events == []
+
+    @pytest.mark.parametrize("initial", [TaskStatus.PENDING, TaskStatus.RUNNING])
+    @patch('src.services.task_orchestrator.celery_app')
+    def test_cancellation_survives_broker_disconnect(
+        self, mock_celery_app, orchestrator, sample_project, initial, cancel_events
+    ):
+        sample_project.status = ProjectStatus.IN_PRODUCTION
+        task = TaskModel(project_id=sample_project.id, status=initial, celery_task_id="offline-broker", total_steps=2)
+        orchestrator.db.add(task)
+        orchestrator.db.commit()
+        mock_celery_app.control.revoke.side_effect = ConnectionError("broker offline")
+
+        assert orchestrator.cancel_task(task.celery_task_id) is True
+
+        orchestrator.db.refresh(task)
+        orchestrator.db.refresh(sample_project)
+        assert task.status == TaskStatus.CANCELLED
+        assert sample_project.status == (ProjectStatus.SCRIPT_GENERATED if initial == TaskStatus.PENDING else ProjectStatus.IN_PRODUCTION)
+        assert cancel_events[0]["task_id"] == task.celery_task_id
+
+    @patch('src.services.task_orchestrator.celery_app')
+    def test_cancelling_old_pending_task_keeps_new_project_run_reserved(
+        self, mock_celery_app, orchestrator, sample_project
+    ):
+        sample_project.status = ProjectStatus.IN_PRODUCTION
+        old = TaskModel(project_id=sample_project.id, status=TaskStatus.PENDING, celery_task_id="old-pending", total_steps=2)
+        orchestrator.db.add(old)
+        orchestrator.db.flush()
+        new = TaskModel(project_id=sample_project.id, status=TaskStatus.RUNNING, celery_task_id="current-run", total_steps=2)
+        orchestrator.db.add(new)
+        orchestrator.db.commit()
+
+        assert orchestrator.cancel_task(old.celery_task_id) is True
+
+        orchestrator.db.refresh(sample_project)
+        assert sample_project.status == ProjectStatus.IN_PRODUCTION
+        assert new.status == TaskStatus.RUNNING
     
     @patch('src.services.task_orchestrator.celery_app')
     def test_cancel_task_success(

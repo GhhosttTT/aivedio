@@ -66,6 +66,28 @@ def test_project_crud_and_owner_isolation(setup):
         assert getattr(client, method)(url).status_code == 404
 
 
+def test_cancel_task_api_persists_request_when_broker_is_offline(setup, monkeypatch):
+    client, db, _ = setup
+    project = db.get(Project, 1)
+    project.status = ProjectStatus.IN_PRODUCTION
+    task = Task(project_id=1, celery_task_id="offline-cancel", status=TaskStatus.PENDING, total_steps=2)
+    db.add(task)
+    db.commit()
+    revoke = Mock(side_effect=ConnectionError("broker offline"))
+    monkeypatch.setattr("src.services.task_orchestrator.celery_app.control.revoke", revoke)
+    events = []
+    monkeypatch.setattr("src.services.task_orchestrator._broadcast_task_event", lambda _project, message: events.append(message))
+
+    response = client.post("/api/tasks/offline-cancel/cancel")
+
+    assert response.status_code == 200, response.text
+    db.expire_all()
+    assert task.status == TaskStatus.CANCELLED
+    assert project.status == ProjectStatus.SCRIPT_GENERATED
+    assert events[0]["task_id"] == "offline-cancel"
+    assert events[0]["status"] == "cancelled"
+
+
 def test_upload_bgm_stores_project_owned_audio(setup):
     client, _, root = setup
     response = client.post(
