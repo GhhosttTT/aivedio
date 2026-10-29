@@ -9,6 +9,7 @@ from celery.app.autoretry import add_autoretry_behaviour
 from celery.exceptions import Ignore
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.attributes import set_committed_value
 
 from src.database.models import Base, Project, ProjectStatus, Task, TaskStatus, User
 from src.services.comfyui_service import ComfyUIWaitTimeout
@@ -142,6 +143,57 @@ def test_worker_cannot_reactivate_task_cancelled_after_pending_read(task_state_c
     db.expire_all()
     assert old.status == TaskStatus.CANCELLED
     assert project.status == ProjectStatus.SCRIPT_GENERATED
+
+
+@pytest.mark.parametrize("winning_status", [TaskStatus.CANCELLED, TaskStatus.COMPLETED])
+@pytest.mark.parametrize("hook", ["on_success", "on_failure"])
+def test_callback_cannot_overwrite_terminal_state_committed_after_read(task_state_case, monkeypatch, winning_status, hook):
+    db, project, old, task = task_state_case
+    old.status = TaskStatus.RUNNING
+    db.commit()
+    events = []
+    monkeypatch.setattr("src.tasks.celery_app._broadcast_task_event", lambda *_args: events.append(_args[1]))
+
+    def stale_running_record(_args, _kwargs, session):
+        record = session.get(Task, old.id)
+        record.status = winning_status
+        if winning_status == TaskStatus.COMPLETED:
+            record.project.status = ProjectStatus.COMPLETED
+        session.commit()
+        # Model another worker's durable terminal update while this callback
+        # still holds the earlier RUNNING snapshot, without dirtying the ORM.
+        set_committed_value(record, "status", TaskStatus.RUNNING)
+        return record
+
+    task._production_record = stale_running_record
+    if hook == "on_failure":
+        task.on_failure(RuntimeError("late exception"), "old-step", (), {}, None)
+    else:
+        task.on_success({}, "old-step", (), {})
+    db.expire_all()
+    assert old.status == winning_status
+    assert project.status == (ProjectStatus.SCRIPT_GENERATED if winning_status == TaskStatus.CANCELLED else ProjectStatus.COMPLETED)
+    assert all(event["status"] != "failed" for event in events)
+
+
+@pytest.mark.parametrize("status", [TaskStatus.COMPLETED, TaskStatus.CANCELLED])
+def test_success_broadcasts_terminal_state_already_persisted_by_task(task_state_case, monkeypatch, status):
+    db, project, old, task = task_state_case
+    old.status = status
+    old.current_step = old.total_steps
+    old.progress = 100.0
+    project.status = ProjectStatus.COMPLETED if status == TaskStatus.COMPLETED else ProjectStatus.IN_PRODUCTION
+    db.commit()
+    events = []
+    monkeypatch.setattr("src.tasks.celery_app._broadcast_task_event", lambda *_args: events.append(_args[1]))
+
+    task.on_success({}, "old-step", (), {})
+
+    assert events[0]["status"] == status.value
+    assert events[0]["type"] == ("completion" if status == TaskStatus.COMPLETED else "status_update")
+    assert events[0]["task_id"] == old.celery_task_id
+    db.refresh(old)
+    assert old.current_step == old.total_steps
 
 
 def test_task_event_bridge_delivers_without_leaking_asyncio_state(monkeypatch):

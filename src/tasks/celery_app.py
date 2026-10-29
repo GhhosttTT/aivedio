@@ -232,12 +232,23 @@ class BaseTask(celery_app.Task):
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
         from src.database.session import get_db_session
-        from src.database.models import TaskStatus, ProjectStatus
+        from src.database.models import TaskStatus, ProjectStatus, Task as TaskModel
         db = None
         event = None
         try:
             db = next(get_db_session())
             record = self._production_record(args, kwargs, db)
+            if record and record.status in {TaskStatus.PENDING, TaskStatus.RUNNING}:
+                # Re-read the winning state: cancellation or completion may
+                # have committed after this callback loaded its ORM instance.
+                db.query(TaskModel).filter(
+                    TaskModel.id == record.id,
+                    TaskModel.status.in_([TaskStatus.PENDING, TaskStatus.RUNNING]),
+                ).update({
+                    TaskModel.status: TaskStatus.FAILED,
+                    TaskModel.error_message: f"{self.name}: {exc}",
+                }, synchronize_session=False)
+                db.refresh(record)
             if record and record.status == TaskStatus.CANCELLED:
                 _update_current_project_state(db, record, ProjectStatus.SCRIPT_GENERATED)
                 db.commit()
@@ -249,12 +260,9 @@ class BaseTask(celery_app.Task):
                     "current_step": self.name,
                     "progress": float(record.progress or 0.0) / 100.0,
                 }
-            elif record and record.status != TaskStatus.COMPLETED:
+            elif record and record.status == TaskStatus.FAILED:
                 # Some tasks persist their failure before Celery invokes this
                 # hook. Keep that diagnosis and still publish the failure event.
-                if record.status != TaskStatus.FAILED:
-                    record.status = TaskStatus.FAILED
-                    record.error_message = f"{self.name}: {exc}"
                 _update_current_project_state(db, record, ProjectStatus.FAILED)
                 db.commit()
                 event = {
@@ -293,6 +301,21 @@ class BaseTask(celery_app.Task):
             if record and record.status == TaskStatus.CANCELLED:
                 _update_current_project_state(db, record, ProjectStatus.SCRIPT_GENERATED)
                 db.commit()
+                event = {
+                    "type": "status_update", "project_id": record.project_id,
+                    "task_id": str(record.celery_task_id), "status": "cancelled",
+                    "current_step": self.name,
+                    "progress": float(record.progress or 0.0) / 100.0,
+                }
+            elif record and record.status == TaskStatus.COMPLETED:
+                # Finalizers publish the artifact and mark the row completed
+                # themselves, before Celery invokes on_success.
+                event = {
+                    "type": "completion", "project_id": record.project_id,
+                    "task_id": str(record.celery_task_id), "status": "completed",
+                    "current_step": record.current_step,
+                    "progress": float(record.progress or 0.0) / 100.0,
+                }
             elif record and record.status == TaskStatus.RUNNING:
                 # Audio/subtitle groups finish concurrently; increment in the database.
                 from src.database.models import Task as TaskModel
@@ -315,11 +338,17 @@ class BaseTask(celery_app.Task):
                     ),
                 }, synchronize_session=False)
                 db.refresh(record)
-                if record.status == TaskStatus.COMPLETED:
+                if record.status == TaskStatus.CANCELLED:
+                    _update_current_project_state(db, record, ProjectStatus.SCRIPT_GENERATED)
+                elif record.status == TaskStatus.COMPLETED:
                     _update_current_project_state(db, record, ProjectStatus.SCRIPT_GENERATED, require_missing_final=True)
                 db.commit()
                 event = {
-                    "type": "progress_update" if record.status != TaskStatus.COMPLETED else "completion",
+                    "type": (
+                        "completion" if record.status == TaskStatus.COMPLETED
+                        else "status_update" if record.status == TaskStatus.CANCELLED
+                        else "progress_update"
+                    ),
                     "project_id": record.project_id,
                     "task_id": str(record.celery_task_id),
                     "status": record.status.value if hasattr(record.status, "value") else str(record.status),
