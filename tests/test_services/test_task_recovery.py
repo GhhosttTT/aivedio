@@ -1,4 +1,5 @@
 import json
+import pytest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -60,6 +61,17 @@ def test_load_pending_video_options_rejects_sidecar_from_another_task(tmp_path, 
     assert task_recovery.load_pending_video_options(7, [1], local_task_id=41) == {
         "provider": "seedance_api",
     }
+
+
+@pytest.mark.parametrize("malformed", [[], None, "not an object", 42])
+def test_pending_recovery_ignores_non_object_sidecar_and_finds_valid_task(tmp_path, monkeypatch, malformed):
+    outputs = {1: tmp_path / "scene-1.mp4", 2: tmp_path / "scene-2.mp4"}
+    monkeypatch.setattr(task_recovery, "get_scene_video_path", lambda _project, scene_id: str(outputs[scene_id]))
+    outputs[1].with_suffix(".provider.pending.json").write_text(json.dumps(malformed), encoding="utf-8")
+    options = {"provider": "seedance_api", "model": "paid-model"}
+    _write_sidecar(outputs[2], options, local_task_id=42)
+
+    assert task_recovery.load_pending_video_options(7, [1, 2], local_task_id=42) == options
 
 
 def test_production_video_options_round_trip(tmp_path, monkeypatch):

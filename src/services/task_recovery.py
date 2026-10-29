@@ -169,6 +169,8 @@ def load_pending_video_options(
             payload = json.loads(sidecar.read_text(encoding="utf-8"))
         except (OSError, ValueError, TypeError):
             continue
+        if not isinstance(payload, dict):
+            continue
         if local_task_id is not None and str(payload.get("local_task_id")) != str(local_task_id):
             continue
         options = payload.get("request_options") if isinstance(payload, dict) else None

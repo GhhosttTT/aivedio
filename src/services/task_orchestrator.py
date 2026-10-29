@@ -911,12 +911,19 @@ class TaskOrchestrator:
                 task_model.project_id,
                 task_id=task_model.id,
             ) or {}
+            # Audit bindings belong to the old task, not the new request.
+            # create_production_task builds a fresh readiness snapshot and
+            # does not accept these internal metadata fields as arguments.
+            retry_options.pop("readiness_snapshot_path", None)
+            retry_options.pop("readiness_task_record_id", None)
             if pending_options:
                 # The remote task is already paid/accepted. Re-run only the
                 # video stage so the original image/audio mtimes and request
                 # fingerprint remain intact; the provider adapter will resume
                 # the existing task instead of submitting a duplicate.
-                retry_options = {
+                # Sidecars describe generation, not the episode's finishing
+                # settings. Keep the exact task snapshot's BGM controls.
+                retry_options.update({
                     key: value for key, value in pending_options.items()
                     if value is not None and key in {
                         "provider", "request_mode", "multi_shot", "native_audio",
@@ -925,7 +932,7 @@ class TaskOrchestrator:
                         "watermark", "duration_seconds", "sequence_level_multi_shot",
                         "sequence_output_path", "add_bgm", "bgm_path", "bgm_volume",
                     }
-                }
+                })
                 retry_options.update({
                     "generate_images": False,
                     "generate_audios": False,

@@ -686,7 +686,44 @@ class TestRetryFailedTask:
         assert kwargs["sequence_output_path"] == "/tmp/sequence_42.mp4"
 
     @patch('src.services.task_orchestrator.load_production_video_options')
-    @patch('src.services.task_orchestrator.TaskOrchestrator.create_production_task')
+    @patch('src.services.task_orchestrator.load_pending_video_options')
+    @patch('src.services.task_orchestrator.TaskOrchestrator.create_production_task', autospec=True)
+    def test_pending_resume_preserves_composition_options_from_exact_task_snapshot(
+        self, mock_create, mock_pending, mock_saved, orchestrator, sample_project, sample_scenes
+    ):
+        task = TaskModel(
+            project_id=sample_project.id, status=TaskStatus.FAILED,
+            celery_task_id="paid-with-bgm", retry_count=0, total_steps=10,
+        )
+        orchestrator.db.add(task)
+        orchestrator.db.commit()
+        mock_saved.return_value = {
+            "provider": "seedance_api", "model": "snapshot-model",
+            "add_bgm": True, "bgm_path": "/project/music/bgm.mp3", "bgm_volume": 0.15,
+            "readiness_snapshot_path": "/project/reviews/old-readiness.json",
+            "readiness_task_record_id": task.id,
+        }
+        mock_pending.return_value = {
+            "provider": "seedance_api", "model": "accepted-model", "native_audio": False,
+            "local_task_id": str(task.id), "resolution": None,
+        }
+        mock_create.return_value = "resumed-with-bgm"
+
+        assert orchestrator.retry_failed_task(task.celery_task_id) == "resumed-with-bgm"
+        mock_saved.assert_called_once_with(sample_project.id, task_id=task.id)
+        options = mock_create.call_args.kwargs
+        assert options["model"] == "accepted-model"
+        assert options["native_audio"] is False
+        assert options["add_bgm"] is True
+        assert options["bgm_path"] == "/project/music/bgm.mp3"
+        assert options["bgm_volume"] == 0.15
+        assert "local_task_id" not in options
+        assert "readiness_snapshot_path" not in options
+        assert "readiness_task_record_id" not in options
+        assert options["generate_images"] is False
+
+    @patch('src.services.task_orchestrator.load_production_video_options')
+    @patch('src.services.task_orchestrator.TaskOrchestrator.create_production_task', autospec=True)
     def test_retry_without_pending_sidecar_preserves_last_video_options(
         self, mock_create, mock_saved, orchestrator, sample_project, sample_scenes
     ):
@@ -706,6 +743,8 @@ class TestRetryFailedTask:
             "output_format": "mp4",
             "draft_task_ids": {1: "draft-1", 2: "draft-2"},
             "sequence_level_multi_shot": False,
+            "readiness_snapshot_path": "/project/reviews/old-readiness.json",
+            "readiness_task_record_id": task.id,
         }
         mock_create.return_value = "retry-with-options-task-id"
 
@@ -716,6 +755,8 @@ class TestRetryFailedTask:
         assert kwargs["model"] == "doubao-seedance-2-0-260128"
         assert kwargs["resolution"] == "1080p"
         assert kwargs["draft_task_ids"] == {1: "draft-1", 2: "draft-2"}
+        assert "readiness_snapshot_path" not in kwargs
+        assert "readiness_task_record_id" not in kwargs
         assert kwargs.get("generate_images", True) is True
         assert kwargs.get("generate_videos", True) is True
 
