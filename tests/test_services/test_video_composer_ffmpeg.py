@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import numpy as np
 
 from src.services.video_composer import VideoComposer, VideoComposerError
 
@@ -158,3 +159,56 @@ def test_add_bgm_without_dialogue_source(tmp_path, require_ffmpeg):
     composer = VideoComposer()
     assert composer._get_duration(str(output)) == pytest.approx(1.0, abs=0.3)
     assert composer.has_audio_stream(str(output)) is True
+
+
+def _beep_onsets(path: Path) -> list[float]:
+    decoded = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(path), "-map", "0:a:0",
+         "-ac", "1", "-ar", "48000", "-f", "f32le", "pipe:1"],
+        capture_output=True, check=True,
+    )
+    samples = np.frombuffer(decoded.stdout, dtype="<f4")
+    window = 240  # 5ms envelopes ignore zero-crossings without hiding drift.
+    levels = np.sqrt(np.mean(samples[:len(samples) // window * window].reshape(-1, window) ** 2, axis=1))
+    active = levels > levels.max() * 0.2
+    return (np.flatnonzero(active & ~np.r_[False, active[:-1]]) * window / 48000).tolist()
+
+
+@pytest.mark.parametrize("audio_source", ["separate-dialogue", "native-audio", "short-native-audio"])
+def test_dialogue_prelap_is_local_to_each_cut_not_accumulated(tmp_path, require_ffmpeg, monkeypatch, audio_source):
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "GENERATION_WIDTH", 160)
+    monkeypatch.setattr(settings, "GENERATION_HEIGHT", 96)
+    monkeypatch.setattr(settings, "GENERATION_VIDEO_OUTPUT_FPS", 24)
+    monkeypatch.setattr(settings, "GENERATION_VIDEO_DIALOGUE_PRELAP_SECONDS", 0.08)
+    source = tmp_path / "beep.wav"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+        "aevalsrc=if(between(t\\,0.2\\,0.3)\\,0.4*sin(2*PI*700*t)\\,0):s=48000:d=1",
+        str(source),
+    ], check=True)
+    count = 6
+    plan = [{"transition": {"video": "none", "duration_seconds": 0.0}}] + [
+        {"audio_strategy": "dialogue_pre_lap", "transition": {"video": "hard_cut", "duration_seconds": 0.0}}
+        for _ in range(count - 1)
+    ]
+    composer = VideoComposer()
+    if audio_source != "separate-dialogue":
+        clip = _make_clip(tmp_path / "video.mp4", with_audio=False)
+        native = tmp_path / "native.mp4"
+        mux = [
+            "ffmpeg", "-v", "error", "-y", "-i", str(clip), "-i", str(source),
+            "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac",
+        ]
+        if audio_source == "short-native-audio":
+            mux += ["-af", "atrim=duration=0.8"]
+        subprocess.run([*mux, str(native)], check=True)
+        output = Path(composer.concat_videos([str(native)] * count, str(tmp_path / "result.mp4"),
+                                            preserve_audio=True, editing_plan=plan))
+    else:
+        output = Path(composer.compose_scene_audio([(str(source), 1.0)] * count,
+                                                 str(tmp_path / "result.wav"), editing_plan=plan))
+    expected_onsets = [0.2] + [index * 0.999 - 0.079 + 0.2 for index in range(1, count)]
+    assert _beep_onsets(output) == pytest.approx(expected_onsets, abs=0.025)
+    assert composer._get_duration(str(output)) == pytest.approx(count - (count - 1) * 0.001, abs=0.05)

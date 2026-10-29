@@ -28,6 +28,7 @@ from src.services.rhythm_audit import RhythmAuditService
 from src.services.asr_service import ASRSegment
 from src.services.localization_quality_service import LocalizationQualityService
 from src.services.video_composer import get_video_composer
+from src.services.composition_timeline import build_composition_timeline
 from src.services.video_quality_metrics import temporal_sample_evidence_error, video_boundary_continuity, video_candidate_metrics
 from src.services.sequence_plan import build_sequence_context
 from src.services.subtitle_generator import get_subtitle_generator
@@ -571,13 +572,16 @@ def _merge_subtitles(
     import re
     
     merged_subtitles = []
-    current_time_offset = 0.0
     subtitle_index = 1
     
     fallback_subtitle_paths = iter(subtitle_paths or [])
     use_scene_subtitle_paths = any(_scene_subtitle_path(scene) for scene in scenes)
+    timeline = build_composition_timeline(
+        [_scene_composition_duration(scene, video_composer) for scene in scenes], editing_plan,
+    )
 
     for scene_index, scene in enumerate(scenes):
+        current_time_offset = timeline[scene_index].audio_start
         subtitle_path = _scene_subtitle_path(scene)
         if not subtitle_path and not use_scene_subtitle_paths:
             subtitle_path = next(fallback_subtitle_paths, None)
@@ -616,24 +620,6 @@ def _merge_subtitles(
                 merged_subtitles.append(new_entry)
                 subtitle_index += 1
 
-        current_time_offset += _scene_composition_duration(scene, video_composer)
-        # The compositor overlaps the next scene by the transition duration.
-        # Keep subtitle cues on the rendered timeline instead of accumulating
-        # the pre-transition source durations and drifting after every cut.
-        next_plan = (editing_plan or [])[scene_index + 1] if scene_index + 1 < len(editing_plan or []) else None
-        transition = next_plan.get("transition", {}) if isinstance(next_plan, dict) else {}
-        transition_mode = transition.get("video")
-        if transition_mode == "crossfade":
-            try:
-                overlap = float(transition.get("duration_seconds", 0.0) or 0.0)
-            except (TypeError, ValueError):
-                overlap = 0.0
-            if math.isfinite(overlap) and overlap > 0:
-                current_time_offset = max(0.0, round(current_time_offset - overlap, 3))
-        elif transition_mode in {"hard_cut", "none"}:
-            # The FFmpeg transition graph uses a 1ms xfade even for hard cuts
-            # so mixed transition plans share one stable filter graph.
-            current_time_offset = max(0.0, round(current_time_offset - 0.001, 3))
     
     # Publish the merged timeline atomically so a failed composition never
     # exposes a truncated or partially shifted subtitle file.

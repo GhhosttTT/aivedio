@@ -15,6 +15,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from src.config import settings
+from src.services.composition_timeline import build_composition_timeline, transition_audio_overlap
 from src.utils.logger import logger
 
 
@@ -736,6 +737,7 @@ class VideoComposer:
         durations = [self._get_duration(path) for path in video_files]
         if any(not math.isfinite(value) or value <= 0 for value in durations):
             raise ValueError("Cannot apply editing transitions to unreadable video durations")
+        timeline = build_composition_timeline(durations, editing_plan)
 
         inputs: list[str] = []
         filters: list[str] = []
@@ -755,7 +757,8 @@ class VideoComposer:
                 if self.has_audio_stream(video_file):
                     filters.append(
                         f"[{index}:a]aresample=48000,aformat=sample_rates=48000:"
-                        f"channel_layouts=stereo,asetpts=PTS-STARTPTS[{audio_label}]"
+                        f"channel_layouts=stereo,asetpts=PTS-STARTPTS,"
+                        f"apad,atrim=duration={durations[index]:.6f}[{audio_label}]"
                     )
                 else:
                     filters.append(
@@ -767,14 +770,9 @@ class VideoComposer:
         current_audio = audio_labels[0] if preserve_audio else None
         elapsed = durations[0]
         for index in range(1, len(video_files)):
-            transition = editing_plan[index].get("transition", {})
-            mode = transition.get("video")
-            requested = float(transition.get("duration_seconds", 0.0) or 0.0)
-            # A 1ms xfade is effectively a hard cut, while keeping one stable
-            # filter graph for mixed hard-cut/crossfade timelines.
-            fade_duration = requested if mode == "crossfade" else 0.001
-            fade_duration = max(0.001, min(fade_duration, 0.12, durations[index - 1], durations[index]))
-            offset = max(0.0, elapsed - fade_duration)
+            timing = timeline[index]
+            fade_duration = timing.video_overlap
+            offset = timing.video_start
             next_video = f"txv{index}"
             filters.append(
                 f"[{current_video}][{video_labels[index]}]xfade=transition=fade:"
@@ -783,17 +781,14 @@ class VideoComposer:
             current_video = next_video
             if preserve_audio:
                 next_audio = f"txa{index}"
-                audio_fade_duration = self._transition_audio_overlap(editing_plan[index])
-                audio_fade_duration = max(
-                    0.001,
-                    min(audio_fade_duration, durations[index - 1], durations[index]),
-                )
+                audio_fade_duration = timing.audio_overlap
                 filters.append(
                     f"[{current_audio}][{audio_labels[index]}]acrossfade="
-                    f"d={audio_fade_duration:.6f}:c1=tri:c2=tri[{next_audio}]"
+                    f"d={audio_fade_duration:.6f}:c1=tri:c2=tri,"
+                    f"apad,atrim=duration={timing.end:.6f},asetpts=PTS-STARTPTS[{next_audio}]"
                 )
                 current_audio = next_audio
-            elapsed += durations[index] - fade_duration
+            elapsed = timing.end
 
         if preserve_audio and current_audio:
             normalized_audio = "ta_normalized"
@@ -953,6 +948,7 @@ class VideoComposer:
                     raise ValueError("Scene audio duration is unreadable")
                 if audio_duration > duration + frame_tolerance:
                     raise ValueError("Dialogue is longer than its scene; regenerate or split the scene")
+        timeline = build_composition_timeline([duration for _, duration in segments], editing_plan)
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="scene_audio_", dir=output.parent) as temp_dir:
@@ -977,34 +973,17 @@ class VideoComposer:
             if editing_plan:
                 if len(editing_plan) != len(aligned_paths):
                     raise ValueError("Editing plan must contain one entry per audio segment")
-                transition_durations = [
-                    self._transition_audio_overlap(editing_plan[index])
-                    for index in range(1, len(editing_plan))
-                ]
+                transition_durations = [timing.audio_overlap for timing in timeline[1:]]
             return self._concat_audio(
                 aligned_paths,
                 str(output),
                 transition_durations=transition_durations,
+                transition_end_seconds=[timing.end for timing in timeline[1:]] if editing_plan else None,
             )
 
     @staticmethod
     def _transition_audio_overlap(plan: dict) -> float:
-        transition = plan.get("transition", {}) if isinstance(plan, dict) else {}
-        if plan.get("audio_strategy") == "dialogue_pre_lap":
-            try:
-                return max(
-                    0.001,
-                    min(0.12, float(settings.GENERATION_VIDEO_DIALOGUE_PRELAP_SECONDS)),
-                )
-            except (TypeError, ValueError):
-                return 0.08
-        mode = transition.get("video")
-        if mode == "crossfade":
-            try:
-                return max(0.001, min(0.12, float(transition.get("duration_seconds", 0.0) or 0.0)))
-            except (TypeError, ValueError):
-                return 0.001
-        return 0.001 if mode in {"hard_cut", "none"} else 0.0
+        return transition_audio_overlap(plan)
 
     @staticmethod
     def _audio_concat_codec_args(output_path: str) -> list[str]:
@@ -1022,6 +1001,7 @@ class VideoComposer:
         audio_files: List[str],
         output_path: str,
         transition_durations: Optional[List[float]] = None,
+        transition_end_seconds: Optional[List[float]] = None,
     ) -> str:
         """
         拼接多个音频文件
@@ -1048,6 +1028,11 @@ class VideoComposer:
             if transition_durations:
                 if len(transition_durations) != len(audio_files) - 1:
                     raise ValueError("Transition durations must cover each audio boundary")
+                if transition_end_seconds is not None and (
+                    len(transition_end_seconds) != len(transition_durations)
+                    or any(not math.isfinite(end) or end <= 0 for end in transition_end_seconds)
+                ):
+                    raise ValueError("Transition ends must cover each boundary with a finite positive time")
                 inputs = [argument for audio_file in audio_files for argument in ("-i", audio_file)]
                 filters = []
                 current = "0:a"
@@ -1055,9 +1040,16 @@ class VideoComposer:
                     if not math.isfinite(float(duration)) or not 0 < float(duration) <= 0.12:
                         raise ValueError("Audio transition duration must be finite and within 0-0.12 seconds")
                     output_label = f"af{index}"
+                    # Re-anchor every cut to the video clock. Padding only the
+                    # final track lets each dialogue pre-lap shorten all later
+                    # shots again, accumulating an audible sync error.
+                    alignment = (
+                        f",apad,atrim=duration={transition_end_seconds[index - 1]:.6f},asetpts=PTS-STARTPTS"
+                        if transition_end_seconds is not None else ""
+                    )
                     filters.append(
                         f"[{current}][{index}:a]acrossfade=d={float(duration):.6f}:"
-                        f"c1=tri:c2=tri[{output_label}]"
+                        f"c1=tri:c2=tri{alignment}[{output_label}]"
                     )
                     current = output_label
                 cmd = [
