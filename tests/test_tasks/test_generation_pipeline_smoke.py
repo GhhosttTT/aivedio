@@ -653,20 +653,6 @@ def test_merge_subtitles_keeps_previous_output_when_publish_fails(tmp_path, monk
     assert not list(tmp_path.glob(".merged.srt.*.part"))
 
 
-def test_cleanup_composition_scratch_removes_only_registered_artifacts(tmp_path):
-    scratch = tmp_path / "final_with_audio.mp4"
-    scratch.write_bytes(b"scratch")
-    scratch.with_suffix(".provider.json").write_text("{}", encoding="utf-8")
-    unrelated = tmp_path / "scene.mp4"
-    unrelated.write_bytes(b"keep")
-
-    composition_tasks._cleanup_composition_scratch([scratch])
-
-    assert not scratch.exists()
-    assert not scratch.with_suffix(".provider.json").exists()
-    assert unrelated.read_bytes() == b"keep"
-
-
 def test_composition_blocks_audio_video_duration_mismatch():
     service = Mock()
     service._get_duration.side_effect = [4.0, 1.0]

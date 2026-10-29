@@ -8,6 +8,7 @@ import hashlib
 import math
 import re
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Optional
 from uuid import uuid4
 from celery.exceptions import Ignore
@@ -235,7 +236,8 @@ def _publish_composition_candidate(
 
     pairs: list[tuple[Path, Path]] = [(candidate, final)]
     if published_review is not None:
-        source_report = candidate.with_suffix(".composition_review.json")
+        report_path = published_review.get("path")
+        source_report = Path(report_path) if isinstance(report_path, (str, Path)) and report_path else candidate.with_suffix(".composition_review.json")
         destination_report = final.with_suffix(".composition_review.json")
         if source_report.is_file():
             report_payload = json.loads(source_report.read_text(encoding="utf-8"))
@@ -326,7 +328,7 @@ def compose_final_video_task(
     self.update_state(state="PROGRESS", meta={"current": 0, "total": 100, "step": "视频合成"})
     db = None
     composition_candidate_path: Path | None = None
-    composition_scratch: list[Path] = []
+    composition_workspace: TemporaryDirectory | None = None
     try:
         # 获取数据库会话
         db = next(get_db())
@@ -386,14 +388,21 @@ def compose_final_video_task(
         
         # 生成最终视频路径
         final_video_path = get_project_final_video_path(project_id)
-        composition_candidate_path = Path(final_video_path).with_name(
-            f".{Path(final_video_path).stem}.candidate-{task_id}.mp4"
+        final_path = Path(final_video_path)
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+        # A worker can outlive cancellation or receive a duplicate delivery.
+        # Isolate every execution, not only every logical task, so its render
+        # outputs and cleanup can never consume another worker's intermediates.
+        composition_workspace = TemporaryDirectory(
+            prefix=f".{final_path.stem}.composition-{task_id}-", dir=final_path.parent,
         )
+        workspace = Path(composition_workspace.name)
+        composition_candidate_path = workspace / "candidate.mp4"
         
         # 步骤 1: 拼接视频（20%）
         self.update_state(state="PROGRESS", meta={"current": 20, "total": 100, "step": "拼接视频"})
         
-        temp_video_path = final_video_path.replace(".mp4", "_temp.mp4")
+        temp_video_path = str(workspace / "concat.mp4")
         temp_video_path = video_composer.concat_videos(
             video_paths,
             temp_video_path,
@@ -401,23 +410,13 @@ def compose_final_video_task(
             preserve_provider_quality=preserve_provider_quality,
             editing_plan=editing_plan,
         )
-        if Path(temp_video_path).resolve() not in {
-            Path(path).resolve() for path in video_paths
-        }:
-            composition_scratch.append(
-                Path(final_video_path.replace(".mp4", "_temp.mp4"))
-            )
         
         # 步骤 2: 同步音频（40%）
         self.update_state(state="PROGRESS", meta={"current": 40, "total": 100, "step": "同步音频"})
         
         if not preserve_native_audio:
-            temp_video_with_audio = final_video_path.replace(".mp4", "_with_audio.mp4")
-            merged_audio_path = final_video_path.replace(".mp4", "_merged_audio.wav")
-            composition_scratch.extend([
-                Path(temp_video_with_audio),
-                Path(merged_audio_path),
-            ])
+            temp_video_with_audio = str(workspace / "with_audio.mp4")
+            merged_audio_path = str(workspace / "merged_audio.wav")
             audio_path = video_composer.compose_scene_audio(
                 audio_segments,
                 merged_audio_path,
@@ -434,8 +433,7 @@ def compose_final_video_task(
         self.update_state(state="PROGRESS", meta={"current": 60, "total": 100, "step": "添加背景音乐"})
         
         if add_bgm and bgm_path:
-            temp_video_with_bgm = final_video_path.replace(".mp4", "_with_bgm.mp4")
-            composition_scratch.append(Path(temp_video_with_bgm))
+            temp_video_with_bgm = str(workspace / "with_bgm.mp4")
             video_composer.add_bgm(
                 video_path=temp_video_path,
                 bgm_path=bgm_path,
@@ -449,8 +447,9 @@ def compose_final_video_task(
         
         if subtitle_paths:
             # 合并所有字幕文件
-            merged_subtitle_path = final_video_path.replace(".mp4", ".srt")
-            composition_scratch.append(Path(merged_subtitle_path))
+            # The visual audit reads the candidate's adjacent SRT. Keeping the
+            # timeline next to that candidate prevents silently skipping it.
+            merged_subtitle_path = str(composition_candidate_path.with_suffix(".srt"))
             _merge_subtitles(
                 subtitle_paths,
                 merged_subtitle_path,
@@ -489,6 +488,9 @@ def compose_final_video_task(
             bgm_path=bgm_path,
             bgm_volume=bgm_volume,
             native_audio_expected=preserve_native_audio,
+            # Review frames are durable evidence, not render intermediates.
+            # Keep them outside the workspace removed when this attempt exits.
+            review_report_path=final_path.parent / "reviews" / "composition_attempts" / f"{task_id}-{uuid4().hex}.json",
         )
         task_model = _claim_task_completion(db, project_id, task_id)
         composition_review = _publish_composition_candidate(
@@ -542,13 +544,11 @@ def compose_final_video_task(
         
         raise
     finally:
-        _cleanup_composition_scratch(composition_scratch)
-        if composition_candidate_path is not None:
-            for candidate_artifact in composition_candidate_path.parent.glob(
-                f"{composition_candidate_path.stem}*"
-            ):
-                if candidate_artifact.is_file():
-                    candidate_artifact.unlink(missing_ok=True)
+        if composition_workspace is not None:
+            try:
+                composition_workspace.cleanup()
+            except OSError as cleanup_error:
+                logger.warning(f"Could not clean composition workspace {composition_workspace.name}: {cleanup_error}")
         if db is not None:
             db.close()
 
@@ -650,24 +650,6 @@ def _merge_subtitles(
 def _scene_subtitle_path(scene) -> str | Path | None:
     subtitle_path = getattr(scene, "subtitle_path", None)
     return subtitle_path if isinstance(subtitle_path, (str, Path)) and subtitle_path else None
-
-
-def _cleanup_composition_scratch(paths: list[str | Path]) -> None:
-    """Remove only intermediates created by one composition attempt."""
-    sidecar_suffixes = (
-        ".quality.json",
-        ".provider.json",
-        ".continuity.json",
-        ".final_review.json",
-        ".last_frame.png",
-    )
-    for raw_path in paths:
-        artifact = Path(raw_path)
-        for candidate in (
-            artifact,
-            *(artifact.with_suffix(suffix) for suffix in sidecar_suffixes),
-        ):
-            candidate.unlink(missing_ok=True)
 
 
 def _scene_composition_duration(scene, video_composer=None) -> float:
@@ -1501,10 +1483,11 @@ def _review_final_composed_video(
     bgm_path: str | Path | None = None,
     bgm_volume: float = 0.3,
     native_audio_expected: bool = False,
+    review_report_path: str | Path | None = None,
 ) -> dict | None:
     if not settings.GENERATION_REQUIRE_VIDEO_REVIEW:
         return None
-    report_path = Path(final_video_path).with_suffix(".composition_review.json")
+    report_path = Path(review_report_path) if review_report_path is not None else Path(final_video_path).with_suffix(".composition_review.json")
     scene_video_paths = [
         scene.video_path
         for scene in scenes
