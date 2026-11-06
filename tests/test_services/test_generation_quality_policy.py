@@ -245,6 +245,25 @@ def test_seed_dance_video_budget_uses_candidate_cap(monkeypatch):
     assert budget.profile == "seed_dance_reference"
 
 
+def test_two_person_dialogue_receives_a_heavier_video_generation_budget(monkeypatch):
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_QUALITY_PROFILE", "hongguo_reference")
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_VIDEO_CANDIDATES", 2)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_VIDEO_REFINEMENT_PASSES", 1)
+    monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_MAX_VIDEO_CANDIDATES", 8)
+
+    budget = video_quality_budget(None, {
+        "shot_role": "dialogue_reaction",
+        "action_intensity": "low",
+        "visible_character_count": 2,
+    })
+
+    assert budget.candidate_count == 6
+    assert budget.refinement_passes == 3
+    assert budget.reason == "shot_risk_generation_budget"
+    assert budget.shot_risk_profile == "dialogue_performance"
+    assert "visible_character_count=2" in budget.shot_risk_factors
+
+
 def test_prop_interaction_pipeline_requires_hand_prop_and_face_quality():
     pipeline = image_quality_pipeline({"id": "prop_interaction"})
 

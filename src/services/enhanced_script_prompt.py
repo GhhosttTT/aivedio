@@ -67,6 +67,7 @@ Short-drama pacing contract. These rules are mandatory:
 - 对话：一句简短对白，无对白填 无
 - 说话人：实际姓名，无对白填 无
 - 情感：一个情绪
+- 镜头规格：单行 JSON，包含 shot_role（establishing/dialogue_reaction/emotion_reaction/action/prop_interaction）、required_engine_capabilities（从 identity_reference/performance_control/multi_character/motion_control/temporal_keyframes 中选择）、purpose、emotion、camera_movement、camera_intensity（low/medium/high）、action_intensity（low/medium/high）、performance_intensity（1-5）、duration_seconds（建议3-6秒）、continuity_constraints（字符串数组）、character_states（数组，每项包含character_name、emotion、action、start_state、end_state）、continuity_assets（数组）。有可见角色必须选择 identity_reference；对白或情绪特写选择 performance_control；动作或道具交互选择 motion_control；同镜头多角色选择 multi_character；确实需要中间关键帧约束才选择 temporal_keyframes。continuity_assets 每项包含 asset_id、kind（prop/wardrobe/injury/environment/blocking/other）、start_state（对象）、end_state（对象）、inherits_previous（布尔值）、transition_note；当道具、服装、伤口、环境或站位跨镜头继续时，用稳定 asset_id 记录可比对属性。状态发生变化时必须写 transition_note；明确左右手、道具归属、服装与伤口等本剧情需要的连续状态；不要杜撰额外角色。
 
 继续分镜2至分镜{num_scenes}，使用相同字段和连续编号。
 """

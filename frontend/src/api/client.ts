@@ -142,7 +142,9 @@ export const projectApi = {
     runAutoRepairQueue: (id: number, data: {max_actions?: number; dry_run?: boolean; action?: string}) => apiClient.post<any, RepairQueueAutoRunResponse>(`/projects/${id}/repair-queue/auto`, data),
     productionReadiness: (id: number, includeEnginePreflight = true, providerOverride?: string, modelOverride?: string, requestModeOverride?: string, resolutionOverride?: string, outputFormatOverride?: string, durationOverride?: number | null) => apiClient.get<any, ProductionReadinessReport>(`/projects/${id}/production-readiness`, {params: {include_engine_preflight: includeEnginePreflight, ...(providerOverride ? {provider_override: providerOverride} : {}), ...(modelOverride ? {model_override: modelOverride} : {}), ...(requestModeOverride ? {request_mode_override: requestModeOverride} : {}), ...(resolutionOverride ? {resolution_override: resolutionOverride} : {}), ...(outputFormatOverride ? {output_format_override: outputFormatOverride} : {}), ...(durationOverride !== null && durationOverride !== undefined ? {duration_override: durationOverride} : {})}}),
     approveStoryRoom: (id: number, notes = '') => apiClient.post<any, {project_id: number; status: string; approval: Record<string, any>}>(`/projects/${id}/approve-story-room`, {notes}),
+    compileShotContracts: (id: number) => apiClient.post<any, {project_id: number; changed_scene_numbers: number[]; changed_count: number}>(`/projects/${id}/compile-shot-contracts`),
     freezeSpatialPlan: (id: number, notes = '') => apiClient.post<any, {project_id: number; status: string; asset_pack: Record<string, any>}>(`/projects/${id}/freeze-spatial-plan`, {notes}),
+    freezeContinuityAssets: (id: number, notes = '') => apiClient.post<any, {project_id: number; status: string; asset_pack: Record<string, any>}>(`/projects/${id}/freeze-continuity-assets`, {notes}),
     freezeVisualStyle: (id: number, data?: {style_prompt?: string; negative_prompt?: string; notes?: string}) => apiClient.post<any, {project_id: number; status: string; asset_pack: Record<string, any>}>(`/projects/${id}/freeze-visual-style`, data || {}),
     freezeWorkflowProfile: (data?: {capabilities?: Record<string, any>; notes?: string}) => apiClient.post<any, {status: string; profile: Record<string, any>}>('/projects/workflow-profile/freeze', data || {}),
     compareSeedDanceBaseline: (id: number, data: {baseline_path: string; candidate_path?: string}) => apiClient.post<any, SeedDanceBaselineComparison>(`/projects/${id}/seed-dance-baseline`, data, {timeout: 300000}),
@@ -155,6 +157,19 @@ export const projectApi = {
         });
     },
     updateScene: (id: number, scene: number, data: any) => apiClient.put(`/projects/${id}/scenes/${scene}`, data),
+    decomposeScene: (id: number, scene: number, dryRun = true) => apiClient.post<any, {
+        applied: boolean;
+        source_scene_number: number;
+        scene_count_delta: number;
+        created_scene_numbers?: number[];
+        atomic_shots: Array<{
+            order: number;
+            shot_role: string;
+            visual_description: string;
+            visible_characters: string[];
+            required_engine_capabilities: string[];
+        }>;
+    }>(`/projects/${id}/scenes/${scene}/decompose`, {dry_run: dryRun}),
     mediaUrl: async (id: number, path: string, download = false) => { const data = await apiClient.get<any, {url: string}>(`/projects/${id}/media-url`, {params: {path}}); const url = new URL(data.url, apiOrigin); if (download) url.searchParams.set('download', 'true'); return url.href; },
     /**
      * 获取项目列表
@@ -553,6 +568,20 @@ export interface VideoEnginePreflight {
         action_items?: string[];
         warnings?: string[];
     };
+    local_model?: {
+        status: 'ready' | 'blocked' | 'not_applicable' | string;
+        profile?: string;
+        detected_profile?: string;
+        label?: string;
+        production_ready?: boolean;
+        model_fps?: number;
+        minimum_model_fps?: number;
+        target_duration_seconds?: number;
+        max_frames?: number;
+        required_target_frames?: number;
+        reason?: string;
+        action_items?: string[];
+    };
     warnings?: string[];
 }
 
@@ -666,6 +695,22 @@ export interface ProductionReadinessReport {
         shot_complexity?: {
             status: string;
             summary: {total: number; needs_split: number; warn: number};
+            invalid_contracts?: Array<{scene_number: number; errors: string[]}>;
+            scenes?: Array<{
+                scene_number: number;
+                status: string;
+                score: number;
+                reasons: string[];
+                recommendations: string[];
+                contract_errors?: string[];
+                suggested_atomic_shots: Array<{
+                    order: number;
+                    shot_role: string;
+                    visual_description: string;
+                    visible_characters: string[];
+                    required_engine_capabilities: string[];
+                }>;
+            }>;
         };
         spatial_continuity?: {
             status: string;

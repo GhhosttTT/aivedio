@@ -7,13 +7,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Character, Project, Scene, Task, TaskStatus, User
-from src.services.generation_review import PLATFORM_REFERENCE_FEATURES, VIDEO_AESTHETIC_FEATURES, VIDEO_PERFORMANCE_FEATURES, file_hash, fingerprint, write_report, ReviewError
+from src.services.generation_review import PLATFORM_REFERENCE_FEATURES, VIDEO_AESTHETIC_FEATURES, VIDEO_DIALOGUE_PERFORMANCE_FEATURES, VIDEO_PERFORMANCE_FEATURES, file_hash, fingerprint, write_report, ReviewError
 from src.services.generation_provider import GenerationProviderName, GenerationResult
+from src.services.generation_quality_policy import QualityBudget
 from src.services.shot_prompt_service import ShotPromptService
-from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _character_sheet_generation_contract, _complexity_report, _composition_constraint, _feedback_repair_directive, _generate_quality_candidates, _get_reference_image, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _spatial_image_directive, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
+from src.tasks.image_tasks import _append_terms, _apply_image_repair_action, _character_sheet_generation_contract, _complexity_report, _composition_constraint, _feedback_repair_directive, _generate_quality_candidates, _get_reference_image, _image_local_repair_plan, _project_complexity_report, _quality_parameters, _repair_action_from_reports, _repair_parameter_profile, _review_feedback, _spatial_image_directive, _turnaround_view_for_scene, _visible_character_payload, _visual_character, _visual_characters, _prepare_prompt
 from src.tasks.review_tasks import current_story, generation_signature, require_generation_review, require_story_review
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
-from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_audio_quality_contract, _apply_video_output_contract_repair, _apply_video_repair_action, _apply_video_repair_prompt, _aspect_ratio_for_size, _build_video_generator, _configured_reference_limit, _continuity_metadata_path, _derive_sequence_segment_provider_metadata, _draft_fallback_allowed, _final_video_acceptance_error, _generate_quality_video_candidates, _multimodal_references_for_scene, _multimodal_references_for_sequence, _native_audio_enabled, _normalization_duration_for_provider, _preserve_generated_audio, _promote_sequence_sidecar, _publish_sequence_artifacts_atomically, _provider_metadata_path, _provider_task_state_is_ambiguous, _read_scene_continuity_reference, _review_final_video_after_postprocess, _scene_review_payload, _select_best_video_candidate, _sequence_segment_quality_report, _video_gate_evidence_complete, _video_gate_passes, _video_performance_gate_passes, _video_repair_action_from_candidates, _write_provider_metadata, _write_scene_continuity_metadata
+from src.tasks.video_tasks import _ComfyVideoGenerator, _apply_audio_quality_contract, _apply_video_output_contract_repair, _apply_video_repair_action, _apply_video_repair_prompt, _aspect_ratio_for_size, _bind_local_engine_conditioning, _build_video_generator, _configured_reference_limit, _continuity_metadata_path, _derive_sequence_segment_provider_metadata, _draft_fallback_allowed, _final_video_acceptance_error, _generate_quality_video_candidates, _keyframe_reference_metrics, _multimodal_references_for_scene, _multimodal_references_for_sequence, _native_audio_enabled, _normalization_duration_for_provider, _preserve_generated_audio, _promote_sequence_sidecar, _publish_sequence_artifacts_atomically, _provider_metadata_path, _provider_task_state_is_ambiguous, _read_scene_continuity_reference, _resolve_shot_motion_reference, _review_final_video_after_postprocess, _scene_review_payload, _select_best_video_candidate, _sequence_segment_quality_report, _uses_configured_video_provider, _video_gate_evidence_complete, _video_gate_passes, _video_performance_gate_passes, _video_repair_action_from_candidates, _write_provider_metadata, _write_scene_continuity_metadata
+from src.tasks.video_tasks import _driving_motion_gate_passes
 
 
 def passed_video_aesthetic_scores(score: int = 5) -> dict:
@@ -26,8 +28,55 @@ def passed_video_aesthetic_scores(score: int = 5) -> dict:
 def passed_video_performance_scores(score: int = 5) -> dict:
     return {
         feature: {"score": score, "evidence": "acting reads like a short-drama performance"}
-        for feature in VIDEO_PERFORMANCE_FEATURES
+        for feature in VIDEO_PERFORMANCE_FEATURES + VIDEO_DIALOGUE_PERFORMANCE_FEATURES
     }
+
+
+def test_local_video_registry_counts_as_configured_workflow(monkeypatch):
+    monkeypatch.setattr("src.tasks.video_tasks.settings.COMFYUI_VIDEO_WORKFLOW_PATH", "")
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.settings.COMFYUI_VIDEO_ENGINE_REGISTRY_PATH",
+        "configs/local_video_engine_registry.json",
+    )
+
+    assert _uses_configured_video_provider("local_comfyui") is True
+
+
+def test_image_local_repair_plan_uses_review_evidence_and_preserves_stage_scope():
+    candidate = {
+        "request": {"seed": 99},
+        "review": {
+            "issues": [
+                {"severity": "minor", "reason": "left hand has fused fingers around the prop"},
+            ],
+            "platform_aesthetic_scores": {
+                "skin_texture": {"score": 4, "evidence": "slightly waxy facial skin"},
+                "phone_readability": {"score": 5, "evidence": "clear"},
+            },
+        },
+    }
+
+    plan = _image_local_repair_plan(candidate)
+
+    assert [stage["name"] for stage in plan] == ["face_eye_detail", "hand_prop_detail"]
+    assert plan[0]["target"] == "face, eyes"
+    assert plan[0]["denoise"] < plan[1]["denoise"]
+    assert plan[0]["seed"] == 1800
+    assert plan[1]["seed"] == 3002
+
+
+def test_image_local_repair_plan_does_not_modify_clean_candidate():
+    candidate = {
+        "review": {
+            "issues": [],
+            "platform_aesthetic_scores": {
+                "skin_texture": {"score": 5, "evidence": "natural skin"},
+                "phone_readability": {"score": 5, "evidence": "clear face"},
+            },
+        },
+    }
+
+    assert _image_local_repair_plan(candidate) == []
 
 
 def test_audio_quality_contract_penalizes_missing_requested_audio():
@@ -423,6 +472,70 @@ def test_ending_frame_reference_floor_blocks_obvious_target_drift(monkeypatch):
 
     assert error is not None
     assert "ending frame reference score" in error
+
+
+def test_middle_keyframe_reference_floor_blocks_performance_drift(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.settings.GENERATION_VIDEO_KEYFRAME_REFERENCE_MIN_SCORE",
+        2.5,
+    )
+
+    error = _final_video_acceptance_error(
+        {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {
+                "keyframe_references": [{
+                    "status": "available",
+                    "frame_index": 48,
+                    "role": "performance_peak",
+                    "score": 1.7,
+                }],
+            },
+        },
+        True,
+        True,
+        True,
+        True,
+        True,
+        4.8,
+        4.8,
+    )
+
+    assert error is not None
+    assert "middle-keyframe reference score" in error
+
+
+def test_keyframe_reference_metrics_preserve_timestamp_after_fps_conversion(monkeypatch):
+    calls = []
+
+    def fake_metrics(video_path, reference_path, frame_index):
+        calls.append((video_path, reference_path, frame_index))
+        return {"status": "available", "score": 4.5}
+
+    monkeypatch.setattr("src.tasks.video_tasks.video_frame_reference_metrics", fake_metrics)
+
+    result = _keyframe_reference_metrics(
+        "normalized.mp4",
+        [{
+            "locator": "middle.png",
+            "frame_index": 24,
+            "keyframe_role": "performance_peak",
+            "strength": 0.85,
+        }],
+        source_fps=12,
+        target_fps=24,
+    )
+
+    assert calls == [("normalized.mp4", "middle.png", 48)]
+    assert result == [{
+        "status": "available",
+        "score": 4.5,
+        "source_frame_index": 24,
+        "frame_index": 48,
+        "role": "performance_peak",
+        "strength": 0.85,
+    }]
 
 
 def test_black_frame_run_floor_blocks_candidate(monkeypatch):
@@ -987,6 +1100,182 @@ def test_multimodal_references_keep_scene_first_and_previous_motion(project_data
     assert references["audios"] == []
 
 
+def test_avatar_route_requires_audio_conditioning():
+    plan = Mock(performance_reference_audio="", motion_reference_video="")
+    route = {
+        "model_profile": "hunyuanvideo_avatar",
+        "requested_capabilities": ["identity_reference", "performance_control"],
+    }
+
+    with pytest.raises(ValueError, match="requires generated dialogue audio"):
+        _bind_local_engine_conditioning(
+            {"images": ["shot.png"], "videos": [], "audios": []}, plan, route,
+        )
+
+
+def test_avatar_route_accepts_generated_dialogue_audio(tmp_path):
+    audio = tmp_path / "dialogue.wav"
+    audio.write_bytes(b"audio")
+    plan = Mock(performance_reference_audio="", motion_reference_video="")
+    route = {
+        "model_profile": "hunyuanvideo_avatar",
+        "requested_capabilities": ["identity_reference", "performance_control"],
+    }
+
+    result = _bind_local_engine_conditioning(
+        {"images": ["shot.png"], "videos": [], "audios": [str(audio)]}, plan, route,
+    )
+
+    assert result["audios"] == [str(audio)]
+
+
+def test_wan_animate_does_not_treat_previous_shot_as_driving_video():
+    plan = Mock(performance_reference_audio="", motion_reference_video="")
+    route = {
+        "model_profile": "wan_2_2_animate",
+        "requested_capabilities": ["identity_reference", "motion_control"],
+    }
+
+    with pytest.raises(ValueError, match="previous shot cannot be used"):
+        _bind_local_engine_conditioning(
+            {"images": ["shot.png"], "videos": ["previous.mp4"], "audios": []}, plan, route,
+        )
+
+
+def test_wan_animate_performance_control_also_requires_driving_video():
+    plan = Mock(performance_reference_audio="", motion_reference_video="")
+    route = {
+        "model_profile": "wan_2_2_animate",
+        "requested_capabilities": ["identity_reference", "performance_control"],
+    }
+
+    with pytest.raises(ValueError, match="previous shot cannot be used"):
+        _bind_local_engine_conditioning(
+            {"images": ["shot.png"], "videos": ["previous.mp4"], "audios": []}, plan, route,
+        )
+
+
+def test_wan_animate_binds_explicit_motion_reference(tmp_path):
+    previous = tmp_path / "previous.mp4"
+    driving = tmp_path / "driving.mp4"
+    previous.write_bytes(b"previous")
+    driving.write_bytes(b"driving")
+    plan = Mock(performance_reference_audio="", motion_reference_video=str(driving))
+    route = {
+        "model_profile": "wan_2_2_animate",
+        "requested_capabilities": ["identity_reference", "motion_control"],
+    }
+
+    result = _bind_local_engine_conditioning(
+        {"images": ["shot.png"], "videos": [str(previous)], "audios": []}, plan, route,
+    )
+
+    assert result["videos"] == [str(driving)]
+
+
+def test_action_shot_resolves_approved_motion_library_asset(tmp_path):
+    driving = tmp_path / "turn.mp4"
+    driving.write_bytes(b"approved-turn")
+    manifest = tmp_path / "motion-library.json"
+    manifest.write_text(json.dumps({"assets": [{
+        "id": "turn-medium",
+        "path": "turn.mp4",
+        "tags": ["turn around", "转身"],
+        "shot_roles": ["action"],
+        "action_intensities": ["medium"],
+        "min_characters": 1,
+        "max_characters": 1,
+    }]}), encoding="utf-8")
+    plan = VideoShotPlan(
+        shot_role="action",
+        action_intensity="medium",
+        target_duration_seconds=3.0,
+        fps=24,
+        num_frames=72,
+        motion_bucket_id=100,
+        noise_aug_strength=0.01,
+        director_prompt="The heroine will turn around and face the door",
+        end_frame_prompt="heroine faces the door",
+        negative_prompt="identity drift",
+        notes=[],
+        visible_character_count=1,
+        required_engine_capabilities=["identity_reference", "motion_control"],
+        shot_spec={"character_states": [{"character_name": "heroine", "action": "转身"}]},
+    )
+
+    resolved = _resolve_shot_motion_reference(plan, str(manifest))
+
+    assert resolved.motion_reference_video == str(driving.resolve())
+    assert resolved.motion_reference_source["asset_id"] == "turn-medium"
+    assert resolved.motion_reference_source["matched_tags"] == ["turn around", "转身"]
+    assert resolved.as_dict()["motion_reference_source"]["sha256"]
+
+
+def test_explicit_motion_reference_wins_over_automatic_library(tmp_path):
+    explicit = tmp_path / "explicit.mp4"
+    explicit.write_bytes(b"explicit")
+    plan = VideoShotPlan(
+        shot_role="action",
+        action_intensity="medium",
+        target_duration_seconds=3.0,
+        fps=24,
+        num_frames=72,
+        motion_bucket_id=100,
+        noise_aug_strength=0.01,
+        director_prompt="turn around",
+        end_frame_prompt="turned",
+        negative_prompt="identity drift",
+        notes=[],
+        motion_reference_video=str(explicit),
+        required_engine_capabilities=["motion_control"],
+    )
+
+    resolved = _resolve_shot_motion_reference(plan, str(tmp_path / "missing-library.json"))
+
+    assert resolved is plan
+    assert resolved.motion_reference_video == str(explicit)
+
+
+def test_driven_model_candidate_requires_motion_adherence_score(monkeypatch):
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_DRIVING_MOTION_MIN_SCORE", 2.8)
+    candidate = {
+        "provider_metadata": {"request_contract": {"local_engine_route": {
+            "model_profile": "wan_2_2_animate",
+            "requested_capabilities": ["identity_reference", "motion_control"],
+        }}},
+        "technical_metrics": {"driving_motion_reference": {
+            "status": "available", "score": 3.5,
+        }},
+    }
+
+    assert _driving_motion_gate_passes(candidate) is True
+    candidate["technical_metrics"]["driving_motion_reference"]["score"] = 2.0
+    assert _driving_motion_gate_passes(candidate) is False
+    candidate["technical_metrics"]["driving_motion_reference"] = {"status": "unavailable", "score": None}
+    assert _driving_motion_gate_passes(candidate) is False
+
+
+def test_driven_model_candidate_rejects_opposite_motion_direction(monkeypatch):
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.settings.GENERATION_VIDEO_DRIVING_MOTION_MIN_DIRECTION_SIMILARITY",
+        0.15,
+    )
+    candidate = {
+        "provider_metadata": {"request_contract": {"local_engine_route": {
+            "model_profile": "wan_2_2_animate",
+            "requested_capabilities": ["identity_reference", "motion_control"],
+        }}},
+        "technical_metrics": {"driving_motion_reference": {
+            "status": "available",
+            "score": 4.2,
+            "spatial_evidence_status": "available",
+            "direction_similarity": -0.8,
+        }},
+    }
+
+    assert _driving_motion_gate_passes(candidate) is False
+
+
 def test_sequence_references_cover_late_shots_and_audio(project_data, tmp_path, monkeypatch):
     db, project, scene, _character, _ = project_data
     scenes = [scene]
@@ -1271,6 +1560,7 @@ def test_spatial_contract_drives_keyframe_composition_directive():
             "camera_angle": "eye level",
             "camera_axis": "north-south axis",
             "character_positions": {"Alice": "frame left", "Bob": "frame right"},
+            "character_eyelines": {"Alice": "screen right", "Bob": "screen left"},
             "prop_focus": "sealed letter on table",
         },
     })
@@ -1278,6 +1568,8 @@ def test_spatial_contract_drives_keyframe_composition_directive():
     assert "medium two-shot" in directive
     assert "Alice=frame left" in directive
     assert "Bob=frame right" in directive
+    assert "Alice=screen right" in directive
+    assert "Bob=screen left" in directive
     assert "sealed letter on table" in directive
     assert "Preserve screen direction" in directive
 
@@ -1407,6 +1699,9 @@ def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_dat
     assert "你把那封信递给我" in plan.director_prompt
     assert "continuous real-time motion" in plan.director_prompt
     assert "Shot aesthetic profile prop_interaction" in plan.end_frame_prompt
+    assert "Middle performance keyframe:" in plan.mid_frame_prompt
+    assert "hand and important prop make clear believable contact" in plan.mid_frame_prompt
+    assert "performance personality: restrained but decisive" in plan.mid_frame_prompt
     assert plan.spatial_plan["shot_scale"] in {"medium shot", "medium two-shot", "wide establishing shot", "close-up"}
     assert plan.spatial_plan["character_positions"]["Alice"] == "center foreground"
     assert set(plan.spatial_plan["control_references"]) == {
@@ -1417,6 +1712,118 @@ def test_video_director_plan_turns_atomic_scene_into_motion_contract(project_dat
     assert "End frame:" in plan.end_frame_prompt
     assert "identity drift" in plan.negative_prompt
     assert "disappearing prop" in plan.negative_prompt
+
+
+def test_video_director_high_action_uses_two_temporal_performance_anchors(project_data, monkeypatch):
+    _, project, scene, _, _ = project_data
+    scene.dialogue = ""
+    scene.visual_description = "Alice runs across the room and fights the attacker"
+    monkeypatch.setattr("src.services.video_director_service.settings.GENERATION_VIDEO_TARGET_SECONDS", 4.0)
+    monkeypatch.setattr("src.services.video_director_service.settings.GENERATION_VIDEO_MAX_MID_KEYFRAMES", 2)
+    monkeypatch.setattr("src.services.video_director_service.settings.GENERATION_VIDEO_MID_KEYFRAME_MIN_SECONDS", 3.0)
+
+    plan = get_video_director_service().plan_scene(scene, project.id, [])
+
+    assert plan.action_intensity == "high"
+    assert [item["role"] for item in plan.temporal_keyframes] == [
+        "action_commitment",
+        "action_peak",
+    ]
+    assert [item["position"] for item in plan.temporal_keyframes] == [0.32, 0.68]
+    assert "weight shift" in plan.temporal_keyframes[0]["prompt"]
+    assert "readable consequence" in plan.temporal_keyframes[1]["prompt"]
+
+
+def test_video_director_simple_shot_keeps_one_configured_temporal_anchor(project_data, monkeypatch):
+    _, project, scene, _, _ = project_data
+    scene.dialogue = ""
+    scene.visual_description = "The empty room remains quiet"
+    monkeypatch.setattr("src.services.video_director_service.settings.GENERATION_VIDEO_TARGET_SECONDS", 3.2)
+    monkeypatch.setattr("src.services.video_director_service.settings.GENERATION_VIDEO_MID_KEYFRAME_POSITION", 0.55)
+    monkeypatch.setattr("src.services.video_director_service.settings.GENERATION_VIDEO_MAX_MID_KEYFRAMES", 2)
+
+    plan = get_video_director_service().plan_scene(scene, project.id, [])
+
+    assert len(plan.temporal_keyframes) == 1
+    assert plan.temporal_keyframes[0]["position"] == 0.55
+    assert plan.temporal_keyframes[0]["role"] == "performance_peak"
+
+
+def test_mid_frame_generation_uses_unique_anchor_prompt_path_and_seed(project_data, tmp_path, monkeypatch):
+    from src.tasks import video_tasks as module
+
+    _, project, scene, _, _ = project_data
+    plan = get_video_director_service().plan_scene(scene, project.id, [])
+    captured = []
+
+    monkeypatch.setattr(
+        module,
+        "_scene_mid_frame_path",
+        lambda _project_id, _scene_id, index, role: str(tmp_path / f"{index}_{role}.png"),
+    )
+
+    def fake_generate(_provider, request, payload, _reference):
+        captured.append((request, payload))
+        return request.output_path, {"status": "passed"}
+
+    monkeypatch.setattr("src.tasks.image_tasks._generate_quality_candidates", fake_generate)
+    first = {"position": 0.32, "role": "action_commitment", "strength": 0.82, "prompt": "first beat"}
+    second = {"position": 0.68, "role": "action_peak", "strength": 0.88, "prompt": "second beat"}
+
+    first_path = module._generate_mid_frame(
+        scene,
+        project.id,
+        plan,
+        provider=object(),
+        anchor=first,
+        anchor_index=1,
+        reference_image="opening.png",
+    )
+    second_path = module._generate_mid_frame(
+        scene,
+        project.id,
+        plan,
+        provider=object(),
+        anchor=second,
+        anchor_index=2,
+        reference_image=first_path,
+    )
+
+    assert first_path != second_path
+    assert [item[0].prompt for item in captured] == ["first beat", "second beat"]
+    assert [item[0].reference_image for item in captured] == ["opening.png", first_path]
+    assert captured[0][0].seed != captured[1][0].seed
+    assert [item[1]["temporal_keyframe"]["role"] for item in captured] == [
+        "action_commitment",
+        "action_peak",
+    ]
+
+
+def test_end_frame_can_continue_from_last_temporal_anchor(project_data, tmp_path, monkeypatch):
+    from src.tasks import video_tasks as module
+
+    _, project, scene, _, _ = project_data
+    plan = get_video_director_service().plan_scene(scene, project.id, [])
+    captured = []
+    monkeypatch.setattr(module, "_scene_end_frame_path", lambda *_args: str(tmp_path / "end.png"))
+
+    def fake_generate(_provider, request, payload, reference):
+        captured.append((request, payload, reference))
+        return request.output_path, {"status": "passed"}
+
+    monkeypatch.setattr("src.tasks.image_tasks._generate_quality_candidates", fake_generate)
+
+    output = module._generate_end_frame(
+        scene,
+        project.id,
+        plan,
+        provider=object(),
+        reference_image="last_anchor.png",
+    )
+
+    assert output.endswith("end.png")
+    assert captured[0][0].reference_image == "last_anchor.png"
+    assert captured[0][2] == "last_anchor.png"
 
 
 def test_video_director_normalize_clip_uses_production_frame_contract(tmp_path, monkeypatch):
@@ -1607,6 +2014,41 @@ def test_visual_style_pack_is_added_to_image_prompt(project_data):
     assert "Platform aesthetic contract" in compiled.prompt
     assert "random color grade" in compiled.negative_prompt
     assert "plastic skin" in compiled.negative_prompt
+
+
+def test_opening_state_reaches_compiler_and_spec_changes_invalidate_cache(project_data):
+    db, project, scene, _, _ = project_data
+    spec = {
+        "emotion": "afraid", "continuity_constraints": ["knife in right hand"],
+        "character_states": [{"character_name": "Alice", "start_state": "wet coat",
+                              "end_state": "beside the door"}],
+    }
+    data = {"scenes": [{"scene_number": scene.scene_number, "characters": ["Alice"], "shot_spec": spec}]}
+    project.script = json.dumps(data)
+    db.commit()
+    llm = Mock()
+    llm.generate.return_value = json.dumps({
+        "subject": "the character", "action": "holding a knife in the right hand",
+        "setting": "office doorway", "framing": "medium shot", "lighting": "window light",
+        "style": "cinematic", "needs_split": False, "reason": "",
+    })
+    compiler = ShotPromptService(llm)
+    first, _ = _prepare_prompt(scene, project.id, scene.visual_description, db, compiler)
+    prompt = llm.generate.call_args.kwargs["prompt"]
+    assert "wet coat" in prompt
+    assert "knife in right hand" in prompt
+    assert "beside the door" not in prompt
+    original_story = current_story(project, [scene])
+    second, _ = _prepare_prompt(scene, project.id, scene.visual_description, db, compiler)
+    assert first.source_hash == second.source_hash
+    assert llm.generate.call_count == 1
+    spec["character_states"][0]["end_state"] = "near the window"
+    project.script = json.dumps(data)
+    db.commit()
+    third, _ = _prepare_prompt(scene, project.id, scene.visual_description, db, compiler)
+    assert third.source_hash != first.source_hash
+    assert current_story(project, [scene]) != original_story
+    assert llm.generate.call_count == 2
 
 
 def test_visual_style_negative_prompt_edit_invalidates_cached_prompt(project_data):
@@ -2187,6 +2629,7 @@ def test_image_repair_generation_expands_quality_budget(tmp_path, monkeypatch):
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_IMAGE_CANDIDATE_MULTIPLIER", 2.0)
     monkeypatch.setattr("src.services.generation_quality_policy.settings.GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES", 0)
     monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_DEDUP_ENABLED", False)
 
     request = ImageGenerationRequest(
         prompt="short drama still",
@@ -2287,8 +2730,144 @@ def test_video_generation_selects_best_reviewed_candidate(project_data, tmp_path
     assert report["candidates"][0]["request"]["fps"] == 8
     assert report["candidates"][0]["request"]["motion_bucket_id"] == report["candidates"][0]["motion_bucket_id"]
     assert report["candidates"][0]["request"]["noise_aug_strength"] == report["candidates"][0]["noise_aug_strength"]
-    assert [candidate["index"] for candidate in report["candidates"]] == [2, 1]
+    # Prop interaction receives the heavier risk budget. The selection order
+    # must still favor the highest reviewed candidate over the failed first one.
+    assert report["candidates"][0]["index"] == 2
+    assert report["candidates"][-1]["index"] == 1
+    assert len(report["candidates"]) >= 6
     assert fake_svd.requests[0]["motion_bucket_id"] != fake_svd.requests[1]["motion_bucket_id"]
+
+
+def test_video_duplicate_candidate_is_skipped_and_replenished(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    Path(scene.image_path).write_bytes(b"image")
+    db.commit()
+
+    class FakeSVD:
+        def __init__(self):
+            self.requests = []
+
+        def generate_video(self, **kwargs):
+            self.requests.append(kwargs)
+            Path(kwargs["output_path"]).write_bytes(f"video-{len(self.requests)}".encode())
+            return kwargs["output_path"]
+
+    class FakeReviewService:
+        calls = 0
+
+        def review_video(self, _video, _payload, _report_path, _reference=None):
+            type(self).calls += 1
+            return {
+                "status": "passed",
+                "average": 4.7,
+                "batches": [{"review": {
+                    "facial_identity": {"score": 5, "evidence": "identity matches reference"},
+                    "identity_consistency": {"score": 5, "evidence": "identity remains stable"},
+                    "temporal_consistency": {"score": 5, "evidence": "motion remains stable"},
+                    "video_aesthetic_scores": passed_video_aesthetic_scores(),
+                    "platform_reference_scores": passed_platform_reference_scores(),
+                    "video_performance_scores": passed_video_performance_scores(),
+                }}],
+            }
+
+    metrics_calls = 0
+
+    def metrics(path):
+        nonlocal metrics_calls
+        metrics_calls += 1
+        hashes = ["0000000000000000", "0f0f0f0f0f0f0f0f", "ffffffffffffffff"]
+        if metrics_calls >= 3:
+            hashes = ["aaaaaaaaaaaaaaaa", "5555555555555555", "3333333333333333"]
+        return {
+            "status": "available",
+            "path": str(path),
+            "technical_score": 4.5,
+            "motion_energy": 8.0,
+            "duration_seconds": 3.6,
+            "perceptual_fingerprint": {"frame_hashes": hashes},
+        }
+
+    fake_svd = FakeSVD()
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr("src.tasks.video_tasks.video_quality_budget", lambda *_args: QualityBudget(2, 0, 4, "hongguo_reference"))
+    monkeypatch.setattr("src.tasks.video_tasks.video_candidate_metrics", metrics)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_DEDUP_ENABLED", True)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_MAX_ATTEMPT_MULTIPLIER", 2.0)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", True)
+
+    _, report = _generate_quality_video_candidates(
+        fake_svd, scene, project.id, str(tmp_path / "scene.mp4"), db,
+        num_frames=29, fps=8, motion_bucket_id=118, noise_aug_strength=0.018,
+    )
+
+    assert len(fake_svd.requests) == 3
+    assert FakeReviewService.calls == 2
+    assert report["quality_budget"]["generation_attempts"] == 3
+    assert report["quality_budget"]["duplicate_candidates"] == 1
+    duplicate = next(item for item in report["candidates"] if item["status"] == "duplicate")
+    assert duplicate["duplicate_of"] == 1
+    assert duplicate["stage"] == "perceptual_dedup"
+
+
+def test_local_video_candidate_budget_covers_all_eligible_engines(project_data, tmp_path, monkeypatch):
+    db, project, scene, _, _ = project_data
+    scene.image_path = str(tmp_path / "source.png")
+    Path(scene.image_path).write_bytes(b"image")
+    db.commit()
+
+    class FakeSVD:
+        def __init__(self):
+            self.requests = []
+            self.local_engine_routes = [
+                {"engine_id": "wan-i2v"},
+                {"engine_id": "hunyuan-i2v"},
+                {"engine_id": "ltx-i2v"},
+            ]
+            self.last_result_metadata = {}
+
+        def generate_video(self, **kwargs):
+            route = self.local_engine_routes[len(self.requests) % len(self.local_engine_routes)]
+            self.requests.append(kwargs)
+            self.last_local_engine_route = route
+            self.last_result_metadata = {
+                "request_contract": {"local_engine_route": route},
+            }
+            Path(kwargs["output_path"]).write_bytes(f"video-{route['engine_id']}".encode())
+            return kwargs["output_path"]
+
+    class FakeReviewService:
+        def review_video(self, _video, _payload, _report_path, _reference=None):
+            return {"status": "passed", "average": 4.7}
+
+    fake_svd = FakeSVD()
+    monkeypatch.setattr("src.tasks.video_tasks.GenerationReviewService", FakeReviewService)
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.video_quality_budget",
+        lambda *_args: QualityBudget(2, 0, 4, "hongguo_reference"),
+    )
+    monkeypatch.setattr(
+        "src.tasks.video_tasks.video_candidate_metrics",
+        lambda path: {"status": "available", "path": str(path), "technical_score": 4.5},
+    )
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_REQUIRE_VIDEO_REVIEW", False)
+    monkeypatch.setattr("src.tasks.video_tasks.settings.GENERATION_VIDEO_DEDUP_ENABLED", False)
+
+    _, report = _generate_quality_video_candidates(
+        fake_svd, scene, project.id, str(tmp_path / "scene.mp4"), db,
+        num_frames=24, fps=8, motion_bucket_id=80, noise_aug_strength=0.01,
+    )
+
+    assert len(fake_svd.requests) == 3
+    assert report["engine_diversity"] == {
+        "eligible_engine_ids": ["wan-i2v", "hunyuan-i2v", "ltx-i2v"],
+        "attempted_engine_ids": ["wan-i2v", "hunyuan-i2v", "ltx-i2v"],
+        "missing_engine_ids": [],
+        "candidate_counts": {"wan-i2v": 1, "hunyuan-i2v": 1, "ltx-i2v": 1},
+        "unknown_engine_attempts": 0,
+        "coverage_complete": True,
+    }
+    assert report["quality_budget"]["candidate_count"] == 2
 
 
 def test_video_selection_prefers_identity_safe_candidate(project_data, tmp_path, monkeypatch):
@@ -3725,7 +4304,15 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
         notes=[],
     )
 
-    result = _ComfyVideoGenerator(scene, provider, shot_plan).with_end_image(str(tmp_path / "end.png")).generate_video(
+    generator = _ComfyVideoGenerator(scene, provider, shot_plan).with_end_image(
+        str(tmp_path / "end.png")
+    ).with_keyframe_images([{
+        "path": str(tmp_path / "middle.png"),
+        "frame_index": 16,
+        "strength": 0.85,
+        "role": "performance_peak",
+    }])
+    result = generator.generate_video(
         image_path=str(tmp_path / "source.png"),
         output_path=str(output),
         num_frames=16,
@@ -3744,6 +4331,12 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
     assert "plastic skin" in provider.request.negative_prompt
     assert provider.request.reference_image.endswith("source.png")
     assert provider.request.end_image.endswith("end.png")
+    assert provider.request.keyframe_images == [{
+        "path": str(tmp_path / "middle.png"),
+        "frame_index": 16,
+        "strength": 0.85,
+        "role": "performance_peak",
+    }]
     assert provider.request.duration_seconds == 4.2
     assert provider.request.aspect_ratio == "4:7"
     assert provider.request.fps == 8
@@ -3754,6 +4347,66 @@ def test_comfy_video_generator_uses_scene_prompt_and_reference(project_data, tmp
     assert "micro_expression_pass" in provider.request.quality_pipeline["stages"]
 
 
+def test_comfy_video_candidates_rotate_across_eligible_local_engines(project_data, tmp_path):
+    _, _, scene, _, _ = project_data
+
+    class FakeProvider:
+        def __init__(self):
+            self.requests = []
+
+        def generate_video(self, request):
+            self.requests.append(request)
+            Path(request.output_path).write_bytes(b"comfy-video")
+            return GenerationResult("local_comfyui", request.output_path, "video", {})
+
+    provider = FakeProvider()
+    shot_plan = VideoShotPlan(
+        shot_role="establishing",
+        action_intensity="low",
+        target_duration_seconds=3.0,
+        fps=8,
+        num_frames=24,
+        motion_bucket_id=70,
+        noise_aug_strength=0.01,
+        director_prompt="stable establishing shot",
+        end_frame_prompt="same room",
+        negative_prompt="identity drift",
+        notes=[],
+        required_engine_capabilities=["identity_reference"],
+    )
+    routes = [{
+        "engine_id": "wan-a",
+        "model_profile": "wan_2_2_i2v_14b",
+        "workflow_path": "wan-a.json",
+        "bindings_path": "wan-a.bindings.json",
+        "capabilities": {"identity_reference": True},
+        "requested_capabilities": ["identity_reference"],
+    }, {
+        "engine_id": "wan-b",
+        "model_profile": "hunyuanvideo_i2v",
+        "workflow_path": "wan-b.json",
+        "bindings_path": "wan-b.bindings.json",
+        "capabilities": {"identity_reference": True},
+        "requested_capabilities": ["identity_reference"],
+    }]
+    generator = _ComfyVideoGenerator(scene, provider, shot_plan).with_local_engine_routes(routes)
+
+    for index in range(3):
+        generator.generate_video(
+            image_path=str(tmp_path / "source.png"),
+            output_path=str(tmp_path / f"candidate-{index}.mp4"),
+            num_frames=24,
+            fps=8,
+            motion_bucket_id=70,
+            noise_aug_strength=0.01,
+        )
+
+    assert [request.local_engine_route["engine_id"] for request in provider.requests] == [
+        "wan-a", "wan-b", "wan-a",
+    ]
+    assert [request.workflow_path for request in provider.requests] == [
+        "wan-a.json", "wan-b.json", "wan-a.json",
+    ]
 def test_explicit_frame_mode_drops_omni_identity_images(project_data, tmp_path, monkeypatch):
     _, _, scene, _, _ = project_data
 
@@ -4231,6 +4884,7 @@ def test_quality_refinement_uses_previous_review_feedback(tmp_path, monkeypatch)
     monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 0)
     monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_DEDUP_ENABLED", False)
     monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_QUALITY_PROMPT_APPEND", "balanced lighting")
     monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_QUALITY_NEGATIVE_APPEND", "bad crop")
     request = ImageGenerationRequest(
@@ -4524,6 +5178,7 @@ def test_quality_refinement_converts_review_failure_into_repair_action(tmp_path,
     monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_REFINEMENT_PASSES", 1)
     monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_MIN_SCORE", 4.0)
     monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_REQUIRE_IMAGE_REVIEW", False)
+    monkeypatch.setattr("src.tasks.image_tasks.settings.GENERATION_IMAGE_DEDUP_ENABLED", False)
     request = ImageGenerationRequest(
         prompt="short drama still",
         negative_prompt="blurry",

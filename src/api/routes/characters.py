@@ -18,6 +18,8 @@ from src.api.schemas import (
     CharacterIdentityPlanResponse,
     CharacterIdentityScoreRequest,
     CharacterIdentityScoreResponse,
+    CharacterIdentityImageScoreRequest,
+    CharacterIdentityImageScoreResponse,
     CharacterAssetFreezeRequest,
     CharacterAssetPackResponse,
     CharacterTurnaroundAlbumFreezeRequest,
@@ -36,6 +38,7 @@ from src.services.character_service import get_character_manager
 from src.services.character_identity_service import CharacterIdentityService, load_identity_spec
 from src.services.character_reference_auto import CharacterReferenceAutoGenerator
 from src.services.character_turnaround_album import CharacterTurnaroundAlbumService
+from src.services.generation_review import GenerationReviewService, ReviewError, file_hash
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -279,6 +282,43 @@ def score_character_identity(
         raise HTTPException(status_code=409, detail="请先生成角色身份方案")
     result = CharacterIdentityService().score_observed_spec(expected, request.observed_spec)
     return CharacterIdentityScoreResponse(character_id=character_id, **result)
+
+
+@router.post("/{character_id}/identity-score-image", response_model=CharacterIdentityImageScoreResponse)
+def score_character_identity_image(
+    project_id: int,
+    character_id: int,
+    request: CharacterIdentityImageScoreRequest,
+    db_session: Session = Depends(get_db_session),
+):
+    """Use the local VLM to quantify identity fidelity for a registered reference image."""
+    character = db_session.query(Character).filter(
+        Character.id == character_id,
+        Character.project_id == project_id,
+    ).first()
+    if not character:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"角色不存在: {character_id}")
+    expected = load_identity_spec(character.visual_description)
+    if not expected:
+        raise HTTPException(status_code=409, detail="请先生成角色身份方案")
+    manager = get_character_manager()
+    allowed = {Path(path).resolve() for path in manager.get_character_references(character_id, project_id)}
+    candidate = Path(request.reference_path).resolve()
+    if candidate not in allowed:
+        raise HTTPException(status_code=422, detail="只能审核当前角色已登记的参考图")
+    try:
+        observation = GenerationReviewService().observe_character_identity(candidate, expected)
+    except ReviewError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    result = CharacterIdentityService().score_observed_spec(expected, observation["observed_spec"])
+    return CharacterIdentityImageScoreResponse(
+        character_id=character_id,
+        reference_path=str(candidate),
+        image_sha256=file_hash(candidate),
+        observed_spec=observation["observed_spec"],
+        observation_evidence=observation["evidence"],
+        **result,
+    )
 
 
 @router.post("/{character_id}/generate-reference", response_model=CharacterReferenceGenerateResponse)

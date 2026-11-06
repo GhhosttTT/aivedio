@@ -436,11 +436,12 @@ def test_composition_blocks_subtitle_that_does_not_match_dialogue(tmp_path):
         composition_tasks._require_scene_subtitles([scene])
 
 
-def test_composition_accepts_matching_dialogue_subtitle(tmp_path):
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_composition_accepts_matching_dialogue_subtitle(tmp_path, newline):
     subtitle = tmp_path / "scene_001.srt"
     subtitle.write_text(
         "1\n00:00:00,000 --> 00:00:01,500\n你为什么\n骗我\n",
-        encoding="utf-8",
+        encoding="utf-8", newline=newline,
     )
     subtitle.with_suffix(".quality.json").write_text(
         json.dumps({
@@ -469,6 +470,14 @@ def test_composition_rejects_stale_subtitle_quality_hash(tmp_path):
     scene = Mock(scene_number=1, dialogue="你为什么骗我？！", subtitle_path=str(subtitle))
 
     with pytest.raises(ValueError, match="subtitle quality report is stale for current file"):
+        composition_tasks._require_scene_subtitles([scene])
+
+
+def test_composition_reports_invalid_subtitle_encoding(tmp_path):
+    subtitle = tmp_path / "invalid.srt"
+    subtitle.write_bytes(b"\xff\xfeinvalid")
+    scene = Mock(scene_number=1, dialogue="Hello", subtitle_path=str(subtitle))
+    with pytest.raises(ValueError, match="cannot read subtitle"):
         composition_tasks._require_scene_subtitles([scene])
 
 

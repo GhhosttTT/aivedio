@@ -347,6 +347,9 @@ def test_local_comfyui_provider_delegates_video_generation():
             quality_mode="seed_dance_reference",
             repair_action="refine_video_commercial_aesthetic",
             quality_pipeline={"stages": ["platform_reference_gap_repair"]},
+            workflow_path="configs/ltx_video.json",
+            bindings_path="configs/ltx_video.bindings.json",
+            local_engine_route={"engine_id": "ltx", "model_profile": "ltx_2_keyframes"},
             shot_plan={
                 "spatial_asset_pack": {
                     "scene_contract_hash": "scene-hash",
@@ -372,6 +375,8 @@ def test_local_comfyui_provider_delegates_video_generation():
     assert service.last_kwargs["quality_mode"] == "seed_dance_reference"
     assert service.last_kwargs["repair_action"] == "refine_video_commercial_aesthetic"
     assert service.last_kwargs["quality_pipeline"] == {"stages": ["platform_reference_gap_repair"]}
+    assert service.last_kwargs["workflow_path"] == "configs/ltx_video.json"
+    assert service.last_kwargs["bindings_path"] == "configs/ltx_video.bindings.json"
     assert result.metadata["motion_bucket_id"] == 96
     assert result.metadata["noise_aug_strength"] == 0.012
     assert result.metadata["quality_mode"] == "seed_dance_reference"
@@ -381,6 +386,8 @@ def test_local_comfyui_provider_delegates_video_generation():
     assert result.metadata["reference_videos"] == ["previous.mp4"]
     assert result.metadata["reference_audios"] == ["dialogue.wav"]
     assert result.metadata["quality_pipeline"] == {"stages": ["platform_reference_gap_repair"]}
+    assert result.metadata["local_engine_route"]["engine_id"] == "ltx"
+    assert result.metadata["workflow_path"] == "configs/ltx_video.json"
     assert result.metadata["spatial_asset_pack"]["scene_contract_hash"] == "scene-hash"
     assert service.last_kwargs["shot_plan"]["spatial_asset_pack"]["project_signature"] == "project-hash"
 
@@ -770,6 +777,27 @@ def test_video_request_fingerprint_changes_with_motion_and_repair_controls():
         noise_aug_strength=0.012,
         repair_action="increase_motion_and_regenerate_video",
         quality_pipeline={"stages": ["motion_control"]},
+    )
+
+    assert generation_provider._video_request_fingerprint(base) != generation_provider._video_request_fingerprint(changed)
+
+
+def test_video_request_fingerprint_changes_with_local_engine_route(tmp_path):
+    wan = tmp_path / "wan.json"
+    ltx = tmp_path / "ltx.json"
+    wan.write_text("{}", encoding="utf-8")
+    ltx.write_text("{}", encoding="utf-8")
+    base = VideoGenerationRequest(
+        prompt="a shot",
+        output_path="scene.mp4",
+        workflow_path=str(wan),
+        local_engine_route={"engine_id": "wan"},
+    )
+    changed = VideoGenerationRequest(
+        prompt="a shot",
+        output_path="scene.mp4",
+        workflow_path=str(ltx),
+        local_engine_route={"engine_id": "ltx"},
     )
 
     assert generation_provider._video_request_fingerprint(base) != generation_provider._video_request_fingerprint(changed)
@@ -3430,6 +3458,7 @@ def test_seedance_prompt_includes_frozen_spatial_blocking_contract():
                 "camera_angle": "over shoulder",
                 "camera_axis": "screen left to right",
                 "character_positions": {"Alice": "frame left", "Bob": "frame right"},
+                "character_eyelines": {"Alice": "screen right", "Bob": "screen left"},
                 "control_references": {
                     "pose_reference_prompt": "hands remain visible",
                     "depth_reference_prompt": "keep the table in the foreground",
@@ -3441,6 +3470,7 @@ def test_seedance_prompt_includes_frozen_spatial_blocking_contract():
     assert "Spatial blocking contract" in prompt
     assert "camera angle=over shoulder" in prompt
     assert "Alice: frame left" in prompt
+    assert "character eyelines=Alice: screen right, Bob: screen left" in prompt
     assert "hands remain visible" in prompt
 
 

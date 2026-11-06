@@ -40,6 +40,7 @@ def write_production_workflows(tmp_path):
           "1": {"class_type": "LoadImage", "inputs": {"image": "{reference_image}"}},
           "2": {"class_type": "LoadImage", "inputs": {"image": "{last_frame}"}},
           "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "{prompt}"}},
+          "3b": {"class_type": "CLIPTextEncode", "inputs": {"text": "{negative_prompt}"}},
           "4": {
             "class_type": "VideoQualitySwitch",
             "inputs": {
@@ -53,8 +54,14 @@ def write_production_workflows(tmp_path):
               "spatial_contract": "{spatial_asset_pack_json}"
             }
           },
+          "4b": {"class_type": "EmptyHunyuanLatentVideo", "inputs": {
+            "width": "{width}", "height": "{height}", "length": "{num_frames}"
+          }},
+          "4c": {"class_type": "KSamplerAdvanced", "inputs": {"noise_seed": "{seed}"}},
           "5": {"class_type": "SVD_img2vid_Conditioning"},
-          "6": {"class_type": "VHS_VideoCombine", "inputs": {"filename_prefix": "{output_prefix}"}}
+          "6": {"class_type": "VHS_VideoCombine", "inputs": {
+            "filename_prefix": "{output_prefix}", "fps": "{fps}"
+          }}
         }
         """,
         encoding="utf-8",
@@ -68,6 +75,7 @@ def test_workflow_profile_freezes_required_workflow_hashes(tmp_path, monkeypatch
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH", "")
 
     service = ProductionWorkflowProfileService()
     manifest = service.freeze_profile(profile_path=str(profile), notes="approved local profile")
@@ -89,6 +97,42 @@ def test_workflow_profile_freezes_required_workflow_hashes(tmp_path, monkeypatch
     stale = service.validate_profile(profile_path=str(profile))
     assert stale["status"] == "blocked"
     assert "video_workflow_hash" in stale["stale"]
+
+
+def test_workflow_profile_requires_temporal_keyframe_control_when_enabled(tmp_path, monkeypatch):
+    image, reference, video = write_production_workflows(tmp_path)
+    profile = tmp_path / "profile.json"
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_VIDEO_MID_KEYFRAME_ENABLED", True)
+
+    service = ProductionWorkflowProfileService()
+
+    with pytest.raises(ValueError, match="temporal_keyframes"):
+        service.freeze_profile(profile_path=str(profile))
+
+
+def test_workflow_profile_tracks_temporal_keyframe_feature_gate(tmp_path, monkeypatch):
+    image, reference, video = write_production_workflows(tmp_path)
+    profile = tmp_path / "profile.json"
+    payload = video.read_text(encoding="utf-8").replace(
+        '"references": "{reference_images_json}",',
+        '"references": "{reference_images_json}", "keyframes": "{keyframe_images_json}",',
+    )
+    video.write_text(payload, encoding="utf-8")
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.GENERATION_VIDEO_MID_KEYFRAME_ENABLED", True)
+
+    service = ProductionWorkflowProfileService()
+    manifest = service.freeze_profile(profile_path=str(profile))
+
+    assert manifest["video_workflow_contract"]["groups"]["temporal_keyframes"] is True
+    assert manifest["quality_gates"]["video_mid_keyframe_enabled"] is True
+    assert manifest["quality_gates"]["video_max_mid_keyframes"] == 2
+    assert service.validate_profile(profile_path=str(profile))["status"] == "valid"
 
 
 def test_workflow_profile_rejects_video_workflow_without_quality_placeholders(tmp_path, monkeypatch):
@@ -168,6 +212,7 @@ def test_workflow_profile_rejects_workflows_without_capability_evidence(tmp_path
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH", "")
 
     service = ProductionWorkflowProfileService()
 

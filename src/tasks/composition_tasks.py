@@ -814,8 +814,9 @@ def _require_scene_subtitles(scenes: list[Scene], video_composer=None) -> None:
             missing.append(str(scene.scene_number))
             continue
         try:
-            content = subtitle_path.read_text(encoding="utf-8")
-        except OSError as exc:
+            subtitle_bytes = subtitle_path.read_bytes()
+            content = subtitle_bytes.decode("utf-8")
+        except (OSError, UnicodeError) as exc:
             failed.append(f"{scene.scene_number}: cannot read subtitle: {exc}")
             continue
         if not _srt_has_timing(content):
@@ -848,7 +849,7 @@ def _require_scene_subtitles(scenes: list[Scene], video_composer=None) -> None:
             failed.append(f"{scene.scene_number}: subtitle quality report is stale for current dialogue")
             continue
         reported_hash = quality_report.get("subtitle_sha256")
-        current_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        current_hash = hashlib.sha256(subtitle_bytes).hexdigest()
         if not isinstance(reported_hash, str) or reported_hash.strip().lower() != current_hash:
             failed.append(f"{scene.scene_number}: subtitle quality report is stale for current file")
             continue

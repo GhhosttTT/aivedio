@@ -3,6 +3,8 @@ import { Edit2, RefreshCw, Save, X } from 'lucide-react';
 import { errorText, projectApi } from '../api/client';
 import type { Project, Scene } from '../types';
 import { ProjectImage, ProjectVideo } from './ProjectMedia';
+import { ShotSpecificationEditor, ShotSpecificationSummary } from './ShotSpecificationEditor';
+import { prepareShotSpecification } from '../utils/shotSpecification';
 
 export function ScriptPreview({project, onReload, locked = false}: {project: Project; onReload: () => void; locked?: boolean}) {
     const [editing, setEditing] = useState<Scene | null>(null);
@@ -30,7 +32,11 @@ export function ScriptPreview({project, onReload, locked = false}: {project: Pro
     };
     const reviewStatus = (sceneNumber: number) => sceneReview(sceneNumber)?.status || (reviewLoading ? 'loading' : '未审核');
     const timelineScenes = project.scenes || [];
-    const timelineDuration = timelineScenes.reduce((total, scene) => total + Math.max(0.5, Number(scene.duration) || 3.6), 0);
+    const shotDuration = (scene: Scene) => {
+        const specified = Number(scene.shot_spec?.duration_seconds);
+        return Math.max(0.5, Number.isFinite(specified) && specified > 0 ? specified : Number(scene.duration) || 3.6);
+    };
+    const timelineDuration = timelineScenes.reduce((total, scene) => total + shotDuration(scene), 0);
     const scrollToScene = (sceneNumber: number) => {
         document.getElementById(`scene-${sceneNumber}`)?.scrollIntoView({behavior: 'smooth', block: 'center'});
     };
@@ -50,6 +56,9 @@ export function ScriptPreview({project, onReload, locked = false}: {project: Pro
             else await projectApi.updateScene(Number(project.id), scene.scene_number, {
                 visual_description: scene.visual_description, dialogue: scene.dialogue, character_name: scene.character_name,
                 characters: visibleCharacters(scene),
+                ...(scene.shot_spec !== undefined ? {
+                    shot_spec: prepareShotSpecification(scene.shot_spec, visibleCharacters(scene)),
+                } : {}),
             });
             setEditing(null); onReload();
         } catch(e) { setError(errorText(e)); }
@@ -68,7 +77,7 @@ export function ScriptPreview({project, onReload, locked = false}: {project: Pro
             </div>
             <div className="wb-shot-timeline-track" role="list">
                 {timelineScenes.map(scene => {
-                    const duration = Math.max(0.5, Number(scene.duration) || 3.6);
+                    const duration = shotDuration(scene);
                     const status = reviewStatus(scene.scene_number);
                     return <button
                         type="button"
@@ -93,7 +102,9 @@ export function ScriptPreview({project, onReload, locked = false}: {project: Pro
                 <label>对白<textarea value={editing.dialogue || ''} onChange={e => setEditing({...editing, dialogue: e.target.value})}/></label>
                 <label>说话角色<select value={editing.character_name || ''} onChange={e => setEditing({...editing, character_name: e.target.value || null})}><option value="">无</option>{project.characters?.map(c => <option key={c.id}>{c.name}</option>)}</select></label>
                 <fieldset><legend>画面可见角色</legend>{project.characters?.map(c => { const selected = visibleCharacters(editing).includes(c.name); return <label key={c.id} className="wb-check"><input type="checkbox" checked={selected} onChange={e => { const current = visibleCharacters(editing); const next = e.target.checked ? [...current, c.name] : current.filter(name => name !== c.name); setEditing({...editing, characters: next}); }}/>{c.name}</label>; })}</fieldset>
+                <ShotSpecificationEditor value={editing.shot_spec} characterNames={visibleCharacters(editing)} disabled={locked || busy !== null} onChange={value => setEditing({...editing, shot_spec: value})}/>
             </> : <><h3>分镜 {scene.scene_number}</h3><p>{scene.visual_description}</p><p className="wb-muted">{scene.character_name || '无说话角色'}{scene.dialogue ? `：${scene.dialogue}` : ' · 无对白'}</p></>}
+            {editing?.id !== scene.id && <ShotSpecificationSummary value={scene.shot_spec}/>}
             <div className="wb-row" style={{marginTop: 14}}>
                 {editing?.id === scene.id ? <><button className="wb-icon" aria-label="保存分镜" title="保存分镜" disabled={locked || busy !== null || !editing.visual_description.trim()} onClick={() => save(editing)}><Save size={17}/></button><button className="wb-icon" aria-label="取消编辑" title="取消编辑" disabled={busy !== null} onClick={() => setEditing(null)}><X size={17}/></button></> : <button className="wb-icon" aria-label={`编辑分镜 ${scene.scene_number}`} title="编辑分镜" disabled={locked || busy !== null} onClick={() => setEditing({...scene})}><Edit2 size={17}/></button>}
                 <button className="wb-icon" aria-label={`重新生成分镜 ${scene.scene_number}`} title="重新生成分镜" disabled={locked || busy !== null} onClick={() => save(scene, true)}><RefreshCw size={17} className={busy === scene.scene_number ? 'animate-spin' : ''}/></button>

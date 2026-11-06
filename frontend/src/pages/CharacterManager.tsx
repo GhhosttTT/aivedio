@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { BadgeCheck, Image, Languages, Mic2, Plus, Trash2, Upload, X } from 'lucide-react';
-import { characterApi, Character, CharacterIdentityPlan, CharacterReference, CharacterTurnaroundGeneration, CharacterVoiceProfile } from '../api/characterApi';
+import { BadgeCheck, Image, Languages, Mic2, Plus, ScanFace, Trash2, Upload, X } from 'lucide-react';
+import { characterApi, Character, CharacterIdentityImageScore, CharacterIdentityPlan, CharacterReference, CharacterTurnaroundGeneration, CharacterVoiceProfile } from '../api/characterApi';
 import { errorText } from '../api/client';
 import { ProjectImage } from '../components/ProjectMedia';
 
@@ -8,6 +8,7 @@ export default function CharacterManager({projectId, locked = false}: {projectId
     const [characters, setCharacters] = useState<Character[]>([]);
     const [references, setReferences] = useState<Record<number, CharacterReference[]>>({});
     const [plans, setPlans] = useState<Record<number, CharacterIdentityPlan>>({});
+    const [identityScores, setIdentityScores] = useState<Record<string, CharacterIdentityImageScore>>({});
     const [albums, setAlbums] = useState<Record<number, CharacterTurnaroundGeneration>>({});
     const [voiceProfiles, setVoiceProfiles] = useState<Record<number, CharacterVoiceProfile>>({});
     const [error, setError] = useState('');
@@ -102,7 +103,14 @@ export default function CharacterManager({projectId, locked = false}: {projectId
                     </div>)}
                 </div>
             </div>}
-            <div className="wb-thumbnails">{references[c.id]?.map(ref => <ProjectImage key={ref.image_path} projectId={projectId} path={ref.image_path} alt={`${c.name} 参考图 ${ref.id}`}/>)}</div>
+            <div className="wb-thumbnails">{references[c.id]?.map(ref => <div key={ref.image_path}>
+                <ProjectImage projectId={projectId} path={ref.image_path} alt={`${c.name} 参考图 ${ref.id}`}/>
+                <button className="wb-button" disabled={locked || busy} onClick={() => operate(async () => {
+                    const score = await characterApi.scoreReferenceIdentity(projectId, c.id, ref.image_path);
+                    setIdentityScores(current => ({...current, [ref.image_path]: score}));
+                })}><ScanFace size={16}/>五官评分</button>
+                {identityScores[ref.image_path] && <p className="wb-muted">五官一致性 {identityScores[ref.image_path].average}/5 · {identityScores[ref.image_path].status}</p>}
+            </div>)}</div>
             <label style={{maxWidth: 330}}><span className="wb-row"><Upload size={16}/>上传 {c.name} 参考图</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={locked || busy} onChange={e => {
                 const file = e.target.files?.[0]; e.target.value = '';
                 if (!file) return;

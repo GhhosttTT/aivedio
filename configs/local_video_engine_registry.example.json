@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "engines": [
+    {
+      "id": "wan22_general_i2v",
+      "model_profile": "wan_2_2_i2v_14b",
+      "workflow_path": "./wan22_i2v_api.json",
+      "bindings_path": "./wan22_i2v_api.bindings.json",
+      "priority": 10,
+      "capabilities": {
+        "identity_reference": true,
+        "performance_control": false,
+        "multi_character": false,
+        "motion_control": false,
+        "temporal_keyframes": false
+      }
+    },
+    {
+      "id": "hunyuan_custom_multimodal",
+      "model_profile": "hunyuan_custom",
+      "workflow_path": "./hunyuan_custom_api.json",
+      "bindings_path": "./hunyuan_custom_api.bindings.json",
+      "priority": 35,
+      "capabilities": {
+        "identity_reference": true,
+        "performance_control": true,
+        "multi_character": true,
+        "motion_control": true,
+        "temporal_keyframes": false
+      }
+    },
+    {
+      "id": "hunyuan_avatar_dialogue",
+      "model_profile": "hunyuanvideo_avatar",
+      "workflow_path": "./hunyuan_avatar_api.json",
+      "bindings_path": "./hunyuan_avatar_api.bindings.json",
+      "priority": 30,
+      "capabilities": {
+        "identity_reference": true,
+        "performance_control": true,
+        "multi_character": true,
+        "motion_control": false,
+        "temporal_keyframes": false
+      }
+    },
+    {
+      "id": "wan22_animate_motion",
+      "model_profile": "wan_2_2_animate",
+      "workflow_path": "./wan22_animate_api.json",
+      "bindings_path": "./wan22_animate_api.bindings.json",
+      "priority": 20,
+      "capabilities": {
+        "identity_reference": true,
+        "performance_control": true,
+        "multi_character": false,
+        "motion_control": true,
+        "temporal_keyframes": false
+      }
+    },
+    {
+      "id": "ltx2_keyframes",
+      "model_profile": "ltx_2_keyframes",
+      "workflow_path": "./ltx2_keyframes_api.json",
+      "bindings_path": "./ltx2_keyframes_api.bindings.json",
+      "priority": 15,
+      "capabilities": {
+        "identity_reference": true,
+        "performance_control": false,
+        "multi_character": false,
+        "motion_control": true,
+        "temporal_keyframes": true
+      }
+    }
+  ]
+}

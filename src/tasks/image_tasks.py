@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import math
 import re
 import shutil
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Optional
 
 from src.database.database import get_db
 from src.database.models import Character, Project, ProjectStatus, Scene, Task as TaskModel
+from src.models.shot_specification import ShotSpecification
 from src.config import settings
 from src.services.character_identity_service import CharacterIdentityService, load_identity_spec
 from src.services.character_turnaround_album import CharacterTurnaroundAlbumService
@@ -17,6 +19,7 @@ from src.services.shot_prompt_service import ShotPromptService, CompiledShot
 from src.services.generation_review import ReviewError, file_hash, write_report
 from src.services.image_quality_service import (
     ImageQualitySelector, candidate_output_path, image_candidate_error, image_candidate_rank,
+    image_fingerprints_are_near_duplicate, image_perceptual_fingerprint,
     image_selection_score, prepare_image_candidate,
 )
 from src.services.comfyui_service import ComfyUIError, ComfyUIWaitTimeout
@@ -30,6 +33,7 @@ from src.services.repair_queue import build_repair_queue
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.shot_complexity_service import ShotComplexityService
 from src.services.spatial_control_assets import SpatialControlAssetService
+from src.services.continuity_asset_pack import ContinuityAssetPackService
 from src.tasks.celery_app import celery_app
 from src.utils.logger import get_logger
 from src.utils.storage import get_scene_image_path
@@ -223,17 +227,37 @@ def _frozen_spatial_contract_for_image(db, project_id: int, scene_number: int) -
     return service.get_scene_contract(project_id, scene_number)
 
 
+def _frozen_continuity_contract_for_image(db, project_id: int, scene_number: int) -> dict | None:
+    service = ContinuityAssetPackService()
+    if service.get_project_pack(project_id) is None:
+        return None
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise ValueError(f"Project not found: {project_id}")
+    scenes = db.query(Scene).filter(Scene.project_id == project_id).order_by(Scene.scene_number).all()
+    validation = service.validate_project_pack(project, scenes)
+    if validation.get("status") != "valid":
+        reasons = ", ".join(validation.get("stale") or [validation.get("status", "invalid")])
+        raise ValueError(
+            f"Frozen continuity asset pack is not current for project {project_id}: {reasons}. "
+            "Re-freeze continuity assets before generating keyframes."
+        )
+    return service.get_scene_contract(project_id, scene_number)
+
+
 def _spatial_image_directive(contract: dict | None) -> str:
     """Turn the frozen blocking contract into an image-generation constraint."""
     if not isinstance(contract, dict):
         return ""
     plan = contract.get("spatial_plan") if isinstance(contract.get("spatial_plan"), dict) else {}
     positions = plan.get("character_positions") if isinstance(plan.get("character_positions"), dict) else {}
+    eyelines = plan.get("character_eyelines") if isinstance(plan.get("character_eyelines"), dict) else {}
     parts = [
         f"shot scale: {plan.get('shot_scale')}" if plan.get("shot_scale") else "",
         f"camera angle: {plan.get('camera_angle')}" if plan.get("camera_angle") else "",
         f"camera axis: {plan.get('camera_axis')}" if plan.get("camera_axis") else "",
         f"character blocking: {', '.join(f'{name}={position}' for name, position in positions.items())}" if positions else "",
+        f"character eyelines: {', '.join(f'{name}={eyeline}' for name, eyeline in eyelines.items())}" if eyelines else "",
         f"prop focus: {plan.get('prop_focus')}" if plan.get("prop_focus") else "",
     ]
     directive = "; ".join(item for item in parts if item)
@@ -340,6 +364,8 @@ def _project_complexity_report(scenes: list[Scene], project_id: int, db) -> dict
 
 def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=None):
     compiler = compiler or ShotPromptService()
+    raw_spec = getattr(scene, "shot_spec", None)
+    specification = ShotSpecification.model_validate(raw_spec) if isinstance(raw_spec, dict) else None
     characters = _visual_characters(scene, project_id, db)
     appearance = _appearance_anchor(characters, db, compiler)
     character = characters[0] if len(characters) == 1 else None
@@ -362,9 +388,18 @@ def _prepare_prompt(scene: Scene, project_id: int, prompt: str, db, compiler=Non
     else:
         appearance_with_layout = " ".join(layout_parts)
     prompt_with_layout = f"{prompt}\n" + "\n".join(layout_parts)
+    specification_source = ""
+    if specification:
+        specification_source = json.dumps(specification.model_dump(), ensure_ascii=False, sort_keys=True)
+        keyframe_contract = specification.keyframe_contract()
+        if keyframe_contract["emotion"] or keyframe_contract["character_states"] or keyframe_contract["continuity_constraints"]:
+            prompt_with_layout += (
+                "\nOpening-frame state requirements (preserve these visible facts): "
+                + json.dumps(keyframe_contract, ensure_ascii=False, sort_keys=True)
+            )
     artifact = Path(get_scene_image_path(project_id, scene.id)).with_suffix(".prompt.json")
     source_hash = compiler.source_hash(
-        f"{prompt_with_layout}\n{shot_aesthetic_profile['prompt']}\n{style_negative}",
+        f"{prompt_with_layout}\n{shot_aesthetic_profile['prompt']}\n{style_negative}\n{specification_source}",
         appearance_with_layout,
     )
     if artifact.is_file():
@@ -648,6 +683,37 @@ def _quality_parameters(
     return min(steps, 56), round(max(4.5, min(cfg, 8.0)), 2)
 
 
+IMAGE_CANDIDATE_SEARCH_STRATEGIES = (
+    (
+        "storyboard_fidelity",
+        "strict storyboard fidelity, preserve specified camera, blocking, props, wardrobe, and continuity facts",
+    ),
+    (
+        "performance_readability",
+        "prioritize phone-readable micro-expression, expressive eyes, natural body tension, and clear dramatic intent while preserving the specified action",
+    ),
+    (
+        "staging_depth",
+        "prioritize deliberate foreground-midground-background staging, clean silhouettes, and production-designed spatial depth without changing character positions",
+    ),
+    (
+        "lighting_separation",
+        "prioritize controlled cinematic key and fill light, stable skin tones, clean catchlights, and strong subject-background separation",
+    ),
+    (
+        "lens_frame_value",
+        "prioritize premium short-drama lens rendering, intentional depth of field, strong vertical frame value, and a clear visual hook without changing the requested shot size",
+    ),
+)
+
+
+def _candidate_search_strategy(index: int, refinement_pass: int) -> dict[str, str | int]:
+    """Assign deterministic, bounded visual emphasis without changing story facts."""
+    name, directive = IMAGE_CANDIDATE_SEARCH_STRATEGIES[index % len(IMAGE_CANDIDATE_SEARCH_STRATEGIES)]
+    phase = "repair" if refinement_pass else "exploration"
+    return {"name": name, "directive": directive, "phase": phase, "slot": index}
+
+
 def _append_terms(text: str | None, addition: str | None) -> str:
     parts = [part.strip() for part in (text or "").split(",") if part.strip()]
     existing = {part.lower() for part in parts}
@@ -862,6 +928,96 @@ def _feedback_repair_directive(feedback: str) -> tuple[str, str]:
     return "; ".join(dict.fromkeys(prompt_terms)), ", ".join(dict.fromkeys(negative_terms))
 
 
+def _image_local_repair_plan(candidate: dict) -> list[dict]:
+    """Translate review evidence into conservative, region-scoped repair stages."""
+    review = candidate.get("review") if isinstance(candidate.get("review"), dict) else {}
+    evidence: list[str] = []
+    for issue in review.get("issues", []) or []:
+        reason = issue.get("reason") if isinstance(issue, dict) else None
+        if reason:
+            evidence.append(str(reason))
+    for gate_name in ("platform_aesthetic_gate", "platform_reference_gate", "turnaround_gate"):
+        gate = candidate.get(gate_name) if isinstance(candidate.get(gate_name), dict) else {}
+        low = gate.get("low") if isinstance(gate.get("low"), dict) else {}
+        for feature, item in low.items():
+            detail = item.get("evidence") if isinstance(item, dict) else None
+            evidence.append(f"{feature}: {detail or feature}")
+    aesthetic_scores = review.get("platform_aesthetic_scores")
+    if isinstance(aesthetic_scores, dict):
+        for feature in ("skin_texture", "phone_readability"):
+            item = aesthetic_scores.get(feature)
+            if (
+                isinstance(item, dict)
+                and isinstance(item.get("score"), (int, float))
+                and float(item["score"]) <= settings.GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE
+            ):
+                evidence.append(f"{feature}: {item.get('evidence') or feature}")
+    for feature in ("visual_integrity", "facial_identity", "identity_consistency"):
+        item = review.get(feature)
+        if (
+            isinstance(item, dict)
+            and isinstance(item.get("score"), (int, float))
+            and float(item["score"]) < settings.GENERATION_IMAGE_MIN_SCORE
+        ):
+            evidence.append(f"{feature}: {item.get('evidence') or feature}")
+
+    compact = []
+    seen = set()
+    for item in evidence:
+        normalized = " ".join(str(item).split())[:240]
+        if normalized and normalized.lower() not in seen:
+            compact.append(normalized)
+            seen.add(normalized.lower())
+    text = " ".join(compact).lower()
+    base_seed = int((candidate.get("request") or {}).get("seed") or 0)
+    stages: list[dict] = []
+    face_terms = (
+        "face", "facial", "eye", "skin", "portrait", "identity", "waxy", "plastic",
+        "airbrush", "五官", "脸", "面部", "眼", "皮肤", "蜡像",
+    )
+    hand_terms = (
+        "hand", "finger", "wrist", "anatomy", "held object", "object contact", "prop",
+        "手", "手指", "手腕", "肢体", "道具", "握持",
+    )
+    if any(term in text for term in face_terms):
+        stages.append({
+            "name": "face_eye_detail",
+            "target": "face, eyes",
+            "denoise": 0.22,
+            "steps": 24,
+            "cfg": 5.0,
+            "seed": base_seed + 1701,
+            "positive_terms": (
+                "same person and expression, natural skin pores, symmetrical clear eyes, "
+                "preserved face geometry and cinematic lighting"
+            ),
+            "negative_terms": (
+                "changed identity, changed expression, waxy skin, plastic skin, asymmetric eyes, "
+                "beauty filter, inpaint seam"
+            ),
+            "evidence": [item for item in compact if any(term in item.lower() for term in face_terms)],
+        })
+    if any(term in text for term in hand_terms):
+        stages.append({
+            "name": "hand_prop_detail",
+            "target": "hands, fingers, wrists, held object",
+            "denoise": 0.30,
+            "steps": 28,
+            "cfg": 5.2,
+            "seed": base_seed + 2903,
+            "positive_terms": (
+                "anatomically coherent hands, five natural fingers, preserved prop design, "
+                "firm believable hand-object contact"
+            ),
+            "negative_terms": (
+                "extra fingers, missing fingers, fused fingers, twisted wrist, floating object, "
+                "changed prop, inpaint seam"
+            ),
+            "evidence": [item for item in compact if any(term in item.lower() for term in hand_terms)],
+        })
+    return stages
+
+
 def _repair_action_from_reports(reports: list[dict]) -> str | None:
     """Infer the next automatic repair action from failed candidate reviews."""
     if not reports:
@@ -894,6 +1050,7 @@ def _generate_quality_candidates(
     next_candidate_index = 1
     while pass_index <= max_refinement_passes:
         pass_reports = []
+        pass_fingerprints: list[tuple[int, dict]] = []
         # Follow the strongest recent candidate rather than defects already repaired in old passes.
         feedback = _review_feedback([best_report]) if pass_index and best_report else ""
         base_prompt = request.prompt
@@ -928,14 +1085,25 @@ def _generate_quality_candidates(
             if feedback_negative:
                 negative_prompt = _append_terms(negative_prompt, feedback_negative)
         prompt, negative_prompt = _apply_image_repair_action(prompt, negative_prompt, current_repair_action)
-        for index in range(pass_budget.candidate_count):
+        target_candidates = pass_budget.candidate_count
+        attempt_multiplier = max(1.0, min(float(settings.GENERATION_IMAGE_MAX_ATTEMPT_MULTIPLIER), 4.0))
+        max_attempts = max(target_candidates, int(math.ceil(target_candidates * attempt_multiplier)))
+        accepted_candidates = 0
+        attempt_index = 0
+        while accepted_candidates < target_candidates and attempt_index < max_attempts:
+            index = attempt_index
+            attempt_index += 1
             candidate_index = next_candidate_index
             next_candidate_index += 1
             output_path = candidate_output_path(request.output_path, candidate_index)
             repair_profile = _repair_parameter_profile(current_repair_action)
             steps, cfg = _quality_parameters(index, pass_index, request.steps, request.cfg_scale, current_repair_action)
+            search_strategy = _candidate_search_strategy(index, pass_index)
+            candidate_prompt = prompt
+            if settings.GENERATION_IMAGE_DIVERSITY_SEARCH_ENABLED:
+                candidate_prompt = _append_sentence_once(candidate_prompt, str(search_strategy["directive"]))
             candidate_request = ImageGenerationRequest(
-                prompt=prompt,
+                prompt=candidate_prompt,
                 negative_prompt=negative_prompt,
                 output_path=output_path,
                 width=request.width,
@@ -967,6 +1135,51 @@ def _generate_quality_candidates(
                 pass_reports.append(failed)
                 continue
             release_generation_resources(provider)
+            fingerprint = None
+            if settings.GENERATION_IMAGE_DEDUP_ENABLED:
+                try:
+                    fingerprint = image_perceptual_fingerprint(result.output_path)
+                except (OSError, ValueError, KeyError, TypeError) as exc:
+                    logger.warning("候选图感知判重不可用，继续进入质量审核: path={} error={}", result.output_path, exc)
+            duplicate_of = None
+            duplicate_distance = None
+            if fingerprint is not None:
+                for prior_index, prior_fingerprint in pass_fingerprints:
+                    is_duplicate, distance = image_fingerprints_are_near_duplicate(
+                        fingerprint,
+                        prior_fingerprint,
+                        max_hamming=max(0, int(settings.GENERATION_IMAGE_DEDUP_HAMMING_DISTANCE)),
+                        max_color_distance=max(0.0, float(settings.GENERATION_IMAGE_DEDUP_COLOR_DISTANCE)),
+                    )
+                    if is_duplicate:
+                        duplicate_of = prior_index
+                        duplicate_distance = distance
+                        break
+            if duplicate_of is not None:
+                duplicate = {
+                    "index": candidate_index,
+                    "path": result.output_path,
+                    "status": "duplicate",
+                    "average": 0,
+                    "stage": "perceptual_dedup",
+                    "duplicate_of": duplicate_of,
+                    "duplicate_distance": duplicate_distance,
+                    "perceptual_fingerprint": fingerprint,
+                    "provider": result.provider,
+                    "provider_metadata": result.metadata,
+                    "scene": {"scene_number": scene_payload.get("scene_number")},
+                    "request": {
+                        "seed": candidate_request.seed,
+                        "refinement_pass": pass_index,
+                        "attempt": attempt_index,
+                        "search_strategy": search_strategy,
+                    },
+                }
+                reports.append(duplicate)
+                pass_reports.append(duplicate)
+                continue
+            if fingerprint is not None:
+                pass_fingerprints.append((candidate_index, fingerprint))
             report = selector.review_candidate(
                 candidate_index,
                 result.output_path,
@@ -1011,14 +1224,21 @@ def _generate_quality_candidates(
                 "feedback": feedback,
                 "repair_action": current_repair_action,
                 "repair_parameter_profile": repair_profile,
+                "search_strategy": search_strategy,
                 "quality_budget": pass_budget.as_dict(),
             }
             report["path"] = result.output_path
+            if fingerprint is not None:
+                report["perceptual_fingerprint"] = fingerprint
             prepare_image_candidate(report)
             pass_reports.append(report)
             reports.append(report)
-        best_report = max(reports, key=image_candidate_rank)
-        if all(report.get("status") in {"technical_only", "error"} for report in pass_reports):
+            accepted_candidates += 1
+        reviewed_reports = [
+            report for report in reports if report.get("status") not in {"duplicate", "error"}
+        ]
+        best_report = max(reviewed_reports or reports, key=image_candidate_rank)
+        if all(report.get("status") in {"technical_only", "error", "duplicate"} for report in pass_reports):
             break
         if image_candidate_error(best_report) is None and pass_index + 1 >= minimum_quality_passes(pass_budget):
             break
@@ -1037,6 +1257,8 @@ def _generate_quality_candidates(
     selection["search"] = {
         "completed_passes": min(pass_index + 1, max_refinement_passes + 1),
         "generated_candidates": len(reports),
+        "reviewed_candidates": sum(report.get("status") not in {"duplicate", "error"} for report in reports),
+        "duplicate_candidates": sum(report.get("status") == "duplicate" for report in reports),
         "failed_generations": sum(report.get("status") == "error" for report in reports),
         "minimum_passes": minimum_quality_passes(strongest_budget),
     }
@@ -1056,6 +1278,8 @@ def _generate_quality_candidates(
     selected_request = selected_candidate.get("request") or {}
     selected_prompt = selected_request.get("prompt", request.prompt)
     selected_negative = selected_request.get("negative_prompt", request.negative_prompt or "")
+    local_repair_plan = _image_local_repair_plan(selected_candidate)
+    selection["postprocess_repair_plan"] = local_repair_plan
     try:
         postprocess_report = ImagePostprocessor().process(
             request.output_path,
@@ -1063,6 +1287,7 @@ def _generate_quality_candidates(
             negative_prompt=selected_negative,
             reference_image=reference_image,
             report_path=Path(request.output_path).with_suffix(".postprocess.json"),
+            repair_plan=local_repair_plan,
         )
     except Exception as exc:
         shutil.copy2(accepted_source, request.output_path)
@@ -1147,6 +1372,8 @@ def generate_image_task(
         visible_characters = _visible_character_payload(scene, project_id, db)
         spatial_contract = _frozen_spatial_contract_for_image(db, project_id, scene.scene_number)
         spatial_directive = _spatial_image_directive(spatial_contract)
+        continuity_contract = _frozen_continuity_contract_for_image(db, project_id, scene.scene_number)
+        continuity_directive = ContinuityAssetPackService.prompt_directive(continuity_contract, phase="opening")
         character_sheet_contract = _character_sheet_generation_contract(visible_characters)
         if len(visible_characters) > 1 and len(character_sheet_contract["references"]) != len(visible_characters):
             raise ReviewError("Every visible character needs a frozen reference before multi-character generation")
@@ -1156,6 +1383,7 @@ def generate_image_task(
         quality_pipeline = image_quality_pipeline(shot_aesthetic_profile, kwargs.get("repair_action"))
         enhanced_prompt = compiled.prompt
         enhanced_prompt = _append_sentence_once(enhanced_prompt, spatial_directive)
+        enhanced_prompt = _append_sentence_once(enhanced_prompt, continuity_directive)
         if character_sheet_contract["prompt"]:
             enhanced_prompt = f"{enhanced_prompt}. {character_sheet_contract['prompt']}."
         enhanced_prompt = _append_sentence_once(enhanced_prompt, shot_aesthetic_profile["prompt"])
@@ -1197,6 +1425,10 @@ def generate_image_task(
             scene_payload = {
                 "scene_number": scene.scene_number,
                 "visual_description": scene.visual_description,
+                "keyframe_state_contract": (
+                    ShotSpecification.model_validate(scene.shot_spec).keyframe_contract()
+                    if isinstance(getattr(scene, "shot_spec", None), dict) else None
+                ),
                 "composition_constraint": _composition_constraint(scene, project_id, db),
                 "complexity": _complexity_report(scene, project_id, db),
                 "dialogue": scene.dialogue,
@@ -1205,8 +1437,10 @@ def generate_image_task(
                 "character_sheet_contract": character_sheet_contract["prompt"],
                 "character_sheet_references": character_sheet_contract["references"],
                 "spatial_asset_pack": spatial_contract or {},
+                "continuity_asset_pack": continuity_contract or {},
                 "spatial_plan": (spatial_contract or {}).get("spatial_plan", {}),
                 "spatial_directive": spatial_directive,
+                "continuity_directive": continuity_directive,
                 "identity_contrast_matrix": character_sheet_contract["identity_contrast_matrix"],
                 "platform_aesthetic_contract": platform_aesthetic_contract,
                 "shot_aesthetic_profile": shot_aesthetic_profile,

@@ -58,7 +58,8 @@ class ScriptGenerator:
     def __init__(
         self,
         db: Session,
-        llm_service: Optional[LLMService] = None
+        llm_service: Optional[LLMService] = None,
+        initialize_llm: bool = True,
     ):
         """
         初始化剧本生成服务
@@ -68,7 +69,7 @@ class ScriptGenerator:
             llm_service: LLM 服务实例（可选，默认使用全局实例）
         """
         self.db = db
-        self.llm_service = llm_service or get_llm_service()
+        self.llm_service = llm_service or (get_llm_service() if initialize_llm else None)
         self.project_manager = ProjectManager(db)
     
     def generate_script(
@@ -108,7 +109,9 @@ class ScriptGenerator:
         # 验证输入
         if not theme and not outline:
             raise ValueError("主题和大纲至少需要提供一个")
-        if isinstance(self.llm_service, LLMService) and not self.llm_service.is_loaded:
+        if self.llm_service is None or (
+            isinstance(self.llm_service, LLMService) and not self.llm_service.is_loaded
+        ):
             self.llm_service = get_llm_service()
         
         # 获取项目
@@ -319,6 +322,7 @@ class ScriptGenerator:
             
             # 提取分镜部分
             scenes = self._parse_scenes(script_text)
+            self._complete_shot_execution_contracts(scenes)
             
             # 验证解析结果
             if not characters:
@@ -340,6 +344,76 @@ class ScriptGenerator:
         except Exception as e:
             logger.error(f"剧本解析异常: {e}")
             raise ScriptParseError(f"剧本解析失败: {e}") from e
+
+    @staticmethod
+    def _complete_shot_execution_contracts(scenes: List[Dict]) -> None:
+        """Fill routing fields omitted by smaller local script models."""
+        from src.models.shot_specification import ShotSpecification
+        from src.services.shot_complexity_service import infer_shot_execution_contract
+
+        for scene in scenes:
+            specification = ShotSpecification.model_validate(scene.get("shot_spec") or {})
+            inferred = infer_shot_execution_contract(
+                str(scene.get("description") or ""),
+                scene.get("dialogue"),
+                list(scene.get("characters") or []),
+            )
+            payload = specification.model_dump()
+            if not specification.shot_role:
+                payload["shot_role"] = inferred["shot_role"]
+            if not specification.required_engine_capabilities:
+                payload["required_engine_capabilities"] = inferred["required_engine_capabilities"]
+            if not specification.action_intensity:
+                payload["action_intensity"] = inferred["action_intensity"]
+            scene["shot_spec"] = ShotSpecification.model_validate(payload).model_dump()
+
+    def compile_existing_shot_contracts(self, project: Project) -> Dict:
+        """Upgrade legacy script scenes without rewriting story or visual content."""
+        if not project.script:
+            raise ScriptParseError("当前项目没有结构化剧本")
+        try:
+            payload = json.loads(project.script) if isinstance(project.script, str) else dict(project.script)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ScriptParseError("当前项目剧本 JSON 无效") from exc
+        scenes = payload.get("scenes") if isinstance(payload, dict) else None
+        if not isinstance(scenes, list) or not scenes:
+            raise ScriptParseError("当前项目没有结构化剧本分镜")
+        if any(not isinstance(scene, dict) for scene in scenes):
+            raise ScriptParseError("当前项目包含无效分镜结构")
+
+        def execution_contract(scene: Dict) -> tuple:
+            specification = scene.get("shot_spec") if isinstance(scene.get("shot_spec"), dict) else {}
+            return (
+                specification.get("shot_role"),
+                tuple(specification.get("required_engine_capabilities") or []),
+                specification.get("action_intensity"),
+            )
+
+        before = {
+            int(scene.get("scene_number") or 0): execution_contract(scene)
+            for scene in scenes
+        }
+        self._complete_shot_execution_contracts(scenes)
+        changed = [
+            int(scene.get("scene_number") or 0)
+            for scene in scenes
+            if before.get(int(scene.get("scene_number") or 0)) != execution_contract(scene)
+        ]
+        changed = sorted(number for number in set(changed) if number > 0)
+        project.script = json.dumps(payload, ensure_ascii=False)
+        if changed:
+            for scene in self.db.query(Scene).filter(
+                Scene.project_id == project.id,
+                Scene.scene_number.in_(changed),
+            ).all():
+                scene.video_path = None
+            project.final_video_path = None
+            project.status = ProjectStatus.SCRIPT_GENERATED
+        return {
+            "project_id": project.id,
+            "changed_scene_numbers": changed,
+            "changed_count": len(changed),
+        }
     
     def repair_script_for_review(
         self,
@@ -571,6 +645,7 @@ Prefer a clean 5-beat structure: setup, misunderstanding, clarification, small e
                 scene[key] for key in ("environment", "character_description", "camera", "lighting", "atmosphere")
             )
             scenes.append(scene)
+        self._complete_shot_execution_contracts(scenes)
         return {
             "script": f"{protagonist}在咖啡店等待约会却收到爽约消息。窗外忽然下雨，她没有立刻离开，而是在靠窗座位上安静停留。",
             "characters": characters,
@@ -605,6 +680,8 @@ Mandatory fixes:
 9. Every 3-4 scenes must escalate conflict through confrontation, refusal, exposed evidence, emotional breakdown, or a higher-stakes decision.
 10. The middle or final third must include one clear reversal, and the final two scenes must deliver a payoff or next-episode hook.
 11. Put hook, goal-conflict-stakes, escalation, reversal, and ending hook into story beats and visible actions, not only into the summary.
+12. Reallocate two-character dialogue into coverage across adjacent scenes: relationship two-shot, speaker close-up, then listener reaction. Keep the total scene count unchanged by removing redundant beats.
+13. Preserve a stable asset_id and explicit state chain for every recurring prop, wardrobe fact, injury, environment state, and blocking fact.
 
 Output only this parser-compatible format:
 【剧本】
@@ -625,6 +702,7 @@ Output only this parser-compatible format:
 - 对话：一句简短对白，无对白填 无
 - 说话人：实际姓名，无对白填 无
 - 情感：一个情绪
+- 镜头规格：单行 JSON，必须包含 shot_role、required_engine_capabilities、purpose、emotion、camera_movement、camera_intensity、action_intensity、performance_intensity、duration_seconds、continuity_constraints、character_states、continuity_assets。shot_role 只能是 establishing/dialogue_reaction/emotion_reaction/action/prop_interaction。required_engine_capabilities 从 identity_reference/performance_control/multi_character/motion_control/temporal_keyframes 中选择。有可见角色必须含 identity_reference；对白或情绪特写含 performance_control；动作或道具交互含 motion_control；同镜头多角色含 multi_character。continuity_assets 使用稳定 asset_id，并记录 start_state、end_state、inherits_previous、transition_note。
 
 Continue through 分镜{expected_scenes}. Do not include markdown fences or commentary.
 """
@@ -760,6 +838,27 @@ Continue through 分镜{expected_scenes}. Do not include markdown fences or comm
                     "environment", "character_description", "camera", "lighting", "atmosphere"
                 ) if scene_data.get(key)
             )
+        from src.models.shot_specification import ShotSpecification
+        specification = re.search(r"-\s*镜头规格[：:]\s*([^\n\r]+)", scene_content)
+        if specification:
+            shot_spec = ShotSpecification.model_validate_json(
+                specification.group(1).strip()
+            )
+            visible_characters = set(scene_data.get("characters") or [])
+            state_names = {state.character_name for state in shot_spec.character_states}
+            if state_names and not visible_characters:
+                raise ScriptParseError("镜头规格包含角色状态时，必须填写出现角色")
+            unexpected_states = state_names - visible_characters
+            if unexpected_states:
+                raise ScriptParseError(
+                    "镜头规格角色状态不属于出现角色: " + ", ".join(sorted(unexpected_states))
+                )
+            scene_data["shot_spec"] = shot_spec.model_dump()
+        else:
+            scene_data["shot_spec"] = ShotSpecification(
+                purpose=scene_data.get("story_beat", ""),
+                emotion=scene_data.get("emotion", ""),
+            ).model_dump()
         return scene_data
     
     def _save_script_to_db(self, project: Project, parsed_script: Dict):

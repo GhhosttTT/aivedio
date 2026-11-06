@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "single_walk_forward_medium",
+      "path": "../assets/motion/single_walk_forward_medium.mp4",
+      "tags": ["walk forward", "向前走", "走近"],
+      "shot_roles": ["action"],
+      "action_intensities": ["medium"],
+      "min_characters": 1,
+      "max_characters": 1,
+      "priority": 10
+    },
+    {
+      "id": "single_turn_reaction_low",
+      "path": "../assets/motion/single_turn_reaction_low.mp4",
+      "tags": ["turn around", "转身", "回头"],
+      "shot_roles": ["action", "emotion_reaction"],
+      "action_intensities": ["low", "medium"],
+      "min_characters": 1,
+      "max_characters": 1,
+      "priority": 10
+    }
+  ]
+}

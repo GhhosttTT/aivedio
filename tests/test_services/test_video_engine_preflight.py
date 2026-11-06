@@ -1,10 +1,612 @@
 import pytest
 
+
+@pytest.mark.parametrize("opening_input", ["reference_image", "image", "start_image", "first_frame"])
+def test_local_video_preflight_resolves_media_controls(monkeypatch, tmp_path, opening_input):
+    import json
+    from unittest.mock import MagicMock
+    from src.services import video_engine_preflight as module
+
+    fields = module.VIDEO_WORKFLOW_PLACEHOLDERS - {
+        "reference_image", "image", "start_image", "first_frame",
+    }
+    fields.add(opening_input)
+    workflow = {"output": {"class_type": "SaveVideo", "inputs": {
+        name: "{" + name + "}" for name in fields
+    }}}
+    path = tmp_path / "video.json"
+    path.write_text(json.dumps(workflow), encoding="utf-8")
+    service = MagicMock()
+    replacer = object.__new__(module.ComfyUIService)
+    service._replace_workflow_placeholders.side_effect = replacer._replace_workflow_placeholders
+
+    def validate_resolved(resolved):
+        inputs = resolved["output"]["inputs"]
+        assert module.scan_placeholders(resolved) == set()
+        assert inputs[opening_input] == "validation_reference.png"
+        assert inputs["end_image"] == inputs["last_frame"] == "validation_end.png"
+        references = json.loads(inputs["reference_images_json"])
+        assert len(references) == inputs["reference_image_count"] == 1
+        assert json.loads(inputs["reference_videos_json"]) == []
+        assert json.loads(inputs["reference_audios_json"]) == []
+        assert inputs["continuity_image"] == inputs["previous_last_frame"]
+
+    service.preflight.side_effect = validate_resolved
+    service.client.get.return_value.json.return_value = {"devices": []}
+    monkeypatch.setattr(module, "ComfyUIService", lambda **kwargs: service)
+
+    report = module.preflight_video_workflow(workflow_path=str(path))
+
+    assert report["status"] == "ready_for_live_test", report
+    service.preflight.assert_called_once()
+    service.client.close.assert_called_once()
+
+
+def test_standard_wan_workflow_preflight_accepts_real_node_bindings(monkeypatch, tmp_path):
+    import json
+    from unittest.mock import MagicMock
+    from src.services import video_engine_preflight as module
+
+    workflow = {
+        "positive": {"class_type": "CLIPTextEncode", "inputs": {"text": "positive"}},
+        "negative": {"class_type": "CLIPTextEncode", "inputs": {"text": "negative"}},
+        "first": {"class_type": "LoadImage", "inputs": {"image": "first.png"}},
+        "last": {"class_type": "LoadImage", "inputs": {"image": "last.png"}},
+        "latent": {"class_type": "EmptyHunyuanLatentVideo", "inputs": {
+            "width": 704, "height": 1280, "length": 81,
+        }},
+        "sampler": {"class_type": "KSamplerAdvanced", "inputs": {"noise_seed": 1}},
+        "save": {"class_type": "SaveVideo", "inputs": {"fps": 16, "filename_prefix": "old"}},
+    }
+    path = tmp_path / "wan22_api.json"
+    path.write_text(json.dumps(workflow), encoding="utf-8")
+    (tmp_path / "wan22_api.bindings.json").write_text(json.dumps({
+        "bindings": {
+            "positive_prompt": {"node_id": "positive", "input": "text"},
+            "negative_prompt": {"node_id": "negative", "input": "text"},
+            "reference_image": {"node_id": "first", "input": "image"},
+            "end_image": {"node_id": "last", "input": "image"},
+            "width": {"node_id": "latent", "input": "width"},
+            "height": {"node_id": "latent", "input": "height"},
+            "num_frames": {"node_id": "latent", "input": "length"},
+            "seed": {"node_id": "sampler", "input": "noise_seed"},
+            "fps": {"node_id": "save", "input": "fps"},
+            "output_prefix": {"node_id": "save", "input": "filename_prefix"}
+        }
+    }), encoding="utf-8")
+    service = MagicMock()
+    replacer = object.__new__(module.ComfyUIService)
+    service._replace_workflow_placeholders.side_effect = replacer._replace_workflow_placeholders
+    service.client.get.return_value.json.return_value = {"devices": []}
+    monkeypatch.setattr(module, "ComfyUIService", lambda **kwargs: service)
+    monkeypatch.setattr(module.settings, "COMFYUI_VIDEO_BINDINGS_PATH", "")
+
+    report = module.preflight_video_workflow(workflow_path=str(path))
+
+    assert report["status"] == "ready_for_live_test", report
+    assert report["placeholders"] == []
+    assert report["binding_manifest"]["status"] == "valid"
+    assert report["checks"]["quality_controls_effective"] is True
+    assert report["checks"]["has_frame_count_control"] is True
+    resolved = service.preflight.call_args.args[0]
+    assert resolved["positive"]["inputs"]["text"] == "validation cinematic short-drama shot"
+    assert resolved["latent"]["inputs"]["length"] > 0
+    assert resolved["save"]["inputs"]["filename_prefix"] == "validation_video"
+
+
+def test_video_preflight_blocks_missing_temporal_keyframe_control_when_enabled(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = {
+        "output": {"class_type": "SaveVideo", "inputs": {
+            name: "{" + name + "}"
+            for name in module.VIDEO_WORKFLOW_PLACEHOLDERS
+            if not name.startswith("keyframe_")
+        }}
+    }
+    path = tmp_path / "video.json"
+    path.write_text(json.dumps(workflow), encoding="utf-8")
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MID_KEYFRAME_ENABLED", True)
+
+    report = module.preflight_video_workflow(workflow_path=str(path))
+
+    assert report["status"] == "blocked"
+    assert report["checks"]["has_temporal_keyframe_control"] is False
+    assert "has_temporal_keyframe_control" in report["required_checks"]
+    assert any("keyframe_images_json" in item for item in report["action_items"])
+
+
+def test_video_preflight_accepts_temporal_keyframe_json_control(monkeypatch, tmp_path):
+    import json
+    from unittest.mock import MagicMock
+    from src.services import video_engine_preflight as module
+
+    workflow = {"output": {"class_type": "SaveVideo", "inputs": {
+        name: "{" + name + "}" for name in module.VIDEO_WORKFLOW_PLACEHOLDERS
+    }}}
+    path = tmp_path / "video.json"
+    path.write_text(json.dumps(workflow), encoding="utf-8")
+    service = MagicMock()
+    replacer = object.__new__(module.ComfyUIService)
+    service._replace_workflow_placeholders.side_effect = replacer._replace_workflow_placeholders
+    service.client.get.return_value.json.return_value = {"devices": []}
+    monkeypatch.setattr(module, "ComfyUIService", lambda **kwargs: service)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MID_KEYFRAME_ENABLED", True)
+
+    report = module.preflight_video_workflow(workflow_path=str(path))
+
+    assert report["status"] == "ready_for_live_test", report
+    assert report["checks"]["has_temporal_keyframe_control"] is True
+    resolved = service.preflight.call_args.args[0]
+    keyframes = json.loads(resolved["output"]["inputs"]["keyframe_images_json"])
+    assert keyframes[0]["role"] == "performance_peak"
+
+
+def test_video_preflight_accepts_temporal_keyframes_as_end_frame_control(monkeypatch, tmp_path):
+    import json
+    from unittest.mock import MagicMock
+    from src.services import video_engine_preflight as module
+
+    fields = module.VIDEO_WORKFLOW_PLACEHOLDERS - {"end_image", "last_frame"}
+    workflow = {"output": {"class_type": "SaveVideo", "inputs": {
+        name: "{" + name + "}" for name in fields
+    }}}
+    path = tmp_path / "ltx_video.json"
+    path.write_text(json.dumps(workflow), encoding="utf-8")
+    service = MagicMock()
+    replacer = object.__new__(module.ComfyUIService)
+    service._replace_workflow_placeholders.side_effect = replacer._replace_workflow_placeholders
+    service.client.get.return_value.json.return_value = {"devices": []}
+    monkeypatch.setattr(module, "ComfyUIService", lambda **kwargs: service)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_END_FRAME_ENABLED", True)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MID_KEYFRAME_ENABLED", True)
+
+    report = module.preflight_video_workflow(workflow_path=str(path))
+
+    assert report["status"] == "ready_for_live_test", report
+    assert report["checks"]["has_native_end_frame_control"] is False
+    assert report["checks"]["has_temporal_keyframe_control"] is True
+    assert report["checks"]["has_end_frame_placeholder"] is True
+
+
+def test_engine_registry_preflight_validates_every_registered_engine(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    for name in ("wan.json", "ltx.json"):
+        (tmp_path / name).write_text("{}", encoding="utf-8")
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps({"engines": [
+        {
+            "id": "dialogue",
+            "model_profile": "hunyuanvideo_avatar",
+            "workflow_path": "wan.json",
+            "capabilities": {
+                "identity_reference": True,
+                "performance_control": True,
+                "multi_character": True,
+            },
+        },
+        {
+            "id": "ltx",
+            "model_profile": "ltx_2_keyframes",
+            "workflow_path": "ltx.json",
+            "capabilities": {
+                "identity_reference": True,
+                "motion_control": True,
+                "temporal_keyframes": True,
+            },
+        },
+    ]}), encoding="utf-8")
+    seen = []
+
+    def fake_workflow(_base_url, workflow_path, bindings_path=None):
+        seen.append((workflow_path, bindings_path))
+        return {
+            "status": "ready_for_live_test",
+            "checks": {
+                "has_temporal_keyframe_control": workflow_path.endswith("ltx.json"),
+                "has_performance_audio_control": workflow_path.endswith("wan.json"),
+                "has_driving_video_control": workflow_path.endswith("ltx.json"),
+            },
+            "action_items": [],
+        }
+
+    def fake_model(workflow_path, configured_profile_override=None):
+        native = (
+            ["identity_reference", "performance_control", "multi_character"]
+            if configured_profile_override == "hunyuanvideo_avatar"
+            else ["identity_reference", "motion_control", "temporal_keyframes"]
+        )
+        return {
+            "status": "ready",
+            "profile": configured_profile_override,
+            "supports_temporal_keyframes": workflow_path.endswith("ltx.json"),
+            "native_capabilities": native,
+            "action_items": [],
+        }
+
+    monkeypatch.setattr(module, "preflight_video_workflow", fake_workflow)
+    monkeypatch.setattr(module, "inspect_local_video_model", fake_model)
+
+    report = module.preflight_local_video_engine_registry(registry_path=str(registry))
+
+    assert report["status"] == "ready_for_live_test"
+    assert [item["engine_id"] for item in report["engines"]] == ["dialogue", "ltx"]
+    assert len(seen) == 2
+    assert report["checks"]["short_drama_profiles_covered"] is True
+
+
+def test_engine_registry_preflight_rejects_unproven_temporal_capability(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = tmp_path / "claimed_ltx.json"
+    workflow.write_text("{}", encoding="utf-8")
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps({"engines": [{
+        "id": "claimed-ltx",
+        "model_profile": "ltx_2_keyframes",
+        "workflow_path": "claimed_ltx.json",
+        "capabilities": {"temporal_keyframes": True},
+    }]}), encoding="utf-8")
+    monkeypatch.setattr(module, "preflight_video_workflow", lambda *_args, **_kwargs: {
+        "status": "ready_for_live_test",
+        "checks": {"has_temporal_keyframe_control": False},
+        "action_items": [],
+    })
+    monkeypatch.setattr(module, "inspect_local_video_model", lambda *_args, **_kwargs: {
+        "status": "ready",
+        "profile": "ltx_2_keyframes",
+        "supports_temporal_keyframes": True,
+        "native_capabilities": ["identity_reference", "motion_control", "temporal_keyframes"],
+        "action_items": [],
+    })
+
+    report = module.preflight_local_video_engine_registry(registry_path=str(registry))
+
+    assert report["status"] == "blocked"
+    assert "does not prove" in report["engines"][0]["capability_issues"][0]
+
+
+def test_engine_registry_preflight_rejects_generic_i2v_claiming_dialogue_controls(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = tmp_path / "wan.json"
+    workflow.write_text("{}", encoding="utf-8")
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps({"engines": [{
+        "id": "generic-wan",
+        "model_profile": "wan_2_2_i2v_14b",
+        "workflow_path": "wan.json",
+        "capabilities": {
+            "identity_reference": True,
+            "performance_control": True,
+            "multi_character": True,
+        },
+    }]}), encoding="utf-8")
+    monkeypatch.setattr(module, "preflight_video_workflow", lambda *_args, **_kwargs: {
+        "status": "ready_for_live_test", "checks": {}, "action_items": [],
+    })
+    monkeypatch.setattr(module, "inspect_local_video_model", lambda *_args, **_kwargs: {
+        "status": "ready",
+        "profile": "wan_2_2_i2v_14b",
+        "supports_temporal_keyframes": False,
+        "native_capabilities": ["identity_reference"],
+        "action_items": [],
+    })
+
+    report = module.preflight_local_video_engine_registry(registry_path=str(registry))
+
+    assert report["status"] == "blocked"
+    assert report["engines"] == []
+    assert "multi_character" in report["action_items"][0]
+    assert "performance_control" in report["action_items"][0]
+
+
+def test_motion_reference_library_preflight_records_approved_assets(tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    clip = tmp_path / "turn.mp4"
+    clip.write_bytes(b"approved-turn")
+    manifest = tmp_path / "motion-library.json"
+    manifest.write_text(json.dumps({"assets": [{
+        "id": "turn",
+        "path": "turn.mp4",
+        "tags": ["turn around", "转身"],
+        "shot_roles": ["action"],
+        "action_intensities": ["medium"],
+    }]}), encoding="utf-8")
+
+    report = module.preflight_motion_reference_library(str(manifest))
+
+    assert report["status"] == "ready"
+    assert report["assets"][0]["asset_id"] == "turn"
+    assert report["assets"][0]["sha256"]
+    assert report["assets"][0]["character_range"] == [1, 1]
+
+
+def test_motion_reference_library_preflight_blocks_missing_asset(tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    manifest = tmp_path / "motion-library.json"
+    manifest.write_text(json.dumps({"assets": [{
+        "id": "turn",
+        "path": "missing.mp4",
+        "tags": ["turn around"],
+    }]}), encoding="utf-8")
+
+    report = module.preflight_motion_reference_library(str(manifest))
+
+    assert report["status"] == "blocked"
+    assert "does not exist" in report["action_items"][0]
+
 from src.services.video_engine_preflight import (
     preflight_end_frame_workflow,
     preflight_video_provider,
     preflight_production_video_engine,
 )
+
+
+def test_local_model_inspection_rejects_svd_for_final_short_drama(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = tmp_path / "svd_video.json"
+    workflow.write_text(json.dumps({
+        "1": {"class_type": "SVD_img2vid_Conditioning"},
+        "2": {"class_type": "VHS_VideoCombine"},
+    }), encoding="utf-8")
+    monkeypatch.setattr(module.settings, "LOCAL_VIDEO_MODEL_PROFILE", "auto")
+
+    report = module.inspect_local_video_model(str(workflow))
+
+    assert report["status"] == "blocked"
+    assert report["profile"] == "svd_legacy"
+    assert report["production_ready"] is False
+
+
+def test_local_model_inspection_accepts_explicit_wan_22_workflow(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = tmp_path / "wan_video.json"
+    workflow.write_text(json.dumps({
+        "1": {"class_type": "Wan2.2ImageToVideo"},
+        "model": {"class_type": "UNETLoader", "inputs": {"unet_name": "wan2.2_ti2v_5B_fp16.safetensors"}},
+        "2": {"class_type": "VHS_VideoCombine"},
+    }), encoding="utf-8")
+    monkeypatch.setattr(module.settings, "LOCAL_VIDEO_MODEL_PROFILE", "auto")
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MODEL_FPS", 24)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MAX_FRAMES", 96)
+
+    report = module.inspect_local_video_model(str(workflow))
+
+    assert report["status"] == "ready"
+    assert report["profile"] == "wan_2_2_ti2v_5b"
+
+
+@pytest.mark.parametrize(("marker", "expected_profile", "expected_capabilities"), [
+    (
+        "HunyuanCustomImageVideoConditioning",
+        "hunyuan_custom",
+        {"identity_reference", "performance_control", "multi_character", "motion_control"},
+    ),
+    (
+        "HunyuanVideo-AvatarAudioConditioning",
+        "hunyuanvideo_avatar",
+        {"identity_reference", "performance_control", "multi_character"},
+    ),
+    (
+        "Wan2.2-AnimateReferenceVideo",
+        "wan_2_2_animate",
+        {"identity_reference", "performance_control", "motion_control"},
+    ),
+])
+def test_local_model_inspection_recognizes_specialized_short_drama_profiles(
+    monkeypatch, tmp_path, marker, expected_profile, expected_capabilities,
+):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = tmp_path / f"{expected_profile}.json"
+    workflow.write_text(json.dumps({"1": {"class_type": marker}}), encoding="utf-8")
+    monkeypatch.setattr(module.settings, "LOCAL_VIDEO_MODEL_PROFILE", "auto")
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MODEL_FPS", 24)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MAX_FRAMES", 120)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MID_KEYFRAME_ENABLED", False)
+
+    report = module.inspect_local_video_model(str(workflow))
+
+    assert report["status"] == "ready"
+    assert report["profile"] == expected_profile
+    assert set(report["native_capabilities"]) == expected_capabilities
+
+
+def test_local_model_inspection_blocks_plain_wan_when_temporal_anchors_enabled(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = tmp_path / "wan_video.json"
+    workflow.write_text(json.dumps({
+        "1": {"class_type": "Wan2.2ImageToVideo"},
+        "model": {"class_type": "UNETLoader", "inputs": {"unet_name": "wan2.2_ti2v_5B_fp16.safetensors"}},
+    }), encoding="utf-8")
+    monkeypatch.setattr(module.settings, "LOCAL_VIDEO_MODEL_PROFILE", "auto")
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MODEL_FPS", 24)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MAX_FRAMES", 120)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MID_KEYFRAME_ENABLED", True)
+
+    report = module.inspect_local_video_model(str(workflow))
+
+    assert report["status"] == "blocked"
+    assert report["supports_temporal_keyframes"] is False
+    assert "does not natively support" in report["action_items"][0]
+
+
+def test_local_model_inspection_accepts_ltx2_temporal_keyframes(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = tmp_path / "ltx2_video.json"
+    workflow.write_text(json.dumps({
+        "model": {"class_type": "LTXVLoader", "inputs": {"model": "ltx-2-dev.safetensors"}},
+        "conditioning": {"class_type": "VideoConditionByKeyframeIndex", "inputs": {
+            "conditioning_images": [], "conditioning_indices": [],
+        }},
+    }), encoding="utf-8")
+    monkeypatch.setattr(module.settings, "LOCAL_VIDEO_MODEL_PROFILE", "auto")
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MODEL_FPS", 24)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MAX_FRAMES", 120)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MID_KEYFRAME_ENABLED", True)
+
+    report = module.inspect_local_video_model(str(workflow))
+
+    assert report["status"] == "ready"
+    assert report["profile"] == "ltx_2_keyframes"
+    assert report["supports_temporal_keyframes"] is True
+
+
+def test_local_model_inspection_blocks_ambiguous_wan_variant(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = tmp_path / "wan_video.json"
+    workflow.write_text(json.dumps({"1": {"class_type": "Wan2.2ImageToVideo"}}), encoding="utf-8")
+    monkeypatch.setattr(module.settings, "LOCAL_VIDEO_MODEL_PROFILE", "auto")
+
+    report = module.inspect_local_video_model(str(workflow))
+
+    assert report["status"] == "blocked"
+    assert report["profile"] == "wan_2_2"
+    assert "does not identify" in report["action_items"][0]
+
+
+def test_local_video_model_fingerprint_changes_when_native_sampling_changes(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = tmp_path / "wan_video.json"
+    workflow.write_text(json.dumps({
+        "1": {"class_type": "Wan2.2ImageToVideo"},
+        "model": {"class_type": "UNETLoader", "inputs": {"unet_name": "wan2.2_ti2v_5B_fp16.safetensors"}},
+    }), encoding="utf-8")
+    monkeypatch.setattr(module.settings, "LOCAL_VIDEO_MODEL_PROFILE", "auto")
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MODEL_FPS", 24)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MAX_FRAMES", 96)
+
+    baseline = module.local_video_model_fingerprint(str(workflow))
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MAX_FRAMES", 120)
+    changed = module.local_video_model_fingerprint(str(workflow))
+
+    assert baseline["model_status"] == "ready"
+    assert baseline["workflow_sha256"]
+    assert baseline["fingerprint"] != changed["fingerprint"]
+
+
+def test_local_video_registry_fingerprint_binds_all_routable_workflows(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = tmp_path / "ltx.json"
+    bindings = tmp_path / "ltx.bindings.json"
+    workflow.write_text(json.dumps({
+        "model": {"class_type": "LTXVLoader", "inputs": {"model": "ltx-2-dev.safetensors"}},
+        "conditioning": {
+            "class_type": "VideoConditionByKeyframeIndex",
+            "inputs": {"conditioning_images": [], "conditioning_indices": []},
+        },
+    }), encoding="utf-8")
+    bindings.write_text('{"version":2}', encoding="utf-8")
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps({"engines": [{
+        "id": "ltx",
+        "model_profile": "ltx_2_keyframes",
+        "workflow_path": "ltx.json",
+        "bindings_path": "ltx.bindings.json",
+        "capabilities": {"temporal_keyframes": True},
+    }]}), encoding="utf-8")
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MODEL_FPS", 24)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MAX_FRAMES", 120)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MID_KEYFRAME_ENABLED", True)
+    monkeypatch.setattr(module.settings, "COMFYUI_VIDEO_ENGINE_REGISTRY_PATH", str(registry))
+
+    baseline = module.local_video_configuration_fingerprint()
+    bindings.write_text('{"version":3}', encoding="utf-8")
+    changed = module.local_video_configuration_fingerprint()
+
+    assert baseline["profile"] == "engine_registry"
+    assert baseline["model_status"] == "ready"
+    assert baseline["engines"][0]["workflow_sha256"]
+    assert baseline["fingerprint"] != changed["fingerprint"]
+
+
+def test_local_model_inspection_blocks_wan_when_only_output_is_24fps(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = tmp_path / "wan_video.json"
+    workflow.write_text(json.dumps({
+        "1": {"class_type": "Wan2.2ImageToVideo"},
+        "model": {"class_type": "UNETLoader", "inputs": {"unet_name": "wan2.2_ti2v_5B_fp16.safetensors"}},
+    }), encoding="utf-8")
+    monkeypatch.setattr(module.settings, "LOCAL_VIDEO_MODEL_PROFILE", "auto")
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MODEL_FPS", 8)
+
+    report = module.inspect_local_video_model(str(workflow))
+
+    assert report["status"] == "blocked"
+    assert "output interpolation" in report["action_items"][0]
+
+
+def test_local_model_inspection_blocks_wan_when_frame_capacity_truncates_shots(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = tmp_path / "wan_video.json"
+    workflow.write_text(json.dumps({
+        "1": {"class_type": "Wan2.2ImageToVideo"},
+        "model": {"class_type": "UNETLoader", "inputs": {"unet_name": "wan2.2_ti2v_5B_fp16.safetensors"}},
+    }), encoding="utf-8")
+    monkeypatch.setattr(module.settings, "LOCAL_VIDEO_MODEL_PROFILE", "auto")
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MODEL_FPS", 24)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_TARGET_SECONDS", 3.6)
+    monkeypatch.setattr(module.settings, "GENERATION_VIDEO_MAX_FRAMES", 40)
+
+    report = module.inspect_local_video_model(str(workflow))
+
+    assert report["status"] == "blocked"
+    assert report["required_target_frames"] == 87
+    assert "cannot hold" in report["action_items"][0]
+
+
+def test_production_preflight_blocks_local_svd_even_when_graph_is_reachable(monkeypatch):
+    from src.services import video_engine_preflight as module
+
+    monkeypatch.setattr(module, "preflight_video_workflow", lambda *_args, **_kwargs: {
+        "status": "ready_for_live_test",
+        "action_items": [],
+    })
+    monkeypatch.setattr(module, "preflight_video_provider", lambda *_args, **_kwargs: {
+        "provider": "local_comfyui",
+        "status": "skipped",
+        "checks": {},
+    })
+    monkeypatch.setattr(module, "inspect_local_video_model", lambda *_args, **_kwargs: {
+        "status": "blocked",
+        "profile": "svd_legacy",
+        "action_items": ["SVD is draft-only."],
+    })
+
+    report = module.preflight_production_video_engine()
+
+    assert report["status"] == "production_not_ready"
+    assert report["local_model"]["profile"] == "svd_legacy"
+    assert report["action_items"] == ["SVD is draft-only."]
 
 
 def test_remote_end_frame_preflight_requires_both_image_workflows(monkeypatch, tmp_path):
@@ -724,6 +1326,40 @@ def test_production_preflight_surfaces_provider_blockers(monkeypatch):
     assert report["warnings"] == ["Local video references are not reachable by Ark"]
 
 
+def test_production_preflight_uses_ready_local_engine_registry(monkeypatch):
+    import src.services.video_engine_preflight as module
+
+    monkeypatch.setattr(module, "preflight_video_workflow", lambda *_args, **_kwargs: {
+        "status": "skipped",
+        "action_items": [],
+    })
+    monkeypatch.setattr(module, "preflight_video_provider", lambda: {
+        "provider": "local_comfyui",
+        "status": "blocked",
+        "action_items": [],
+    })
+    registry_report = {
+        "status": "ready_for_live_test",
+        "engines": [{
+            "engine_id": "ltx",
+            "status": "ready",
+            "model": {"status": "ready", "profile": "ltx_2_keyframes"},
+        }],
+        "action_items": [],
+    }
+    monkeypatch.setattr(
+        module,
+        "preflight_local_video_engine_registry",
+        lambda *_args, **_kwargs: registry_report,
+    )
+
+    report = module.preflight_production_video_engine()
+
+    assert report["status"] == "ready_for_production_video_test"
+    assert report["workflow"] is registry_report
+    assert report["local_model"]["profiles"] == ["ltx_2_keyframes"]
+
+
 def test_production_preflight_accepts_per_run_provider_override(monkeypatch):
     import src.services.video_engine_preflight as module
 
@@ -743,6 +1379,26 @@ def test_production_preflight_accepts_per_run_provider_override(monkeypatch):
 
     assert seen["provider"] == "seedance_api"
     assert report["status"] == "ready_for_production_video_test"
+
+
+def test_production_preflight_blocks_seedance_without_output_artifact_validation(monkeypatch):
+    import src.services.video_engine_preflight as module
+
+    monkeypatch.setattr(module, "preflight_video_workflow", lambda *_args, **_kwargs: {
+        "status": "skipped",
+        "action_items": [],
+    })
+    monkeypatch.setattr(module, "preflight_video_provider", lambda *_args, **_kwargs: {
+        "provider": "seedance_api",
+        "status": "configured",
+        "checks": {},
+        "capabilities": {"output_artifact_validation": False},
+    })
+
+    report = module.preflight_production_video_engine(provider_override="seedance_api")
+
+    assert report["status"] == "production_not_ready"
+    assert "ffprobe" in report["action_items"][0]
 
 
 def test_production_preflight_accepts_per_run_model_override(monkeypatch):

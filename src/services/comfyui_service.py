@@ -7,7 +7,9 @@ ComfyUI 服务（ComfyUIService）
 
 import copy
 import json
+import math
 import mimetypes
+import re
 import time
 import tempfile
 import uuid
@@ -29,6 +31,13 @@ from src.services.parameter_optimizer import (
 from src.services.prompt_optimizer import (
     get_prompt_optimizer,
     OptimizationMode
+)
+from src.services.video_workflow_binding import (
+    VideoWorkflowBindingError,
+    apply_video_workflow_bindings,
+    binding_has_control,
+    load_video_workflow_bindings,
+    validate_video_workflow_bindings,
 )
 
 
@@ -619,6 +628,135 @@ class ComfyUIService:
             workflow[image_id]["inputs"]["image"] = self._upload_reference_image(str(reference_path))
             workflow[mask_id]["inputs"]["image"] = self._upload_region_mask(width, height, region)
 
+    def repair_image(
+        self,
+        source_image: str,
+        *,
+        output_path: str,
+        prompt: str,
+        negative_prompt: str,
+        repair_target: str,
+        denoise: float | None = None,
+        steps: int | None = None,
+        cfg_scale: float | None = None,
+        seed: int = 0,
+        workflow_path: str | None = None,
+    ) -> str:
+        """Repair detected regions in an accepted image without redrawing its base frame."""
+        source = Path(source_image)
+        if not source.is_file():
+            raise ComfyUIError(f"Repair source image does not exist: {source}")
+        target = str(repair_target or "").strip()
+        if not target:
+            raise ComfyUIError("Image repair requires a non-empty repair_target")
+        denoise = (
+            settings.GENERATION_IMAGE_REPAIR_DEFAULT_DENOISE
+            if denoise is None else float(denoise)
+        )
+        steps = (
+            settings.GENERATION_IMAGE_REPAIR_DEFAULT_STEPS
+            if steps is None else int(steps)
+        )
+        cfg_scale = (
+            settings.GENERATION_IMAGE_REPAIR_DEFAULT_CFG
+            if cfg_scale is None else float(cfg_scale)
+        )
+        if not 0.0 < denoise <= 0.6:
+            raise ComfyUIError("Image repair denoise must be within (0, 0.6]")
+        if steps < 1:
+            raise ComfyUIError("Image repair steps must be positive")
+        if cfg_scale <= 0:
+            raise ComfyUIError("Image repair cfg_scale must be positive")
+
+        configured_path = str(
+            workflow_path or settings.COMFYUI_IMAGE_REPAIR_WORKFLOW_PATH or ""
+        ).strip()
+        if not configured_path:
+            raise ComfyUIError("COMFYUI_IMAGE_REPAIR_WORKFLOW_PATH is not configured")
+        path = Path(configured_path)
+        if not path.is_file():
+            raise ComfyUIError(f"Image repair workflow does not exist: {path}")
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ComfyUIError(f"Cannot load image repair workflow: {exc}") from exc
+        nodes = payload.get("nodes") if isinstance(payload, dict) else None
+        if not isinstance(nodes, dict):
+            nodes = payload
+        if not isinstance(nodes, dict) or not nodes:
+            raise ComfyUIError("Image repair workflow has no nodes")
+
+        workflow, name_to_id = self._named_nodes_to_api_workflow(nodes)
+        uploaded = self._upload_reference_image(str(source))
+        output_prefix = f"aivedio_repair_{uuid.uuid4().hex[:8]}"
+        workflow = self._replace_workflow_placeholders(workflow, {
+            "input_image": uploaded,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "repair_target": target,
+            "denoise": denoise,
+            "steps": steps,
+            "cfg": cfg_scale,
+            "seed": int(seed),
+            "output_prefix": output_prefix,
+        })
+        configured_output = str(settings.COMFYUI_IMAGE_REPAIR_OUTPUT_NODE or "").strip()
+        if not configured_output and isinstance(payload, dict):
+            configured_output = str(
+                ((payload.get("parameters") or {}).get("default") or {}).get("output_node") or ""
+            ).strip()
+        output_node = name_to_id.get(configured_output, configured_output) or None
+        if output_node and output_node not in workflow:
+            raise ComfyUIError(f"Configured image repair output node does not exist: {output_node}")
+        if output_node is None:
+            save_nodes = [
+                node_id for node_id, node in workflow.items()
+                if node.get("class_type") == "SaveImage"
+            ]
+            if len(save_nodes) != 1:
+                raise ComfyUIError(
+                    "Image repair graph must have one SaveImage node or configure "
+                    "COMFYUI_IMAGE_REPAIR_OUTPUT_NODE"
+                )
+            output_node = save_nodes[0]
+        if not any(
+            node.get("class_type") == "LoadImage"
+            and node.get("inputs", {}).get("image") == uploaded
+            for node in workflow.values()
+        ):
+            raise ComfyUIError("Image repair workflow does not bind the accepted source image")
+        self.preflight(workflow)
+        artifact = Path(output_path).with_suffix(".workflow.json")
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text(json.dumps(workflow, ensure_ascii=False, indent=2), encoding="utf-8")
+        return self._run_submitted_job(
+            workflow,
+            output_path,
+            "image_repair",
+            output_node,
+            lambda result: self._get_generated_image(result, output_path, output_node),
+        )
+
+    @staticmethod
+    def _named_nodes_to_api_workflow(nodes: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, str]]:
+        """Convert readable named-node JSON into the node-id graph expected by ComfyUI."""
+        name_to_id = {name: str(index + 1) for index, name in enumerate(nodes)}
+        workflow: Dict[str, Any] = {}
+        for name, raw_node in nodes.items():
+            if not isinstance(raw_node, dict) or not isinstance(raw_node.get("inputs"), dict):
+                raise ComfyUIError(f"Invalid workflow node: {name}")
+            node = copy.deepcopy(raw_node)
+            for key, value in node["inputs"].items():
+                if (
+                    isinstance(value, list)
+                    and len(value) == 2
+                    and isinstance(value[0], str)
+                    and value[0] in name_to_id
+                ):
+                    node["inputs"][key] = [name_to_id[value[0]], value[1]]
+            workflow[name_to_id[name]] = node
+        return workflow, name_to_id
+
     @staticmethod
     def _region_pixel_bounds(width: int, height: int, region) -> tuple[int, int, int, int]:
         import math
@@ -735,6 +873,7 @@ class ComfyUIService:
         reference_image: str,
         output_path: str,
         end_image: Optional[str] = None,
+        keyframe_images: Optional[List[Dict]] = None,
         continuity_reference_image: Optional[str] = None,
         reference_images: Optional[List[str]] = None,
         reference_videos: Optional[List[str]] = None,
@@ -746,12 +885,14 @@ class ComfyUIService:
         fps: int = 8,
         seed: int = -1,
         workflow_path: Optional[str] = None,
+        bindings_path: Optional[str] = None,
         motion_bucket_id: int = 127,
         noise_aug_strength: float = 0.02,
         quality_mode: Optional[str] = None,
         repair_action: Optional[str] = None,
         quality_pipeline: Optional[dict] = None,
         shot_plan: Optional[dict] = None,
+        local_engine_route: Optional[dict] = None,
     ) -> str:
         """Run a user-supplied ComfyUI image-to-video API workflow."""
         path = workflow_path or settings.COMFYUI_VIDEO_WORKFLOW_PATH
@@ -759,59 +900,130 @@ class ComfyUIService:
             raise ComfyUIError("未配置 COMFYUI_VIDEO_WORKFLOW_PATH，无法使用 ComfyUI 视频工作流")
         if not reference_image:
             raise ComfyUIError("ComfyUI 视频生成需要 reference_image")
+        if (
+            isinstance(duration_seconds, bool) or isinstance(fps, bool)
+            or not isinstance(duration_seconds, (int, float))
+            or not isinstance(fps, (int, float))
+            or not math.isfinite(duration_seconds) or duration_seconds <= 0
+            or not math.isfinite(fps) or fps <= 0
+            or not math.isfinite(duration_seconds * fps)
+        ):
+            raise ComfyUIError("Video duration and fps must be finite positive numbers")
+        num_frames = math.ceil(duration_seconds * fps)
+        normalized_keyframes = self._normalize_video_keyframes(keyframe_images, num_frames)
         workflow_file = Path(path)
         if not workflow_file.is_absolute():
             workflow_file = Path.cwd() / workflow_file
         if not workflow_file.is_file():
             raise ComfyUIError(f"ComfyUI 视频工作流不存在: {workflow_file}")
         workflow = json.loads(workflow_file.read_text(encoding="utf-8"))
+        try:
+            binding_manifest = load_video_workflow_bindings(
+                workflow_file,
+                bindings_path if bindings_path is not None else getattr(settings, "COMFYUI_VIDEO_BINDINGS_PATH", ""),
+            )
+        except VideoWorkflowBindingError as exc:
+            raise ComfyUIError(str(exc)) from exc
+        if binding_manifest.get("status") == "configured":
+            binding_validation = validate_video_workflow_bindings(workflow, binding_manifest)
+            if binding_validation["status"] != "valid":
+                raise ComfyUIError(
+                    "ComfyUI 视频绑定清单无效: " + "; ".join(binding_validation["errors"])
+                )
+
+        def has_control(names: set[str]) -> bool:
+            return self._workflow_contains_any_placeholder(workflow, names) or binding_has_control(
+                binding_manifest, names,
+            )
+
         plan = shot_plan if isinstance(shot_plan, dict) else {}
         spatial_plan = plan.get("spatial_plan") if isinstance(plan.get("spatial_plan"), dict) else {}
-        if end_image and not self._workflow_contains_any_placeholder(workflow, {"end_image", "last_frame"}):
-            raise ComfyUIError(
-                "ComfyUI 视频工作流未接入 {end_image} 或 {last_frame}，无法安全使用末帧控制"
+        has_native_end_control = has_control({"end_image", "last_frame"})
+        has_temporal_keyframe_control = bool(
+            has_control({"keyframe_images_json"})
+            or (
+                has_control({"keyframe_images"})
+                and has_control({"keyframe_indices"})
             )
-        if continuity_reference_image and not self._workflow_contains_any_placeholder(
-            workflow, {"continuity_reference_image", "continuity_image", "previous_last_frame"},
-        ):
+        )
+        if end_image and not (has_native_end_control or has_temporal_keyframe_control):
+            raise ComfyUIError(
+                "ComfyUI 视频工作流未接入 end_image/last_frame 或时间关键帧控制，无法安全使用末帧控制"
+            )
+        if normalized_keyframes and not has_temporal_keyframe_control:
+            raise ComfyUIError(
+                "ComfyUI 视频工作流未接入 keyframe_images_json，或未同时接入 "
+                "keyframe_images/keyframe_indices，无法安全使用中间关键帧"
+            )
+        if end_image and has_temporal_keyframe_control and not has_native_end_control:
+            if any(item["frame_index"] == num_frames - 1 for item in normalized_keyframes):
+                raise ComfyUIError("时间关键帧已占用最终帧，无法再合并独立末帧")
+            normalized_keyframes.append({
+                "path": str(end_image),
+                "frame_index": num_frames - 1,
+                "strength": 1.0,
+                "role": "closing_frame",
+            })
+        if continuity_reference_image and not has_control({
+            "continuity_reference_image", "continuity_image", "previous_last_frame",
+        }):
             raise ComfyUIError(
                 "ComfyUI 视频工作流未接入连续帧占位符，无法安全使用上一镜头尾帧"
             )
-        if spatial_plan and not self._workflow_contains_placeholder(workflow, "spatial_plan_json"):
+        if spatial_plan and not has_control({"spatial_plan_json"}):
             raise ComfyUIError(
                 "ComfyUI 视频工作流未接入 {spatial_plan_json}，无法安全使用镜头空间契约"
             )
-        if spatial_plan.get("control_references") and not self._workflow_contains_placeholder(
-            workflow, "spatial_control_references_json",
-        ):
+        if spatial_plan.get("control_references") and not has_control({"spatial_control_references_json"}):
             raise ComfyUIError(
                 "ComfyUI 视频工作流未接入 {spatial_control_references_json}，无法安全使用动作控制参考"
             )
         spatial_asset_pack = plan.get("spatial_asset_pack") if isinstance(plan.get("spatial_asset_pack"), dict) else {}
-        if spatial_asset_pack and not self._workflow_contains_any_placeholder(
-            workflow, {"spatial_asset_pack_json", "spatial_scene_contract_hash"},
-        ):
+        if spatial_asset_pack and not has_control({"spatial_asset_pack_json", "spatial_scene_contract_hash"}):
             raise ComfyUIError(
                 "ComfyUI 视频工作流未接入空间资产契约占位符，无法安全生成"
             )
-        if reference_videos and not self._workflow_contains_placeholder(workflow, "reference_videos_json"):
+        if reference_videos and not has_control({"reference_videos_json", "driving_video"}):
             raise ComfyUIError(
-                "ComfyUI 视频工作流未接入 {reference_videos_json}，无法安全使用参考视频"
+                "ComfyUI 视频工作流未接入 {reference_videos_json} 或 {driving_video}，无法安全使用参考视频"
             )
         missing_videos = [str(path) for path in reference_videos or [] if path and not Path(path).is_file()]
         if missing_videos:
             raise ComfyUIError("参考视频不存在: " + ", ".join(missing_videos))
-        if reference_audios and not self._workflow_contains_placeholder(workflow, "reference_audios_json"):
-            raise ComfyUIError(
-                "ComfyUI 视频工作流未接入 {reference_audios_json}，无法安全使用参考音频"
-            )
+        if reference_audios and not has_control({"reference_audios_json"}):
+            if not has_control({"performance_audio"}):
+                raise ComfyUIError(
+                    "ComfyUI 视频工作流未接入 {reference_audios_json} 或 {performance_audio}，无法安全使用参考音频"
+                )
         missing_audios = [str(path) for path in reference_audios or [] if path and not Path(path).is_file()]
         if missing_audios:
             raise ComfyUIError("参考音频不存在: " + ", ".join(missing_audios))
+        route = local_engine_route if isinstance(local_engine_route, dict) else {}
+        route_profile = str(route.get("model_profile") or "").strip().lower()
+        route_requirements = set(route.get("requested_capabilities") or [])
+        if (
+            route_profile == "hunyuanvideo_avatar"
+            and "performance_control" in route_requirements
+            and not has_control({"performance_audio"})
+        ):
+            raise ComfyUIError(
+                "HunyuanVideo-Avatar 工作流必须把 performance_audio 绑定到真实音频条件节点"
+            )
+        if (
+            route_profile in {"wan_2_2_animate", "hunyuan_custom"}
+            and (
+                "motion_control" in route_requirements
+                or (route_profile == "wan_2_2_animate" and "performance_control" in route_requirements)
+            )
+            and not has_control({"driving_video"})
+        ):
+            raise ComfyUIError(
+                f"{route_profile} 动作工作流必须把 driving_video 绑定到真实视频条件节点"
+            )
         if (
             reference_images
             and len({str(Path(path).resolve()) for path in reference_images if path}) > 1
-            and not self._workflow_contains_placeholder(workflow, "reference_images_json")
+            and not has_control({"reference_images_json"})
         ):
             raise ComfyUIError(
                 "ComfyUI 视频工作流未接入 {reference_images_json}，无法安全使用多张参考图"
@@ -827,7 +1039,25 @@ class ComfyUIService:
                 continue
             uploaded_references.append(self._upload_reference_image(reference_path))
             seen_reference_paths.add(resolved_reference_path)
-        uploaded_end = self._upload_reference_image(end_image) if end_image else uploaded_reference
+        uploaded_reference_videos = [
+            self._upload_input_media(path) for path in reference_videos or [] if path
+        ]
+        uploaded_reference_audios = [
+            self._upload_input_media(path) for path in reference_audios or [] if path
+        ]
+        uploaded_end = (
+            self._upload_reference_image(end_image)
+            if end_image and has_native_end_control
+            else uploaded_reference
+        )
+        uploaded_keyframes = [
+            {
+                **item,
+                "source_path": item["path"],
+                "path": self._upload_reference_image(item["path"]),
+            }
+            for item in normalized_keyframes
+        ]
         continuity_fallback = not continuity_reference_image
         # The first shot has no previous tail frame. Reuse its verified opening
         # frame so a required continuity LoadImage node never receives an
@@ -845,20 +1075,22 @@ class ComfyUIService:
             "reference_image": uploaded_reference,
             "reference_images_json": json.dumps(uploaded_references, ensure_ascii=False),
             "reference_image_count": len(uploaded_references),
-            "reference_videos_json": json.dumps(
-                [self._upload_input_media(path) for path in reference_videos or [] if path],
-                ensure_ascii=False,
-            ),
-            "reference_audios_json": json.dumps(
-                [self._upload_input_media(path) for path in reference_audios or [] if path],
-                ensure_ascii=False,
-            ),
+            "reference_videos_json": json.dumps(uploaded_reference_videos, ensure_ascii=False),
+            "reference_audios_json": json.dumps(uploaded_reference_audios, ensure_ascii=False),
+            "driving_video": uploaded_reference_videos[0] if uploaded_reference_videos else "",
+            "performance_audio": uploaded_reference_audios[0] if uploaded_reference_audios else "",
             "reference_video_count": len([path for path in reference_videos or [] if path]),
             "reference_audio_count": len([path for path in reference_audios or [] if path]),
             "start_image": uploaded_reference,
             "first_frame": uploaded_reference,
             "end_image": uploaded_end,
             "last_frame": uploaded_end,
+            "keyframe_images": [item["path"] for item in uploaded_keyframes],
+            "keyframe_indices": [item["frame_index"] for item in uploaded_keyframes],
+            "keyframe_strengths": [item["strength"] for item in uploaded_keyframes],
+            "keyframe_roles": [item["role"] for item in uploaded_keyframes],
+            "keyframe_images_json": json.dumps(uploaded_keyframes, ensure_ascii=False),
+            "keyframe_count": len(uploaded_keyframes),
             # Keep the previous shot's verified tail frame separate from the
             # current shot's opening/end-frame controls. Custom workflows can
             # bind this to a temporal-conditioning node without changing the
@@ -871,6 +1103,9 @@ class ComfyUIService:
             "width": width,
             "height": height,
             "duration_seconds": duration_seconds,
+            "num_frames": num_frames,
+            "video_frames": num_frames,
+            "frame_count": num_frames,
             "fps": fps,
             "seed": seed,
             "output_prefix": Path(output_path).stem,
@@ -896,6 +1131,11 @@ class ComfyUIService:
             "spatial_scene_contract_hash": str(spatial_asset_pack.get("scene_contract_hash") or ""),
         }
         workflow = self._replace_workflow_placeholders(workflow, replacements)
+        if binding_manifest.get("status") == "configured":
+            try:
+                workflow = apply_video_workflow_bindings(workflow, binding_manifest, replacements)
+            except VideoWorkflowBindingError as exc:
+                raise ComfyUIError(f"ComfyUI 视频绑定应用失败: {exc}") from exc
         output_node = settings.COMFYUI_VIDEO_OUTPUT_NODE.strip() or None
         if output_node and output_node not in workflow:
             raise ComfyUIError(f"Configured video output node does not exist: {output_node}")
@@ -916,6 +1156,45 @@ class ComfyUIService:
                 result, output_path, media_keys=("videos", "gifs", "images"), output_node_id=output_node,
             ),
         )
+
+    @staticmethod
+    def _normalize_video_keyframes(
+        keyframes: Optional[List[Dict]],
+        num_frames: int,
+    ) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
+        occupied: set[int] = set()
+        for index, raw in enumerate(keyframes or []):
+            if not isinstance(raw, dict):
+                raise ComfyUIError("Each video keyframe must be an object")
+            path = str(raw.get("path") or "").strip()
+            if not path or not Path(path).is_file():
+                raise ComfyUIError(f"Video keyframe image does not exist: {path or index}")
+            frame_index = raw.get("frame_index")
+            if isinstance(frame_index, bool) or not isinstance(frame_index, int):
+                raise ComfyUIError("Video keyframe frame_index must be an integer")
+            if frame_index < 0 or frame_index >= num_frames:
+                raise ComfyUIError(
+                    f"Video keyframe frame_index {frame_index} is outside [0, {num_frames - 1}]"
+                )
+            if frame_index in occupied:
+                raise ComfyUIError(f"Duplicate video keyframe frame_index: {frame_index}")
+            strength = raw.get("strength", 1.0)
+            if (
+                isinstance(strength, bool)
+                or not isinstance(strength, (int, float))
+                or not math.isfinite(float(strength))
+                or not 0.0 < float(strength) <= 1.0
+            ):
+                raise ComfyUIError("Video keyframe strength must be within (0, 1]")
+            occupied.add(frame_index)
+            normalized.append({
+                "path": path,
+                "frame_index": frame_index,
+                "strength": float(strength),
+                "role": str(raw.get("role") or "keyframe").strip() or "keyframe",
+            })
+        return sorted(normalized, key=lambda item: item["frame_index"])
 
     def _run_submitted_job(self, workflow, output_path, kind, output_node, download):
         from src.services.generation_review import fingerprint, write_report
@@ -988,20 +1267,24 @@ class ComfyUIService:
 
     def _replace_workflow_placeholders(self, value: Any, replacements: Dict[str, Any]) -> Any:
         if isinstance(value, dict):
-            replaced = {}
-            for key, item in value.items():
-                if key in replacements and not isinstance(item, (dict, list)):
-                    replaced[key] = replacements[key]
-                else:
-                    replaced[key] = self._replace_workflow_placeholders(item, replacements)
-            return replaced
+            return {
+                key: self._replace_workflow_placeholders(item, replacements)
+                for key, item in value.items()
+            }
         if isinstance(value, list):
             return [self._replace_workflow_placeholders(item, replacements) for item in value]
         if isinstance(value, str):
-            result = value
-            for key, replacement in replacements.items():
-                result = result.replace("{" + key + "}", str(replacement))
-            return result
+            # Exact placeholders retain numeric/container types. Substitution
+            # is one-pass so literal braces in prompts are never expanded again.
+            match = re.fullmatch(r"\{([A-Za-z_][A-Za-z_0-9]*)\}", value)
+            if match and match.group(1) in replacements:
+                return copy.deepcopy(replacements[match.group(1)])
+            return re.sub(
+                r"\{([A-Za-z_][A-Za-z_0-9]*)\}",
+                lambda item: str(replacements[item.group(1)])
+                if item.group(1) in replacements else item.group(0),
+                value,
+            )
         return copy.deepcopy(value)
 
     @staticmethod

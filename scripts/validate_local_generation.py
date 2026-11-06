@@ -23,6 +23,7 @@ from src.services.generation_provider import ImageGenerationRequest, LocalComfyU
 from src.services.comfyui_service import ComfyUIService
 from src.services.image_quality_service import ImageQualitySelector
 from src.services.video_engine_preflight import (
+    local_video_configuration_fingerprint,
     preflight_production_video_engine,
     preflight_video_workflow,
 )
@@ -728,6 +729,149 @@ def _final_video_reviews(quality_reports: dict[str, dict]) -> list[dict]:
     return reviews
 
 
+def _local_engine_id_from_metadata(metadata: dict | None) -> str:
+    if not isinstance(metadata, dict):
+        return ""
+    route = metadata.get("local_engine_route")
+    if isinstance(route, dict) and route.get("engine_id"):
+        return str(route["engine_id"]).strip()
+    contract = metadata.get("request_contract")
+    route = contract.get("local_engine_route") if isinstance(contract, dict) else None
+    if isinstance(route, dict) and route.get("engine_id"):
+        return str(route["engine_id"]).strip()
+    return ""
+
+
+def _local_engine_route_from_metadata(metadata: dict | None) -> dict:
+    if not isinstance(metadata, dict):
+        return {}
+    route = metadata.get("local_engine_route")
+    if isinstance(route, dict):
+        return route
+    contract = metadata.get("request_contract")
+    route = contract.get("local_engine_route") if isinstance(contract, dict) else None
+    return route if isinstance(route, dict) else {}
+
+
+def _local_engine_sample_coverage(
+    local_model_fingerprint: dict | None,
+    quality_reports: dict[str, dict],
+) -> dict:
+    model = local_model_fingerprint if isinstance(local_model_fingerprint, dict) else {}
+    if model.get("profile") != "engine_registry":
+        return {
+            "applicable": False,
+            "required": [],
+            "required_capabilities": {},
+            "observed": [],
+            "passed_engines": [],
+            "exercised_capabilities": {},
+            "uncovered_capabilities": {},
+            "missing": [],
+            "failed": [],
+            "passed": True,
+        }
+    capability_names = {
+        "identity_reference", "performance_control", "multi_character",
+        "motion_control", "temporal_keyframes",
+    }
+    required_capabilities = {}
+    for item in model.get("engines", []):
+        if not isinstance(item, dict):
+            continue
+        engine_id = str(item.get("engine_id") or "").strip()
+        if not engine_id:
+            continue
+        capabilities = item.get("capabilities") if isinstance(item.get("capabilities"), dict) else {}
+        required_capabilities[engine_id] = sorted(
+            name for name in capability_names if capabilities.get(name) is True
+        )
+    required = sorted(required_capabilities)
+    observed = set()
+    reviewed_pass_engines = set()
+    exercised_capabilities = {engine_id: set() for engine_id in required}
+    for report in quality_reports.values():
+        if not isinstance(report, dict):
+            continue
+        review = report.get("final_video_review")
+        if not isinstance(review, dict):
+            continue
+        metadata = review.get("provider_metadata")
+        route = _local_engine_route_from_metadata(metadata)
+        engine_id = _local_engine_id_from_metadata(metadata)
+        if not engine_id:
+            metadata = report.get("selected_provider_metadata")
+            route = _local_engine_route_from_metadata(metadata)
+            engine_id = _local_engine_id_from_metadata(metadata)
+        if not engine_id:
+            continue
+        observed.add(engine_id)
+        if _final_video_reviews_passed([review]):
+            reviewed_pass_engines.add(engine_id)
+            for reason in route.get("selection_reasons", []):
+                if not isinstance(reason, str) or ":" not in reason:
+                    continue
+                capability = reason.split(":", 1)[1].strip()
+                if capability in capability_names:
+                    exercised_capabilities.setdefault(engine_id, set()).add(capability)
+    required_set = set(required)
+    uncovered_capabilities = {
+        engine_id: sorted(
+            set(required_capabilities[engine_id]) - exercised_capabilities.get(engine_id, set())
+        )
+        for engine_id in required
+        if set(required_capabilities[engine_id]) - exercised_capabilities.get(engine_id, set())
+    }
+    passed_engines = {
+        engine_id for engine_id in required
+        if engine_id in reviewed_pass_engines and engine_id not in uncovered_capabilities
+    }
+    return {
+        "applicable": True,
+        "required": required,
+        "required_capabilities": required_capabilities,
+        "observed": sorted(observed),
+        "passed_engines": sorted(passed_engines),
+        "exercised_capabilities": {
+            engine_id: sorted(exercised_capabilities.get(engine_id, set()))
+            for engine_id in required
+        },
+        "uncovered_capabilities": uncovered_capabilities,
+        "missing": sorted(required_set - observed),
+        "failed": sorted((required_set & observed) - passed_engines),
+        "passed": bool(required) and required_set <= passed_engines,
+    }
+
+
+def _verified_temporal_registry_engines(production_report: dict | None) -> list[str]:
+    registry = (
+        production_report.get("engine_registry")
+        if isinstance(production_report, dict)
+        and isinstance(production_report.get("engine_registry"), dict)
+        else {}
+    )
+    verified = []
+    for engine in registry.get("engines", []):
+        if not isinstance(engine, dict) or engine.get("status") != "ready":
+            continue
+        declared = engine.get("declared_capabilities")
+        model = engine.get("model")
+        workflow = engine.get("workflow")
+        workflow_checks = workflow.get("checks") if isinstance(workflow, dict) else None
+        if (
+            isinstance(declared, dict)
+            and declared.get("temporal_keyframes") is True
+            and isinstance(model, dict)
+            and model.get("supports_temporal_keyframes") is True
+            and isinstance(workflow_checks, dict)
+            and workflow_checks.get("has_temporal_keyframe_control") is True
+        ):
+            engine_id = str(engine.get("engine_id") or "").strip()
+            if engine_id:
+                verified.append(engine_id)
+    return sorted(set(verified))
+
+
 def _composition_reviews(composition_reports: dict[str, dict]) -> list[dict]:
     reviews = []
     for source, report in composition_reports.items():
@@ -1127,6 +1271,7 @@ def _calibration_recommendations(manual_cases: list[dict], video_review_report: 
 def summarize_validation(output: Path):
     preflight_report = _read_json(output / "preflight.json")
     video_workflow_report = _read_json(output / "video_workflow_preflight.json")
+    production_video_engine_report = _read_json(output / "production_video_engine_preflight.json")
     render_report = _read_json(output / "render.json")
     image_review_report = _read_json(output / "image_review.json")
     video_review_report = _read_json(output / "video_review.json")
@@ -1146,6 +1291,7 @@ def summarize_validation(output: Path):
         "inputs": {
             "preflight": str(output / "preflight.json"),
             "video_workflow_preflight": str(output / "video_workflow_preflight.json"),
+            "production_video_engine_preflight": str(output / "production_video_engine_preflight.json"),
             "render": str(output / "render.json"),
             "image_review": str(output / "image_review.json"),
             "video_review": str(output / "video_review.json"),
@@ -1160,7 +1306,52 @@ def summarize_validation(output: Path):
         "action_items": [],
         "calibration_recommendations": [],
     }
+    provider = (
+        production_video_engine_report.get("provider", {}).get("provider")
+        if isinstance(production_video_engine_report, dict)
+        and isinstance(production_video_engine_report.get("provider"), dict)
+        else ""
+    )
+    if str(provider).strip().lower() == "local_comfyui":
+        workflow_report = production_video_engine_report.get("workflow", {})
+        report["local_video_model"] = local_video_configuration_fingerprint(
+            workflow_report.get("workflow_path")
+            if isinstance(workflow_report, dict) and workflow_report.get("workflow_path")
+            else None
+        )
     checks = report["checks"]
+    temporal_keyframes_required = bool(settings.GENERATION_VIDEO_MID_KEYFRAME_ENABLED)
+    local_model_report = (
+        production_video_engine_report.get("local_model")
+        if isinstance(production_video_engine_report, dict)
+        and isinstance(production_video_engine_report.get("local_model"), dict)
+        else {}
+    )
+    workflow_checks = (
+        video_workflow_report.get("checks")
+        if isinstance(video_workflow_report, dict)
+        and isinstance(video_workflow_report.get("checks"), dict)
+        else {}
+    )
+    verified_temporal_registry_engines = _verified_temporal_registry_engines(
+        production_video_engine_report
+    )
+    checks["verified_temporal_registry_engines"] = verified_temporal_registry_engines
+    checks["temporal_keyframes_required"] = temporal_keyframes_required
+    checks["temporal_keyframe_model_capability_passed"] = bool(
+        not temporal_keyframes_required
+        or local_model_report.get("supports_temporal_keyframes") is True
+        or verified_temporal_registry_engines
+    )
+    checks["temporal_keyframe_workflow_control_passed"] = bool(
+        not temporal_keyframes_required
+        or workflow_checks.get("has_temporal_keyframe_control") is True
+        or verified_temporal_registry_engines
+    )
+    checks["temporal_keyframe_final_evidence_passed"] = bool(
+        not temporal_keyframes_required
+        or _temporal_keyframe_final_evidence_passed(final_video_reviews)
+    )
     checks["environment_ready"] = bool(preflight_report and preflight_report.get("status") == "ready_for_live_test")
     checks["video_workflow_ready"] = bool(
         video_workflow_report
@@ -1215,6 +1406,10 @@ def summarize_validation(output: Path):
     checks["video_performance_gate_passed"] = _video_performance_gates_passed(video_review_report)
     checks["final_normalized_video_review_count"] = len(final_video_reviews)
     checks["final_normalized_video_review_passed"] = _final_video_reviews_passed(final_video_reviews)
+    checks["local_engine_sample_coverage"] = _local_engine_sample_coverage(
+        report.get("local_video_model"), quality_reports
+    )
+    checks["local_engine_sample_coverage_passed"] = checks["local_engine_sample_coverage"]["passed"]
     checks["composition_review_count"] = len(composition_reviews)
     checks["composition_review_passed"] = _composition_reviews_passed(composition_reviews)
     checks["video_review_passed"] = bool(
@@ -1229,6 +1424,9 @@ def summarize_validation(output: Path):
         and checks["video_performance_gate_passed"]
         and checks["final_normalized_video_review_passed"]
         and checks["composition_review_passed"]
+        and checks["temporal_keyframe_model_capability_passed"]
+        and checks["temporal_keyframe_workflow_control_passed"]
+        and checks["temporal_keyframe_final_evidence_passed"]
     )
     checks["baseline_comparison_present"] = bool(baseline_comparison_report)
     checks["baseline_contact_sheet_present"] = _baseline_contact_sheet_present(baseline_comparison_report, output)
@@ -1297,6 +1495,19 @@ def summarize_validation(output: Path):
         report["action_items"].append("Run preflight and fix ffmpeg/ffprobe/model/ComfyUI/llama.cpp readiness before judging quality.")
     if not checks["video_workflow_ready"]:
         report["action_items"].append("Run preflight-video-workflow and fix workflow placeholders, nodes, models, or output nodes.")
+    if not checks["temporal_keyframe_model_capability_passed"]:
+        report["action_items"].append(
+            "Use a verified LTX-2 or HunyuanVideo 1.5 frame-indexed keyframe model before validating temporal anchors."
+        )
+    if not checks["temporal_keyframe_workflow_control_passed"]:
+        report["action_items"].append(
+            "Bind keyframe_images plus keyframe_indices, or keyframe_images_json, to the real temporal conditioning node."
+        )
+    if not checks["temporal_keyframe_final_evidence_passed"]:
+        report["action_items"].append(
+            "Regenerate and normalize the clip until every requested temporal keyframe has available evidence "
+            f"with score >= {settings.GENERATION_VIDEO_KEYFRAME_REFERENCE_MIN_SCORE}."
+        )
     if not checks["images_rendered"]:
         report["action_items"].append("Run render-images on the fixed validation cases and inspect generated keyframes.")
     elif not checks["render_profile_passed"]:
@@ -1335,6 +1546,15 @@ def summarize_validation(output: Path):
     if not checks["final_normalized_video_review_passed"]:
         report["action_items"].append(
             "Fix final normalized video review failures from production .quality.json reports before accepting sample quality."
+        )
+    if not checks["local_engine_sample_coverage_passed"]:
+        coverage = checks["local_engine_sample_coverage"]
+        unresolved = coverage["missing"] + coverage["failed"]
+        report["action_items"].append(
+            "Generate and approve at least one representative final clip for every registered local video engine; "
+            "missing or failed engines: " + ", ".join(unresolved)
+            + "; uncovered capabilities: "
+            + json.dumps(coverage["uncovered_capabilities"], ensure_ascii=False, sort_keys=True)
         )
     if not checks["composition_review_passed"]:
         report["action_items"].append(
@@ -1416,6 +1636,10 @@ def summarize_validation(output: Path):
         "image_review_passed", "image_platform_reference_gate_passed",
         "video_review_passed", "baseline_comparison_passed", "manual_review_passed",
         "repair_queue_empty", "quality_scorecard_production_score_passed",
+        "local_engine_sample_coverage_passed",
+        "temporal_keyframe_model_capability_passed",
+        "temporal_keyframe_workflow_control_passed",
+        "temporal_keyframe_final_evidence_passed",
     )):
         report["status"] = "ready_for_seed_dance_candidate"
     elif (
@@ -1426,6 +1650,25 @@ def summarize_validation(output: Path):
     ):
         report["status"] = "partial_needs_review"
     return report
+
+
+def _temporal_keyframe_final_evidence_passed(final_video_reviews: list[dict]) -> bool:
+    if not final_video_reviews:
+        return False
+    for review in final_video_reviews:
+        metrics = review.get("technical_metrics") if isinstance(review, dict) else None
+        references = metrics.get("keyframe_references") if isinstance(metrics, dict) else None
+        if not isinstance(references, list) or not references:
+            return False
+        for item in references:
+            if (
+                not isinstance(item, dict)
+                or item.get("status") != "available"
+                or not isinstance(item.get("score"), (int, float))
+                or item["score"] < settings.GENERATION_VIDEO_KEYFRAME_REFERENCE_MIN_SCORE
+            ):
+                return False
+    return True
 
 
 def _path_exists(path: Path) -> bool:

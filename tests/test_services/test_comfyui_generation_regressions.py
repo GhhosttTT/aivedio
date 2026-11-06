@@ -164,6 +164,9 @@ def test_face_detailer_settings_override_workflow_defaults(service, monkeypatch)
 
 
 def test_face_detailer_enabled_requires_supporting_workflow(service, monkeypatch):
+    service.workflow_manager.load_workflow(
+        workflow_path="configs/comfyui_workflow_juggernaut.json"
+    )
     monkeypatch.setattr(settings, "FACE_DETAILER_ENABLED", True)
 
     with pytest.raises(ComfyUIError, match="FaceDetailer"):

@@ -87,11 +87,15 @@ def _compute_video_candidate_metrics(
             duration_seconds=float(probe["duration_seconds"]),
         )
         gray_frames = [cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) for frame in frames]
+        frame_hashes = [_gray_frame_dhash(frame, cv2) for frame in gray_frames]
         histogram_jump_values = _frame_histogram_distances(frames, cv2)
         motion_values = [
             float(np.mean(cv2.absdiff(gray_frames[index], gray_frames[index - 1])))
             for index in range(1, len(gray_frames))
         ]
+        motion_direction_profile, motion_centroid_profile = _optical_flow_motion_profiles(
+            gray_frames, cv2, np,
+        )
         static_transition_ratio = (
             sum(value < 0.5 for value in motion_values) / len(motion_values)
             if motion_values else 1.0
@@ -154,7 +158,15 @@ def _compute_video_candidate_metrics(
             "temporal_sample_minimum": settings.GENERATION_VIDEO_MIN_TEMPORAL_SAMPLES,
             "sampling_interval_seconds": round(sample_interval, 3),
             "sampling_strategy": "explicit" if max_samples is not None else "adaptive_temporal",
+            "perceptual_fingerprint": {
+                "algorithm": "dhash-64-sequence",
+                "frame_hashes": frame_hashes,
+                "sample_count": len(frame_hashes),
+            },
             "motion_energy": round(motion_energy, 3),
+            "motion_profile": [round(value, 4) for value in motion_values],
+            "motion_direction_profile": motion_direction_profile,
+            "motion_centroid_profile": motion_centroid_profile,
             "static_transition_ratio": round(static_transition_ratio, 3),
             "max_static_run_seconds": round(max_static_run * sample_interval, 3),
             "sharpness": round(sharpness, 3),
@@ -200,6 +212,220 @@ def _compute_video_candidate_metrics(
             "technical_score": None,
             "error": str(exc),
         }
+
+
+def _gray_frame_dhash(gray_frame, cv2) -> str:
+    """Return a 64-bit difference hash for one decoded grayscale frame."""
+    resized = cv2.resize(gray_frame, (9, 8), interpolation=cv2.INTER_AREA)
+    comparisons = (resized[:, :-1] > resized[:, 1:]).reshape(-1)
+    value = 0
+    for bit in comparisons:
+        value = (value << 1) | int(bool(bit))
+    return f"{value:016x}"
+
+
+def video_perceptual_distance(
+    first: dict[str, Any], second: dict[str, Any],
+) -> dict[str, float | int] | None:
+    """Compare aligned sampled-frame hashes and basic temporal statistics."""
+    first_fp = first.get("perceptual_fingerprint") if isinstance(first, dict) else None
+    second_fp = second.get("perceptual_fingerprint") if isinstance(second, dict) else None
+    first_hashes = first_fp.get("frame_hashes") if isinstance(first_fp, dict) else None
+    second_hashes = second_fp.get("frame_hashes") if isinstance(second_fp, dict) else None
+    if not isinstance(first_hashes, list) or not isinstance(second_hashes, list):
+        return None
+    sample_count = min(len(first_hashes), len(second_hashes))
+    if sample_count < 2:
+        return None
+
+    def aligned_index(position: int, total: int) -> int:
+        if sample_count <= 1 or total <= 1:
+            return 0
+        return round(position * (total - 1) / (sample_count - 1))
+
+    distances = []
+    try:
+        for position in range(sample_count):
+            left = int(str(first_hashes[aligned_index(position, len(first_hashes))]), 16)
+            right = int(str(second_hashes[aligned_index(position, len(second_hashes))]), 16)
+            distances.append((left ^ right).bit_count())
+    except (TypeError, ValueError):
+        return None
+    return {
+        "average_hamming_distance": round(sum(distances) / len(distances), 3),
+        "max_hamming_distance": max(distances),
+        "motion_energy_delta": round(
+            abs(float(first.get("motion_energy") or 0) - float(second.get("motion_energy") or 0)), 3
+        ),
+        "duration_delta_seconds": round(
+            abs(float(first.get("duration_seconds") or 0) - float(second.get("duration_seconds") or 0)), 3
+        ),
+        "compared_samples": sample_count,
+    }
+
+
+def video_motion_reference_metrics(
+    candidate: dict[str, Any], reference: dict[str, Any], *, sample_count: int = 12,
+) -> dict[str, Any]:
+    """Compare temporal motion shape against an explicit driving video.
+
+    Pixel similarity is excluded because the driven character and environment
+    may differ from the performer. The metric checks normalized motion timing,
+    total motion energy, and duration.
+    """
+    if candidate.get("status") != "available" or reference.get("status") != "available":
+        return {"status": "unavailable", "score": None, "error": "candidate or driving-video metrics unavailable"}
+    candidate_profile = candidate.get("motion_profile")
+    reference_profile = reference.get("motion_profile")
+    if not isinstance(candidate_profile, list) or not isinstance(reference_profile, list):
+        return {"status": "unavailable", "score": None, "error": "motion profile missing"}
+    if len(candidate_profile) < 2 or len(reference_profile) < 2:
+        return {"status": "unavailable", "score": None, "error": "motion profile has insufficient samples"}
+
+    def resample(values: list, count: int) -> list[float]:
+        source = [float(value) for value in values]
+        result = []
+        for index in range(count):
+            position = index * (len(source) - 1) / max(count - 1, 1)
+            left = int(math.floor(position))
+            right = min(len(source) - 1, left + 1)
+            fraction = position - left
+            result.append(source[left] * (1.0 - fraction) + source[right] * fraction)
+        return result
+
+    count = max(3, min(int(sample_count), len(candidate_profile), len(reference_profile)))
+    left = resample(candidate_profile, count)
+    right = resample(reference_profile, count)
+    left_mean = sum(left) / count
+    right_mean = sum(right) / count
+    left_std = math.sqrt(sum((value - left_mean) ** 2 for value in left) / count)
+    right_std = math.sqrt(sum((value - right_mean) ** 2 for value in right) / count)
+    if left_std < 1e-6 or right_std < 1e-6:
+        correlation = 1.0 if left_std < 1e-6 and right_std < 1e-6 else 0.0
+    else:
+        correlation = sum(
+            ((left[index] - left_mean) / left_std) * ((right[index] - right_mean) / right_std)
+            for index in range(count)
+        ) / count
+    correlation = max(-1.0, min(1.0, correlation))
+    shape_score = max(0.0, correlation) * 5.0
+    candidate_energy = max(0.0, float(candidate.get("motion_energy") or left_mean))
+    reference_energy = max(0.0, float(reference.get("motion_energy") or right_mean))
+    energy_log_delta = abs(math.log((candidate_energy + 0.5) / (reference_energy + 0.5)))
+    energy_score = max(0.0, 5.0 - energy_log_delta * 3.0)
+    candidate_duration = max(0.0, float(candidate.get("duration_seconds") or 0.0))
+    reference_duration = max(0.0, float(reference.get("duration_seconds") or 0.0))
+    duration_delta_ratio = abs(candidate_duration - reference_duration) / max(reference_duration, 0.001)
+    duration_score = max(0.0, 5.0 - duration_delta_ratio * 5.0)
+    score = shape_score * 0.65 + energy_score * 0.25 + duration_score * 0.10
+    spatial_metrics = _spatial_motion_reference_metrics(candidate, reference, count=count)
+    if spatial_metrics is not None:
+        score = (
+            shape_score * 0.50
+            + energy_score * 0.15
+            + duration_score * 0.10
+            + float(spatial_metrics["spatial_score"]) * 0.25
+        )
+    result = {
+        "status": "available",
+        "score": round(max(0.0, min(5.0, score)), 2),
+        "trajectory_correlation": round(correlation, 4),
+        "shape_score": round(shape_score, 2),
+        "energy_score": round(energy_score, 2),
+        "duration_score": round(duration_score, 2),
+        "sample_count": count,
+    }
+    if spatial_metrics is None:
+        result["spatial_evidence_status"] = "unavailable"
+    else:
+        result.update(spatial_metrics)
+        result["spatial_evidence_status"] = "available"
+    return result
+
+
+def _resample_vector_profile(values: list, count: int) -> list[tuple[float, float]]:
+    source = [
+        (float(item[0]), float(item[1]))
+        for item in values
+        if isinstance(item, (list, tuple)) and len(item) == 2
+    ]
+    if len(source) < 2:
+        return []
+    result = []
+    for index in range(count):
+        position = index * (len(source) - 1) / max(count - 1, 1)
+        left = int(math.floor(position))
+        right = min(len(source) - 1, left + 1)
+        fraction = position - left
+        result.append((
+            source[left][0] * (1.0 - fraction) + source[right][0] * fraction,
+            source[left][1] * (1.0 - fraction) + source[right][1] * fraction,
+        ))
+    return result
+
+
+def _spatial_motion_reference_metrics(
+    candidate: dict[str, Any], reference: dict[str, Any], *, count: int,
+) -> dict[str, Any] | None:
+    candidate_direction = _resample_vector_profile(
+        candidate.get("motion_direction_profile") or [], count,
+    )
+    reference_direction = _resample_vector_profile(
+        reference.get("motion_direction_profile") or [], count,
+    )
+    candidate_centroid = _resample_vector_profile(
+        candidate.get("motion_centroid_profile") or [], count,
+    )
+    reference_centroid = _resample_vector_profile(
+        reference.get("motion_centroid_profile") or [], count,
+    )
+    if not all((candidate_direction, reference_direction, candidate_centroid, reference_centroid)):
+        return None
+    direction_similarities = []
+    for left, right in zip(candidate_direction, reference_direction):
+        left_norm = math.hypot(*left)
+        right_norm = math.hypot(*right)
+        if left_norm < 1e-6 or right_norm < 1e-6:
+            continue
+        cosine = (left[0] * right[0] + left[1] * right[1]) / (left_norm * right_norm)
+        direction_similarities.append(max(-1.0, min(1.0, cosine)))
+    if not direction_similarities:
+        return None
+    direction_similarity = sum(direction_similarities) / len(direction_similarities)
+    direction_score = max(0.0, direction_similarity) * 5.0
+    centroid_distance = sum(
+        math.hypot(left[0] - right[0], left[1] - right[1])
+        for left, right in zip(candidate_centroid, reference_centroid)
+    ) / count
+    centroid_score = max(0.0, 5.0 * (1.0 - centroid_distance / math.sqrt(2.0)))
+    spatial_score = direction_score * 0.65 + centroid_score * 0.35
+    return {
+        "direction_similarity": round(direction_similarity, 4),
+        "direction_score": round(direction_score, 2),
+        "motion_centroid_distance": round(centroid_distance, 4),
+        "motion_centroid_score": round(centroid_score, 2),
+        "spatial_score": round(spatial_score, 2),
+        "spatial_sample_count": len(direction_similarities),
+    }
+
+
+def video_metrics_are_near_duplicate(
+    first: dict[str, Any],
+    second: dict[str, Any],
+    *,
+    max_average_hamming: float,
+    max_motion_energy_delta: float,
+    max_duration_delta_seconds: float,
+) -> tuple[bool, dict[str, float | int] | None]:
+    distance = video_perceptual_distance(first, second)
+    if distance is None:
+        return False, None
+    return (
+        float(distance["average_hamming_distance"]) <= max_average_hamming
+        and float(distance["motion_energy_delta"]) <= max_motion_energy_delta
+        and float(distance["duration_delta_seconds"]) <= max_duration_delta_seconds,
+        distance,
+    )
 
 
 def temporal_sample_evidence_error(
@@ -291,6 +517,49 @@ def _max_consecutive_true(values: list[bool]) -> int:
         else:
             current = 0
     return longest
+
+
+def _optical_flow_motion_profiles(gray_frames, cv2, np) -> tuple[list[list[float]], list[list[float]]]:
+    """Measure dominant motion direction and its normalized spatial center."""
+    directions: list[list[float]] = []
+    centroids: list[list[float]] = []
+    for index in range(1, len(gray_frames)):
+        flow = cv2.calcOpticalFlowFarneback(
+            gray_frames[index - 1], gray_frames[index], None,
+            0.5, 3, 15, 3, 5, 1.2, 0,
+        )
+        horizontal = flow[..., 0]
+        vertical = flow[..., 1]
+        magnitude = cv2.magnitude(horizontal, vertical)
+        threshold = max(0.2, float(np.percentile(magnitude, 70)))
+        mask = magnitude >= threshold
+        if not bool(np.any(mask)):
+            directions.append([0.0, 0.0])
+            centroids.append([0.5, 0.5])
+            continue
+        weights = magnitude[mask]
+        total = float(np.sum(weights))
+        if total <= 1e-6:
+            directions.append([0.0, 0.0])
+            centroids.append([0.5, 0.5])
+            continue
+        mean_horizontal = float(np.sum(horizontal[mask] * weights) / total)
+        mean_vertical = float(np.sum(vertical[mask] * weights) / total)
+        norm = math.hypot(mean_horizontal, mean_vertical)
+        if norm <= 1e-6:
+            directions.append([0.0, 0.0])
+        else:
+            directions.append([
+                round(mean_horizontal / norm, 4),
+                round(mean_vertical / norm, 4),
+            ])
+        rows, columns = np.nonzero(mask)
+        height, width = magnitude.shape[:2]
+        centroids.append([
+            round(float(np.sum(columns * weights) / total) / max(width - 1, 1), 4),
+            round(float(np.sum(rows * weights) / total) / max(height - 1, 1), 4),
+        ])
+    return directions, centroids
 
 
 def _frame_histogram_distances(frames, cv2) -> list[float]:
@@ -729,6 +998,28 @@ def video_continuity_reference_metrics(
     return result
 
 
+def video_frame_reference_metrics(
+    video_path: str | Path,
+    reference_image: str | Path | None,
+    frame_index: int,
+) -> dict[str, Any]:
+    """Compare a requested internal video frame with a locked keyframe image."""
+    if not reference_image:
+        return {"status": "not_applicable"}
+    try:
+        cv2, np = _load_cv2_numpy()
+        frame = _read_frame_at_index(Path(video_path), cv2, frame_index)
+        result = _frame_reference_metrics(frame, reference_image, cv2, np)
+        result.update(boundary="internal", frame_index=frame_index)
+        return result
+    except Exception as exc:
+        return {
+            "status": "unavailable",
+            "frame_index": frame_index,
+            "error": str(exc),
+        }
+
+
 def _video_boundary_frame_reference_metrics(
     video_path: str | Path,
     reference_image: str | Path | None,
@@ -741,40 +1032,45 @@ def _video_boundary_frame_reference_metrics(
     try:
         cv2, np = _load_cv2_numpy()
         boundary_frame = _read_boundary_frame(Path(video_path), cv2, np, from_end=from_end)
-        reference = cv2.imread(str(reference_image), cv2.IMREAD_COLOR)
-        if reference is None:
-            raise RuntimeError("video boundary frame or reference image is unreadable")
-        boundary_frame = cv2.resize(boundary_frame, (256, 144), interpolation=cv2.INTER_AREA)
-        reference = cv2.resize(reference, (256, 144), interpolation=cv2.INTER_AREA)
-        boundary_gray = cv2.cvtColor(boundary_frame, cv2.COLOR_BGR2GRAY)
-        reference_gray = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)
-        brightness_delta = abs(
-            float(np.mean(boundary_gray)) - float(np.mean(reference_gray))
-        ) / 255.0
-        pixel_delta = float(np.mean(cv2.absdiff(boundary_frame, reference))) / 255.0
-        boundary_hist = cv2.calcHist([boundary_frame], [0, 1], None, [16, 16], [0, 256, 0, 256])
-        reference_hist = cv2.calcHist([reference], [0, 1], None, [16, 16], [0, 256, 0, 256])
-        cv2.normalize(boundary_hist, boundary_hist)
-        cv2.normalize(reference_hist, reference_hist)
-        histogram_distance = max(
-            0.0,
-            min(1.0, float(cv2.compareHist(boundary_hist, reference_hist, cv2.HISTCMP_BHATTACHARYYA))),
-        )
-        score = max(
-            0.0,
-            min(5.0, 5.0 * (0.35 * (1.0 - pixel_delta) + 0.65 * (1.0 - histogram_distance))),
-        )
-        return {
-            "status": "available",
-            "reference_image": str(reference_image),
-            "boundary": "end" if from_end else "start",
-            "brightness_delta": round(brightness_delta, 3),
-            "pixel_delta": round(pixel_delta, 3),
-            "histogram_distance": round(histogram_distance, 3),
-            "score": round(score, 2),
-        }
+        result = _frame_reference_metrics(boundary_frame, reference_image, cv2, np)
+        result["boundary"] = "end" if from_end else "start"
+        return result
     except Exception as exc:
         return {"status": "unavailable", "error": str(exc)}
+
+
+def _frame_reference_metrics(frame, reference_image: str | Path, cv2, np) -> dict[str, Any]:
+    reference = cv2.imread(str(reference_image), cv2.IMREAD_COLOR)
+    if reference is None:
+        raise RuntimeError("video frame or reference image is unreadable")
+    frame = cv2.resize(frame, (256, 144), interpolation=cv2.INTER_AREA)
+    reference = cv2.resize(reference, (256, 144), interpolation=cv2.INTER_AREA)
+    boundary_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    reference_gray = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)
+    brightness_delta = abs(
+        float(np.mean(boundary_gray)) - float(np.mean(reference_gray))
+    ) / 255.0
+    pixel_delta = float(np.mean(cv2.absdiff(frame, reference))) / 255.0
+    boundary_hist = cv2.calcHist([frame], [0, 1], None, [16, 16], [0, 256, 0, 256])
+    reference_hist = cv2.calcHist([reference], [0, 1], None, [16, 16], [0, 256, 0, 256])
+    cv2.normalize(boundary_hist, boundary_hist)
+    cv2.normalize(reference_hist, reference_hist)
+    histogram_distance = max(
+        0.0,
+        min(1.0, float(cv2.compareHist(boundary_hist, reference_hist, cv2.HISTCMP_BHATTACHARYYA))),
+    )
+    score = max(
+        0.0,
+        min(5.0, 5.0 * (0.35 * (1.0 - pixel_delta) + 0.65 * (1.0 - histogram_distance))),
+    )
+    return {
+        "status": "available",
+        "reference_image": str(reference_image),
+        "brightness_delta": round(brightness_delta, 3),
+        "pixel_delta": round(pixel_delta, 3),
+        "histogram_distance": round(histogram_distance, 3),
+        "score": round(score, 2),
+    }
 
 
 def _read_boundary_frame(path: Path, cv2, np, *, from_end: bool):
@@ -789,6 +1085,27 @@ def _read_boundary_frame(path: Path, cv2, np, *, from_end: bool):
         ok, frame = capture.read()
         if not ok or frame is None:
             raise RuntimeError(f"Video boundary frame is unreadable: {path}")
+        return frame
+    finally:
+        capture.release()
+
+
+def _read_frame_at_index(path: Path, cv2, frame_index: int):
+    if isinstance(frame_index, bool) or not isinstance(frame_index, int) or frame_index < 0:
+        raise RuntimeError("Video frame index must be a nonnegative integer")
+    capture = cv2.VideoCapture(str(path))
+    if not capture.isOpened():
+        raise RuntimeError(f"Video cannot be opened for frame analysis: {path}")
+    try:
+        frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        if frame_index >= frame_count:
+            raise RuntimeError(
+                f"Requested frame {frame_index} exceeds video frame count {frame_count}: {path}"
+            )
+        capture.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+        ok, frame = capture.read()
+        if not ok or frame is None:
+            raise RuntimeError(f"Video frame {frame_index} is unreadable: {path}")
         return frame
     finally:
         capture.release()

@@ -16,10 +16,17 @@ from src.utils.storage import storage_manager
 
 def current_story(project, scenes):
     original = json.loads(project.script) if project.script else {}
+    specifications = {
+        item.get("scene_number"): item["shot_spec"]
+        for item in original.get("scenes", [])
+        if isinstance(item, dict) and isinstance(item.get("shot_spec"), dict)
+    }
     return {"script": original.get("script", project.outline or project.theme or ""),
             "characters": [{"name": c.name, "description": c.description} for c in project.characters],
             "scenes": [{"scene_number": s.scene_number, "description": s.visual_description,
-                        "dialogue": s.dialogue, "speaker": s.character_name} for s in scenes]}
+                        "dialogue": s.dialogue, "speaker": s.character_name,
+                        **({"shot_spec": specifications[s.scene_number]} if s.scene_number in specifications else {})}
+                       for s in scenes]}
 
 
 def generation_signature(project, scenes):

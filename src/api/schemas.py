@@ -7,6 +7,7 @@ API 请求和响应模型
 from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
+from src.models.shot_specification import ShotSpecification
 
 
 # ==================== 项目相关模型 ====================
@@ -148,6 +149,18 @@ class CharacterIdentityScoreResponse(BaseModel):
     limitation: str
 
 
+class CharacterIdentityImageScoreRequest(BaseModel):
+    """Score a project-owned, registered reference image with the local VLM."""
+    reference_path: str = Field(..., min_length=1, max_length=2000)
+
+
+class CharacterIdentityImageScoreResponse(CharacterIdentityScoreResponse):
+    reference_path: str
+    image_sha256: str
+    observed_spec: dict
+    observation_evidence: str
+
+
 class CharacterReferenceGenerateRequest(BaseModel):
     """
     自动生成角色定妆参考图
@@ -227,6 +240,11 @@ class SpatialAssetFreezeRequest(BaseModel):
     notes: Optional[str] = Field(None, max_length=500, description="空间/机位审核备注")
 
 
+class ContinuityAssetFreezeRequest(BaseModel):
+    """冻结项目级道具、服装、伤势和场景状态合同。"""
+    notes: Optional[str] = Field(None, max_length=500, description="连续性资产审核备注")
+
+
 class VisualStyleFreezeRequest(BaseModel):
     """
     冻结项目视觉风格资产包
@@ -249,6 +267,12 @@ class SpatialAssetPackResponse(BaseModel):
     """
     项目空间连续性资产包响应
     """
+    project_id: int
+    status: str
+    asset_pack: dict
+
+
+class ContinuityAssetPackResponse(BaseModel):
     project_id: int
     status: str
     asset_pack: dict
@@ -289,6 +313,7 @@ class SceneResponse(BaseModel):
     
     id: int
     scene_number: int
+    shot_spec: Optional[ShotSpecification] = None
     location: Optional[str] = None
     time_period: Optional[str] = None
     characters: Optional[str] = None
@@ -301,6 +326,15 @@ class SceneResponse(BaseModel):
     video_path: Optional[str] = None
     audio_path: Optional[str] = None
     subtitle_path: Optional[str] = None
+
+    @field_validator("shot_spec", mode="before")
+    @classmethod
+    def normalize_shot_spec(cls, value):
+        # ORM JSON values are dictionaries. Generic mocks/proxies may expose a
+        # synthetic attribute tree that must not be serialized as a real spec.
+        if value is None or isinstance(value, (dict, ShotSpecification)):
+            return value
+        return None
 
 
 class ProjectResponse(BaseModel):
@@ -386,6 +420,7 @@ class RegenerateSceneRequest(BaseModel):
 
 
 class SceneUpdate(BaseModel):
+    shot_spec: Optional[ShotSpecification] = None
     visual_description: str = Field(..., min_length=1, max_length=1500)
     dialogue: Optional[str] = Field(None, max_length=2000)
     character_name: Optional[str] = Field(None, max_length=100)
@@ -394,6 +429,10 @@ class SceneUpdate(BaseModel):
         max_length=10,
         description="镜头中可见的角色名称；传入空数组表示空镜/无人物镜头",
     )
+
+
+class ShotDecompositionRequest(BaseModel):
+    dry_run: bool = Field(True, description="仅预览拆解方案；false 时原子化应用并使旧素材失效")
 
 
 class RepairSceneRequest(BaseModel):

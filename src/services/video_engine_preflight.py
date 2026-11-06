@@ -3,14 +3,33 @@
 from __future__ import annotations
 
 import json
+import math
 import ipaddress
 import os
 import shutil
+import hashlib
 from pathlib import Path
 from urllib.parse import urlparse
 
 from src.config import settings
 from src.services.comfyui_service import ComfyUIService
+from src.services.local_video_engine_router import (
+    evaluate_local_video_engine_fleet,
+    LocalVideoEngineRoutingError,
+    LOCAL_VIDEO_MODEL_CAPABILITY_POLICY,
+    load_local_video_engine_registry,
+)
+from src.services.motion_reference_library import (
+    load_motion_reference_library,
+    MotionReferenceLibraryError,
+)
+from src.services.video_workflow_binding import (
+    VideoWorkflowBindingError,
+    apply_video_workflow_bindings,
+    binding_has_control,
+    load_video_workflow_bindings,
+    validate_video_workflow_bindings,
+)
 from src.services.generation_provider import (
     _seedance_model,
     _seedance_model_is_10,
@@ -27,6 +46,7 @@ VIDEO_WORKFLOW_PLACEHOLDERS = {
     "prompt", "positive_prompt", "negative_prompt", "reference_image", "image",
     "start_image", "first_frame", "end_image", "last_frame",
     "width", "height", "duration_seconds", "fps", "seed", "output_prefix",
+    "num_frames", "video_frames", "frame_count",
     "motion_bucket_id", "noise_aug_strength",
     "quality_mode", "quality_profile", "repair_action", "quality_pipeline",
     "quality_pipeline_json", "quality_pipeline_stages", "quality_pipeline_prompt",
@@ -37,7 +57,10 @@ VIDEO_WORKFLOW_PLACEHOLDERS = {
     "continuity_reference_fallback",
     "reference_images_json", "reference_image_count",
     "reference_videos_json", "reference_audios_json",
+    "driving_video", "performance_audio",
     "reference_video_count", "reference_audio_count",
+    "keyframe_images", "keyframe_indices", "keyframe_strengths", "keyframe_roles",
+    "keyframe_images_json", "keyframe_count",
 }
 
 # Keep the selectable catalog next to the provider contract so the UI and
@@ -50,6 +73,371 @@ SEEDANCE_MODEL_CATALOG = [
     {"id": "doubao-seedance-1-0-pro-250528", "label": "Seedance 1.0 Pro"},
     {"id": "doubao-seedance-1-0-pro-fast-251015", "label": "Seedance 1.0 Pro Fast"},
 ]
+
+
+LOCAL_VIDEO_MODEL_PROFILES = {
+    "svd_legacy": {
+        "label": "Stable Video Diffusion",
+        "production_ready": False,
+        "minimum_model_fps": 0,
+        "supports_temporal_keyframes": False,
+        "native_capabilities": list(LOCAL_VIDEO_MODEL_CAPABILITY_POLICY["svd_legacy"]),
+        "reason": "SVD is retained for draft motion checks only; it is not approved for final short-drama video.",
+    },
+    "wan_2_2_ti2v_5b": {
+        "label": "Wan 2.2 TI2V-5B",
+        "production_ready": True,
+        "minimum_model_fps": 24,
+        "official_min_vram_gb": 24,
+        "quality_tier": "local_candidate",
+        "supports_temporal_keyframes": False,
+        "native_capabilities": list(LOCAL_VIDEO_MODEL_CAPABILITY_POLICY["wan_2_2_ti2v_5b"]),
+        "reason": "Official 720P/24fps local candidate; 12GB quantized/offload deployments require measured sample validation.",
+    },
+    "wan_2_2_i2v_14b": {
+        "label": "Wan 2.2 I2V-A14B",
+        "production_ready": True,
+        "minimum_model_fps": 24,
+        "official_min_vram_gb": 80,
+        "quality_tier": "high_quality_candidate",
+        "supports_temporal_keyframes": False,
+        "native_capabilities": list(LOCAL_VIDEO_MODEL_CAPABILITY_POLICY["wan_2_2_i2v_14b"]),
+        "reason": "Higher-capacity I2V candidate; official full-precision single-GPU inference uses an 80GB-class GPU.",
+    },
+    "wan_2_2": {
+        "label": "Wan 2.2 (variant unknown)",
+        "production_ready": False,
+        "minimum_model_fps": 24,
+        "official_min_vram_gb": None,
+        "quality_tier": "unknown",
+        "supports_temporal_keyframes": False,
+        "native_capabilities": list(LOCAL_VIDEO_MODEL_CAPABILITY_POLICY["wan_2_2"]),
+        "reason": "The workflow mentions Wan 2.2 but does not identify a 5B or 14B I2V model variant.",
+    },
+    "hunyuanvideo_i2v": {
+        "label": "HunyuanVideo I2V",
+        "production_ready": True,
+        "minimum_model_fps": 24,
+        "official_min_vram_gb": None,
+        "quality_tier": "local_candidate",
+        "supports_temporal_keyframes": False,
+        "native_capabilities": list(LOCAL_VIDEO_MODEL_CAPABILITY_POLICY["hunyuanvideo_i2v"]),
+        "reason": "Use atomic 3-6 second shots and retain character, continuity, and lip-sync quality gates.",
+    },
+    "hunyuanvideo_1_5_keyframes": {
+        "label": "HunyuanVideo 1.5 Keyframes",
+        "production_ready": True,
+        "minimum_model_fps": 24,
+        "official_min_vram_gb": None,
+        "quality_tier": "high_quality_candidate",
+        "supports_temporal_keyframes": True,
+        "native_capabilities": list(LOCAL_VIDEO_MODEL_CAPABILITY_POLICY["hunyuanvideo_1_5_keyframes"]),
+        "reason": "Keyframe-aware HunyuanVideo 1.5 candidate; the workflow must expose real frame-indexed conditioning.",
+    },
+    "ltx_2_keyframes": {
+        "label": "LTX-2 Keyframes",
+        "production_ready": True,
+        "minimum_model_fps": 24,
+        "official_min_vram_gb": None,
+        "quality_tier": "high_quality_candidate",
+        "supports_temporal_keyframes": True,
+        "native_capabilities": list(LOCAL_VIDEO_MODEL_CAPABILITY_POLICY["ltx_2_keyframes"]),
+        "reason": "Native multi-keyframe candidate; validate identity, motion and final-resolution samples on the target GPU.",
+    },
+    "hunyuan_custom": {
+        "label": "HunyuanCustom",
+        "production_ready": True,
+        "minimum_model_fps": 24,
+        "official_min_vram_gb": None,
+        "quality_tier": "specialized_candidate",
+        "supports_temporal_keyframes": False,
+        "native_capabilities": list(LOCAL_VIDEO_MODEL_CAPABILITY_POLICY["hunyuan_custom"]),
+        "reason": "Subject-consistent image/audio/video-conditioned candidate; multi-subject release support must be proven separately.",
+    },
+    "hunyuanvideo_avatar": {
+        "label": "HunyuanVideo-Avatar",
+        "production_ready": True,
+        "minimum_model_fps": 24,
+        "official_min_vram_gb": 24,
+        "quality_tier": "specialized_candidate",
+        "supports_temporal_keyframes": False,
+        "native_capabilities": list(LOCAL_VIDEO_MODEL_CAPABILITY_POLICY["hunyuanvideo_avatar"]),
+        "reason": "Audio-driven emotional and multi-character dialogue candidate; target-GPU speed and dialogue samples remain mandatory.",
+    },
+    "wan_2_2_animate": {
+        "label": "Wan 2.2 Animate",
+        "production_ready": True,
+        "minimum_model_fps": 24,
+        "official_min_vram_gb": None,
+        "quality_tier": "specialized_candidate",
+        "supports_temporal_keyframes": False,
+        "native_capabilities": list(LOCAL_VIDEO_MODEL_CAPABILITY_POLICY["wan_2_2_animate"]),
+        "reason": "Reference-character plus driving-video candidate for controlled body motion and expression transfer.",
+    },
+    "unknown": {
+        "label": "Unknown local video model",
+        "production_ready": False,
+        "minimum_model_fps": 0,
+        "official_min_vram_gb": None,
+        "quality_tier": "draft_only",
+        "supports_temporal_keyframes": False,
+        "native_capabilities": [],
+        "reason": "The workflow does not expose a verified production video model family.",
+    },
+}
+
+
+def inspect_local_video_model(
+    workflow_path: str | None = None,
+    configured_profile_override: str | None = None,
+) -> dict:
+    """Classify the model referenced by a local ComfyUI video workflow."""
+    configured_profile = str(
+        configured_profile_override
+        if configured_profile_override is not None
+        else getattr(settings, "LOCAL_VIDEO_MODEL_PROFILE", "auto") or "auto"
+    ).strip().lower()
+    path_value = workflow_path or settings.COMFYUI_VIDEO_WORKFLOW_PATH
+    path = Path(path_value) if path_value else None
+    if path and not path.is_absolute():
+        path = Path.cwd() / path
+    report = {
+        "status": "blocked",
+        "profile": "unknown",
+        "configured_profile": configured_profile,
+        "workflow_path": str(path) if path else "",
+        "evidence": [],
+        "action_items": [],
+    }
+    if not path or not path.is_file():
+        report["action_items"].append("Configure a local ComfyUI video workflow before selecting a production model profile.")
+        return report
+    try:
+        workflow = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        report["action_items"].append(f"Read the local video workflow failed: {exc}")
+        return report
+
+    raw = json.dumps(workflow, ensure_ascii=False).lower()
+    detected = "unknown"
+    wan_marker = "wan2.2" in raw or "wan_2_2" in raw or "wan2_2" in raw
+    if any(marker in raw for marker in ("wan2.2-animate", "wan2_2_animate", "wan_2_2_animate", "wan-animate", "wan_animate", "wananimate")):
+        detected = "wan_2_2_animate"
+    elif any(marker in raw for marker in ("hunyuanvideo-avatar", "hunyuanvideo_avatar", "hunyuanvideoavatar")):
+        detected = "hunyuanvideo_avatar"
+    elif any(marker in raw for marker in ("hunyuan-custom", "hunyuan_custom", "hunyuancustom")):
+        detected = "hunyuan_custom"
+    elif any(marker in raw for marker in ("ltx-2", "ltx_2", "ltx2", "ltxvideo2")):
+        detected = "ltx_2_keyframes"
+    elif (
+        any(marker in raw for marker in ("hunyuanvideo-1.5", "hunyuanvideo_1_5", "hunyuanvideo1.5"))
+        and any(marker in raw for marker in ("keyframe", "key_frame", "conditioning_indices"))
+    ):
+        detected = "hunyuanvideo_1_5_keyframes"
+    elif wan_marker and ("ti2v" in raw and "5b" in raw):
+        detected = "wan_2_2_ti2v_5b"
+    elif wan_marker and ("i2v" in raw and "14b" in raw):
+        detected = "wan_2_2_i2v_14b"
+    elif wan_marker:
+        detected = "wan_2_2"
+    elif "hunyuanvideo" in raw or "hunyuan_video" in raw:
+        detected = "hunyuanvideo_i2v"
+    elif "stable-video-diffusion" in raw or "stable_video_diffusion" in raw or "svd_" in raw or "svd" in raw:
+        detected = "svd_legacy"
+
+    requested = configured_profile if configured_profile != "auto" else detected
+    aliases = {
+        "wan2.2": "wan_2_2",
+        "wan2_2": "wan_2_2",
+        "wan_2_2_ti2v_5b": "wan_2_2_ti2v_5b",
+        "wan2.2-ti2v-5b": "wan_2_2_ti2v_5b",
+        "wan2.2-i2v-14b": "wan_2_2_i2v_14b",
+        "hunyuanvideo": "hunyuanvideo_i2v",
+        "hunyuanvideo-i2v": "hunyuanvideo_i2v",
+        "hunyuanvideo-1.5-keyframes": "hunyuanvideo_1_5_keyframes",
+        "hunyuanvideo_1_5_keyframes": "hunyuanvideo_1_5_keyframes",
+        "ltx-2": "ltx_2_keyframes",
+        "ltx2": "ltx_2_keyframes",
+        "ltx_2_keyframes": "ltx_2_keyframes",
+        "hunyuan-custom": "hunyuan_custom",
+        "hunyuancustom": "hunyuan_custom",
+        "hunyuanvideo-avatar": "hunyuanvideo_avatar",
+        "hunyuanvideo_avatar": "hunyuanvideo_avatar",
+        "wan2.2-animate": "wan_2_2_animate",
+        "wan-animate": "wan_2_2_animate",
+        "svd": "svd_legacy",
+    }
+    requested = aliases.get(requested, requested)
+    if requested not in LOCAL_VIDEO_MODEL_PROFILES:
+        requested = "unknown"
+    profile = LOCAL_VIDEO_MODEL_PROFILES[requested]
+    report.update({
+        "profile": requested,
+        "detected_profile": detected,
+        "label": profile["label"],
+        "production_ready": profile["production_ready"],
+        "reason": profile["reason"],
+        "model_fps": int(getattr(settings, "GENERATION_VIDEO_MODEL_FPS", 0) or 0),
+        "minimum_model_fps": profile["minimum_model_fps"],
+        "official_min_vram_gb": profile.get("official_min_vram_gb"),
+        "quality_tier": profile.get("quality_tier", "unknown"),
+        "supports_temporal_keyframes": bool(profile.get("supports_temporal_keyframes")),
+        "native_capabilities": list(profile.get("native_capabilities") or []),
+        "target_duration_seconds": float(getattr(settings, "GENERATION_VIDEO_TARGET_SECONDS", 0) or 0),
+        "max_frames": int(getattr(settings, "GENERATION_VIDEO_MAX_FRAMES", 0) or 0),
+        "evidence": [f"workflow_detection={detected}", f"configured_profile={configured_profile}"],
+    })
+    if configured_profile != "auto" and detected != "unknown" and requested != detected:
+        report["action_items"].append(
+            f"LOCAL_VIDEO_MODEL_PROFILE={requested} conflicts with workflow detection={detected}; align the setting and graph."
+        )
+        return report
+    if not profile["production_ready"]:
+        report["action_items"].append(profile["reason"])
+        report["action_items"].append(
+            "Use a verified Wan 2.2 or HunyuanVideo-I2V workflow for single-frame conditioning, or an "
+            "LTX-2/HunyuanVideo 1.5 keyframe workflow when temporal anchors are enabled; then run real-GPU samples."
+        )
+        return report
+    if (
+        settings.GENERATION_VIDEO_MID_KEYFRAME_ENABLED
+        and not report["supports_temporal_keyframes"]
+    ):
+        report["action_items"].append(
+            f"{profile['label']} does not natively support the frame-indexed temporal keyframes required by "
+            "GENERATION_VIDEO_MID_KEYFRAME_ENABLED. Use LTX-2 Keyframes or a verified HunyuanVideo 1.5 "
+            "keyframe workflow, or disable temporal anchors."
+        )
+        return report
+    if report["model_fps"] < report["minimum_model_fps"]:
+        report["action_items"].append(
+            f"GENERATION_VIDEO_MODEL_FPS={report['model_fps']} is below the {report['minimum_model_fps']} fps "
+            f"required for {profile['label']} production sampling; output interpolation does not replace model motion samples."
+        )
+        return report
+    required_frames = math.ceil(report["target_duration_seconds"] * report["model_fps"])
+    report["required_target_frames"] = required_frames
+    if report["max_frames"] < required_frames:
+        report["action_items"].append(
+            f"GENERATION_VIDEO_MAX_FRAMES={report['max_frames']} cannot hold the configured "
+            f"{report['target_duration_seconds']:.2f}s target at {report['model_fps']} fps "
+            f"({required_frames} frames required). Increase the workflow frame capacity before production."
+        )
+        return report
+    report["status"] = "ready"
+    return report
+
+
+def local_video_model_fingerprint(workflow_path: str | None = None) -> dict:
+    """Return the reproducible local-video configuration validated by a sample run.
+
+    A validation score only applies to the graph and native sampling settings
+    that produced it. Keep the fingerprint intentionally independent from the
+    graph's absolute location so GPU machines can share an acceptance package.
+    """
+    inspection = inspect_local_video_model(workflow_path)
+    path_value = inspection.get("workflow_path")
+    path = Path(path_value) if path_value else None
+    workflow_sha256 = ""
+    if path and path.is_file():
+        workflow_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    binding_sha256 = ""
+    if path and path.is_file():
+        try:
+            binding_sha256 = load_video_workflow_bindings(
+                path,
+                getattr(settings, "COMFYUI_VIDEO_BINDINGS_PATH", ""),
+            ).get("sha256", "")
+        except VideoWorkflowBindingError:
+            binding_sha256 = "invalid"
+    identity = {
+        "profile": inspection.get("profile", "unknown"),
+        "detected_profile": inspection.get("detected_profile", "unknown"),
+        "workflow_sha256": workflow_sha256,
+        "binding_sha256": binding_sha256,
+        "model_fps": inspection.get("model_fps", 0),
+        "max_frames": inspection.get("max_frames", 0),
+        "target_duration_seconds": inspection.get("target_duration_seconds", 0),
+        "required_target_frames": inspection.get("required_target_frames", 0),
+        "mid_keyframe_enabled": bool(settings.GENERATION_VIDEO_MID_KEYFRAME_ENABLED),
+        "mid_keyframe_position": settings.GENERATION_VIDEO_MID_KEYFRAME_POSITION,
+        "mid_keyframe_min_seconds": settings.GENERATION_VIDEO_MID_KEYFRAME_MIN_SECONDS,
+        "max_mid_keyframes": settings.GENERATION_VIDEO_MAX_MID_KEYFRAMES,
+        "keyframe_reference_min_score": settings.GENERATION_VIDEO_KEYFRAME_REFERENCE_MIN_SCORE,
+        "supports_temporal_keyframes": inspection.get("supports_temporal_keyframes", False),
+    }
+    canonical = json.dumps(identity, sort_keys=True, separators=(",", ":"))
+    return {
+        **identity,
+        "fingerprint": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        "model_status": inspection.get("status", "blocked"),
+    }
+
+
+def local_video_engine_registry_fingerprint(registry_path: str | None = None) -> dict:
+    """Bind sample evidence to every workflow that the local router may select."""
+    configured_path = str(
+        registry_path
+        if registry_path is not None
+        else getattr(settings, "COMFYUI_VIDEO_ENGINE_REGISTRY_PATH", "") or ""
+    ).strip()
+    try:
+        engines = load_local_video_engine_registry(configured_path)
+    except LocalVideoEngineRoutingError as exc:
+        return {
+            "profile": "engine_registry",
+            "fingerprint": "",
+            "model_status": "blocked",
+            "error": str(exc),
+            "engines": [],
+        }
+    engine_identities = []
+    statuses = []
+    for engine in engines:
+        workflow = Path(str(engine["workflow_path"]))
+        bindings = Path(str(engine["bindings_path"])) if engine.get("bindings_path") else None
+        inspection = inspect_local_video_model(
+            str(workflow),
+            configured_profile_override=str(engine.get("model_profile") or "auto"),
+        )
+        statuses.append(inspection.get("status"))
+        engine_identities.append({
+            "engine_id": engine["id"],
+            "model_profile": engine.get("model_profile"),
+            "detected_profile": inspection.get("detected_profile", "unknown"),
+            "workflow_sha256": hashlib.sha256(workflow.read_bytes()).hexdigest(),
+            "binding_sha256": (
+                hashlib.sha256(bindings.read_bytes()).hexdigest()
+                if bindings and bindings.is_file() else ""
+            ),
+            "capabilities": dict(engine.get("capabilities") or {}),
+            "priority": int(engine.get("priority") or 0),
+        })
+    identity = {
+        "profile": "engine_registry",
+        "engines": engine_identities,
+        "model_fps": int(settings.GENERATION_VIDEO_MODEL_FPS),
+        "max_frames": int(settings.GENERATION_VIDEO_MAX_FRAMES),
+        "target_duration_seconds": float(settings.GENERATION_VIDEO_TARGET_SECONDS),
+        "mid_keyframe_enabled": bool(settings.GENERATION_VIDEO_MID_KEYFRAME_ENABLED),
+        "max_mid_keyframes": int(settings.GENERATION_VIDEO_MAX_MID_KEYFRAMES),
+        "keyframe_reference_min_score": float(settings.GENERATION_VIDEO_KEYFRAME_REFERENCE_MIN_SCORE),
+    }
+    canonical = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return {
+        **identity,
+        "fingerprint": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        "model_status": "ready" if statuses and all(status == "ready" for status in statuses) else "blocked",
+    }
+
+
+def local_video_configuration_fingerprint(workflow_path: str | None = None) -> dict:
+    """Return the active single-workflow or routed-workflow evidence identity."""
+    if workflow_path is None and str(
+        getattr(settings, "COMFYUI_VIDEO_ENGINE_REGISTRY_PATH", "") or ""
+    ).strip():
+        return local_video_engine_registry_fingerprint()
+    return local_video_model_fingerprint(workflow_path)
 
 
 def scan_placeholders(value) -> set[str]:
@@ -81,7 +469,11 @@ def likely_video_outputs(workflow: dict) -> list[dict]:
     return matches
 
 
-def preflight_video_workflow(base_url: str | None = None, workflow_path: str | None = None) -> dict:
+def preflight_video_workflow(
+    base_url: str | None = None,
+    workflow_path: str | None = None,
+    bindings_path: str | None = None,
+) -> dict:
     path = workflow_path or settings.COMFYUI_VIDEO_WORKFLOW_PATH
     report = {"status": "blocked", "workflow_path": path, "checks": {}, "action_items": []}
     checks = report["checks"]
@@ -105,40 +497,101 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
         workflow = json.loads(workflow_file.read_text(encoding="utf-8"))
         if not isinstance(workflow, dict):
             raise ValueError("workflow JSON root must be an object")
+        binding_manifest = load_video_workflow_bindings(
+            workflow_file,
+            bindings_path if bindings_path is not None else getattr(settings, "COMFYUI_VIDEO_BINDINGS_PATH", ""),
+        )
+        binding_validation = (
+            validate_video_workflow_bindings(workflow, binding_manifest)
+            if binding_manifest.get("status") == "configured"
+            else {
+                "status": "missing",
+                "controls": [],
+                "derived_controls": [],
+                "errors": [],
+                "path": "",
+                "sha256": "",
+            }
+        )
+        report["binding_manifest"] = binding_validation
+        if binding_validation["status"] == "invalid":
+            checks["binding_manifest_valid"] = False
+            report["action_items"].extend(binding_validation["errors"])
+            return report
+        checks["binding_manifest_valid"] = binding_validation["status"] in {"valid", "missing"}
         placeholders = sorted(scan_placeholders(workflow))
+        placeholder_set = set(placeholders)
+
+        def has_control(names: set[str]) -> bool:
+            return bool(names & placeholder_set) or binding_has_control(binding_manifest, names)
+
         outputs = likely_video_outputs(workflow)
         report["placeholders"] = placeholders
         report["recognized_placeholders"] = sorted(VIDEO_WORKFLOW_PLACEHOLDERS)
         report["likely_output_nodes"] = outputs
-        checks["has_reference_placeholder"] = bool({"reference_image", "image"} & set(placeholders))
-        checks["has_end_frame_placeholder"] = bool({"end_image", "last_frame"} & set(placeholders))
-        checks["has_prompt_placeholder"] = bool({"prompt", "positive_prompt"} & set(placeholders))
-        checks["has_quality_profile_placeholder"] = bool({"quality_mode", "quality_profile"} & set(placeholders))
-        checks["has_repair_action_placeholder"] = "repair_action" in set(placeholders)
-        checks["has_quality_pipeline_placeholder"] = bool({
+        checks["has_reference_placeholder"] = has_control(
+            {"reference_image", "image", "start_image", "first_frame"}
+        )
+        checks["has_native_end_frame_control"] = has_control({"end_image", "last_frame"})
+        checks["has_prompt_placeholder"] = has_control({"prompt", "positive_prompt"})
+        checks["has_negative_prompt_control"] = has_control({"negative_prompt"})
+        checks["has_dimensions_control"] = (
+            has_control({"width"}) and has_control({"height"})
+        )
+        checks["has_frame_count_control"] = has_control({"num_frames", "video_frames", "frame_count"})
+        checks["has_fps_control"] = has_control({"fps"})
+        checks["has_seed_control"] = has_control({"seed"})
+        checks["has_output_prefix_control"] = has_control({"output_prefix"})
+        checks["has_quality_profile_placeholder"] = has_control({"quality_mode", "quality_profile"})
+        checks["has_repair_action_placeholder"] = has_control({"repair_action"})
+        checks["has_quality_pipeline_placeholder"] = has_control({
             "quality_pipeline", "quality_pipeline_json", "quality_pipeline_stages",
             "quality_pipeline_prompt", "quality_pipeline_negative",
-        } & set(placeholders))
-        checks["has_spatial_plan_placeholder"] = "spatial_plan_json" in set(placeholders)
-        checks["has_spatial_control_references_placeholder"] = "spatial_control_references_json" in set(placeholders)
-        checks["has_spatial_asset_contract_placeholder"] = bool({
+        })
+        checks["has_spatial_plan_placeholder"] = has_control({"spatial_plan_json"})
+        checks["has_spatial_control_references_placeholder"] = has_control({"spatial_control_references_json"})
+        checks["has_spatial_asset_contract_placeholder"] = has_control({
             "spatial_asset_pack_json", "spatial_scene_contract_hash",
-        } & set(placeholders))
-        checks["has_continuity_reference_placeholder"] = bool({
+        })
+        checks["has_continuity_reference_placeholder"] = has_control({
             "continuity_reference_image", "continuity_image", "previous_last_frame",
-        } & set(placeholders))
-        checks["has_reference_images_placeholder"] = "reference_images_json" in set(placeholders)
-        checks["has_likely_video_output"] = bool(outputs)
-        contract_required = (
-            "workflow_file", "has_reference_placeholder", "has_prompt_placeholder",
-            "has_end_frame_placeholder",
-            "has_quality_profile_placeholder", "has_repair_action_placeholder",
-            "has_quality_pipeline_placeholder", "has_likely_video_output",
-            "has_spatial_plan_placeholder", "has_spatial_control_references_placeholder",
-            "has_spatial_asset_contract_placeholder",
-            "has_continuity_reference_placeholder",
-            "has_reference_images_placeholder",
+        })
+        checks["has_reference_images_placeholder"] = has_control({"reference_images_json"})
+        checks["has_driving_video_control"] = has_control({"driving_video"})
+        checks["has_performance_audio_control"] = has_control({"performance_audio"})
+        checks["has_temporal_keyframe_control"] = bool(
+            has_control({"keyframe_images_json"})
+            or (
+                has_control({"keyframe_images"})
+                and has_control({"keyframe_indices"})
+            )
         )
+        checks["has_end_frame_placeholder"] = bool(
+            checks["has_native_end_frame_control"]
+            or checks["has_temporal_keyframe_control"]
+        )
+        # The director and quality pipeline are compiled into the positive and
+        # negative prompts before this graph is called. Standard Wan nodes do
+        # not parse application JSON, so prompt bindings are valid model-facing
+        # delivery for these controls. Explicit JSON remains an optional native
+        # capability for custom pose/depth/multi-reference workflows.
+        checks["quality_controls_effective"] = bool(
+            checks["has_prompt_placeholder"] and checks["has_negative_prompt_control"]
+        )
+        checks["spatial_prompt_fallback_effective"] = checks["has_prompt_placeholder"]
+        checks["has_likely_video_output"] = bool(outputs)
+        contract_required = [
+            "workflow_file", "has_reference_placeholder", "has_prompt_placeholder",
+            "has_negative_prompt_control", "has_dimensions_control",
+            "has_frame_count_control", "has_fps_control", "has_seed_control",
+            "has_output_prefix_control", "quality_controls_effective",
+            "spatial_prompt_fallback_effective", "has_likely_video_output",
+        ]
+        if settings.GENERATION_VIDEO_END_FRAME_ENABLED:
+            contract_required.append("has_end_frame_placeholder")
+        if settings.GENERATION_VIDEO_MID_KEYFRAME_ENABLED:
+            contract_required.append("has_temporal_keyframe_control")
+        report["required_checks"] = list(contract_required)
         if not all(checks.get(key) for key in contract_required):
             checks["comfyui_preflight"] = False
             report["status"] = "blocked"
@@ -157,9 +610,39 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
                 "negative_prompt": "flicker, warped face, bad motion",
                 "reference_image": "validation_reference.png",
                 "image": "validation_reference.png",
+                "start_image": "validation_reference.png",
+                "first_frame": "validation_reference.png",
+                "end_image": "validation_end.png",
+                "last_frame": "validation_end.png",
+                "reference_images_json": json.dumps(["validation_reference.png"]),
+                "reference_image_count": 1,
+                "reference_videos_json": "[]",
+                "reference_audios_json": "[]",
+                "driving_video": "validation_driving.mp4",
+                "performance_audio": "validation_performance.wav",
+                "reference_video_count": 0,
+                "reference_audio_count": 0,
+                "keyframe_images": ["validation_mid.png"],
+                "keyframe_indices": [max(1, math.ceil(
+                    settings.GENERATION_VIDEO_TARGET_SECONDS * settings.GENERATION_VIDEO_MODEL_FPS
+                ) // 2)],
+                "keyframe_strengths": [0.85],
+                "keyframe_roles": ["performance_peak"],
+                "keyframe_images_json": json.dumps([{
+                    "path": "validation_mid.png",
+                    "frame_index": max(1, math.ceil(
+                        settings.GENERATION_VIDEO_TARGET_SECONDS * settings.GENERATION_VIDEO_MODEL_FPS
+                    ) // 2),
+                    "strength": 0.85,
+                    "role": "performance_peak",
+                }]),
+                "keyframe_count": 1,
                 "width": settings.GENERATION_WIDTH,
                 "height": settings.GENERATION_HEIGHT,
                 "duration_seconds": settings.GENERATION_VIDEO_TARGET_SECONDS,
+                "num_frames": math.ceil(settings.GENERATION_VIDEO_TARGET_SECONDS * settings.GENERATION_VIDEO_MODEL_FPS),
+                "video_frames": math.ceil(settings.GENERATION_VIDEO_TARGET_SECONDS * settings.GENERATION_VIDEO_MODEL_FPS),
+                "frame_count": math.ceil(settings.GENERATION_VIDEO_TARGET_SECONDS * settings.GENERATION_VIDEO_MODEL_FPS),
                 "fps": settings.GENERATION_VIDEO_MODEL_FPS,
                 "seed": 31001,
                 "output_prefix": "validation_video",
@@ -181,7 +664,57 @@ def preflight_video_workflow(base_url: str | None = None, workflow_path: str | N
                 "spatial_asset_pack_json": json.dumps({"scene_contract_hash": "validation"}, ensure_ascii=False),
                 "spatial_scene_contract_hash": "validation",
                 "continuity_reference_image": "validation_previous_last_frame.png",
+                "continuity_image": "validation_previous_last_frame.png",
+                "previous_last_frame": "validation_previous_last_frame.png",
+                "continuity_reference_fallback": "",
             })
+            if binding_manifest.get("status") == "configured":
+                resolved = apply_video_workflow_bindings(resolved, binding_manifest, {
+                    "prompt": "validation cinematic short-drama shot",
+                    "positive_prompt": "validation cinematic short-drama shot",
+                    "negative_prompt": "flicker, warped face, bad motion",
+                    "reference_image": "validation_reference.png",
+                    "image": "validation_reference.png",
+                    "start_image": "validation_reference.png",
+                    "first_frame": "validation_reference.png",
+                    "end_image": "validation_end.png",
+                    "last_frame": "validation_end.png",
+                    "continuity_reference_image": "validation_previous_last_frame.png",
+                    "continuity_image": "validation_previous_last_frame.png",
+                    "previous_last_frame": "validation_previous_last_frame.png",
+                    "reference_images_json": json.dumps(["validation_reference.png"]),
+                    "driving_video": "validation_driving.mp4",
+                    "performance_audio": "validation_performance.wav",
+                    "keyframe_images": ["validation_mid.png"],
+                    "keyframe_indices": [max(1, math.ceil(
+                        settings.GENERATION_VIDEO_TARGET_SECONDS * settings.GENERATION_VIDEO_MODEL_FPS
+                    ) // 2)],
+                    "keyframe_strengths": [0.85],
+                    "keyframe_roles": ["performance_peak"],
+                    "keyframe_images_json": json.dumps([{
+                        "path": "validation_mid.png",
+                        "frame_index": max(1, math.ceil(
+                            settings.GENERATION_VIDEO_TARGET_SECONDS * settings.GENERATION_VIDEO_MODEL_FPS
+                        ) // 2),
+                        "strength": 0.85,
+                        "role": "performance_peak",
+                    }]),
+                    "keyframe_count": 1,
+                    "width": settings.GENERATION_WIDTH,
+                    "height": settings.GENERATION_HEIGHT,
+                    "num_frames": math.ceil(
+                        settings.GENERATION_VIDEO_TARGET_SECONDS * settings.GENERATION_VIDEO_MODEL_FPS
+                    ),
+                    "video_frames": math.ceil(
+                        settings.GENERATION_VIDEO_TARGET_SECONDS * settings.GENERATION_VIDEO_MODEL_FPS
+                    ),
+                    "frame_count": math.ceil(
+                        settings.GENERATION_VIDEO_TARGET_SECONDS * settings.GENERATION_VIDEO_MODEL_FPS
+                    ),
+                    "fps": settings.GENERATION_VIDEO_MODEL_FPS,
+                    "seed": 31001,
+                    "output_prefix": "validation_video",
+                })
             service.preflight(resolved)
             checks["comfyui_preflight"] = True
             stats = service.client.get(service.base_url + "/system_stats")
@@ -256,6 +789,177 @@ def preflight_end_frame_workflow(provider: str | None = None) -> dict:
     return report
 
 
+def preflight_local_video_engine_registry(
+    base_url: str | None = None,
+    registry_path: str | None = None,
+) -> dict:
+    """Validate every routable local workflow before production starts."""
+    configured_path = str(
+        registry_path
+        if registry_path is not None
+        else getattr(settings, "COMFYUI_VIDEO_ENGINE_REGISTRY_PATH", "") or ""
+    ).strip()
+    report = {
+        "status": "skipped",
+        "registry_path": configured_path,
+        "engines": [],
+        "action_items": [],
+    }
+    if not configured_path:
+        report["message"] = "COMFYUI_VIDEO_ENGINE_REGISTRY_PATH is empty"
+        return report
+    try:
+        engines = load_local_video_engine_registry(configured_path)
+    except LocalVideoEngineRoutingError as exc:
+        report["status"] = "blocked"
+        report["action_items"].append(str(exc))
+        return report
+
+    for engine in engines:
+        workflow_report = preflight_video_workflow(
+            base_url,
+            str(engine["workflow_path"]),
+            str(engine["bindings_path"]) if engine.get("bindings_path") else None,
+        )
+        model_report = inspect_local_video_model(
+            str(engine["workflow_path"]),
+            configured_profile_override=str(engine.get("model_profile") or "auto"),
+        )
+        declared = dict(engine.get("capabilities") or {})
+        capability_issues = []
+        native_capabilities = set(model_report.get("native_capabilities") or [])
+        unsupported_claims = sorted(
+            name for name, enabled in declared.items()
+            if enabled and name not in native_capabilities
+        )
+        if unsupported_claims:
+            capability_issues.append(
+                "declares capabilities not supported by the selected model profile: "
+                + ", ".join(unsupported_claims)
+            )
+        if declared.get("temporal_keyframes") and not (
+            workflow_report.get("checks", {}).get("has_temporal_keyframe_control")
+            and model_report.get("supports_temporal_keyframes")
+        ):
+            capability_issues.append(
+                "declares temporal_keyframes but the workflow/model does not prove frame-indexed conditioning"
+            )
+        workflow_checks = workflow_report.get("checks", {})
+        profile = str(model_report.get("profile") or engine.get("model_profile") or "").strip().lower()
+        if (
+            profile == "hunyuanvideo_avatar"
+            and declared.get("performance_control")
+            and not workflow_checks.get("has_performance_audio_control")
+        ):
+            capability_issues.append(
+                "declares performance_control but the Avatar workflow has no performance_audio binding"
+            )
+        if (
+            profile in {"wan_2_2_animate", "hunyuan_custom"}
+            and declared.get("motion_control")
+            and not workflow_checks.get("has_driving_video_control")
+        ):
+            capability_issues.append(
+                "declares motion_control but the driven workflow has no driving_video binding"
+            )
+        if (
+            profile == "hunyuan_custom"
+            and declared.get("performance_control")
+            and not (
+                workflow_checks.get("has_performance_audio_control")
+                or workflow_checks.get("has_driving_video_control")
+            )
+        ):
+            capability_issues.append(
+                "declares performance_control but HunyuanCustom has neither performance_audio nor driving_video binding"
+            )
+        status = "ready" if (
+            workflow_report.get("status") == "ready_for_live_test"
+            and model_report.get("status") == "ready"
+            and not capability_issues
+        ) else "blocked"
+        engine_report = {
+            "engine_id": engine["id"],
+            "status": status,
+            "declared_capabilities": declared,
+            "workflow": workflow_report,
+            "model": model_report,
+            "capability_issues": capability_issues,
+        }
+        report["engines"].append(engine_report)
+        if status != "ready":
+            reasons = capability_issues or workflow_report.get("action_items") or model_report.get("action_items")
+            report["action_items"].extend(
+                f"{engine['id']}: {reason}" for reason in reasons
+            )
+    ready_engine_ids = {
+        item["engine_id"] for item in report["engines"] if item["status"] == "ready"
+    }
+    fleet_coverage = evaluate_local_video_engine_fleet(
+        [engine for engine in engines if engine["id"] in ready_engine_ids],
+        temporal_keyframes_required=bool(settings.GENERATION_VIDEO_MID_KEYFRAME_ENABLED),
+    )
+    if not fleet_coverage["passed"]:
+        report["action_items"].append(
+            "Local video engine registry does not cover required short-drama profiles: "
+            + ", ".join(fleet_coverage["missing_profiles"])
+        )
+    all_engines_ready = bool(report["engines"]) and all(
+        item["status"] == "ready" for item in report["engines"]
+    )
+    report["status"] = (
+        "ready_for_live_test"
+        if all_engines_ready and fleet_coverage["passed"]
+        else "blocked"
+    )
+    report["fleet_coverage"] = fleet_coverage
+    report["checks"] = {
+        "registry_loaded": True,
+        "engine_count": len(report["engines"]),
+        "all_engines_ready": all_engines_ready,
+        "short_drama_profiles_covered": fleet_coverage["passed"],
+    }
+    return report
+
+
+def preflight_motion_reference_library(library_path: str | None = None) -> dict:
+    """Validate configured action-driving assets before a GPU task needs them."""
+    configured_path = str(
+        library_path
+        if library_path is not None
+        else getattr(settings, "LOCAL_MOTION_REFERENCE_LIBRARY_PATH", "") or ""
+    ).strip()
+    report = {
+        "status": "skipped",
+        "library_path": configured_path,
+        "assets": [],
+        "action_items": [],
+    }
+    if not configured_path:
+        report["message"] = "LOCAL_MOTION_REFERENCE_LIBRARY_PATH is empty"
+        return report
+    try:
+        assets = load_motion_reference_library(configured_path)
+    except MotionReferenceLibraryError as exc:
+        report["status"] = "blocked"
+        report["action_items"].append(str(exc))
+        return report
+    report["status"] = "ready"
+    report["assets"] = [
+        {
+            "asset_id": asset["id"],
+            "path": asset["path"],
+            "sha256": asset["sha256"],
+            "tags": list(asset["tags"]),
+            "shot_roles": list(asset["shot_roles"]),
+            "action_intensities": list(asset["action_intensities"]),
+            "character_range": [asset["min_characters"], asset["max_characters"]],
+        }
+        for asset in assets
+    ]
+    return report
+
+
 def _inspect_image_workflow(path: Path, *, require_reference: bool) -> dict:
     """Validate the offline contract required by ComfyUI image generation."""
     result = {"valid": False, "classes": [], "errors": []}
@@ -298,33 +1002,28 @@ def _video_workflow_action_items(checks: dict) -> list[str]:
     if not checks.get("has_reference_placeholder"):
         items.append("Add {reference_image} or {image} to the workflow input image node.")
     if not checks.get("has_prompt_placeholder"):
-        items.append("Add {prompt} or {positive_prompt} to the positive prompt node.")
+        items.append("Bind prompt/positive_prompt to the real positive CLIP text node.")
+    if not checks.get("has_negative_prompt_control"):
+        items.append("Bind negative_prompt to the real negative CLIP text node so repair constraints affect sampling.")
+    if not checks.get("has_dimensions_control"):
+        items.append("Bind width and height to the latent/video conditioning node.")
+    if not checks.get("has_frame_count_control"):
+        items.append("Bind num_frames, video_frames, or frame_count to the native video length input.")
+    if not checks.get("has_fps_control"):
+        items.append("Bind fps to the video output node.")
+    if not checks.get("has_seed_control"):
+        items.append("Bind seed to every active Wan sampling stage.")
+    if not checks.get("has_output_prefix_control"):
+        items.append("Bind output_prefix to the video save node so candidates cannot overwrite each other.")
     if not checks.get("has_end_frame_placeholder"):
         items.append("Add {end_image} or {last_frame} so the workflow can honor an approved shot ending.")
-    if not checks.get("has_quality_profile_placeholder"):
-        items.append("Add {quality_mode} or {quality_profile} so the workflow can switch production quality profiles.")
-    if not checks.get("has_repair_action_placeholder"):
-        items.append("Add {repair_action} so repair passes can select stronger generation branches.")
-    if not checks.get("has_quality_pipeline_placeholder"):
+    if settings.GENERATION_VIDEO_MID_KEYFRAME_ENABLED and not checks.get("has_temporal_keyframe_control"):
         items.append(
-            "Add {quality_pipeline_json}, {quality_pipeline_stages}, {quality_pipeline_prompt}, "
-            "or {quality_pipeline_negative} so commercial quality stages reach the workflow."
+            "Bind keyframe_images_json, or bind both keyframe_images and keyframe_indices, "
+            "before enabling middle-frame performance anchors."
         )
-    if not checks.get("has_spatial_plan_placeholder"):
-        items.append("Add {spatial_plan_json} so the approved camera/blocking contract reaches the video workflow.")
-    if not checks.get("has_spatial_control_references_placeholder"):
-        items.append("Add {spatial_control_references_json} so pose/depth/camera control references reach the video workflow.")
-    if not checks.get("has_spatial_asset_contract_placeholder"):
-        items.append("Add {spatial_asset_pack_json} or {spatial_scene_contract_hash} to bind the frozen spatial asset pack.")
-    if not checks.get("has_continuity_reference_placeholder"):
-        items.append(
-            "Add {continuity_reference_image}, {continuity_image}, or {previous_last_frame} "
-            "so adjacent shots can consume the verified previous tail frame."
-        )
-    if not checks.get("has_reference_images_placeholder"):
-        items.append(
-            "Add {reference_images_json} so character and turnaround references reach the video workflow."
-        )
+    if not checks.get("quality_controls_effective"):
+        items.append("Bind both positive and negative prompts; quality and repair directives are compiled into them upstream.")
     if not checks.get("has_likely_video_output"):
         items.append("Add a video output node such as VHS_VideoCombine, WebM/GIF export, or another video save node.")
     if not checks.get("comfyui_preflight"):
@@ -383,6 +1082,36 @@ def preflight_production_video_engine(
         ],
         "action_items": [],
     }
+    local_provider = str(provider_report.get("provider") or "").strip().lower() == "local_comfyui"
+    registry_report = (
+        preflight_local_video_engine_registry(base_url)
+        if local_provider and workflow_path is None
+        else {"status": "skipped", "engines": [], "action_items": []}
+    )
+    if registry_report.get("status") != "skipped":
+        workflow_report = registry_report
+        report["workflow"] = workflow_report
+        report["engine_registry"] = registry_report
+        model_reports = [
+            item.get("model") for item in registry_report.get("engines", [])
+            if isinstance(item, dict) and isinstance(item.get("model"), dict)
+        ]
+        local_model_report = {
+            "status": "ready" if model_reports and all(
+                item.get("status") == "ready" for item in model_reports
+            ) else "blocked",
+            "profiles": [item.get("profile") for item in model_reports],
+            "engines": model_reports,
+            "action_items": list(registry_report.get("action_items") or []),
+        }
+    else:
+        local_model_report = inspect_local_video_model(workflow_path) if local_provider else {
+            "status": "not_applicable",
+            "reason": "The selected video provider is not the local ComfyUI path.",
+        }
+    report["local_model"] = local_model_report
+    motion_library_report = preflight_motion_reference_library()
+    report["motion_reference_library"] = motion_library_report
     end_frame_report = preflight_end_frame_workflow(provider_report.get("provider"))
     report["end_frame"] = end_frame_report
     provider_warnings = provider_report.get("warnings") or []
@@ -392,10 +1121,33 @@ def preflight_production_video_engine(
     end_frame_blocked = end_frame_report.get("status") == "blocked"
     workflow_ready = workflow_report.get("status") == "ready_for_live_test"
     provider_ready = provider_report.get("status") == "configured"
+    provider_requires_output_validation = str(provider_report.get("provider") or "").strip().lower() == "seedance_api"
+    provider_capabilities = provider_report.get("capabilities")
+    provider_output_validation_ready = (
+        not provider_requires_output_validation
+        or not isinstance(provider_capabilities, dict)
+        or "output_artifact_validation" not in provider_capabilities
+        or provider_capabilities.get("output_artifact_validation") is True
+    )
     if workflow_ready or provider_ready:
         report["status"] = "ready_for_production_video_test"
         report["action_items"].append("Run one full project with video review enabled and compare against the Seed Dance baseline.")
         report["action_items"].extend(provider_warnings)
+        if local_provider and local_model_report.get("status") != "ready":
+            report["status"] = "production_not_ready"
+            report["action_items"] = local_model_report.get("action_items") or [
+                "Configure a verified local production video model before final generation."
+            ]
+        if local_provider and motion_library_report.get("status") == "blocked":
+            report["status"] = "production_not_ready"
+            report["action_items"] = motion_library_report.get("action_items") or [
+                "Fix the configured motion reference library before action generation."
+            ]
+        if provider_ready and not provider_output_validation_ready:
+            report["status"] = "production_not_ready"
+            report["action_items"] = [
+                "Install ffprobe and keep SEEDANCE_VALIDATE_OUTPUT=true before accepting remote video output for production."
+            ]
         if end_frame_blocked:
             report["status"] = "production_not_ready"
             report["action_items"] = end_frame_report.get("action_items") or [
@@ -407,7 +1159,10 @@ def preflight_production_video_engine(
             or [provider_report.get("message") or "Fix the configured video provider before production."]
         )
     elif workflow_report.get("status") == "skipped":
-        report["action_items"].append("Configure COMFYUI_VIDEO_WORKFLOW_PATH with a stronger local video workflow such as Wan/AnimateDiff/FramePack.")
+        report["action_items"].append(
+            "Configure COMFYUI_VIDEO_WORKFLOW_PATH with a verified local workflow. Use LTX-2 or "
+            "HunyuanVideo 1.5 keyframe conditioning when temporal anchors are enabled."
+        )
     elif workflow_report.get("error"):
         report["action_items"].append(workflow_report["error"])
     else:
@@ -728,9 +1483,8 @@ def preflight_video_provider(
             report.setdefault("warnings", []).append(
                 "SEEDANCE_VALIDATE_OUTPUT is enabled but ffprobe is unavailable; returned Ark artifacts cannot be validated immediately."
             )
-            configuration_ok = False
             report.setdefault("action_items", []).append(
-                "Install ffprobe or set SEEDANCE_VALIDATE_OUTPUT=false explicitly before using native Ark in production."
+                "Install ffprobe before submitting native Ark production generation tasks."
             )
         if not report["capabilities"]["continuity_last_frame"]:
             report.setdefault("warnings", []).append(

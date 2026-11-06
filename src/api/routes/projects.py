@@ -29,6 +29,8 @@ from src.api.schemas import (
     ProductionTaskResponse,
     SpatialAssetFreezeRequest,
     SpatialAssetPackResponse,
+    ContinuityAssetFreezeRequest,
+    ContinuityAssetPackResponse,
     VisualStyleFreezeRequest,
     VisualStyleAssetPackResponse,
     WorkflowProfileFreezeRequest,
@@ -36,6 +38,7 @@ from src.api.schemas import (
     StoryRoomApprovalRequest,
     StoryRoomApprovalResponse,
     HumanReviewDecisionRequest,
+    ShotDecompositionRequest,
 )
 from src.api.dependencies import get_current_user, require_project_access
 from src.services.project_manager import ProjectManager
@@ -43,6 +46,7 @@ from src.services.script_generator import ScriptGenerator, ScriptParseError
 from src.services.task_orchestrator import TaskOrchestrator
 from src.services.production_readiness import get_cached_production_readiness
 from src.services.spatial_control_assets import SpatialControlAssetService
+from src.services.continuity_asset_pack import ContinuityAssetPackService
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.production_workflow_profile import ProductionWorkflowProfileService
 from src.services.quality_loop import build_quality_loop_plan
@@ -71,6 +75,10 @@ from src.services.dialogue_delivery_audit import DialogueDeliveryAuditService
 from src.services.generation_context_audit import GenerationContextAuditService
 from src.services.atomic_video_motion_audit import AtomicVideoMotionAuditService
 from src.services.first_frame_consistency_audit import FirstFrameConsistencyAuditService
+from src.services.shot_decomposition_service import (
+    ShotDecompositionError,
+    ShotDecompositionService,
+)
 from src.database.session import get_db_session
 from src.database.models import Character, Project, ProjectStatus, Scene
 from src.config import settings
@@ -1168,6 +1176,28 @@ def freeze_spatial_plan(
     )
 
 
+@router.post("/{project_id}/freeze-continuity-assets", response_model=ContinuityAssetPackResponse)
+def freeze_continuity_assets(
+    project_id: int,
+    request: ContinuityAssetFreezeRequest,
+    current_user=Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+):
+    project = db_session.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    scenes = (
+        db_session.query(Scene)
+        .filter(Scene.project_id == project_id)
+        .order_by(Scene.scene_number)
+        .all()
+    )
+    if not scenes:
+        raise HTTPException(status_code=409, detail="请先生成分镜再冻结连续性资产")
+    asset_pack = ContinuityAssetPackService().freeze_project_pack(project, scenes, notes=request.notes or "")
+    return ContinuityAssetPackResponse(project_id=project_id, status=asset_pack["status"], asset_pack=asset_pack)
+
+
 @router.post("/{project_id}/freeze-visual-style", response_model=VisualStyleAssetPackResponse)
 def freeze_visual_style(
     project_id: int,
@@ -1899,6 +1929,25 @@ def repair_script(project_id: int, db_session: Session = Depends(get_db_session)
         raise HTTPException(status_code=500, detail="重写剧本失败，请检查 LLM 和故事审核服务配置") from exc
 
 
+@router.post("/{project_id}/compile-shot-contracts")
+def compile_shot_contracts(project_id: int, db_session: Session = Depends(get_db_session)):
+    """Upgrade missing shot execution contracts without calling the LLM."""
+    project = db_session.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail=f"项目不存在: {project_id}")
+    if project.status == ProjectStatus.IN_PRODUCTION:
+        raise HTTPException(status_code=409, detail="项目正在制作，请等待当前任务结束")
+    try:
+        result = ScriptGenerator(
+            db_session, initialize_llm=False,
+        ).compile_existing_shot_contracts(project)
+        db_session.commit()
+        return result
+    except ScriptParseError as exc:
+        db_session.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/{project_id}/regenerate-scene", response_model=ProjectResponse)
 def regenerate_scene(project_id: int, request: RegenerateSceneRequest, db_session: Session = Depends(get_db_session)):
     """
@@ -2539,6 +2588,31 @@ def latest_production_task(project_id: int, db_session: Session = Depends(get_db
 from src.api.schemas import SceneUpdate
 
 
+@router.post("/{project_id}/scenes/{scene_number}/decompose")
+def decompose_scene(
+    project_id: int,
+    scene_number: int,
+    request: ShotDecompositionRequest,
+    db_session: Session = Depends(get_db_session),
+):
+    project = db_session.query(Project).filter(Project.id == project_id).first()
+    scene = db_session.query(Scene).filter(
+        Scene.project_id == project_id,
+        Scene.scene_number == scene_number,
+    ).first()
+    if project is None or scene is None:
+        raise HTTPException(status_code=404, detail="项目或分镜不存在")
+    service = ShotDecompositionService(db_session)
+    try:
+        plan = service.plan(project, scene) if request.dry_run else service.apply(project, scene)
+    except ShotDecompositionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        **plan,
+        "applied": not request.dry_run,
+    }
+
+
 @router.put("/{project_id}/scenes/{scene_number}", response_model=ProjectResponse)
 def update_scene(project_id: int, scene_number: int, request: SceneUpdate, db_session: Session = Depends(get_db_session)):
     import json
@@ -2565,6 +2639,8 @@ def update_scene(project_id: int, scene_number: int, request: SceneUpdate, db_se
         except (TypeError, ValueError):
             raise HTTPException(409, "项目脚本数据损坏，无法安全编辑分镜")
     script_items = script.get("scenes", []) if isinstance(script, dict) else []
+    if not isinstance(script, dict) or not isinstance(script_items, list):
+        raise HTTPException(409, "项目脚本数据损坏，无法安全编辑分镜")
     script_item = next(
         (item for item in script_items if isinstance(item, dict) and item.get("scene_number") == scene_number),
         None,
@@ -2594,6 +2670,19 @@ def update_scene(project_id: int, scene_number: int, request: SceneUpdate, db_se
     if speaker and speaker not in visible_characters:
         visible_characters.insert(0, speaker)
 
+    if request.shot_spec is not None:
+        state_names = [state.character_name for state in request.shot_spec.character_states]
+        if len(set(state_names)) != len(state_names):
+            raise HTTPException(422, "镜头角色状态不能重复")
+        if any(name not in visible_characters for name in state_names):
+            raise HTTPException(422, "镜头角色状态必须属于当前可见角色")
+    elif "shot_spec" not in request.model_fields_set and isinstance(script_item, dict):
+        stored_spec = script_item.get("shot_spec")
+        if isinstance(stored_spec, dict):
+            states = stored_spec.get("character_states") or []
+            if any(state.get("character_name") not in visible_characters for state in states):
+                raise HTTPException(422, "可见角色已改变，请同时更新或清空镜头规格")
+
     scene.visual_description = request.visual_description.strip()
     scene.dialogue = request.dialogue.strip() if request.dialogue else None
     scene.character_name = speaker
@@ -2605,6 +2694,12 @@ def update_scene(project_id: int, scene_number: int, request: SceneUpdate, db_se
     scene.audio_duration = None
     project.final_video_path = None
     project.status = ProjectStatus.SCRIPT_GENERATED
+    if script_item is None:
+        if not isinstance(script, dict) or not isinstance(script_items, list):
+            raise HTTPException(409, "项目脚本数据损坏，无法安全编辑分镜")
+        script_item = {"scene_number": scene_number}
+        script_items.append(script_item)
+        script["scenes"] = script_items
     if isinstance(script_item, dict):
         script_item.update(
             description=scene.visual_description,
@@ -2612,6 +2707,11 @@ def update_scene(project_id: int, scene_number: int, request: SceneUpdate, db_se
             speaker=scene.character_name,
             characters=visible_characters,
         )
+        if "shot_spec" in request.model_fields_set:
+            if request.shot_spec is None:
+                script_item.pop("shot_spec", None)
+            else:
+                script_item["shot_spec"] = request.shot_spec.model_dump()
         project.script = json.dumps(script, ensure_ascii=False)
     db_session.commit()
     return project

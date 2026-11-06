@@ -16,6 +16,14 @@
 .wb-tabs button { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 2px solid transparent; color: #aeb4b7; }
 .wb-tabs button[aria-selected="true"] { color: #75d7b9; border-bottom-color: #75d7b9; }
 .wb-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 20px 0; }
+.wb-shot-spec { min-width: 0; margin: 16px 0; }
+.wb-shot-spec-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; }
+.wb-shot-spec-fields label { min-width: 0; }
+.wb-shot-spec-fields textarea { min-height: 80px; resize: vertical; }
+.wb-shot-character { border-top: 1px solid #d8dce2; margin-top: 14px; padding-top: 10px; }
+.wb-shot-character h4 { font-size: 14px; margin: 0 0 10px; }
+.wb-shot-spec-summary { margin-top: 12px; overflow-wrap: anywhere; }
+.wb-shot-spec-summary summary { cursor: pointer; font-size: 14px; }
 .workbench label { display: flex; flex-direction: column; gap: 7px; font-size: 14px; color: #c5c7c9; }
 .workbench input:not([type="checkbox"]), .workbench textarea, .workbench select { width: 100%; background: #17191a; border: 1px solid #45484a; border-radius: 5px; padding: 10px; color: #f0f0f0; }
 .workbench textarea { resize: vertical; min-height: 84px; }

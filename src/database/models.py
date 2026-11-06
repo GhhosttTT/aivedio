@@ -4,6 +4,7 @@
 定义所有数据库表的 ORM 模型
 """
 from datetime import datetime
+import json
 from enum import Enum
 
 from sqlalchemy import (
@@ -140,6 +141,20 @@ class Scene(Base):
 
     # 关系
     project = relationship("Project", back_populates="scenes")
+
+    @property
+    def shot_spec(self):
+        from src.models.shot_specification import ShotSpecification
+
+        script = self.project.script if self.project is not None else None
+        if not script:
+            return None
+        payload = json.loads(script)
+        for item in payload.get("scenes", []):
+            if isinstance(item, dict) and item.get("scene_number") == self.scene_number:
+                specification = item.get("shot_spec")
+                return ShotSpecification.model_validate(specification).model_dump() if specification is not None else None
+        return None
 
 
 class Task(Base):

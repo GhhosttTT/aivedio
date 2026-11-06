@@ -7,7 +7,7 @@
 
 另有少量由脚本或适配器直接读取、不属于 `Settings` 的变量（如 `DEFAULT_ADMIN_*`、`ENCRYPTION_KEY`），见 `.env.example`。
 
-共 273 项，按变量前缀分组。
+共 299 项，按变量前缀分组。
 
 ## 目录
 
@@ -15,7 +15,7 @@
 - [ASR](#asr)（8 项）
 - [AUTO](#auto)（1 项）
 - [CELERY](#celery)（3 项）
-- [COMFYUI](#comfyui)（9 项）
+- [COMFYUI](#comfyui)（13 项）
 - [CORS](#cors)（1 项）
 - [DATABASE](#database)（1 项）
 - [DEEPSEEK](#deepseek)（6 项）
@@ -31,7 +31,7 @@
 - [GENERATION_EPISODE](#generation_episode)（10 项）
 - [GENERATION_HEIGHT](#generation_height)（1 项）
 - [GENERATION_HYBRID](#generation_hybrid)（1 项）
-- [GENERATION_IMAGE](#generation_image)（8 项）
+- [GENERATION_IMAGE](#generation_image)（16 项）
 - [GENERATION_MAX](#generation_max)（2 项）
 - [GENERATION_MIN](#generation_min)（1 项）
 - [GENERATION_PREFER](#generation_prefer)（1 项）
@@ -45,7 +45,7 @@
 - [GENERATION_STEP](#generation_step)（1 项）
 - [GENERATION_STEPS](#generation_steps)（1 项）
 - [GENERATION_TURNAROUND](#generation_turnaround)（1 项）
-- [GENERATION_VIDEO](#generation_video)（52 项）
+- [GENERATION_VIDEO](#generation_video)（64 项）
 - [GENERATION_WIDTH](#generation_width)（1 项）
 - [GPU](#gpu)（1 项）
 - [HAILUO](#hailuo)（2 项）
@@ -54,7 +54,7 @@
 - [JWT](#jwt)（4 项）
 - [KLING](#kling)（2 项）
 - [LLM](#llm)（4 项）
-- [LOCAL](#local)（5 项）
+- [LOCAL](#local)（7 项）
 - [LOCALIZATION](#localization)（3 项）
 - [LOG](#log)（2 项）
 - [MAX](#max)（1 项）
@@ -117,13 +117,17 @@
 | --- | --- | --- |
 | `COMFYUI_BASE_URL` | `str` | `http://127.0.0.1:8188` |
 | `COMFYUI_DEFAULT_WORKFLOW_TYPE` | `str` | `juggernaut` |
-| `COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH` | `str` | `""` |
+| `COMFYUI_IMAGE_REPAIR_OUTPUT_NODE` | `str` | `""` |
+| `COMFYUI_IMAGE_REPAIR_WORKFLOW_PATH` | `str` | `""` |
+| `COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH` | `str` | `./configs/comfyui_workflow_sdxl_regional_two_character.json` |
 | `COMFYUI_PRODUCTION_PROFILE_PATH` | `str` | `./configs/production_workflow_profile.json` |
 | `COMFYUI_REFERENCE_WORKFLOW_PATH` | `str` | `./configs/comfyui_workflow_ipadapter_sdxl.json` |
 | `COMFYUI_TIMEOUT` | `int` | `900` |
+| `COMFYUI_VIDEO_BINDINGS_PATH` | `str` | `""` |
+| `COMFYUI_VIDEO_ENGINE_REGISTRY_PATH` | `str` | `""` |
 | `COMFYUI_VIDEO_OUTPUT_NODE` | `str` | `""` |
 | `COMFYUI_VIDEO_WORKFLOW_PATH` | `str` | `""` |
-| `COMFYUI_WORKFLOW_PATH` | `str` | `./configs/comfyui_workflow_juggernaut.json` |
+| `COMFYUI_WORKFLOW_PATH` | `str` | `./configs/comfyui_workflow_juggernaut_facedetailer.json` |
 
 ## CORS
 
@@ -252,12 +256,20 @@
 | --- | --- | --- |
 | `GENERATION_IMAGE_AESTHETIC_FEATURE_MIN_SCORE` | `float` | `4.0` |
 | `GENERATION_IMAGE_CANDIDATES` | `int` | `5` |
+| `GENERATION_IMAGE_DEDUP_COLOR_DISTANCE` | `float` | `12.0` |
+| `GENERATION_IMAGE_DEDUP_ENABLED` | `bool` | `True` |
+| `GENERATION_IMAGE_DEDUP_HAMMING_DISTANCE` | `int` | `4` |
+| `GENERATION_IMAGE_DIVERSITY_SEARCH_ENABLED` | `bool` | `True` |
 | `GENERATION_IMAGE_IDENTITY_MIN_SCORE` | `float` | `4.0` |
+| `GENERATION_IMAGE_MAX_ATTEMPT_MULTIPLIER` | `float` | `2.0` |
 | `GENERATION_IMAGE_MIN_SCORE` | `float` | `4.0` |
 | `GENERATION_IMAGE_PLATFORM_MIN_SCORE` | `float` | `4.1` |
 | `GENERATION_IMAGE_POSTPROCESS_COMMAND` | `str` | `""` |
 | `GENERATION_IMAGE_POSTPROCESS_TIMEOUT_SECONDS` | `int` | `1800` |
 | `GENERATION_IMAGE_REFINEMENT_PASSES` | `int` | `2` |
+| `GENERATION_IMAGE_REPAIR_DEFAULT_CFG` | `float` | `5.0` |
+| `GENERATION_IMAGE_REPAIR_DEFAULT_DENOISE` | `float` | `0.24` |
+| `GENERATION_IMAGE_REPAIR_DEFAULT_STEPS` | `int` | `22` |
 
 ## GENERATION_MAX
 
@@ -375,22 +387,34 @@
 | `GENERATION_VIDEO_CANDIDATES` | `int` | `4` |
 | `GENERATION_VIDEO_CHARACTER_DISTINCTIVENESS_MIN_SCORE` | `float` | `4.0` |
 | `GENERATION_VIDEO_CONTINUITY_REFERENCE_MIN_SCORE` | `float` | `2.0` |
+| `GENERATION_VIDEO_DEDUP_AVERAGE_HAMMING_DISTANCE` | `float` | `6.0` |
+| `GENERATION_VIDEO_DEDUP_DURATION_DELTA_SECONDS` | `float` | `0.25` |
+| `GENERATION_VIDEO_DEDUP_ENABLED` | `bool` | `True` |
+| `GENERATION_VIDEO_DEDUP_MOTION_ENERGY_DELTA` | `float` | `1.5` |
 | `GENERATION_VIDEO_DIALOGUE_PRELAP_SECONDS` | `float` | `0.08` |
+| `GENERATION_VIDEO_DRIVING_MOTION_MIN_DIRECTION_SIMILARITY` | `float` | `0.15` |
+| `GENERATION_VIDEO_DRIVING_MOTION_MIN_SCORE` | `float` | `2.8` |
 | `GENERATION_VIDEO_DURATION_SYNC_TOLERANCE_SECONDS` | `float` | `0.35` |
 | `GENERATION_VIDEO_END_FRAME_ENABLED` | `bool` | `True` |
 | `GENERATION_VIDEO_END_FRAME_REFERENCE_MIN_SCORE` | `float` | `2.5` |
 | `GENERATION_VIDEO_FRAME_FIT_MODE` | `str` | `cover` |
 | `GENERATION_VIDEO_IDENTITY_MIN_SCORE` | `float` | `4.0` |
+| `GENERATION_VIDEO_KEYFRAME_REFERENCE_MIN_SCORE` | `float` | `2.5` |
+| `GENERATION_VIDEO_MAX_ATTEMPT_MULTIPLIER` | `float` | `1.5` |
 | `GENERATION_VIDEO_MAX_BLACK_FRAME_RATIO` | `float` | `0.05` |
 | `GENERATION_VIDEO_MAX_BLACK_SECONDS` | `float` | `0.2` |
 | `GENERATION_VIDEO_MAX_BRIGHTNESS_STEP_P95` | `float` | `36.0` |
 | `GENERATION_VIDEO_MAX_FRAMES` | `int` | `40` |
 | `GENERATION_VIDEO_MAX_FREEZE_SECONDS` | `float` | `0.2` |
+| `GENERATION_VIDEO_MAX_MID_KEYFRAMES` | `int` | `2` |
 | `GENERATION_VIDEO_MAX_MOTION_JITTER_RATIO` | `float` | `1.5` |
 | `GENERATION_VIDEO_MAX_SECONDS` | `float` | `6.0` |
 | `GENERATION_VIDEO_MAX_STATIC_RUN_SECONDS` | `float` | `1.8` |
 | `GENERATION_VIDEO_MAX_TEMPORAL_JUMP_P95` | `float` | `0.75` |
 | `GENERATION_VIDEO_MAX_TEMPORAL_JUMP_RATIO` | `float` | `0.35` |
+| `GENERATION_VIDEO_MID_KEYFRAME_ENABLED` | `bool` | `False` |
+| `GENERATION_VIDEO_MID_KEYFRAME_MIN_SECONDS` | `float` | `3.0` |
+| `GENERATION_VIDEO_MID_KEYFRAME_POSITION` | `float` | `0.5` |
 | `GENERATION_VIDEO_MIN_COMPARISON_SAMPLES` | `int` | `4` |
 | `GENERATION_VIDEO_MIN_SCORE` | `float` | `4.0` |
 | `GENERATION_VIDEO_MIN_TEMPORAL_SAMPLES` | `int` | `4` |
@@ -482,11 +506,13 @@
 
 | 变量 | 类型 | 默认值 |
 | --- | --- | --- |
+| `LOCAL_MOTION_REFERENCE_LIBRARY_PATH` | `str` | `""` |
 | `LOCAL_REVIEW_BACKEND` | `str` | `llama_cpp` |
 | `LOCAL_REVIEW_BASE_URL` | `str` | `http://127.0.0.1:8080/v1` |
 | `LOCAL_REVIEW_MODEL` | `str` | `local-vlm` |
 | `LOCAL_REVIEW_PROBE_TIMEOUT` | `float` | `2.0` |
 | `LOCAL_REVIEW_TIMEOUT` | `int` | `300` |
+| `LOCAL_VIDEO_MODEL_PROFILE` | `str` | `auto` |
 
 ## LOCALIZATION
 

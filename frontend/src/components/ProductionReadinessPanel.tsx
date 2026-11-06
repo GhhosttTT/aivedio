@@ -7,12 +7,14 @@ export function ProductionReadinessPanel({
     onRefresh,
     onRepairAction,
     onApproveStoryRoom,
+    onDecomposeScene,
 }: {
     report: ProductionReadinessReport | null;
     loading: boolean;
     onRefresh: () => void;
     onRepairAction?: (action: string) => void;
     onApproveStoryRoom?: () => void;
+    onDecomposeScene?: (sceneNumber: number) => void;
 }) {
     const status = report?.status || 'loading';
     const blocked = status === 'blocked';
@@ -30,6 +32,7 @@ export function ProductionReadinessPanel({
     const visualFormat = report?.checks.visual_format;
     const characters = report?.checks.characters;
     const complexity = report?.checks.shot_complexity;
+    const shotStateContinuity = report?.checks.shot_state_continuity;
     const spatial = report?.checks.spatial_continuity;
     const reviewer = report?.checks.reviewer;
     const workflowProfile = report?.checks.workflow_profile;
@@ -42,6 +45,8 @@ export function ProductionReadinessPanel({
         ...(workflowProfile?.quality_budget_issues || []),
     ];
     const sampleValidation = report?.checks.sample_validation;
+    const videoEngine = report?.checks.video_engine;
+    const localVideoModel = videoEngine?.local_model;
     const qualityScorecard = sampleValidation?.quality_scorecard;
     const scorecardFocus = sampleValidation?.checks?.quality_scorecard_next_focus || qualityScorecard?.next_focus;
     const readinessActions = report?.repair_actions || [];
@@ -73,12 +78,16 @@ export function ProductionReadinessPanel({
                 <Metric label="角色参考" value={characters ? `${characters.visible_character_names.length - characters.missing_references.length}/${characters.visible_character_names.length}` : '未检查'}/>
                 <Metric label="角色声线" value={characters ? `${characters.visible_character_names.length - characters.missing_voice_profiles.length}/${characters.visible_character_names.length}` : '未检查'}/>
                 <Metric label="复杂镜头" value={complexity ? `${complexity.summary.needs_split} 阻断 / ${complexity.summary.warn} 警告` : '未检查'}/>
+                <Metric label="镜头合同" value={complexity ? `${complexity.invalid_contracts?.length || 0} 个缺口` : '未检查'}/>
+                <Metric label="角色状态连续性" value={shotStateContinuity ? `${shotStateContinuity.summary.tracked_transitions} 已跟踪` : '未配置'}/>
+                <Metric label="资产状态连续性" value={shotStateContinuity ? `${shotStateContinuity.summary.asset_transitions || 0} 已跟踪 / ${shotStateContinuity.summary.conflicts} 冲突` : '未配置'}/>
                 <Metric label="空间计划" value={spatial ? `${spatial.summary.total - spatial.summary.weak}/${spatial.summary.total}` : '未检查'}/>
                 <Metric label="审核门槛" value={reviewer ? `${reviewer.image_review_required && reviewer.video_review_required ? '已开启' : '未完全开启'}` : '未检查'}/>
                 <Metric label="Workflow" value={workflowProfile ? workflowProfile.status : '未检查'}/>
                 <Metric label="样片验证" value={sampleValidation ? sampleValidation.status : '未检查'}/>
                 <Metric label="样片质量分" value={qualityScorecard ? formatScore(qualityScorecard.production_score) : '未检查'}/>
-                <Metric label="视频引擎" value={report?.checks.video_engine?.status || '未预检'}/>
+                <Metric label="视频引擎" value={videoEngine?.status || '未预检'}/>
+                <Metric label="本地模型" value={localVideoModel?.label || localVideoModel?.profile || '未识别'}/>
             </div>
             {characters?.missing_voice_profiles?.length ? (
                 <div className="wb-summary-actions">
@@ -93,6 +102,47 @@ export function ProductionReadinessPanel({
                         <span>待绑定</span>
                         <p>{characters.missing_voice_profiles.join(' / ')}</p>
                     </div>
+                </div>
+            ) : null}
+            {!!complexity?.invalid_contracts?.length && (
+                <div className="wb-summary-actions" aria-label="镜头执行合同缺口">
+                    <div className="wb-row wb-between">
+                        <div>
+                            <h3>镜头执行合同缺口</h3>
+                            <p className="wb-muted">补齐镜头角色和必需模型能力后再生成，避免路由到不具备表演或动作控制的工作流。</p>
+                        </div>
+                        <span className="wb-badge">{complexity.invalid_contracts.length} 个分镜</span>
+                    </div>
+                    {complexity.invalid_contracts.slice(0, 8).map(item => (
+                        <div className="wb-issue blocker" key={item.scene_number}>
+                            <span>分镜 {item.scene_number}</span>
+                            <p>{item.errors.join('；')}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
+            {complexity?.scenes?.some(item => item.suggested_atomic_shots.length > 0) ? (
+                <div className="wb-summary-actions" aria-label="复杂镜头自动拆解">
+                    <div className="wb-row wb-between">
+                        <div>
+                            <h3>复杂镜头拆解</h3>
+                            <p className="wb-muted">按建立镜头、说话者近景和听者反应镜头降低本地模型生成难度。</p>
+                        </div>
+                        <span className="wb-badge">{complexity.summary.needs_split + complexity.summary.warn} 个可拆</span>
+                    </div>
+                    {complexity.scenes.filter(item => item.suggested_atomic_shots.length > 0).slice(0, 6).map(item => (
+                        <div className={`wb-issue ${item.status === 'needs_split' ? 'blocker' : 'warning'}`} key={item.scene_number}>
+                            <span>分镜 {item.scene_number} · 拆为 {item.suggested_atomic_shots.length} 镜</span>
+                            <p>{item.reasons.join('；')}</p>
+                            <button
+                                className="wb-button"
+                                disabled={loading || !item.suggested_atomic_shots.length}
+                                onClick={() => onDecomposeScene?.(item.scene_number)}
+                            >
+                                拆成短剧覆盖镜头
+                            </button>
+                        </div>
+                    ))}
                 </div>
             ) : null}
             {storyRoom?.status === 'passed' && storyApproval && (
@@ -246,6 +296,33 @@ export function ProductionReadinessPanel({
                     </div>
                 </div>
             )}
+            {localVideoModel && localVideoModel.status !== 'not_applicable' && (
+                <div className={`wb-summary-actions ${localVideoModel.status === 'ready' ? '' : 'blocked'}`}>
+                    <div className="wb-row wb-between">
+                        <div>
+                            <h3>本地视频模型准入</h3>
+                            <p className="wb-muted">检查的是工作流实际模型、原生采样帧率和镜头帧容量。</p>
+                        </div>
+                        <span className={`wb-badge ${localVideoModel.status === 'ready' ? 'success' : ''}`}>
+                            {localVideoModel.status === 'ready' ? '可跑样片' : '未达生产条件'}
+                        </span>
+                    </div>
+                    <div className="wb-grid compact">
+                        <Metric label="工作流识别" value={localVideoModel.detected_profile || '未知'}/>
+                        <Metric label="启用 Profile" value={localVideoModel.profile || '未知'}/>
+                        <Metric label="原生采样" value={localVideoModel.model_fps ? `${localVideoModel.model_fps} fps` : '未记录'}/>
+                        <Metric label="帧容量" value={localVideoModel.max_frames ? `${localVideoModel.max_frames} / ${localVideoModel.required_target_frames || '-'} 帧` : '未记录'}/>
+                    </div>
+                    {localVideoModel.reason && <div className="wb-issue warning">
+                        <span>说明</span><p>{localVideoModel.reason}</p>
+                    </div>}
+                    {localVideoModel.action_items?.slice(0, 3).map((item) => (
+                        <div className="wb-issue blocker" key={item}>
+                            <span>处理</span><p>{item}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
             {spatial?.asset_pack?.control_gaps?.length ? (
                 <div className="wb-summary-actions">
                     <div className="wb-row wb-between">
@@ -259,6 +336,23 @@ export function ProductionReadinessPanel({
                         <div className="wb-issue blocker" key={gap.scene_number}>
                             <span>分镜 {gap.scene_number}{gap.character ? ` · ${gap.character}` : ''}</span>
                             <p>{gap.missing.join(' / ')}</p>
+                        </div>
+                    ))}
+                </div>
+            ) : null}
+            {shotStateContinuity?.asset_conflicts?.length ? (
+                <div className="wb-summary-actions" aria-label="跨镜头资产冲突">
+                    <div className="wb-row wb-between">
+                        <div>
+                            <h3>跨镜头资产冲突</h3>
+                            <p className="wb-muted">为变化补充转场说明，或修正相邻镜头的资产状态。</p>
+                        </div>
+                        <span className="wb-badge">{shotStateContinuity.asset_conflicts.length} 项</span>
+                    </div>
+                    {shotStateContinuity.asset_conflicts.slice(0, 6).map((item: any) => (
+                        <div className="wb-issue warning" key={`${item.asset_id}-${item.from_scene}-${item.to_scene}`}>
+                            <span>{item.asset_id} · 分镜 {item.from_scene} 到 {item.to_scene}</span>
+                            <p>{Object.entries(item.mismatches || {}).map(([key, value]: [string, any]) => `${key}: ${value.previous} → ${value.current}`).join('；')}</p>
                         </div>
                     ))}
                 </div>
@@ -322,11 +416,13 @@ function labelScorecardAction(action: string): string {
         refine_final_composition_finish: '统一最终成片精修',
         refine_dialogue_audio_delivery: '优化对白音频',
         rewrite_short_drama_story_rhythm: '重写短剧节奏',
+        compile_shot_execution_contracts: '批量编译镜头合同',
         complete_topic_brief: '补齐选题定位',
         review_content_safety: '人工复核内容安全',
         refine_topic_brief: '细化选题定位',
         split_scene: '拆分复杂分镜',
         refreeze_spatial_plan: '重做空间计划',
+        freeze_continuity_assets: '冻结连续性资产',
         fix_workflow_profile: '修复 Workflow Profile',
         run_real_gpu_sample_validation: '运行真实 GPU 样片验证',
     };
@@ -335,8 +431,10 @@ function labelScorecardAction(action: string): string {
 
 function isExecutableRepairAction(action: string): boolean {
     return action === 'refreeze_spatial_plan'
+        || action === 'freeze_continuity_assets'
         || action === 'fix_workflow_profile'
         || action === 'rewrite_short_drama_story_rhythm'
+        || action === 'compile_shot_execution_contracts'
         || action === 'lower_motion_and_regenerate_video'
         || action === 'regenerate_video_with_performance_direction'
         || action === 'refine_video_commercial_aesthetic'

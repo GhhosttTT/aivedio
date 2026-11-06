@@ -293,6 +293,9 @@ needs_split (boolean), reason. All text is English. Visual fields total at most 
 An identity anchor, if supplied, is prepended VERBATIM by code. Do not repeat or
 contradict its age, hair or clothing; use 'the character' as subject instead.
 For an empty location use the location as subject and a static state as action.
+If opening-frame state requirements are supplied, preserve their visible
+character states, emotions, and continuity constraints in the English frame.
+Describe the opening state only; do not depict a later action result.
 """
         payload = json.dumps({"scene": description, "identity_anchor": appearance}, ensure_ascii=False)
         correction = ""

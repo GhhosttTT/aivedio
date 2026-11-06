@@ -1,0 +1,100 @@
+{
+  "workflow": {
+    "name": "Accepted Keyframe Local Repair",
+    "description": "Preserve the accepted source frame and inpaint only CLIPSeg/SAM detected defects.",
+    "version": "1.0.0"
+  },
+  "parameters": {
+    "default": {
+      "output_node": "save_image"
+    }
+  },
+  "nodes": {
+    "checkpoint_loader": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors"
+      }
+    },
+    "source_image": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "{input_image}"
+      }
+    },
+    "positive": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "{prompt}",
+        "clip": ["checkpoint_loader", 1]
+      }
+    },
+    "negative": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "{negative_prompt}",
+        "clip": ["checkpoint_loader", 1]
+      }
+    },
+    "target_detector": {
+      "class_type": "CLIPSegDetectorProvider",
+      "inputs": {
+        "text": "{repair_target}",
+        "blur": 7,
+        "threshold": 0.4,
+        "dilation_factor": 4
+      }
+    },
+    "sam_loader": {
+      "class_type": "SAMLoader",
+      "inputs": {
+        "model_name": "sam_vit_b_01ec64.pth",
+        "device_mode": "AUTO"
+      }
+    },
+    "local_detailer": {
+      "class_type": "FaceDetailer",
+      "inputs": {
+        "image": ["source_image", 0],
+        "model": ["checkpoint_loader", 0],
+        "clip": ["checkpoint_loader", 1],
+        "vae": ["checkpoint_loader", 2],
+        "guide_size": 768,
+        "guide_size_for": true,
+        "max_size": 1024,
+        "seed": "{seed}",
+        "steps": "{steps}",
+        "cfg": "{cfg}",
+        "sampler_name": "dpmpp_2m_sde",
+        "scheduler": "karras",
+        "positive": ["positive", 0],
+        "negative": ["negative", 0],
+        "denoise": "{denoise}",
+        "feather": 5,
+        "noise_mask": true,
+        "force_inpaint": true,
+        "bbox_threshold": 0.5,
+        "bbox_dilation": 10,
+        "bbox_crop_factor": 3.0,
+        "sam_detection_hint": "center-1",
+        "sam_dilation": 0,
+        "sam_threshold": 0.93,
+        "sam_bbox_expansion": 0,
+        "sam_mask_hint_threshold": 0.7,
+        "sam_mask_hint_use_negative": "False",
+        "drop_size": 10,
+        "bbox_detector": ["target_detector", 0],
+        "sam_model_opt": ["sam_loader", 0],
+        "wildcard": "",
+        "cycle": 1
+      }
+    },
+    "save_image": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "filename_prefix": "{output_prefix}",
+        "images": ["local_detailer", 0]
+      }
+    }
+  }
+}

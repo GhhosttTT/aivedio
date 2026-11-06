@@ -14,6 +14,13 @@ from src.services.generation_quality_policy import (
     video_quality_budget,
 )
 from src.services.video_engine_preflight import scan_placeholders
+from src.services.video_workflow_binding import (
+    VideoWorkflowBindingError,
+    binding_has_control,
+    load_video_workflow_bindings,
+    resolve_video_binding_path,
+    validate_video_workflow_bindings,
+)
 from src.utils.atomic_json import write_json_atomic
 
 
@@ -68,6 +75,22 @@ VIDEO_WORKFLOW_PLACEHOLDER_GROUPS = {
     "spatial_asset_contract": {"spatial_asset_pack_json", "spatial_scene_contract_hash"},
     "continuity_reference": {"continuity_reference_image", "continuity_image", "previous_last_frame"},
     "reference_images": {"reference_images_json"},
+    "temporal_keyframes": {
+        "keyframe_images_json", "keyframe_images", "keyframe_indices",
+        "keyframe_strengths", "keyframe_roles",
+    },
+}
+VIDEO_WORKFLOW_REQUIRED_CONTROLS = {
+    "reference": {"reference_image", "image", "start_image", "first_frame"},
+    "end_frame": {"end_image", "last_frame"},
+    "positive_prompt": {"prompt", "positive_prompt"},
+    "negative_prompt": {"negative_prompt"},
+    "width": {"width"},
+    "height": {"height"},
+    "frame_count": {"num_frames", "video_frames", "frame_count"},
+    "fps": {"fps"},
+    "seed": {"seed"},
+    "output_prefix": {"output_prefix"},
 }
 IMAGE_WORKFLOW_PLACEHOLDER_GROUPS = {
     "spatial_plan": {"spatial_plan_json"},
@@ -117,7 +140,7 @@ class ProductionWorkflowProfileService:
                 + ", ".join(image_contract["missing_groups"])
             )
         manifest = {
-            "version": 1,
+            "version": 2,
             "status": "approved",
             "name": "local_short_drama_high_quality",
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -133,6 +156,10 @@ class ProductionWorkflowProfileService:
             "required_video_workflow_placeholders": {
                 name: sorted(values)
                 for name, values in VIDEO_WORKFLOW_PLACEHOLDER_GROUPS.items()
+            },
+            "required_video_workflow_controls": {
+                name: sorted(values)
+                for name, values in VIDEO_WORKFLOW_REQUIRED_CONTROLS.items()
             },
             "video_workflow_contract": video_contract,
             "required_image_workflow_placeholders": {
@@ -166,6 +193,8 @@ class ProductionWorkflowProfileService:
         stale = []
         if profile.get("status") != "approved":
             missing.append("approved_status")
+        if profile.get("version") != 2:
+            stale.append("profile_version")
         if profile.get("required_image_pipeline_stages") != REQUIRED_IMAGE_PIPELINE_STAGES:
             stale.append("required_image_pipeline_stages")
         required_video_placeholders = {
@@ -174,6 +203,12 @@ class ProductionWorkflowProfileService:
         }
         if profile.get("required_video_workflow_placeholders") != required_video_placeholders:
             stale.append("required_video_workflow_placeholders")
+        required_video_controls = {
+            name: sorted(values)
+            for name, values in VIDEO_WORKFLOW_REQUIRED_CONTROLS.items()
+        }
+        if profile.get("required_video_workflow_controls") != required_video_controls:
+            stale.append("required_video_workflow_controls")
         required_image_placeholders = {
             name: sorted(values)
             for name, values in IMAGE_WORKFLOW_PLACEHOLDER_GROUPS.items()
@@ -247,6 +282,7 @@ class ProductionWorkflowProfileService:
                 "video_end_frame_enabled": True,
                 "required_image_pipeline_stages": REQUIRED_IMAGE_PIPELINE_STAGES,
                 "required_video_workflow_placeholders": required_video_placeholders,
+                "required_video_workflow_controls": required_video_controls,
                 "required_image_workflow_placeholders": required_image_placeholders,
             },
             "profile": profile,
@@ -260,6 +296,14 @@ class ProductionWorkflowProfileService:
         }
         if settings.COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH:
             paths["multi_reference"] = self._resolve_path(settings.COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH)
+        video_path = paths.get("video")
+        if video_path:
+            binding_path = resolve_video_binding_path(
+                video_path,
+                getattr(settings, "COMFYUI_VIDEO_BINDINGS_PATH", ""),
+            )
+            if binding_path:
+                paths["video_bindings"] = str(binding_path)
         return paths
 
     def _profile_path(self, profile_path: str | None = None) -> Path:
@@ -346,6 +390,11 @@ class ProductionWorkflowProfileService:
             "effective_video_candidates": video_budget.candidate_count,
             "effective_video_refinement_passes": video_budget.refinement_passes,
             "video_end_frame_enabled": settings.GENERATION_VIDEO_END_FRAME_ENABLED,
+            "video_mid_keyframe_enabled": settings.GENERATION_VIDEO_MID_KEYFRAME_ENABLED,
+            "video_mid_keyframe_position": settings.GENERATION_VIDEO_MID_KEYFRAME_POSITION,
+            "video_mid_keyframe_min_seconds": settings.GENERATION_VIDEO_MID_KEYFRAME_MIN_SECONDS,
+            "video_max_mid_keyframes": settings.GENERATION_VIDEO_MAX_MID_KEYFRAMES,
+            "video_keyframe_reference_min_score": settings.GENERATION_VIDEO_KEYFRAME_REFERENCE_MIN_SCORE,
             "video_output_node": settings.COMFYUI_VIDEO_OUTPUT_NODE,
             "video_target_seconds": settings.GENERATION_VIDEO_TARGET_SECONDS,
             "video_max_frames": settings.GENERATION_VIDEO_MAX_FRAMES,
@@ -389,7 +438,10 @@ class ProductionWorkflowProfileService:
         first_last_ok = bool(
             has_video_output
             and settings.GENERATION_VIDEO_END_FRAME_ENABLED
-            and load_image_counts.get("video", 0) >= 2
+            and (
+                load_image_counts.get("video", 0) >= 2
+                or any("keyframe" in class_name for class_name in video_classes)
+            )
         )
         evidence["first_last_frame_video"] = {
             "present": first_last_ok,
@@ -437,14 +489,65 @@ class ProductionWorkflowProfileService:
     def _video_workflow_contract(self, workflow_path: str) -> dict:
         placeholders = sorted(self._workflow_placeholders(workflow_path))
         placeholder_set = set(placeholders)
-        group_status = {
+        native_group_status = {
             name: bool(values & placeholder_set)
             for name, values in VIDEO_WORKFLOW_PLACEHOLDER_GROUPS.items()
         }
+        binding_manifest = {
+            "status": "missing", "bindings": {}, "derived_controls": [], "path": "", "sha256": "",
+        }
+        binding_validation = {
+            "status": "missing", "controls": [], "derived_controls": [], "errors": [], "path": "", "sha256": "",
+        }
+        workflow = {}
+        path = Path(workflow_path) if workflow_path else None
+        if path and path.is_file():
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                workflow = payload if isinstance(payload, dict) else {}
+                binding_manifest = load_video_workflow_bindings(
+                    path,
+                    getattr(settings, "COMFYUI_VIDEO_BINDINGS_PATH", ""),
+                )
+                if binding_manifest.get("status") == "configured":
+                    binding_validation = validate_video_workflow_bindings(workflow, binding_manifest)
+            except (OSError, ValueError, VideoWorkflowBindingError) as exc:
+                binding_validation = {
+                    "status": "invalid", "controls": [], "derived_controls": [],
+                    "errors": [str(exc)], "path": "", "sha256": "",
+                }
+
+        def has_control(values: set[str]) -> bool:
+            return bool(values & placeholder_set) or binding_has_control(binding_manifest, values)
+
+        required_group_status = {
+            name: has_control(values)
+            for name, values in VIDEO_WORKFLOW_REQUIRED_CONTROLS.items()
+        }
+        temporal_keyframes_present = bool(
+            has_control({"keyframe_images_json"})
+            or (
+                has_control({"keyframe_images"})
+                and has_control({"keyframe_indices"})
+            )
+        )
+        feature_group_status = {
+            "temporal_keyframes": temporal_keyframes_present,
+        }
+        required_group_status["end_frame"] = bool(
+            required_group_status.get("end_frame") or temporal_keyframes_present
+        )
+        missing_groups = [
+            name for name, present in required_group_status.items() if not present
+        ]
+        if settings.GENERATION_VIDEO_MID_KEYFRAME_ENABLED and not temporal_keyframes_present:
+            missing_groups.append("temporal_keyframes")
         return {
             "placeholders": placeholders,
-            "groups": group_status,
-            "missing_groups": sorted(name for name, present in group_status.items() if not present),
+            "groups": {**native_group_status, **required_group_status, **feature_group_status},
+            "native_optional_groups": native_group_status,
+            "binding_manifest": binding_validation,
+            "missing_groups": sorted(missing_groups),
         }
 
     def _image_workflow_contract(self, workflow_path: str) -> dict:

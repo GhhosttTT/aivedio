@@ -83,7 +83,8 @@ def generate_subtitle_task(
             dialogues=dialogue_segments,
             output_path=subtitle_path,
         )
-        subtitle_content = Path(result_path).read_text(encoding="utf-8")
+        subtitle_bytes = Path(result_path).read_bytes()
+        subtitle_content = subtitle_bytes.decode("utf-8")
         quality_report = assess_subtitle_timeline(subtitle_content, scene.dialogue)
         quality_report.update({
             "stage": "subtitle",
@@ -93,7 +94,7 @@ def generate_subtitle_task(
             "cue_strategy": "punctuation_timed",
             "source_duration_seconds": duration,
             "generated_cue_count": len(dialogue_segments),
-            "subtitle_sha256": hashlib.sha256(subtitle_content.encode("utf-8")).hexdigest(),
+            "subtitle_sha256": hashlib.sha256(subtitle_bytes).hexdigest(),
         })
         subtitle_quality_report_path(result_path).write_text(
             json.dumps(quality_report, ensure_ascii=False, indent=2),

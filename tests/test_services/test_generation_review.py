@@ -19,6 +19,7 @@ from src.services.generation_review import (
     PLATFORM_REFERENCE_FEATURES,
     VIDEO_AESTHETIC_FEATURES,
     VIDEO_PERFORMANCE_FEATURES,
+    VIDEO_DIALOGUE_PERFORMANCE_FEATURES,
     decision,
     final_composition_finishing_gate,
     platform_reference_gate,
@@ -80,6 +81,24 @@ def test_story_success_records_input_and_scores(tmp_path):
     assert result["status"] == "passed"
     assert result["average"] == 4
     assert len(result["input_hash"]) == 64
+
+
+def test_story_review_deterministically_blocks_unsplit_two_character_dialogue(tmp_path):
+    reviewer = Mock()
+    reviewer.evaluate.return_value = story_review(reviewed_scenes=[1])
+    payload = {"scenes": [{
+        "scene_number": 1,
+        "description": "Alice confronts Bob across the desk",
+        "characters": ["Alice", "Bob"],
+        "dialogue": "Alice: You knew the truth.",
+    }]}
+
+    result = GenerationReviewService(reviewer).review_story(payload, tmp_path / "story.json")
+
+    assert result["status"] == "needs_review"
+    assert result["review"]["filmability"]["score"] == 2
+    assert result["review"]["issues"][0]["severity"] == "major"
+    assert "atomic coverage" in result["review"]["issues"][0]["reason"]
 
 
 def test_empty_or_numbering_errors_block_before_model(tmp_path):
@@ -263,7 +282,10 @@ def test_video_performance_gate_quantifies_flat_short_drama_acting(monkeypatch):
         "emotion_readability",
         "gaze_intent",
         "dialogue_reaction",
+        "visible_mouth_articulation",
+        "speech_timing",
     }
+    assert set(gate["missing"]) == set(VIDEO_DIALOGUE_PERFORMANCE_FEATURES)
 
 
 def test_video_performance_gate_covers_dialogue_in_establishing_shot():
@@ -275,7 +297,7 @@ def test_video_performance_gate_covers_dialogue_in_establishing_shot():
 
     assert gate is not None
     assert gate["status"] == "needs_review"
-    assert set(gate["missing"]) == set(VIDEO_PERFORMANCE_FEATURES)
+    assert set(gate["missing"]) == set(VIDEO_PERFORMANCE_FEATURES + VIDEO_DIALOGUE_PERFORMANCE_FEATURES)
 
 
 def test_episode_continuity_gate_quantifies_final_composition_jump_cuts(monkeypatch):
@@ -445,7 +467,7 @@ def test_frame_review_accepts_video_performance_scores(tmp_path, monkeypatch):
         "story_match", "composition", "aesthetic_quality", "visual_integrity", "facial_identity", "identity_consistency", "temporal_consistency")}
     data["video_performance_scores"] = {
         feature: {"score": 4, "evidence": "acting reads clearly"}
-        for feature in VIDEO_PERFORMANCE_FEATURES
+        for feature in VIDEO_PERFORMANCE_FEATURES + VIDEO_DIALOGUE_PERFORMANCE_FEATURES
     }
     reviewer = Mock()
     reviewer.evaluate.return_value = FrameReview(**data, reviewed_frames=[0, 1, 2], issues=[])

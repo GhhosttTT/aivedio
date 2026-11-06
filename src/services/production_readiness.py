@@ -19,8 +19,10 @@ from src.services.character_service import get_character_manager
 from src.services.character_identity_service import CharacterIdentityService, FACIAL_FIELDS, load_identity_spec
 from src.services.character_turnaround_album import CharacterTurnaroundAlbumService
 from src.services.content_safety_audit import ContentSafetyAuditService
+from src.services.continuity_asset_pack import ContinuityAssetPackService
 from src.services.script_generator import MIN_PRODUCTION_SCENES
 from src.services.shot_complexity_service import ShotComplexityService
+from src.services.shot_state_continuity import ShotStateContinuityService
 from src.services.spatial_control_assets import SpatialControlAssetService
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.generation_quality_scorecard import (
@@ -35,7 +37,10 @@ from src.services.story_room_quality import StoryRoomQualityService
 from src.services.topic_brief import TopicBriefService
 from src.services.rhythm_audit import RhythmAuditService
 from src.services.video_director_service import get_video_director_service
-from src.services.video_engine_preflight import preflight_production_video_engine
+from src.services.video_engine_preflight import (
+    local_video_configuration_fingerprint,
+    preflight_production_video_engine,
+)
 from src.utils.storage import storage_manager
 
 
@@ -136,7 +141,11 @@ class ProductionReadinessService:
         "stale_story_room_approval": ("approve_story_room", "script", "manual"),
         "episode_rhythm_warning": ("rewrite_short_drama_story_rhythm", "script", "setup_required"),
         "complex_shot_warnings": ("split_scene", "script", "manual"),
+        "invalid_shot_execution_contract": ("compile_shot_execution_contracts", "script", "setup_required"),
         "weak_spatial_continuity": ("refreeze_spatial_plan", "spatial", "setup_required"),
+        "shot_state_continuity_conflicts": ("review_shot_state_continuity", "script", "manual"),
+        "missing_continuity_asset_pack": ("freeze_continuity_assets", "continuity", "setup_required"),
+        "stale_continuity_asset_pack": ("freeze_continuity_assets", "continuity", "setup_required"),
         "missing_sample_validation": ("run_real_gpu_sample_validation", "validation", "manual"),
         "sample_validation_not_production_ready": ("run_real_gpu_sample_validation", "validation", "manual"),
         "sample_validation_video_temporal_gate_not_passed": (
@@ -195,7 +204,6 @@ class ProductionReadinessService:
         characters = self.db.query(Character).filter(Character.project_id == project_id).all()
         blockers: list[ReadinessIssue] = []
         warnings: list[ReadinessIssue] = []
-        sample_warning_start = len(warnings)
         checks = {
             "script": self._script_check(project, scenes, blockers),
             "story_rhythm": self._story_rhythm_check(project, scenes, blockers, warnings),
@@ -209,14 +217,17 @@ class ProductionReadinessService:
             "video_postprocess": self._video_postprocess_check(blockers),
             "characters": self._character_check(project, scenes, characters, blockers, warnings),
             "shot_complexity": self._shot_complexity_check(project, scenes, blockers, warnings),
+            "shot_state_continuity": self._shot_state_continuity_check(project, warnings),
+            "continuity_assets": self._continuity_asset_check(project, scenes, blockers),
             "spatial_continuity": self._spatial_continuity_check(project, scenes, characters, blockers, warnings),
             "visual_style": self._visual_style_check(project, scenes, blockers),
             "workflow_profile": self._workflow_profile_check(blockers),
             "regional_identity": self._regional_identity_check(project, scenes, blockers),
             "reviewer": self._reviewer_check(blockers, probe_live=include_engine_preflight),
             "project_generation_quality": self._project_generation_quality_check(project, warnings),
-            "sample_validation": self._sample_validation_check(warnings),
         }
+        sample_warning_start = len(warnings)
+        checks["sample_validation"] = self._sample_validation_check(warnings)
         if len(warnings) > sample_warning_start:
             blockers.append(ReadinessIssue(
                 "sample_validation_not_production_ready",
@@ -836,16 +847,49 @@ class ProductionReadinessService:
         script_scenes = self._script_scene_map(project)
         service = ShotComplexityService()
         reports = []
+        invalid_contracts = []
         for scene in scenes:
-            visible = self._visible_character_names(scene, script_scenes.get(scene.scene_number, {}))
+            script_scene = script_scenes.get(scene.scene_number, {})
+            visible = self._visible_character_names(scene, script_scene)
             report = service.diagnose(scene.visual_description or "", visible, scene.dialogue or "").to_dict()
+            from src.models.shot_specification import ShotSpecification
+            from src.services.shot_complexity_service import infer_shot_execution_contract
+            raw_spec = script_scene.get("shot_spec") if isinstance(script_scene, dict) else None
+            contract_errors = []
+            try:
+                specification = ShotSpecification.model_validate(raw_spec or {})
+                expected = infer_shot_execution_contract(
+                    scene.visual_description or "", scene.dialogue or "", visible,
+                )
+                if not specification.shot_role:
+                    contract_errors.append("missing shot_role")
+                missing_capabilities = sorted(
+                    set(expected["required_engine_capabilities"])
+                    - set(specification.required_engine_capabilities)
+                )
+                if missing_capabilities:
+                    contract_errors.append(
+                        "missing capabilities " + ", ".join(missing_capabilities)
+                    )
+            except Exception as exc:
+                contract_errors.append(f"invalid shot_spec: {exc}")
+            if contract_errors:
+                invalid_contracts.append({
+                    "scene_number": scene.scene_number,
+                    "errors": contract_errors,
+                })
+            two_character_dialogue = any(
+                reason.startswith("two-character dialogue") for reason in report["reasons"]
+            )
+            effective_status = "needs_split" if two_character_dialogue else report["status"]
             reports.append({
                 "scene_number": scene.scene_number,
-                "status": report["status"],
+                "status": effective_status,
                 "score": report["score"],
                 "reasons": report["reasons"],
                 "recommendations": report["recommendations"],
                 "suggested_atomic_shots": report.get("suggested_atomic_shots", []),
+                "contract_errors": contract_errors,
             })
         needs_split = [item for item in reports if item["status"] == "needs_split"]
         warn = [item for item in reports if item["status"] == "warn"]
@@ -862,10 +906,72 @@ class ProductionReadinessService:
                 f"Review complex scenes before final generation: {scene_numbers}.",
                 severity="warning",
             ))
+        if invalid_contracts:
+            details = "; ".join(
+                f"scene {item['scene_number']}: {', '.join(item['errors'])}"
+                for item in invalid_contracts
+            )
+            blockers.append(ReadinessIssue(
+                "invalid_shot_execution_contract",
+                "Complete shot roles and local-engine capability requirements before production: " + details,
+            ))
         return {
-            "status": "needs_split" if needs_split else ("warn" if warn else "passed"),
+            "status": (
+                "invalid_contract" if invalid_contracts
+                else "needs_split" if needs_split
+                else "warn" if warn
+                else "passed"
+            ),
             "summary": {"total": len(reports), "needs_split": len(needs_split), "warn": len(warn)},
+            "invalid_contracts": invalid_contracts,
             "scenes": reports,
+        }
+
+    def _shot_state_continuity_check(
+        self,
+        project: Project,
+        warnings: list[ReadinessIssue],
+    ) -> dict:
+        script_scenes = self._script_scene_map(project)
+        report = ShotStateContinuityService().assess(script_scenes.values())
+        conflicts = [*(report.get("conflicts") or []), *(report.get("asset_conflicts") or [])]
+        if conflicts:
+            boundaries = ", ".join(
+                f"{item['from_scene']}-{item['to_scene']}" for item in conflicts
+            )
+            warnings.append(ReadinessIssue(
+                "shot_state_continuity_conflicts",
+                "Review explicit character and asset continuity between shots: " + boundaries + ".",
+                severity="warning",
+            ))
+        return report
+
+    def _continuity_asset_check(
+        self,
+        project: Project,
+        scenes: list[Scene],
+        blockers: list[ReadinessIssue],
+    ) -> dict:
+        report = ContinuityAssetPackService().validate_project_pack(project, scenes)
+        current = report.get("current") if isinstance(report.get("current"), dict) else {}
+        if not current.get("asset_ids"):
+            return {"status": "not_configured", "stale": [], "scene_stale": [], "asset_ids": []}
+        if report.get("status") == "missing":
+            blockers.append(ReadinessIssue(
+                "missing_continuity_asset_pack",
+                "Freeze the project continuity asset pack before final production.",
+            ))
+        elif report.get("status") != "valid":
+            blockers.append(ReadinessIssue(
+                "stale_continuity_asset_pack",
+                "Re-freeze changed continuity assets before final production: "
+                + ", ".join(report.get("stale") or [report.get("status", "unknown")]),
+            ))
+        return {
+            "status": report.get("status"),
+            "stale": report.get("stale", []),
+            "scene_stale": report.get("scene_stale", []),
+            "asset_ids": (report.get("manifest") or current).get("asset_ids", []),
         }
 
     def _spatial_continuity_check(
@@ -1145,6 +1251,31 @@ class ProductionReadinessService:
         status = summary.get("status")
         checks = summary.get("checks") if isinstance(summary.get("checks"), dict) else {}
         quality_scorecard = summary.get("quality_scorecard") if isinstance(summary.get("quality_scorecard"), dict) else {}
+        sample_model = summary.get("local_video_model") if isinstance(summary.get("local_video_model"), dict) else {}
+        configured_video_workflow = str(getattr(settings, "COMFYUI_VIDEO_WORKFLOW_PATH", "") or "").strip()
+        configured_video_registry = str(
+            getattr(settings, "COMFYUI_VIDEO_ENGINE_REGISTRY_PATH", "") or ""
+        ).strip()
+        local_video_configured = bool(configured_video_workflow or configured_video_registry)
+        current_model = local_video_configuration_fingerprint() if local_video_configured else {}
+        model_binding_present = bool(sample_model.get("fingerprint"))
+        model_binding_matches = (
+            model_binding_present
+            and bool(current_model.get("fingerprint"))
+            and sample_model.get("fingerprint") == current_model.get("fingerprint")
+        )
+        if local_video_configured and not model_binding_present:
+            warnings.append(ReadinessIssue(
+                "sample_validation_model_binding_missing",
+                "Rerun preflight-production-video and summarize so the real GPU sample is bound to its local video workflow and native sampling settings.",
+                severity="warning",
+            ))
+        elif local_video_configured and not model_binding_matches:
+            warnings.append(ReadinessIssue(
+                "sample_validation_model_binding_stale",
+                "The current local video workflow or native sampling settings differ from the validated sample. Rerun representative GPU clips and the full validation sequence.",
+                severity="warning",
+            ))
         if status != "ready_for_seed_dance_candidate":
             warnings.append(ReadinessIssue(
                 "sample_validation_not_ready",
@@ -1344,6 +1475,12 @@ class ProductionReadinessService:
             "path": str(path),
             "required_status": "ready_for_seed_dance_candidate",
             "quality_scorecard": quality_scorecard,
+            "local_video_model": {
+                "sample": sample_model,
+                "current": current_model,
+                "binding_present": model_binding_present,
+                "binding_matches": model_binding_matches if configured_video_workflow else None,
+            },
             "checks": {
                 "render_profile": checks.get("render_profile"),
                 "render_profile_passed": checks.get("render_profile_passed"),

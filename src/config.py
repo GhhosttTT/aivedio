@@ -34,10 +34,26 @@ class Settings(BaseSettings):
 
     # ComfyUI 配置
     COMFYUI_BASE_URL: str = "http://127.0.0.1:8188"
-    COMFYUI_WORKFLOW_PATH: str = "./configs/comfyui_workflow_juggernaut.json"
+    COMFYUI_WORKFLOW_PATH: str = "./configs/comfyui_workflow_juggernaut_facedetailer.json"
     COMFYUI_REFERENCE_WORKFLOW_PATH: str = "./configs/comfyui_workflow_ipadapter_sdxl.json"
-    COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH: str = ""
+    # Optional input-image repair graph. Unlike the primary generation graph,
+    # this graph must preserve the accepted frame and only inpaint detected defects.
+    COMFYUI_IMAGE_REPAIR_WORKFLOW_PATH: str = ""
+    COMFYUI_IMAGE_REPAIR_OUTPUT_NODE: str = ""
+    # The bundled graph has two independent FaceID regions. Larger casts must
+    # be split into reverse shots until a separately validated regional graph
+    # is supplied.
+    COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH: str = "./configs/comfyui_workflow_sdxl_regional_two_character.json"
     COMFYUI_VIDEO_WORKFLOW_PATH: str = ""
+    # Optional sidecar that maps logical controls to concrete node inputs in a
+    # standard ComfyUI API workflow. When empty, <workflow>.bindings.json is used.
+    COMFYUI_VIDEO_BINDINGS_PATH: str = ""
+    # Optional registry of local video workflows. When configured, each shot is
+    # routed by required and preferred capabilities instead of one global graph.
+    COMFYUI_VIDEO_ENGINE_REGISTRY_PATH: str = ""
+    # Optional approved driving-video manifest used to resolve action shots
+    # without silently treating the previous generated clip as motion control.
+    LOCAL_MOTION_REFERENCE_LIBRARY_PATH: str = ""
     COMFYUI_VIDEO_OUTPUT_NODE: str = ""
     COMFYUI_PRODUCTION_PROFILE_PATH: str = "./configs/production_workflow_profile.json"
     COMFYUI_TIMEOUT: int = 900
@@ -50,6 +66,13 @@ class Settings(BaseSettings):
     GENERATION_IMAGE_CANDIDATES: int = 5
     GENERATION_IMAGE_REFINEMENT_PASSES: int = 2
     GENERATION_MAX_IMAGE_CANDIDATES: int = 12
+    # Reject near-identical images within one search pass and keep drawing
+    # until the requested number of useful candidates or the attempt cap.
+    GENERATION_IMAGE_DEDUP_ENABLED: bool = True
+    GENERATION_IMAGE_DEDUP_HAMMING_DISTANCE: int = 4
+    GENERATION_IMAGE_DEDUP_COLOR_DISTANCE: float = 12.0
+    GENERATION_IMAGE_MAX_ATTEMPT_MULTIPLIER: float = 2.0
+    GENERATION_IMAGE_DIVERSITY_SEARCH_ENABLED: bool = True
     GENERATION_MIN_QUALITY_PASSES: int = 2
     GENERATION_REPAIR_IMAGE_CANDIDATE_MULTIPLIER: float = 1.5
     GENERATION_REPAIR_EXTRA_REFINEMENT_PASSES: int = 1
@@ -63,6 +86,9 @@ class Settings(BaseSettings):
     GENERATION_IMAGE_POSTPROCESS_COMMAND: str = ""
     GENERATION_REQUIRE_IMAGE_POSTPROCESS: bool = False
     GENERATION_IMAGE_POSTPROCESS_TIMEOUT_SECONDS: int = 1800
+    GENERATION_IMAGE_REPAIR_DEFAULT_DENOISE: float = 0.24
+    GENERATION_IMAGE_REPAIR_DEFAULT_STEPS: int = 22
+    GENERATION_IMAGE_REPAIR_DEFAULT_CFG: float = 5.0
     GENERATION_BLOCK_COMPLEX_SHOTS: bool = False
     GENERATION_QUALITY_PROMPT_APPEND: str = "clean cinematic composition, coherent anatomy, readable main action, balanced lighting, polished short-drama keyframe"
     GENERATION_QUALITY_NEGATIVE_APPEND: str = "amateur snapshot, dull composition, muddy lighting, deformed face, deformed hands, broken fingers, extra people, random text, logo, watermark, bad crop, messy background"
@@ -104,6 +130,11 @@ class Settings(BaseSettings):
     GENERATION_VIDEO_CANDIDATES: int = 4
     GENERATION_VIDEO_REFINEMENT_PASSES: int = 2
     GENERATION_MAX_VIDEO_CANDIDATES: int = 8
+    GENERATION_VIDEO_DEDUP_ENABLED: bool = True
+    GENERATION_VIDEO_DEDUP_AVERAGE_HAMMING_DISTANCE: float = 6.0
+    GENERATION_VIDEO_DEDUP_MOTION_ENERGY_DELTA: float = 1.5
+    GENERATION_VIDEO_DEDUP_DURATION_DELTA_SECONDS: float = 0.25
+    GENERATION_VIDEO_MAX_ATTEMPT_MULTIPLIER: float = 1.5
     GENERATION_REPAIR_VIDEO_CANDIDATE_MULTIPLIER: float = 1.5
     GENERATION_VIDEO_MIN_SCORE: float = 4.0
     GENERATION_VIDEO_IDENTITY_MIN_SCORE: float = 4.0
@@ -119,10 +150,14 @@ class Settings(BaseSettings):
     GENERATION_VIDEO_START_FRAME_REFERENCE_MIN_SCORE: float = 2.5
     # When an end-frame target is generated, reject clips that do not converge to it.
     GENERATION_VIDEO_END_FRAME_REFERENCE_MIN_SCORE: float = 2.5
+    GENERATION_VIDEO_KEYFRAME_REFERENCE_MIN_SCORE: float = 2.5
     # Project-level continuity audit floor for a clip's opening frame versus the prior shot tail.
     GENERATION_VIDEO_CONTINUITY_REFERENCE_MIN_SCORE: float = 2.0
     # Minimum decoded audio/activity correlation when a candidate carries audio.
     GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE: float = 2.5
+    # Minimum temporal motion-trajectory adherence for driven animation models.
+    GENERATION_VIDEO_DRIVING_MOTION_MIN_SCORE: float = 2.8
+    GENERATION_VIDEO_DRIVING_MOTION_MIN_DIRECTION_SIMILARITY: float = 0.15
     # Ignore small baseline score movement as measurement noise; larger drops block delivery.
     GENERATION_SEED_DANCE_BASELINE_REGRESSION_TOLERANCE: float = 0.05
     GENERATION_VIDEO_AESTHETIC_FEATURE_MIN_SCORE: float = 4.0
@@ -183,6 +218,12 @@ class Settings(BaseSettings):
     GENERATION_VIDEO_POSTPROCESS: bool = True
     GENERATION_ALLOW_SVD_PRODUCTION_FALLBACK: bool = False
     GENERATION_VIDEO_END_FRAME_ENABLED: bool = True
+    # Optional local multi-keyframe conditioning. The configured ComfyUI graph
+    # must bind keyframe_images/keyframe_indices (or keyframe_images_json).
+    GENERATION_VIDEO_MID_KEYFRAME_ENABLED: bool = False
+    GENERATION_VIDEO_MID_KEYFRAME_POSITION: float = 0.5
+    GENERATION_VIDEO_MID_KEYFRAME_MIN_SECONDS: float = 3.0
+    GENERATION_VIDEO_MAX_MID_KEYFRAMES: int = 2
     GENERATION_PREFER_NATIVE_VIDEO_AUDIO: bool = False
     SUBTITLE_MAX_READING_UNITS_PER_SECOND: float = 18.0
     GENERATION_RHYTHM_MIN_SHOT_SECONDS: float = 1.2
@@ -249,6 +290,11 @@ class Settings(BaseSettings):
     GENERATION_HYBRID_LOCAL_SHOT_ROLES: str = "establishing"
     GENERATION_QUALITY_PROFILE: str = "seed_dance_reference"
     COMFYUI_DEFAULT_WORKFLOW_TYPE: str = "juggernaut"
+    # ``auto`` inspects the configured ComfyUI workflow. Production rejects
+    # SVD and unknown engines because their quality envelope is too small for
+    # final short-drama shots. Set this to an approved local model profile
+    # only when the workflow actually loads that model.
+    LOCAL_VIDEO_MODEL_PROFILE: str = "auto"
     JIMENG_ENDPOINT: str = ""
     JIMENG_API_KEY: str = ""
     KLING_ENDPOINT: str = ""

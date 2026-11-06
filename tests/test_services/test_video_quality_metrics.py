@@ -12,10 +12,118 @@ from src.services.video_quality_metrics import (
     video_boundary_continuity,
     video_continuity_reference_metrics,
     video_end_frame_reference_metrics,
+    video_frame_reference_metrics,
     video_start_frame_reference_metrics,
+    video_metrics_are_near_duplicate,
+    video_motion_reference_metrics,
     video_technical_score,
     _is_abrupt_visual_jump,
 )
+
+
+def test_driving_motion_metric_rewards_matching_temporal_trajectory():
+    reference = {
+        "status": "available", "duration_seconds": 4.0, "motion_energy": 5.0,
+        "motion_profile": [1.0, 2.0, 6.0, 3.0, 1.5],
+    }
+    matching = {
+        "status": "available", "duration_seconds": 4.0, "motion_energy": 5.2,
+        "motion_profile": [0.8, 2.2, 6.4, 3.1, 1.2],
+    }
+    reversed_motion = {
+        "status": "available", "duration_seconds": 4.0, "motion_energy": 5.0,
+        "motion_profile": [6.0, 5.0, 1.0, 4.0, 5.5],
+    }
+
+    good = video_motion_reference_metrics(matching, reference)
+    poor = video_motion_reference_metrics(reversed_motion, reference)
+
+    assert good["status"] == "available"
+    assert good["score"] >= 4.5
+    assert good["trajectory_correlation"] > 0.9
+    assert poor["score"] < good["score"]
+
+
+def test_driving_motion_metric_rejects_opposite_spatial_direction():
+    reference = {
+        "status": "available", "duration_seconds": 4.0, "motion_energy": 5.0,
+        "motion_profile": [1.0, 2.0, 6.0, 3.0, 1.5],
+        "motion_direction_profile": [[1.0, 0.0]] * 5,
+        "motion_centroid_profile": [[0.4, 0.5], [0.45, 0.5], [0.5, 0.5], [0.55, 0.5], [0.6, 0.5]],
+    }
+    matching = {
+        **reference,
+        "motion_energy": 5.2,
+        "motion_profile": [0.8, 2.2, 6.4, 3.1, 1.2],
+    }
+    opposite = {
+        **matching,
+        "motion_direction_profile": [[-1.0, 0.0]] * 5,
+    }
+
+    good = video_motion_reference_metrics(matching, reference)
+    poor = video_motion_reference_metrics(opposite, reference)
+
+    assert good["spatial_evidence_status"] == "available"
+    assert good["direction_similarity"] > 0.99
+    assert poor["direction_similarity"] < -0.99
+    assert poor["score"] < good["score"]
+
+
+def test_video_perceptual_dedup_requires_visual_motion_and_duration_match():
+    baseline = {
+        "perceptual_fingerprint": {"frame_hashes": ["0000000000000000", "0f0f0f0f0f0f0f0f", "ffffffffffffffff"]},
+        "motion_energy": 8.0,
+        "duration_seconds": 3.6,
+    }
+    near = {
+        "perceptual_fingerprint": {"frame_hashes": ["0000000000000001", "0f0f0f0f0f0f0f0e", "fffffffffffffffe"]},
+        "motion_energy": 8.5,
+        "duration_seconds": 3.7,
+    }
+    different_motion = {**near, "motion_energy": 15.0}
+
+    duplicate, distance = video_metrics_are_near_duplicate(
+        baseline, near,
+        max_average_hamming=2.0,
+        max_motion_energy_delta=1.5,
+        max_duration_delta_seconds=0.25,
+    )
+    assert duplicate is True
+    assert distance["compared_samples"] == 3
+    assert video_metrics_are_near_duplicate(
+        baseline, different_motion,
+        max_average_hamming=2.0,
+        max_motion_energy_delta=1.5,
+        max_duration_delta_seconds=0.25,
+    )[0] is False
+
+
+def test_internal_frame_reference_metrics_reads_requested_frame(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    video = tmp_path / "three_frames.avi"
+    reference = tmp_path / "middle.png"
+    writer = cv2.VideoWriter(
+        str(video), cv2.VideoWriter_fourcc(*"MJPG"), 3.0, (64, 64),
+    )
+    if not writer.isOpened():
+        pytest.skip("OpenCV MJPG writer unavailable")
+    frames = [
+        np.full((64, 64, 3), (10, 10, 10), dtype=np.uint8),
+        np.full((64, 64, 3), (40, 180, 220), dtype=np.uint8),
+        np.full((64, 64, 3), (220, 30, 30), dtype=np.uint8),
+    ]
+    for frame in frames:
+        writer.write(frame)
+    writer.release()
+    cv2.imwrite(str(reference), frames[1])
+
+    metrics = video_frame_reference_metrics(video, reference, 1)
+
+    assert metrics["status"] == "available"
+    assert metrics["boundary"] == "internal"
+    assert metrics["frame_index"] == 1
+    assert metrics["score"] >= 4.5
 
 
 def test_audio_signal_metrics_reports_loudness_and_true_peak(monkeypatch, tmp_path):

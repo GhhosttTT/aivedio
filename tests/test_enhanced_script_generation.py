@@ -43,6 +43,8 @@ def test_enhanced_prompt_generation():
     assert "Every 3-4 scenes must escalate conflict" in prompt, "Prompt 应包含冲突升级要求"
     assert "one clear reversal" in prompt, "Prompt 应包含反转要求"
     assert "ending hook" in prompt, "Prompt 应包含结尾悬念要求"
+    assert "shot_role" in prompt, "Prompt 应包含镜头角色合同"
+    assert "required_engine_capabilities" in prompt, "Prompt 应包含模型能力合同"
     
     print("\n✅ 所有验证通过！")
     print("\n增强版 Prompt 包含以下关键元素：")

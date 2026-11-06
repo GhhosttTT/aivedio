@@ -5,7 +5,9 @@
  * 参考：src/database/models.py
  */
 
-export type ProjectStatus = 
+import type { ShotSpecification } from './shotSpecification';
+
+export type ProjectStatus =
     | 'draft'              // 草稿
     | 'script_generated'   // 剧本已生成
     | 'in_production'      // 生产中（注意：后端是 in_production 不是 producing）
@@ -25,6 +27,7 @@ export interface Scene {
     id: number;
     project_id: number;
     scene_number: number;
+    shot_spec?: ShotSpecification | null;
     character_name?: string;  // 允许为空，某些分镜可能没有角色
     dialogue?: string;  // 允许为空，某些分镜可能没有对话
     visual_description: string;

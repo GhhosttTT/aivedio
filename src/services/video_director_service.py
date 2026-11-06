@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Iterable
 
 from src.config import settings
+from src.models.shot_specification import ShotSpecification
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -44,6 +45,14 @@ class VideoShotPlan:
     performance_direction: str = ""
     edit_intent: str = ""
     continuity_priorities: list[str] | None = None
+    shot_spec: dict | None = None
+    visible_character_count: int = 0
+    mid_frame_prompt: str = ""
+    temporal_keyframes: list[dict] | None = None
+    motion_reference_video: str = ""
+    motion_reference_source: dict | None = None
+    performance_reference_audio: str = ""
+    required_engine_capabilities: list[str] | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -64,6 +73,14 @@ class VideoShotPlan:
             "performance_direction": self.performance_direction,
             "edit_intent": self.edit_intent,
             "continuity_priorities": list(self.continuity_priorities or []),
+            "shot_spec": self.shot_spec,
+            "visible_character_count": self.visible_character_count,
+            "mid_frame_prompt": self.mid_frame_prompt,
+            "temporal_keyframes": [dict(item) for item in (self.temporal_keyframes or [])],
+            "motion_reference_video": self.motion_reference_video,
+            "motion_reference_source": dict(self.motion_reference_source or {}),
+            "performance_reference_audio": self.performance_reference_audio,
+            "required_engine_capabilities": list(self.required_engine_capabilities or []),
         }
 
 
@@ -71,12 +88,13 @@ class VideoDirectorService:
     """Plans model-facing motion and continuity constraints per atomic scene."""
 
     ACTION_TERMS = (
-        "走", "跑", "追", "打", "撞", "摔", "推", "拉", "转身", "递", "拿起", "放下",
-        "knock", "run", "walk", "push", "pull", "turn", "fight", "chase", "hand",
+        "走", "跑", "追", "打斗", "打架", "击打", "殴打", "撞", "摔", "推", "拉", "转身", "递", "拿起", "放下",
+        "knock", "run", "walk", "push", "pull", "turn", "fight", "chase", "handoff", "hand over",
     )
     EMOTION_TERMS = (
         "哭", "笑", "愣", "惊", "怒", "尴尬", "羞", "沉默", "看着", "凝视",
         "smile", "cry", "stare", "hesitate", "shock", "angry", "embarrassed",
+        "reaction", "react", "listening", "absorbing",
     )
     PROP_TERMS = (
         "杯", "咖啡", "手机", "信", "纸条", "门", "钥匙", "照片", "latte", "phone",
@@ -88,14 +106,30 @@ class VideoDirectorService:
         prompt = (scene.image_prompt or visual).strip()
         dialogue = (scene.dialogue or "").strip()
         visible = list(visible_characters or [])
+        raw_spec = getattr(scene, "shot_spec", None)
+        specification = ShotSpecification.model_validate(raw_spec) if isinstance(raw_spec, dict) else None
         visual_style = self._visual_style_prompt(project_id)
         shot_aesthetic = self._shot_aesthetic_profile(scene, visible_count=len(visible))
         if shot_aesthetic.get("prompt"):
             visual_style = self._append_sentence(visual_style, shot_aesthetic["prompt"])
-        shot_role = self._shot_role(visual, prompt, dialogue)
+        shot_role = (
+            specification.shot_role
+            if specification and specification.shot_role
+            else self._shot_role(visual, prompt, dialogue)
+        )
         action_intensity = self._action_intensity(visual, prompt)
+        if specification and specification.action_intensity:
+            action_intensity = specification.action_intensity
         duration = self._target_duration(dialogue, shot_role)
         fps = max(8, int(settings.GENERATION_VIDEO_MODEL_FPS))
+        capacity = min(float(settings.GENERATION_VIDEO_MAX_SECONDS), int(settings.GENERATION_VIDEO_MAX_FRAMES) / fps)
+        if not math.isfinite(capacity) or capacity <= 0:
+            raise ValueError("Video workflow duration capacity must be finite and positive")
+        duration = min(duration, capacity)
+        if specification and specification.duration_seconds is not None:
+            if specification.duration_seconds > capacity:
+                raise ValueError("Shot specification exceeds video workflow duration capacity")
+            duration = specification.duration_seconds
         audio_duration = getattr(scene, "audio_duration", None)
         if dialogue.lower() not in NO_DIALOGUE_MARKERS and isinstance(audio_duration, (int, float)):
             if not math.isfinite(audio_duration) or audio_duration < 0:
@@ -113,12 +147,23 @@ class VideoDirectorService:
         motion, noise = self._motion_params(shot_role, action_intensity)
         spatial_plan = self._spatial_plan(prompt or visual, shot_role, visible)
         camera_movement = self._camera_movement(shot_role, action_intensity)
+        if specification and specification.camera_movement:
+            camera_movement = specification.camera_movement
+        if specification and specification.camera_intensity:
+            camera_movement += f" (camera intensity: {specification.camera_intensity})"
         framing = str(spatial_plan.get("shot_scale") or "medium shot")
         performance_direction = self._performance_direction(shot_role)
+        if specification:
+            performance_direction = self._append_sentence(performance_direction, specification.direction_text())
         edit_intent = self._edit_intent(shot_role, action_intensity)
         continuity_priorities = self._continuity_priorities(shot_role, visible, spatial_plan)
+        if specification:
+            continuity_priorities.extend(specification.continuity_constraints)
+            spatial_plan["continuity_prompt"] = self._append_sentence(
+                spatial_plan.get("continuity_prompt"), "; ".join(specification.continuity_constraints),
+            )
         director_prompt = self._director_prompt(
-            prompt or visual,
+            visual or prompt,
             shot_role,
             action_intensity,
             visible,
@@ -135,6 +180,39 @@ class VideoDirectorService:
             camera_movement=camera_movement,
             edit_intent=edit_intent,
         )
+        mid_frame_prompt = self._mid_frame_prompt(
+            prompt or visual,
+            shot_role,
+            action_intensity,
+            visible,
+            spatial_plan,
+            visual_style,
+            performance_direction=performance_direction,
+            camera_movement=camera_movement,
+        )
+        temporal_keyframes = self._temporal_keyframe_plan(
+            mid_frame_prompt,
+            shot_role=shot_role,
+            action_intensity=action_intensity,
+            duration_seconds=duration,
+            performance_intensity=(specification.performance_intensity if specification else None),
+            specification=specification,
+        )
+        if specification:
+            ending_states = [
+                f"{state.character_name}: {state.end_state}"
+                for state in specification.character_states if state.end_state
+            ]
+            ending_assets = [
+                f"{asset.asset_id}: " + ", ".join(
+                    f"{key}={value}" for key, value in asset.end_state.items()
+                )
+                for asset in specification.continuity_assets if asset.end_state
+            ]
+            end_frame_prompt = self._append_sentence(
+                end_frame_prompt,
+                "; ".join(ending_states + ending_assets + specification.continuity_constraints),
+            )
         negative_prompt = self._negative_prompt(project_id, shot_aesthetic)
         notes = [
             "single continuous shot",
@@ -145,7 +223,7 @@ class VideoDirectorService:
             notes.append(f"project_id={project_id}")
         if isinstance(audio_duration, (int, float)) and audio_duration > 0:
             notes.append(f"timed to measured dialogue audio: {audio_duration:.3f}s")
-        return VideoShotPlan(
+        plan = VideoShotPlan(
             shot_role=shot_role,
             action_intensity=action_intensity,
             target_duration_seconds=duration,
@@ -163,7 +241,17 @@ class VideoDirectorService:
             performance_direction=performance_direction,
             edit_intent=edit_intent,
             continuity_priorities=continuity_priorities,
+            shot_spec=specification.model_dump() if specification else None,
+            visible_character_count=len(visible),
+            mid_frame_prompt=mid_frame_prompt,
+            temporal_keyframes=temporal_keyframes,
+            motion_reference_video=(specification.motion_reference_video if specification else ""),
+            performance_reference_audio=(specification.performance_reference_audio if specification else ""),
+            required_engine_capabilities=(
+                list(specification.required_engine_capabilities) if specification else []
+            ),
         )
+        return plan
 
     def normalize_clip(
         self,
@@ -284,10 +372,28 @@ class VideoDirectorService:
     @staticmethod
     def _contains_any(text: str, terms: Iterable[str]) -> bool:
         lower = text.lower()
-        return any(term.lower() in lower for term in terms)
+        for term in terms:
+            term = term.lower()
+            if not re.fullmatch(r"[a-z]+(?:[ -][a-z]+)*", term):
+                if term in lower:
+                    return True
+                continue
+            forms = {term, term + "s", term + "es", term + "ed", term + "ing"}
+            if term.endswith("e"):
+                forms.update({term + "d", term[:-1] + "ing"})
+            if term.endswith("y"):
+                forms.update({term[:-1] + "ies", term[:-1] + "ied"})
+            if term == "run":
+                forms.update({"ran", "running"})
+            if term == "fight":
+                forms.add("fought")
+            pattern = "|".join(re.escape(form) for form in forms)
+            if re.search(r"(?<![a-z])(?:" + pattern + r")(?![a-z])", lower):
+                return True
+        return False
 
     def _shot_role(self, visual: str, prompt: str, dialogue: str) -> str:
-        text = f"{visual} {prompt}"
+        text = visual.strip() or prompt
         if self._contains_any(text, self.ACTION_TERMS):
             return "action"
         if self._contains_any(text, self.PROP_TERMS):
@@ -299,8 +405,8 @@ class VideoDirectorService:
         return "establishing"
 
     def _action_intensity(self, visual: str, prompt: str) -> str:
-        text = f"{visual} {prompt}"
-        if self._contains_any(text, ("跑", "追", "打", "撞", "摔", "fight", "chase", "run")):
+        text = visual.strip() or prompt
+        if self._contains_any(text, ("跑", "追", "打斗", "打架", "击打", "殴打", "撞", "摔", "fight", "chase", "run")):
             return "high"
         if self._contains_any(text, self.ACTION_TERMS):
             return "medium"
@@ -390,15 +496,26 @@ class VideoDirectorService:
             camera_angle = "eye-level angle"
 
         slots = ["frame left", "frame right", "center", "background left", "background right"]
-        if len(names) == 1:
-            positions = {names[0]: "center foreground"}
-        else:
-            positions = {name: slots[index % len(slots)] for index, name in enumerate(names)}
+        positions = {}
+        for index, name in enumerate(names):
+            explicit_position = self._explicit_screen_position(prompt, name)
+            if explicit_position:
+                positions[name] = explicit_position
+            elif len(names) == 1:
+                positions[name] = "center foreground"
+            else:
+                positions[name] = slots[index % len(slots)]
+        eyelines = {
+            name: direction
+            for name in names
+            if (direction := self._explicit_eyeline_direction(prompt, name))
+        }
         prop_focus = self._prop_focus(prompt)
         axis = "keep a fixed 180-degree screen direction; do not flip left/right positions"
         continuity = (
             f"{shot_scale}, {camera_angle}; "
             + ", ".join(f"{name} at {position}" for name, position in positions.items())
+            + ("; " + ", ".join(f"{name} looks {direction}" for name, direction in eyelines.items()) if eyelines else "")
             + (f"; prop focus: {prop_focus}" if prop_focus else "")
             + f"; {axis}."
         )
@@ -406,6 +523,7 @@ class VideoDirectorService:
             "pose_reference_prompt": (
                 f"Pose control for {shot_scale}: "
                 + ", ".join(f"{name} {position}" for name, position in positions.items())
+                + ("; " + ", ".join(f"{name} eyeline {direction}" for name, direction in eyelines.items()) if eyelines else "")
                 + "; one readable short-drama action beat; stable limbs and eye lines."
             ),
             "depth_reference_prompt": (
@@ -420,14 +538,51 @@ class VideoDirectorService:
             "camera_angle": camera_angle,
             "camera_axis": axis,
             "character_positions": positions,
+            "character_eyelines": eyelines,
             "prop_focus": prop_focus,
             "continuity_prompt": continuity,
             "control_references": control_references,
         }
 
+    @staticmethod
+    def _explicit_screen_position(prompt: str, character_name: str) -> str:
+        text = str(prompt or "").lower()
+        name = re.escape(str(character_name or "").lower())
+        candidates = (
+            ("frame left", rf"{name}[^.;，。]{{0,80}}(?:at|on|stays|站在|位于)\s*(?:the\s*)?(?:frame|screen)?\s*left"),
+            ("frame right", rf"{name}[^.;，。]{{0,80}}(?:at|on|stays|站在|位于)\s*(?:the\s*)?(?:frame|screen)?\s*right"),
+            ("center foreground", rf"{name}[^.;，。]{{0,80}}(?:at|in|stays|站在|位于)\s*(?:the\s*)?(?:frame\s*)?center"),
+        )
+        for position, pattern in candidates:
+            if re.search(pattern, text, re.I):
+                return position
+        if len(character_name or "") and len(text.split()) < 60:
+            if "画面左" in text or "屏幕左" in text:
+                return "frame left"
+            if "画面右" in text or "屏幕右" in text:
+                return "frame right"
+        return ""
+
+    @staticmethod
+    def _explicit_eyeline_direction(prompt: str, character_name: str) -> str:
+        text = str(prompt or "").lower()
+        name = re.escape(str(character_name or "").lower())
+        for direction in ("screen right", "screen left"):
+            if re.search(
+                rf"{name}[^.;，。]{{0,100}}(?:look(?:s|ing)?|eyeline|gaze|看向|望向)\s*(?:toward\s*)?{direction}",
+                text,
+                re.I,
+            ):
+                return direction
+        if "看向画面右" in text or "视线向右" in text:
+            return "screen right"
+        if "看向画面左" in text or "视线向左" in text:
+            return "screen left"
+        return ""
+
     def _prop_focus(self, prompt: str) -> str:
         for term in self.PROP_TERMS:
-            if term.lower() in prompt.lower():
+            if self._contains_any(prompt, (term,)):
                 return term
         return ""
 
@@ -460,10 +615,11 @@ class VideoDirectorService:
             "dialogue_reaction": "gentle conversational push-in with stable face framing",
             "establishing": "slow cinematic drift with stable horizon and room geometry",
         }.get(shot_role, "subtle cinematic camera movement without a cut")
+        camera_guidance = camera_movement or camera_guidance
         spoken_line = str(dialogue or "").strip()
         if spoken_line and spoken_line.lower() not in NO_DIALOGUE_MARKERS:
             dialogue_guidance = (
-                f"Dialogue and lip sync: deliver the exact spoken line \"{spoken_line[:240]}\"; "
+                f"Dialogue and lip sync: deliver the exact spoken line \"{spoken_line}\"; "
                 "mouth movement starts and stops with the line, natural pauses and restrained facial acting, "
                 "keep the speaking character's eyeline readable."
             )
@@ -513,6 +669,110 @@ class VideoDirectorService:
             f"Preserve spatial contract: {spatial_plan.get('continuity_prompt', '')} "
             f"{visual_style} Same scene, same wardrobe, same props, no new people, cinematic short-drama keyframe."
         )
+
+    def _mid_frame_prompt(
+        self,
+        prompt: str,
+        shot_role: str,
+        action_intensity: str,
+        visible_characters: list[dict],
+        spatial_plan: dict,
+        visual_style: str = "",
+        performance_direction: str = "",
+        camera_movement: str = "",
+    ) -> str:
+        identity = self._identity_prompt(
+            visible_characters, prefix=" Keep all identity anchors unchanged",
+        )
+        development = {
+            "action": "the action is at its clearest readable peak with coherent body mechanics",
+            "prop_interaction": "the hand and important prop make clear believable contact",
+            "emotion_reaction": "the emotional reaction reaches its most readable expression without exaggeration",
+            "dialogue_reaction": "the speaking or listening performance reaches the key emotional emphasis",
+            "establishing": "the camera reaches the most informative view of the same location",
+        }.get(shot_role, "the dramatic beat reaches its clearest visual development")
+        return (
+            f"{prompt}. Middle performance keyframe: {development}. "
+            f"Motion intensity: {action_intensity}. Performance: {performance_direction}."
+            f"{identity} Camera remains on the same path: {camera_movement or 'subtle cinematic motion'}. "
+            f"Preserve spatial contract: {spatial_plan.get('continuity_prompt', '')} "
+            f"{visual_style} Same scene, same wardrobe, same props, no new people, "
+            f"cinematic short-drama development keyframe."
+        )
+
+    def _temporal_keyframe_plan(
+        self,
+        mid_frame_prompt: str,
+        *,
+        shot_role: str,
+        action_intensity: str,
+        duration_seconds: float,
+        performance_intensity: int | None = None,
+        specification: ShotSpecification | None = None,
+    ) -> list[dict]:
+        """Place visual anchors at meaningful performance beats within one shot."""
+        maximum = max(1, int(settings.GENERATION_VIDEO_MAX_MID_KEYFRAMES))
+        needs_two = bool(
+            maximum >= 2
+            and duration_seconds >= settings.GENERATION_VIDEO_MID_KEYFRAME_MIN_SECONDS
+            and (
+                action_intensity == "high"
+                or shot_role == "prop_interaction"
+                or duration_seconds >= 5.0
+                or (isinstance(performance_intensity, int) and performance_intensity >= 4)
+            )
+        )
+        if not needs_two:
+            position = float(settings.GENERATION_VIDEO_MID_KEYFRAME_POSITION)
+            anchor = {
+                "position": position,
+                "role": "performance_peak",
+                "strength": 0.85,
+                "prompt": mid_frame_prompt,
+            }
+            if specification:
+                anchor["prompt"] = self._append_sentence(
+                    anchor["prompt"], specification.temporal_state_directive(position),
+                )
+            return [anchor]
+
+        phases = {
+            "action": (
+                (0.32, "action_commitment", "The body has clearly committed to the action; weight shift and limb direction are physically coherent before impact."),
+                (0.68, "action_peak", "The action reaches its readable consequence; contact, balance and reaction remain physically coherent."),
+            ),
+            "prop_interaction": (
+                (0.34, "prop_approach", "The hand approaches the established prop with separated fingers and an unambiguous reach direction."),
+                (0.66, "prop_contact", "The established hand makes believable contact with the same prop; ownership and orientation are visually clear."),
+            ),
+            "emotion_reaction": (
+                (0.36, "emotion_onset", "The emotional change has begun in the eyes and facial muscles while the head pose remains restrained."),
+                (0.70, "emotion_peak", "The emotion reaches its clearest restrained expression with stable facial anatomy and eye line."),
+            ),
+            "dialogue_reaction": (
+                (0.36, "dialogue_emphasis", "The line reaches its first meaningful emphasis with natural mouth shape, breath and attentive eye line."),
+                (0.70, "dialogue_response", "The spoken or listening beat resolves into a readable reaction without exaggerated mouth or head motion."),
+            ),
+        }.get(shot_role, (
+            (0.35, "visual_development", "The shot reaches a clearer informative view while preserving the same layout and subject positions."),
+            (0.68, "visual_peak", "The visual beat reaches its strongest composition before settling toward the approved ending."),
+        ))
+        anchors = [
+            {
+                "position": position,
+                "role": role,
+                "strength": 0.82 if index == 0 else 0.88,
+                "prompt": self._append_sentence(mid_frame_prompt, directive),
+            }
+            for index, (position, role, directive) in enumerate(phases[:maximum])
+        ]
+        if specification:
+            for anchor in anchors:
+                anchor["prompt"] = self._append_sentence(
+                    anchor["prompt"],
+                    specification.temporal_state_directive(anchor["position"]),
+                )
+        return anchors
 
     def _negative_prompt(self, project_id: int | None = None, shot_aesthetic: dict | None = None) -> str:
         base = settings.GENERATION_QUALITY_NEGATIVE_APPEND

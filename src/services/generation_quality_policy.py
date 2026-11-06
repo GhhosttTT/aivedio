@@ -30,6 +30,8 @@ class QualityBudget:
     repair_action: str | None = None
     reason: str = "base_generation"
     action_profile: str | None = None
+    shot_risk_profile: str | None = None
+    shot_risk_factors: list[str] | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -40,6 +42,8 @@ class QualityBudget:
             "repair_action": self.repair_action,
             "reason": self.reason,
             "action_profile": self.action_profile,
+            "shot_risk_profile": self.shot_risk_profile,
+            "shot_risk_factors": list(self.shot_risk_factors or []),
         }
 
 
@@ -313,6 +317,33 @@ ACTION_BUDGETS = {
 }
 
 
+# A single candidate budget wastes GPU time on easy establishing shots while
+# under-sampling the clips with the highest visible failure rate. These budgets
+# are deliberately about generation uncertainty, not story importance.
+VIDEO_SHOT_RISK_BUDGETS = {
+    "dialogue_reaction": {
+        "min_candidates": 6,
+        "extra_refinement_passes": 1,
+        "profile": "dialogue_performance",
+    },
+    "emotion_reaction": {
+        "min_candidates": 5,
+        "extra_refinement_passes": 1,
+        "profile": "micro_expression",
+    },
+    "prop_interaction": {
+        "min_candidates": 6,
+        "extra_refinement_passes": 2,
+        "profile": "hand_prop_temporal_integrity",
+    },
+    "action": {
+        "min_candidates": 6,
+        "extra_refinement_passes": 2,
+        "profile": "high_motion_temporal_integrity",
+    },
+}
+
+
 def image_quality_budget(repair_action: str | None = None) -> QualityBudget:
     return _budget(
         stage="image",
@@ -324,7 +355,10 @@ def image_quality_budget(repair_action: str | None = None) -> QualityBudget:
     )
 
 
-def video_quality_budget(repair_action: str | None = None) -> QualityBudget:
+def video_quality_budget(
+    repair_action: str | None = None,
+    shot_plan: dict | None = None,
+) -> QualityBudget:
     return _budget(
         stage="video",
         base_candidates=settings.GENERATION_VIDEO_CANDIDATES,
@@ -332,6 +366,7 @@ def video_quality_budget(repair_action: str | None = None) -> QualityBudget:
         max_candidates=settings.GENERATION_MAX_VIDEO_CANDIDATES,
         repair_multiplier=settings.GENERATION_REPAIR_VIDEO_CANDIDATE_MULTIPLIER,
         repair_action=repair_action,
+        shot_plan=shot_plan,
     )
 
 
@@ -403,6 +438,7 @@ def _budget(
     max_candidates: int,
     repair_multiplier: float,
     repair_action: str | None,
+    shot_plan: dict | None = None,
 ) -> QualityBudget:
     max_candidates = max(1, int(max_candidates))
     candidate_count = max(1, min(int(base_candidates), max_candidates))
@@ -411,6 +447,8 @@ def _budget(
     profile_budget = PROFILE_BUDGETS.get(profile)
     reason = "base_generation_budget"
     action_profile = None
+    shot_risk_profile = None
+    shot_risk_factors: list[str] = []
     if profile_budget:
         candidate_count = max(
             candidate_count,
@@ -437,6 +475,34 @@ def _budget(
             )
             refinement_passes += max(0, int(action_budget["extra_refinement_passes"]))
             action_profile = str(action_budget["profile"])
+    if stage == "video" and isinstance(shot_plan, dict):
+        shot_role = str(shot_plan.get("shot_role") or "").strip().lower()
+        action_intensity = str(shot_plan.get("action_intensity") or "").strip().lower()
+        try:
+            visible_count = int(shot_plan.get("visible_character_count") or 0)
+        except (TypeError, ValueError):
+            visible_count = 0
+        risk_budget = VIDEO_SHOT_RISK_BUDGETS.get(shot_role)
+        if risk_budget:
+            candidate_count = max(
+                candidate_count,
+                min(max_candidates, int(risk_budget["min_candidates"])),
+            )
+            refinement_passes += max(0, int(risk_budget["extra_refinement_passes"]))
+            shot_risk_profile = str(risk_budget["profile"])
+            shot_risk_factors.append(f"shot_role={shot_role}")
+        if action_intensity in {"high", "强", "高"}:
+            candidate_count = min(max_candidates, max(candidate_count, 6))
+            refinement_passes += 1
+            shot_risk_factors.append("action_intensity=high")
+        if visible_count >= 2:
+            candidate_count = min(max_candidates, max(candidate_count, 6))
+            refinement_passes += 1
+            shot_risk_factors.append(f"visible_character_count={visible_count}")
+            if shot_risk_profile is None:
+                shot_risk_profile = "multi_character_temporal_identity"
+        if shot_risk_factors:
+            reason = "shot_risk_generation_budget"
     return QualityBudget(
         candidate_count=candidate_count,
         refinement_passes=refinement_passes,
@@ -445,4 +511,6 @@ def _budget(
         repair_action=repair_action,
         reason=reason,
         action_profile=action_profile,
+        shot_risk_profile=shot_risk_profile,
+        shot_risk_factors=shot_risk_factors,
     )

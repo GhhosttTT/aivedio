@@ -85,14 +85,14 @@ class TestScriptGenerator:
 【分镜】
 分镜1：
 - 场景描述：公园里，阳光明媚
-- 出现角色：[小明, 小红]
+- 出现角色：[小明]
 - 对话：你好，很高兴认识你
 - 说话人：小明
 - 情感：开心
 
 分镜2：
 - 场景描述：咖啡厅，温馨的氛围
-- 出现角色：[小明, 小红]
+- 出现角色：[小红]
 - 对话：我也很高兴认识你
 - 说话人：小红
 - 情感：温柔
@@ -443,6 +443,64 @@ class TestScriptGenerator:
         assert "one clear reversal" in prompt
         assert "final two scenes" in prompt
         assert "exactly 16 scenes" in prompt
+        assert "relationship two-shot, speaker close-up, then listener reaction" in prompt
+        assert "required_engine_capabilities" in prompt
+        assert "continuity_assets" in prompt
+
+    def test_safe_fallback_script_contains_execution_contracts(
+        self,
+        script_generator,
+        sample_project,
+    ):
+        fallback = script_generator._build_safe_fallback_script(
+            sample_project,
+            {"characters": [{"name": "角色A", "description": "都市主角"}]},
+            16,
+        )
+
+        assert len(fallback["scenes"]) == 16
+        assert all(scene["shot_spec"]["shot_role"] for scene in fallback["scenes"])
+        assert all(
+            scene["shot_spec"]["required_engine_capabilities"]
+            for scene in fallback["scenes"] if scene["characters"]
+        )
+
+    def test_compile_existing_shot_contracts_invalidates_only_changed_videos(
+        self,
+        script_generator,
+        sample_project,
+        db_session,
+    ):
+        sample_project.script = json.dumps({"scenes": [{
+            "scene_number": 1,
+            "description": "角色A奔跑追逐嫌疑人",
+            "characters": ["角色A"],
+            "shot_spec": {},
+        }, {
+            "scene_number": 2,
+            "description": "空办公室",
+            "characters": [],
+            "shot_spec": {
+                "shot_role": "establishing",
+                "required_engine_capabilities": [],
+                "action_intensity": "low",
+            },
+        }]}, ensure_ascii=False)
+        first = Scene(project_id=sample_project.id, scene_number=1, visual_description="角色A奔跑追逐嫌疑人", video_path="old-1.mp4")
+        second = Scene(project_id=sample_project.id, scene_number=2, visual_description="空办公室", video_path="old-2.mp4")
+        db_session.add_all([first, second])
+        db_session.flush()
+
+        result = script_generator.compile_existing_shot_contracts(sample_project)
+
+        assert result["changed_scene_numbers"] == [1]
+        assert first.video_path is None
+        assert second.video_path == "old-2.mp4"
+        compiled = json.loads(sample_project.script)["scenes"][0]["shot_spec"]
+        assert compiled["shot_role"] == "action"
+        assert compiled["required_engine_capabilities"] == [
+            "identity_reference", "motion_control",
+        ]
     
     def test_parse_script_with_colon_variants(self, script_generator):
         """测试：解析使用不同冒号的剧本"""

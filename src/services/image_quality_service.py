@@ -46,6 +46,56 @@ class ImageReview(BaseModel):
     reviewed_images: list[StrictInt]
     issues: list[Issue] = Field(default_factory=list)
 
+
+def image_perceptual_fingerprint(path: str | Path, hash_size: int = 8) -> dict[str, Any]:
+    """Return a compact structural hash plus a coarse colour signature."""
+    image_path = Path(path)
+    with Image.open(image_path) as image:
+        rgb = image.convert("RGB")
+        mean_rgb = [round(value, 3) for value in ImageStat.Stat(rgb).mean]
+        gray = rgb.convert("L").resize((hash_size + 1, hash_size), Image.Resampling.LANCZOS)
+        pixels = list(gray.getdata())
+    bits = []
+    row_width = hash_size + 1
+    for row in range(hash_size):
+        offset = row * row_width
+        bits.extend(pixels[offset + column] > pixels[offset + column + 1] for column in range(hash_size))
+    value = 0
+    for bit in bits:
+        value = (value << 1) | int(bit)
+    return {
+        "algorithm": f"dhash-{hash_size * hash_size}",
+        "dhash": f"{value:0{hash_size * hash_size // 4}x}",
+        "mean_rgb": mean_rgb,
+    }
+
+
+def image_fingerprint_distance(
+    first: dict[str, Any], second: dict[str, Any],
+) -> tuple[int, float]:
+    """Return structural Hamming distance and RMS distance between mean RGB."""
+    first_hash = int(str(first["dhash"]), 16)
+    second_hash = int(str(second["dhash"]), 16)
+    hamming = (first_hash ^ second_hash).bit_count()
+    first_rgb = [float(value) for value in first["mean_rgb"]]
+    second_rgb = [float(value) for value in second["mean_rgb"]]
+    color = math.sqrt(sum((left - right) ** 2 for left, right in zip(first_rgb, second_rgb)) / 3)
+    return hamming, round(color, 3)
+
+
+def image_fingerprints_are_near_duplicate(
+    first: dict[str, Any],
+    second: dict[str, Any],
+    *,
+    max_hamming: int,
+    max_color_distance: float,
+) -> tuple[bool, dict[str, float | int]]:
+    hamming, color = image_fingerprint_distance(first, second)
+    return (
+        hamming <= max_hamming and color <= max_color_distance,
+        {"hamming_distance": hamming, "color_distance": color},
+    )
+
 PLATFORM_AESTHETIC_FEATURES = (
     "skin_texture",
     "lighting_quality",

@@ -103,6 +103,24 @@ def passed_video_review():
     }
 
 
+def passed_final_video_review(engine_id, *, average=4.5, status="passed"):
+    return {
+        "status": status,
+        "average": average,
+        "provider_metadata": {
+            "local_engine_route": {"engine_id": engine_id},
+        },
+        "gate_scores": {
+            "facial_identity": 4.4,
+            "identity_consistency": 4.4,
+            "temporal_consistency": 4.3,
+        },
+        "platform_score": 4.3,
+        "video_aesthetic_gate": {"status": "passed"},
+        "video_performance_gate": {"status": "passed"},
+    }
+
+
 def passed_seed_dance_baseline(tmp_path):
     contact_sheet = tmp_path / "seed_dance_contact_sheet.png"
     contact_sheet.write_bytes(b"visual comparison evidence")
@@ -312,7 +330,8 @@ def test_video_workflow_preflight_blocks_missing_video_contract(tmp_path, monkey
     assert report["checks"]["has_continuity_reference_placeholder"] is False
     assert report["checks"]["has_likely_video_output"] is False
     assert any("{reference_image}" in item for item in report["action_items"])
-    assert any("{quality_mode}" in item for item in report["action_items"])
+    assert any("positive CLIP" in item for item in report["action_items"])
+    assert any("frame_count" in item for item in report["action_items"])
     assert any("video output node" in item for item in report["action_items"])
 
 
@@ -359,10 +378,10 @@ def test_video_workflow_preflight_blocks_missing_quality_placeholders(tmp_path, 
     assert report["checks"]["has_quality_profile_placeholder"] is False
     assert report["checks"]["has_repair_action_placeholder"] is False
     assert report["checks"]["has_quality_pipeline_placeholder"] is False
-    assert any("{quality_mode}" in item for item in report["action_items"])
-    assert any("{repair_action}" in item for item in report["action_items"])
-    assert any("{quality_pipeline_json}" in item for item in report["action_items"])
-    assert any("continuity_reference" in item for item in report["action_items"])
+    assert any("negative_prompt" in item for item in report["action_items"])
+    assert any("width and height" in item for item in report["action_items"])
+    assert any("native video length" in item for item in report["action_items"])
+    assert any("Bind seed" in item for item in report["action_items"])
 
 
 def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeypatch):
@@ -370,6 +389,7 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
     workflow.write_text(json.dumps({
         "1": {"class_type": "LoadImage", "inputs": {"image": "{reference_image}"}},
         "2": {"class_type": "CLIPTextEncode", "inputs": {"text": "{prompt}"}},
+        "2b": {"class_type": "CLIPTextEncode", "inputs": {"text": "{negative_prompt}"}},
         "3": {"class_type": "LoadImage", "inputs": {"image": "{last_frame}"}},
         "3b": {"class_type": "LoadImage", "inputs": {"image": "{continuity_reference_image}"}},
         "3c": {"class_type": "ReferenceStack", "inputs": {"images": "{reference_images_json}"}},
@@ -384,7 +404,13 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
                 "spatial_contract": "{spatial_asset_pack_json}",
             },
         },
-        "5": {"class_type": "VHS_VideoCombine", "inputs": {"filename_prefix": "{output_prefix}"}},
+        "4b": {"class_type": "EmptyHunyuanLatentVideo", "inputs": {
+            "width": "{width}", "height": "{height}", "length": "{num_frames}",
+        }},
+        "4c": {"class_type": "KSamplerAdvanced", "inputs": {"noise_seed": "{seed}"}},
+        "5": {"class_type": "VHS_VideoCombine", "inputs": {
+            "filename_prefix": "{output_prefix}", "fps": "{fps}",
+        }},
     }), encoding="utf-8")
 
     class FakeResponse:
@@ -427,9 +453,10 @@ def test_video_workflow_preflight_accepts_placeholder_contract(tmp_path, monkeyp
     assert report["checks"]["has_continuity_reference_placeholder"] is True
     assert report["checks"]["has_reference_images_placeholder"] is True
     assert report["placeholders"] == [
-        "continuity_reference_image", "last_frame", "output_prefix", "prompt", "quality_mode",
+        "continuity_reference_image", "fps", "height", "last_frame", "negative_prompt", "num_frames",
+        "output_prefix", "prompt", "quality_mode",
         "quality_pipeline_json", "reference_image", "reference_images_json", "repair_action",
-        "spatial_asset_pack_json", "spatial_control_references_json", "spatial_plan_json",
+        "seed", "spatial_asset_pack_json", "spatial_control_references_json", "spatial_plan_json", "width",
     ]
     assert report["likely_output_nodes"][0]["class_type"] == "VHS_VideoCombine"
     assert report["action_items"] == []
@@ -794,6 +821,233 @@ def test_validation_summary_accepts_seed_dance_candidate(tmp_path):
     assert report["checks"]["manual_blocking_issues_passed"] is True
     assert report["checks"]["repair_queue_empty"] is True
     assert report["action_items"] == []
+
+
+def test_temporal_keyframe_evidence_requires_every_final_anchor_to_pass(monkeypatch):
+    monkeypatch.setattr(validator.settings, "GENERATION_VIDEO_KEYFRAME_REFERENCE_MIN_SCORE", 2.5)
+
+    assert validator._temporal_keyframe_final_evidence_passed([{
+        "technical_metrics": {
+            "keyframe_references": [
+                {"status": "available", "score": 4.2},
+                {"status": "available", "score": 3.8},
+            ],
+        },
+    }]) is True
+    assert validator._temporal_keyframe_final_evidence_passed([{
+        "technical_metrics": {
+            "keyframe_references": [
+                {"status": "available", "score": 4.2},
+                {"status": "available", "score": 2.4},
+            ],
+        },
+    }]) is False
+
+
+def test_verified_temporal_registry_engine_requires_one_engine_to_prove_full_contract():
+    report = {
+        "engine_registry": {
+            "engines": [
+                {
+                    "engine_id": "wan_identity",
+                    "status": "ready",
+                    "declared_capabilities": {"temporal_keyframes": False},
+                    "model": {"supports_temporal_keyframes": False},
+                    "workflow": {"checks": {"has_temporal_keyframe_control": False}},
+                },
+                {
+                    "engine_id": "ltx_temporal",
+                    "status": "ready",
+                    "declared_capabilities": {"temporal_keyframes": True},
+                    "model": {"supports_temporal_keyframes": True},
+                    "workflow": {"checks": {"has_temporal_keyframe_control": True}},
+                },
+            ],
+        },
+    }
+
+    assert validator._verified_temporal_registry_engines(report) == ["ltx_temporal"]
+
+    report["engine_registry"]["engines"][1]["workflow"]["checks"]["has_temporal_keyframe_control"] = False
+    assert validator._verified_temporal_registry_engines(report) == []
+
+
+def test_local_engine_sample_coverage_requires_a_passing_final_clip_per_engine():
+    fingerprint = {
+        "profile": "engine_registry",
+        "engines": [
+            {"engine_id": "wan_identity"},
+            {"engine_id": "ltx_temporal"},
+            {"engine_id": "wan_motion"},
+        ],
+    }
+    reports = {
+        "identity.quality.json": {
+            "selected_provider_metadata": {
+                "request_contract": {
+                    "local_engine_route": {"engine_id": "wan_identity"},
+                },
+            },
+            "final_video_review": {
+                **passed_final_video_review("wan_identity"),
+                "provider_metadata": {},
+            },
+        },
+        "temporal.quality.json": {
+            "final_video_review": passed_final_video_review(
+                "ltx_temporal", average=2.5, status="needs_review"
+            ),
+        },
+    }
+
+    coverage = validator._local_engine_sample_coverage(fingerprint, reports)
+
+    assert coverage == {
+        "applicable": True,
+        "required": ["ltx_temporal", "wan_identity", "wan_motion"],
+        "required_capabilities": {
+            "ltx_temporal": [],
+            "wan_identity": [],
+            "wan_motion": [],
+        },
+        "observed": ["ltx_temporal", "wan_identity"],
+        "passed_engines": ["wan_identity"],
+        "exercised_capabilities": {
+            "ltx_temporal": [],
+            "wan_identity": [],
+            "wan_motion": [],
+        },
+        "uncovered_capabilities": {},
+        "missing": ["wan_motion"],
+        "failed": ["ltx_temporal"],
+        "passed": False,
+    }
+
+
+def test_local_engine_sample_coverage_aggregates_exercised_capabilities():
+    fingerprint = {
+        "profile": "engine_registry",
+        "engines": [{
+            "engine_id": "wan_performance",
+            "capabilities": {
+                "identity_reference": True,
+                "performance_control": True,
+                "motion_control": True,
+            },
+        }],
+    }
+    reports = {
+        "dialogue.quality.json": {
+            "final_video_review": {
+                **passed_final_video_review("wan_performance"),
+                "provider_metadata": {
+                    "local_engine_route": {
+                        "engine_id": "wan_performance",
+                        "selection_reasons": [
+                            "preferred:identity_reference",
+                            "preferred:performance_control",
+                        ],
+                    },
+                },
+            },
+        },
+        "action.quality.json": {
+            "final_video_review": {
+                **passed_final_video_review("wan_performance"),
+                "provider_metadata": {
+                    "local_engine_route": {
+                        "engine_id": "wan_performance",
+                        "selection_reasons": ["preferred:motion_control"],
+                    },
+                },
+            },
+        },
+    }
+
+    coverage = validator._local_engine_sample_coverage(fingerprint, reports)
+
+    assert coverage["passed"] is True
+    assert coverage["passed_engines"] == ["wan_performance"]
+    assert coverage["exercised_capabilities"]["wan_performance"] == [
+        "identity_reference", "motion_control", "performance_control",
+    ]
+    assert coverage["uncovered_capabilities"] == {}
+
+    reports.pop("action.quality.json")
+    coverage = validator._local_engine_sample_coverage(fingerprint, reports)
+    assert coverage["passed"] is False
+    assert coverage["uncovered_capabilities"] == {
+        "wan_performance": ["motion_control"],
+    }
+
+
+def test_validation_summary_blocks_unvalidated_registered_engine(tmp_path, monkeypatch):
+    monkeypatch.setattr(validator, "local_video_configuration_fingerprint", lambda _path=None: {
+        "profile": "engine_registry",
+        "fingerprint": "registry-v1",
+        "engines": [
+            {"engine_id": "wan_identity"},
+            {"engine_id": "ltx_temporal"},
+        ],
+    })
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "production_video_engine_preflight.json", {
+        "provider": {"provider": "local_comfyui"},
+        "workflow": {},
+        "local_model": {"status": "ready"},
+    })
+    write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "image_review.json", passed_image_review(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", passed_manual_review(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "identity.quality.json", {
+        "final_video_review": passed_final_video_review("wan_identity"),
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    coverage = report["checks"]["local_engine_sample_coverage"]
+    assert report["status"] != "ready_for_seed_dance_candidate"
+    assert coverage["passed"] is False
+    assert coverage["passed_engines"] == ["wan_identity"]
+    assert coverage["missing"] == ["ltx_temporal"]
+    assert any("ltx_temporal" in item for item in report["action_items"])
+
+
+def test_validation_summary_blocks_missing_temporal_keyframe_evidence(tmp_path, monkeypatch):
+    monkeypatch.setattr(validator.settings, "GENERATION_VIDEO_MID_KEYFRAME_ENABLED", True)
+    write_json(tmp_path / "preflight.json", {"status": "ready_for_live_test"})
+    write_json(tmp_path / "video_workflow_preflight.json", {
+        "status": "ready_for_live_test",
+        "checks": {"has_temporal_keyframe_control": True},
+    })
+    write_json(tmp_path / "production_video_engine_preflight.json", {
+        "provider": {"provider": "local_comfyui"},
+        "local_model": {"supports_temporal_keyframes": True},
+        "workflow": {"workflow_path": ""},
+    })
+    write_json(tmp_path / "render.json", rendered_cases(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "image_review.json", passed_image_review(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "video_review.json", passed_video_review())
+    write_json(tmp_path / "seed_dance_baseline_comparison.json", passed_seed_dance_baseline(tmp_path))
+    write_json(tmp_path / "manual_review.json", passed_manual_review(*PRODUCTION_CASE_IDS))
+    write_json(tmp_path / "scene.quality.json", {
+        "final_video_review": {
+            "status": "passed",
+            "average": 4.8,
+            "technical_metrics": {"keyframe_references": []},
+        },
+    })
+
+    report = validator.summarize_validation(tmp_path)
+
+    assert report["status"] != "ready_for_seed_dance_candidate"
+    assert report["checks"]["temporal_keyframe_model_capability_passed"] is True
+    assert report["checks"]["temporal_keyframe_workflow_control_passed"] is True
+    assert report["checks"]["temporal_keyframe_final_evidence_passed"] is False
+    assert any("every requested temporal keyframe" in item for item in report["action_items"])
 
 
 def test_validation_summary_blocks_clean_scorecard_below_commercial_candidate_score(tmp_path, monkeypatch):

@@ -143,6 +143,39 @@ def audit_video_output_contract(
                 "request_contract_hash_mismatch",
                 "Request contract hash does not match its recorded controls.",
             ))
+        if contract_version >= 4:
+            reference_assets = contract.get("reference_assets")
+            if not isinstance(reference_assets, list):
+                issues.append(_issue(
+                    "request_contract_reference_assets_missing",
+                    "Version 4 request contract is missing its reference asset evidence.",
+                ))
+            else:
+                checked.append("reference_asset_integrity")
+                for asset in reference_assets:
+                    if not isinstance(asset, dict) or asset.get("kind") != "local_file":
+                        continue
+                    locator = asset.get("locator")
+                    expected_asset_hash = str(asset.get("sha256") or "")
+                    if not isinstance(locator, str) or not locator or not expected_asset_hash:
+                        issues.append(_issue(
+                            "reference_asset_evidence_incomplete",
+                            "A local reference asset is missing its locator or SHA-256 evidence.",
+                        ))
+                        continue
+                    asset_path = Path(locator)
+                    if not asset_path.is_file():
+                        issues.append(_issue(
+                            "reference_asset_missing",
+                            f"Reference asset is no longer available: {locator}",
+                        ))
+                        continue
+                    actual_asset_hash = _file_sha256(asset_path)
+                    if actual_asset_hash != expected_asset_hash:
+                        issues.append(_issue(
+                            "reference_asset_hash_mismatch",
+                            f"Reference asset changed after request capture: {locator}",
+                        ))
     if metrics.get("status") != "available":
         issues.append(_issue("metrics_unavailable", "Output media metrics are unavailable."))
     else:
@@ -217,6 +250,14 @@ def audit_video_output_contract(
 
 def _issue(code: str, message: str) -> dict:
     return {"code": code, "severity": "high", "message": message}
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _positive_number(value) -> float:

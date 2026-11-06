@@ -1,9 +1,12 @@
+import type { ShotSpecification } from './types/shotSpecification';
+
 /**
  * 分镜类型
  */
 export interface Scene {
     id: number;
     scene_number: number;
+    shot_spec?: ShotSpecification | null;
     location?: string | null;
     time_period?: string | null;
     characters?: string | string[] | null;

@@ -153,6 +153,92 @@ def test_scene_save_invalidates_media_and_rejects_manual_completion(setup):
     assert client.put("/api/projects/1", json={"status": "completed"}).status_code == 400
 
 
+def test_scene_specification_roundtrip_and_removal(setup):
+    client, db, _ = setup
+    db.add(Character(project_id=1, name="Alice", description="lead"))
+    db.commit()
+    payload = {
+        "visual_description": "Alice steps forward", "characters": ["Alice"],
+        "shot_spec": {"camera_movement": "locked camera", "camera_intensity": "low",
+                      "character_states": [{"character_name": "Alice", "emotion": "afraid"}]},
+    }
+    response = client.put("/api/projects/1/scenes/1", json=payload)
+    assert response.status_code == 200, response.text
+    assert response.json()["scenes"][0]["shot_spec"]["camera_intensity"] == "low"
+    response = client.get("/api/projects/1")
+    assert response.json()["scenes"][0]["shot_spec"]["character_states"][0]["emotion"] == "afraid"
+    payload.pop("shot_spec")
+    assert client.put("/api/projects/1/scenes/1", json=payload).json()["scenes"][0]["shot_spec"] is not None
+    payload["characters"] = []
+    assert client.put("/api/projects/1/scenes/1", json=payload).status_code == 422
+    payload["shot_spec"] = None
+    assert client.put("/api/projects/1/scenes/1", json=payload).json()["scenes"][0]["shot_spec"] is None
+
+
+def test_local_vlm_identity_score_only_allows_registered_reference(setup, monkeypatch):
+    client, db, root = setup
+    from src.services.character_identity_service import CharacterIdentityService
+
+    spec = CharacterIdentityService().build_identity_spec("Alice", project_id=1)
+    character = Character(project_id=1, name="Alice", visual_description=json.dumps(spec))
+    db.add(character)
+    db.commit()
+    reference = root / "storage" / "characters" / "1" / str(character.id) / "reference_1.png"
+    reference.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (64, 64), "blue").save(reference)
+
+    monkeypatch.setattr(
+        "src.api.routes.characters.GenerationReviewService.observe_character_identity",
+        lambda _self, _path, _expected: {"observed_spec": {field: spec[field] for field in ("eyes", "nose", "mouth")}, "evidence": "eyes nose and mouth remain visibly aligned"},
+    )
+    response = client.post(
+        f"/api/projects/1/characters/{character.id}/identity-score-image",
+        json={"reference_path": str(reference)},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "needs_review"
+    assert payload["scores"]["eyes"]["score"] == 5
+    assert payload["image_sha256"]
+    rejected = client.post(
+        f"/api/projects/1/characters/{character.id}/identity-score-image",
+        json={"reference_path": str(root / "outside.png")},
+    )
+    assert rejected.status_code == 422
+
+
+def test_scene_specification_rejects_invisible_character_state(setup):
+    client, _, _ = setup
+    result = client.put("/api/projects/1/scenes/1", json={
+        "visual_description": "Empty rooftop", "characters": [],
+        "shot_spec": {"character_states": [{"character_name": "Alice"}]},
+    })
+    assert result.status_code == 422
+
+
+def test_freeze_continuity_assets_returns_project_scoped_contract(setup):
+    client, _, _ = setup
+    saved = client.put("/api/projects/1/scenes/1", json={
+        "visual_description": "A sealed letter rests by the window",
+        "characters": [],
+        "shot_spec": {
+            "continuity_assets": [{
+                "asset_id": "prop:letter", "kind": "prop",
+                    "start_state": {"location": "window table"},
+                    "end_state": {"location": "window table"},
+            }],
+        },
+    })
+    assert saved.status_code == 200, saved.text
+
+    frozen = client.post("/api/projects/1/freeze-continuity-assets", json={"notes": "approved letter state"})
+
+    assert frozen.status_code == 200, frozen.text
+    assert frozen.json()["status"] == "frozen"
+    assert frozen.json()["asset_pack"]["asset_ids"] == ["prop:letter"]
+
+
 def test_scene_save_rejects_unknown_visible_character(setup):
     client, db, _ = setup
     db.add(Character(project_id=1, name="Alice", description="lead"))
@@ -844,17 +930,23 @@ def test_workflow_profile_freeze_clears_readiness_workflow_profile_blocker(setup
             '"2b":{"class_type":"LoadImage","inputs":{"image":"{continuity_reference_image}"}},'
             '"2c":{"class_type":"ReferenceStack","inputs":{"images":"{reference_images_json}"}},'
         '"3":{"class_type":"CLIPTextEncode","inputs":{"text":"{prompt}"}},'
+        '"3b":{"class_type":"CLIPTextEncode","inputs":{"text":"{negative_prompt}"}},'
+        '"3c":{"class_type":"EmptyLatentVideo","inputs":{"width":"{width}",'
+        '"height":"{height}","length":"{num_frames}"}},'
         '"4":{"class_type":"VideoQualitySwitch","inputs":{"quality_mode":"{quality_mode}",'
         '"repair_action":"{repair_action}","pipeline":"{quality_pipeline_json}",'
         '"spatial_plan":"{spatial_plan_json}","spatial_references":"{spatial_control_references_json}",'
         '"spatial_contract":"{spatial_asset_pack_json}"}},'
         '"5":{"class_type":"SVD_img2vid_Conditioning"},'
-        '"6":{"class_type":"VHS_VideoCombine","inputs":{"filename_prefix":"{output_prefix}"}}}',
+        '"5b":{"class_type":"KSampler","inputs":{"seed":"{seed}"}},'
+        '"6":{"class_type":"VHS_VideoCombine","inputs":{"fps":"{fps}",'
+        '"filename_prefix":"{output_prefix}"}}}',
         encoding="utf-8",
     )
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_WORKFLOW_PATH", str(image))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_VIDEO_WORKFLOW_PATH", str(video))
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_REFERENCE_WORKFLOW_PATH", str(reference))
+    monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH", "")
     monkeypatch.setattr("src.services.production_workflow_profile.settings.COMFYUI_PRODUCTION_PROFILE_PATH", str(profile))
 
     before = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False}).json()
@@ -913,7 +1005,10 @@ def test_production_readiness_reports_video_workflow_quality_contract_gaps(setup
     assert response.status_code == 200, response.text
     payload = response.json()
     contract = payload["checks"]["workflow_profile"]["video_quality_contract"]
-    assert set(contract["missing_groups"]) >= {"prompt", "quality_pipeline", "quality_profile", "reference", "repair_action"}
+    assert set(contract["missing_groups"]) == {
+        "end_frame", "fps", "frame_count", "height", "negative_prompt",
+        "output_prefix", "positive_prompt", "reference", "seed", "width",
+    }
     image_contract = payload["checks"]["workflow_profile"]["image_spatial_contract"]
     assert set(image_contract["missing_groups"]) == {"spatial_asset_contract", "spatial_control_references", "spatial_plan"}
     blocker = next(item for item in payload["blockers"] if item["code"] == "workflow_profile_not_ready")
@@ -1295,6 +1390,35 @@ def test_production_readiness_accepts_passing_sample_validation_summary(setup):
     assert not any(item["code"] == "sample_validation_manual_review_not_passed" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_repair_queue_not_empty" for item in payload["warnings"])
     assert not any(item["code"] == "sample_validation_quality_scorecard_needs_repair" for item in payload["warnings"])
+
+
+def test_production_readiness_rejects_sample_validation_bound_to_a_changed_local_video_workflow(setup, monkeypatch):
+    client, _, path = setup
+    from src.config import settings
+    from src.services.video_engine_preflight import local_video_model_fingerprint
+
+    workflow = path / "wan_video.json"
+    workflow.write_text(json.dumps({"1": {"class_type": "Wan2.2ImageToVideo"}}), encoding="utf-8")
+    monkeypatch.setattr(settings, "COMFYUI_VIDEO_WORKFLOW_PATH", str(workflow))
+    monkeypatch.setattr(settings, "LOCAL_VIDEO_MODEL_PROFILE", "auto")
+    monkeypatch.setattr(settings, "GENERATION_VIDEO_MODEL_FPS", 24)
+    monkeypatch.setattr(settings, "GENERATION_VIDEO_MAX_FRAMES", 96)
+    stale_binding = local_video_model_fingerprint(str(workflow))
+    monkeypatch.setattr(settings, "GENERATION_VIDEO_MAX_FRAMES", 120)
+    validation_dir = path / "storage" / "validation"
+    validation_dir.mkdir(parents=True, exist_ok=True)
+    (validation_dir / "validation_summary.json").write_text(json.dumps({
+        "status": "ready_for_seed_dance_candidate",
+        "local_video_model": stale_binding,
+        "checks": {},
+    }), encoding="utf-8")
+
+    response = client.get("/api/projects/1/production-readiness", params={"include_engine_preflight": False})
+
+    assert response.status_code == 200, response.text
+    validation = response.json()["checks"]["sample_validation"]
+    assert validation["local_video_model"]["binding_matches"] is False
+    assert any(item["code"] == "sample_validation_model_binding_stale" for item in response.json()["warnings"])
 
 
 def test_production_readiness_warns_when_sample_coverage_is_incomplete(setup):
@@ -2003,8 +2127,129 @@ def test_production_readiness_returns_atomic_split_hints_for_overloaded_shots(se
     shot = payload["checks"]["shot_complexity"]["scenes"][0]
     assert shot["status"] == "needs_split"
     assert len(shot["suggested_atomic_shots"]) >= 2
-    assert shot["suggested_atomic_shots"][0]["visible_characters"] == ["Alice"]
+    atomic_shots = shot["suggested_atomic_shots"]
+    assert atomic_shots[0]["shot_role"] == "establishing"
+    assert atomic_shots[0]["visible_characters"] == ["Alice", "Bob"]
+    assert atomic_shots[1]["shot_role"] == "dialogue_reaction"
+    assert atomic_shots[1]["visible_characters"] == ["Alice"]
+    assert {item["visible_characters"][0] for item in atomic_shots[2:]} == {"Bob", "Cara"}
     assert "static" in shot["suggested_atomic_shots"][0]["camera"]
+
+
+def test_scene_decomposition_previews_then_atomically_applies_coverage(setup):
+    client, db, _ = setup
+    project = db.query(Project).filter(Project.id == 1).one()
+    scene = db.query(Scene).filter(Scene.project_id == 1, Scene.scene_number == 1).one()
+    scene.visual_description = "Alice confronts Bob across a desk in the same office"
+    scene.dialogue = "Alice: You knew the truth all along."
+    later = Scene(
+        project_id=1,
+        scene_number=2,
+        visual_description="Bob leaves the office",
+        image_prompt="stale prompt",
+        image_path="stale.png",
+        video_path="stale.mp4",
+        audio_path="stale.wav",
+        subtitle_path="stale.srt",
+    )
+    db.add(later)
+    project.final_video_path = "stale_final.mp4"
+    project.script = json.dumps({"scenes": [
+        {
+            "scene_number": 1,
+            "location": "office",
+            "description": scene.visual_description,
+            "dialogue": scene.dialogue,
+            "characters": ["Alice", "Bob"],
+        },
+        {
+            "scene_number": 2,
+            "location": "corridor",
+            "description": later.visual_description,
+            "characters": ["Bob"],
+        },
+    ]})
+    db.commit()
+
+    preview = client.post(
+        "/api/projects/1/scenes/1/decompose",
+        json={"dry_run": True},
+    )
+
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["applied"] is False
+    assert preview.json()["scene_count_delta"] == 2
+    assert db.query(Scene).filter(Scene.project_id == 1).count() == 2
+
+    applied = client.post(
+        "/api/projects/1/scenes/1/decompose",
+        json={"dry_run": False},
+    )
+
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["applied"] is True
+    scenes = db.query(Scene).filter(Scene.project_id == 1).order_by(Scene.scene_number).all()
+    assert [item.scene_number for item in scenes] == [1, 2, 3, 4]
+    assert [item.character_name for item in scenes[:3]] == [None, "Alice", None]
+    assert scenes[1].dialogue == "You knew the truth all along."
+    assert scenes[2].dialogue is None
+    assert scenes[3].visual_description == "Bob leaves the office"
+    assert scenes[3].image_prompt is None
+    assert scenes[3].image_path is None
+    assert scenes[3].video_path is None
+    assert scenes[3].audio_path is None
+    assert scenes[3].subtitle_path is None
+    db.refresh(project)
+    assert project.final_video_path is None
+    script = json.loads(project.script)
+    assert [item["scene_number"] for item in script["scenes"]] == [1, 2, 3, 4]
+    assert script["scenes"][0]["location"] == "office"
+    assert script["scenes"][1]["dialogue"] == "You knew the truth all along."
+    assert script["scenes"][1]["decomposition"]["screen_positions"] == {"Alice": "frame left"}
+    assert script["scenes"][1]["decomposition"]["eyeline_directions"] == {"Alice": "screen right"}
+    assert script["scenes"][1]["shot_spec"]["shot_role"] == "dialogue_reaction"
+    assert script["scenes"][1]["shot_spec"]["required_engine_capabilities"] == [
+        "identity_reference", "performance_control",
+    ]
+    assert any(
+        "Alice keeps eyeline toward screen right" in item
+        for item in script["scenes"][1]["shot_spec"]["continuity_constraints"]
+    )
+    assert script["scenes"][3]["location"] == "corridor"
+
+
+def test_compile_shot_contracts_upgrades_legacy_project_and_invalidates_old_video(setup):
+    client, db, _ = setup
+    project = db.query(Project).filter(Project.id == 1).one()
+    scene = db.query(Scene).filter(Scene.project_id == 1, Scene.scene_number == 1).one()
+    scene.visual_description = "Alice runs toward the locked door"
+    scene.image_path = "approved.png"
+    scene.audio_path = "approved.wav"
+    scene.video_path = "old-generic.mp4"
+    project.final_video_path = "old-final.mp4"
+    project.script = json.dumps({"scenes": [{
+        "scene_number": 1,
+        "description": scene.visual_description,
+        "characters": ["Alice"],
+        "shot_spec": {},
+    }]})
+    db.commit()
+
+    response = client.post("/api/projects/1/compile-shot-contracts")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["changed_scene_numbers"] == [1]
+    db.refresh(project)
+    db.refresh(scene)
+    assert project.final_video_path is None
+    assert scene.video_path is None
+    assert scene.image_path == "approved.png"
+    assert scene.audio_path == "approved.wav"
+    specification = json.loads(project.script)["scenes"][0]["shot_spec"]
+    assert specification["shot_role"] == "action"
+    assert specification["required_engine_capabilities"] == [
+        "identity_reference", "motion_control",
+    ]
 
 
 def test_production_readiness_requires_character_identity_bible(setup):

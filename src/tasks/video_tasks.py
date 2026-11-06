@@ -4,10 +4,11 @@ import shutil
 import os
 import json
 import hashlib
+import re
 import subprocess
 import time
 from dataclasses import replace
-from math import gcd, isfinite
+from math import ceil, gcd, isfinite
 from pathlib import Path
 from uuid import uuid4
 
@@ -46,11 +47,17 @@ from src.services.video_quality_metrics import (
     video_continuity_reference_metrics,
     video_start_frame_reference_metrics,
     video_end_frame_reference_metrics,
+    video_frame_reference_metrics,
+    video_metrics_are_near_duplicate,
+    video_motion_reference_metrics,
     video_technical_score,
 )
 from src.services.visual_style_assets import VisualStyleAssetService
 from src.services.video_director_service import VideoShotPlan, get_video_director_service
+from src.services.local_video_engine_router import resolve_local_video_engine_routes
+from src.services.motion_reference_library import resolve_motion_reference
 from src.services.spatial_control_assets import SpatialControlAssetService
+from src.services.continuity_asset_pack import ContinuityAssetPackService
 from src.services.video_output_contract import audit_video_output_contract, validate_sequence_request_plan
 from src.services.sequence_plan import build_sequence_context, build_sequence_timeline
 from src.services.sequence_video_service import split_sequence_video
@@ -244,6 +251,19 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
             item = _reference_asset_evidence(role, value, index)
             if item:
                 reference_assets.append(item)
+    keyframe_assets = []
+    for index, keyframe in enumerate(request.keyframe_images or [], start=1):
+        if not isinstance(keyframe, dict):
+            continue
+        item = _reference_asset_evidence("keyframe_image", keyframe.get("path"), index)
+        if item:
+            item.update({
+                "frame_index": keyframe.get("frame_index"),
+                "strength": keyframe.get("strength"),
+                "keyframe_role": keyframe.get("role"),
+            })
+            reference_assets.append(item)
+            keyframe_assets.append(item)
     reference_images_by_index = {
         item.get("index"): item
         for item in reference_assets
@@ -279,8 +299,16 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         else "reference_audio" if request.audio_path or request.reference_audios
         else "silent"
     )
+    engine_assets = []
+    for role, value in (
+        ("workflow", request.workflow_path),
+        ("workflow_bindings", request.bindings_path),
+    ):
+        item = _reference_asset_evidence(role, value)
+        if item:
+            engine_assets.append(item)
     contract = {
-        "provider_request_version": 3,
+        "provider_request_version": 5,
         "request_mode": request_mode,
         "model": request.model,
         "resolution": request.resolution,
@@ -311,6 +339,8 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         "has_reference_image": bool(request.reference_image or request.reference_images),
         "reference_video_count": len(request.reference_videos or []),
         "reference_audio_count": len(request.reference_audios or []),
+        "keyframe_count": len(keyframe_assets),
+        "keyframes": keyframe_assets,
         "reference_assets": reference_assets,
         "character_reference_binding_count": len(character_bindings),
         "character_reference_bindings": character_bindings,
@@ -319,6 +349,8 @@ def _video_request_contract(request: VideoGenerationRequest, *, request_mode: st
         "sequence_audio_bindings": sequence_audio_bindings,
         "spatial_asset_pack": spatial_contract,
         "sequence_shot_contracts": sequence_shot_contracts,
+        "local_engine_route": dict(request.local_engine_route or {}),
+        "engine_assets": engine_assets,
     }
     encoded = json.dumps(contract, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     contract["contract_hash"] = hashlib.sha256(encoded).hexdigest()
@@ -412,6 +444,24 @@ def _frozen_spatial_contract_for_generation(db, project_id: int, scene_number: i
         raise ValueError(
             f"Frozen spatial asset pack is not current for project {project_id}: {reasons}. "
             "Re-freeze the spatial plan before generating video."
+        )
+    return service.get_scene_contract(project_id, scene_number)
+
+
+def _frozen_continuity_contract_for_generation(db, project_id: int, scene_number: int) -> dict | None:
+    service = ContinuityAssetPackService()
+    if service.get_project_pack(project_id) is None:
+        return None
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise ValueError(f"Project not found: {project_id}")
+    scenes = db.query(Scene).filter(Scene.project_id == project_id).order_by(Scene.scene_number).all()
+    validation = service.validate_project_pack(project, scenes)
+    if validation.get("status") != "valid":
+        reasons = ", ".join(validation.get("stale") or [validation.get("status", "invalid")])
+        raise ValueError(
+            f"Frozen continuity asset pack is not current for project {project_id}: {reasons}. "
+            "Re-freeze continuity assets before generating video."
         )
     return service.get_scene_contract(project_id, scene_number)
 
@@ -672,7 +722,10 @@ def _extract_video_last_frame(video_path: str | Path) -> str | None:
 
 
 def _uses_configured_video_provider(provider_name: str) -> bool:
-    return provider_name != "local_comfyui" or bool(settings.COMFYUI_VIDEO_WORKFLOW_PATH)
+    return provider_name != "local_comfyui" or bool(
+        settings.COMFYUI_VIDEO_WORKFLOW_PATH
+        or settings.COMFYUI_VIDEO_ENGINE_REGISTRY_PATH
+    )
 
 
 def _build_video_generator(
@@ -822,6 +875,7 @@ class _ComfyVideoGenerator:
         self.provider_options = dict(provider_options or {})
         self.shot_plan = shot_plan
         self.reference_images = list(reference_images or [])
+        self.keyframe_images: list[dict] = []
         self.continuity_reference_image: str | None = None
         self.reference_videos = list(reference_videos or [])
         self.reference_audios = list(reference_audios or [])
@@ -831,6 +885,9 @@ class _ComfyVideoGenerator:
         self.character_reference_bindings = [
             dict(item) for item in (character_reference_bindings or []) if isinstance(item, dict)
         ]
+        self.local_engine_routes: list[dict] = []
+        self.local_engine_route_cursor = 0
+        self.last_local_engine_route: dict | None = None
 
     def generate_video(
         self,
@@ -841,6 +898,29 @@ class _ComfyVideoGenerator:
         motion_bucket_id: int,
         noise_aug_strength: float,
     ) -> str:
+        active_route = self.provider_options.get("LOCAL_ENGINE_ROUTE")
+        if self.local_engine_routes:
+            active_route = self.local_engine_routes[
+                self.local_engine_route_cursor % len(self.local_engine_routes)
+            ]
+            self.local_engine_route_cursor += 1
+        active_route = dict(active_route) if isinstance(active_route, dict) else None
+        self.last_local_engine_route = dict(active_route) if active_route else None
+        route_supports_temporal = bool(
+            not active_route or (active_route.get("capabilities") or {}).get("temporal_keyframes")
+        )
+        active_end_image = getattr(self, "end_image", None) if route_supports_temporal else None
+        active_keyframes = list(self.keyframe_images) if route_supports_temporal else []
+        conditioned_references = {
+            "images": list(self.reference_images),
+            "videos": list(self.reference_videos),
+            "audios": list(self.reference_audios),
+            "continuity_image": self.continuity_reference_image,
+        }
+        if active_route and self.shot_plan:
+            conditioned_references = _bind_local_engine_conditioning(
+                conditioned_references, self.shot_plan, active_route,
+            )
         duration = (
             self.shot_plan.target_duration_seconds
             if self.shot_plan
@@ -931,6 +1011,19 @@ class _ComfyVideoGenerator:
                     "turnaround_controls_hash": spatial_contract.get("turnaround_controls_hash"),
                 },
             }
+        continuity_contract = self.provider_options.get("CONTINUITY_ASSET_PACK")
+        if shot_plan_payload is not None and isinstance(continuity_contract, dict):
+            shot_plan_payload = {
+                **shot_plan_payload,
+                "continuity_asset_pack": {
+                    "version": continuity_contract.get("version"),
+                    "project_signature": continuity_contract.get("project_signature"),
+                    "scene_contract_hash": continuity_contract.get("scene_contract_hash"),
+                    "source_hash": continuity_contract.get("source_hash"),
+                    "continuity_asset_hash": continuity_contract.get("continuity_asset_hash"),
+                    "assets": continuity_contract.get("assets") or [],
+                },
+            }
         if shot_plan_payload is not None and self.sequence_context:
             shot_plan_payload = {**shot_plan_payload, "sequence_context": self.sequence_context}
         if shot_plan_payload is not None and self.character_reference_bindings:
@@ -1008,13 +1101,14 @@ class _ComfyVideoGenerator:
             prompt=prompt,
             negative_prompt=negative_prompt,
             reference_image=image_path,
-            end_image=getattr(self, "end_image", None),
-            reference_images=provider_reference_images or None,
-            continuity_reference_image=self.continuity_reference_image,
-            reference_videos=(None if request_mode == "extend" else self.reference_videos or None),
-            extend_video=(self.reference_videos[0] if request_mode == "extend" and self.reference_videos else None),
-            reference_audios=self.reference_audios or None,
-            audio_path=self.reference_audios[0] if self.reference_audios else None,
+            end_image=active_end_image,
+            keyframe_images=active_keyframes or None,
+            reference_images=conditioned_references["images"] if provider_reference_images else None,
+            continuity_reference_image=conditioned_references.get("continuity_image"),
+            reference_videos=(None if request_mode == "extend" else conditioned_references["videos"] or None),
+            extend_video=(conditioned_references["videos"][0] if request_mode == "extend" and conditioned_references["videos"] else None),
+            reference_audios=conditioned_references["audios"] or None,
+            audio_path=(conditioned_references["audios"][0] if conditioned_references["audios"] else None),
             generate_audio=_setting_enabled(self._provider_setting("NATIVE_AUDIO", False)),
             return_last_frame=_setting_enabled(self._provider_setting("RETURN_LAST_FRAME", True)),
             camera_fixed=_setting_enabled(self._provider_setting("CAMERA_FIXED", False)),
@@ -1022,6 +1116,9 @@ class _ComfyVideoGenerator:
             output_format=self._provider_setting("OUTPUT_FORMAT", "") or None,
             resolution=self._provider_setting("RESOLUTION", "") or None,
             model=self._provider_setting("MODEL", "") or None,
+            workflow_path=(active_route.get("workflow_path") if active_route else self._provider_setting("WORKFLOW_PATH", "")) or None,
+            bindings_path=(active_route.get("bindings_path") if active_route else self._provider_setting("BINDINGS_PATH", "")) or None,
+            local_engine_route=active_route,
             request_mode=request_mode,
             draft=_setting_enabled(self._provider_setting("DRAFT", False)),
             draft_task_id=self._provider_setting("DRAFT_TASK_ID", "") or None,
@@ -1058,8 +1155,19 @@ class _ComfyVideoGenerator:
         self.end_image = end_image
         return self
 
+    def with_keyframe_images(self, keyframes: list[dict] | None):
+        self.keyframe_images = [dict(item) for item in (keyframes or []) if isinstance(item, dict)]
+        return self
+
     def with_repair_action(self, repair_action: str | None):
         self.repair_action = repair_action
+        return self
+
+    def with_local_engine_routes(self, routes: list[dict] | None):
+        self.local_engine_routes = [
+            dict(route) for route in (routes or []) if isinstance(route, dict)
+        ]
+        self.local_engine_route_cursor = 0
         return self
 
     def with_multimodal_references(
@@ -1178,12 +1286,14 @@ def _scene_review_payload(scene: Scene, project_id: int | None = None, db=None) 
         scene,
         visible_count=len(visible_characters),
     )
+    shot_spec = getattr(scene, "shot_spec", None)
     return {
         "scene_number": scene.scene_number,
         "description": scene.visual_description,
         "dialogue": scene.dialogue,
         "image_prompt": scene.image_prompt,
         "expected_image": scene.image_path,
+        "shot_spec": shot_spec if isinstance(shot_spec, dict) else None,
         "visible_characters": visible_characters,
         "character_sheet_contract": character_sheet_contract["prompt"],
         "character_sheet_references": character_sheet_contract["references"],
@@ -1292,6 +1402,86 @@ def _multimodal_references_for_scene(
         "videos": videos[: _configured_reference_limit(provider_name, "MAX_REFERENCE_VIDEOS", 3, model)],
         "audios": audios[: _configured_reference_limit(provider_name, "MAX_REFERENCE_AUDIOS", 3, model)],
     }
+
+
+def _bind_local_engine_conditioning(
+    references: dict[str, object],
+    shot_plan: VideoShotPlan,
+    route: dict | None,
+) -> dict[str, object]:
+    """Bind specialized local engines to explicit, model-facing conditions.
+
+    A previous accepted clip is useful for continuity, but it is not a valid
+    motion-driving performance for the current shot. Driven models therefore
+    require an explicitly approved shot-level asset instead of silently reusing
+    the previous scene's video.
+    """
+    if not isinstance(route, dict):
+        return references
+    result = {
+        **references,
+        "images": list(references.get("images") or []),
+        "videos": list(references.get("videos") or []),
+        "audios": list(references.get("audios") or []),
+    }
+    profile = str(route.get("model_profile") or "").strip().lower()
+    requested = set(route.get("requested_capabilities") or [])
+
+    audio_reference = str(shot_plan.performance_reference_audio or "").strip()
+    if audio_reference:
+        if not Path(audio_reference).is_file():
+            raise ValueError(f"Performance reference audio does not exist: {audio_reference}")
+        result["audios"] = [audio_reference]
+
+    if profile == "hunyuanvideo_avatar" and "performance_control" in requested:
+        if not result["audios"]:
+            raise ValueError(
+                "HunyuanVideo-Avatar performance shot requires generated dialogue audio "
+                "or shot_spec.performance_reference_audio"
+            )
+
+    if (
+        profile in {"wan_2_2_animate", "hunyuan_custom"}
+        and (
+            "motion_control" in requested
+            or (profile == "wan_2_2_animate" and "performance_control" in requested)
+        )
+    ):
+        motion_reference = str(shot_plan.motion_reference_video or "").strip()
+        if not motion_reference:
+            raise ValueError(
+                f"{profile} motion-controlled shot requires shot_spec.motion_reference_video; "
+                "the previous shot cannot be used as a driving performance"
+            )
+        if not Path(motion_reference).is_file():
+            raise ValueError(f"Motion reference video does not exist: {motion_reference}")
+        result["videos"] = [motion_reference]
+
+    if profile == "hunyuan_custom" and "performance_control" in requested:
+        if not result["audios"] and not shot_plan.motion_reference_video:
+            raise ValueError(
+                "HunyuanCustom performance shot requires dialogue/performance audio or an explicit motion reference video"
+            )
+    return result
+
+
+def _resolve_shot_motion_reference(
+    shot_plan: VideoShotPlan,
+    manifest_path: str | None,
+) -> VideoShotPlan:
+    """Attach an approved library clip only when an action contract requires it."""
+    if str(shot_plan.motion_reference_video or "").strip():
+        return shot_plan
+    if "motion_control" not in set(shot_plan.required_engine_capabilities or []):
+        return shot_plan
+    selection = resolve_motion_reference(manifest_path, shot_plan=shot_plan.as_dict())
+    if selection is None:
+        return shot_plan
+    return replace(
+        shot_plan,
+        motion_reference_video=selection.path,
+        motion_reference_source=selection.as_dict(),
+    )
 
 
 def _character_reference_bindings_for_scene(
@@ -1460,11 +1650,29 @@ def _scene_end_frame_path(project_id: int, scene_id: int) -> str:
     return str(path)
 
 
+def _scene_mid_frame_path(
+    project_id: int,
+    scene_id: int,
+    anchor_index: int = 1,
+    anchor_role: str = "performance_peak",
+) -> str:
+    from src.utils.storage import storage_manager
+    safe_role = re.sub(r"[^a-z0-9_]+", "_", str(anchor_role).lower()).strip("_") or "anchor"
+    path = storage_manager.get_image_path(
+        project_id,
+        scene_id,
+        f"scene_{scene_id}_mid_{anchor_index:02d}_{safe_role}.png",
+    )
+    return str(path)
+
+
 def _generate_end_frame(
     scene: Scene, project_id: int, shot_plan: VideoShotPlan, provider=None,
     scene_payload: dict | None = None,
+    reference_image: str | None = None,
 ) -> str:
     provider = provider or get_generation_provider("local_comfyui")
+    reference_image = reference_image or scene.image_path
     output_path = _scene_end_frame_path(project_id, scene.id)
     payload = {
         **(scene_payload or {}),
@@ -1483,13 +1691,63 @@ def _generate_end_frame(
         steps=settings.GENERATION_STEPS,
         cfg_scale=settings.GENERATION_CFG,
         seed=stage_seed(scene.id, f"end_frame:{shot_plan.shot_role}"),
-        reference_image=scene.image_path,
-        use_ipadapter=bool(scene.image_path and settings.COMFYUI_REFERENCE_WORKFLOW_PATH),
+        reference_image=reference_image,
+        use_ipadapter=bool(reference_image and settings.COMFYUI_REFERENCE_WORKFLOW_PATH),
         quality_mode=settings.GENERATION_QUALITY_PROFILE,
         character_references=references if len(references) > 1 else None,
     )
     from src.tasks.image_tasks import _generate_quality_candidates
-    path, _quality = _generate_quality_candidates(provider, request, payload, scene.image_path)
+    path, _quality = _generate_quality_candidates(provider, request, payload, reference_image)
+    return path
+
+
+def _generate_mid_frame(
+    scene: Scene,
+    project_id: int,
+    shot_plan: VideoShotPlan,
+    provider=None,
+    scene_payload: dict | None = None,
+    anchor: dict | None = None,
+    anchor_index: int = 1,
+    reference_image: str | None = None,
+) -> str:
+    provider = provider or get_generation_provider("local_comfyui")
+    reference_image = reference_image or scene.image_path
+    anchor = anchor if isinstance(anchor, dict) else {}
+    anchor_role = str(anchor.get("role") or "performance_peak")
+    output_path = _scene_mid_frame_path(project_id, scene.id, anchor_index, anchor_role)
+    prompt = str(anchor.get("prompt") or shot_plan.mid_frame_prompt or shot_plan.director_prompt).strip()
+    payload = {
+        **(scene_payload or {}),
+        "scene_number": scene.scene_number,
+        "visual_description": prompt,
+        "dialogue": scene.dialogue,
+        "stage": "temporal_keyframe",
+        "temporal_keyframe": {
+            "index": anchor_index,
+            "role": anchor_role,
+            "position": anchor.get("position"),
+            "strength": anchor.get("strength"),
+            "source_reference": reference_image,
+        },
+    }
+    references = payload.get("character_sheet_references") or []
+    request = ImageGenerationRequest(
+        prompt=prompt,
+        negative_prompt=shot_plan.negative_prompt,
+        output_path=output_path,
+        width=settings.GENERATION_WIDTH,
+        height=settings.GENERATION_HEIGHT,
+        steps=settings.GENERATION_STEPS,
+        cfg_scale=settings.GENERATION_CFG,
+        seed=stage_seed(scene.id, f"mid_frame:{anchor_index}:{anchor_role}:{shot_plan.shot_role}"),
+        reference_image=reference_image,
+        use_ipadapter=bool(reference_image and settings.COMFYUI_REFERENCE_WORKFLOW_PATH),
+        quality_mode=settings.GENERATION_QUALITY_PROFILE,
+        character_references=references if len(references) > 1 else None,
+    )
+    from src.tasks.image_tasks import _generate_quality_candidates
+    path, _quality = _generate_quality_candidates(provider, request, payload, reference_image)
     return path
 
 
@@ -2005,11 +2263,32 @@ def _attach_video_technical_metrics(candidate: dict) -> None:
         metrics["end_frame_reference"] = video_end_frame_reference_metrics(
             candidate["path"], end_frame_reference,
         )
+    keyframes = request.get("keyframe_images")
+    if isinstance(keyframes, list) and "keyframe_references" not in metrics:
+        metrics["keyframe_references"] = _keyframe_reference_metrics(
+            candidate["path"],
+            keyframes,
+            source_fps=request.get("fps"),
+            target_fps=metrics.get("fps"),
+        )
     continuity_reference = request.get("continuity_reference_image")
     if continuity_reference and "continuity_reference" not in metrics:
         metrics["continuity_reference"] = video_continuity_reference_metrics(
             candidate["path"], continuity_reference,
         )
+    if _driving_motion_expected(candidate) and "driving_motion_reference" not in metrics:
+        references = request.get("reference_videos")
+        driving_video = references[0] if isinstance(references, list) and references else None
+        if driving_video and Path(str(driving_video)).is_file():
+            metrics["driving_motion_reference"] = video_motion_reference_metrics(
+                metrics,
+                video_candidate_metrics(str(driving_video)),
+            )
+        else:
+            metrics["driving_motion_reference"] = {
+                "status": "unavailable", "score": None,
+                "error": "explicit driving video is missing",
+            }
     if _is_long_form_shot_plan(candidate.get("shot_plan")) and metrics.get("status") == "available":
         metrics["technical_score"] = video_technical_score(
             metrics,
@@ -2022,6 +2301,45 @@ def _attach_video_technical_metrics(candidate: dict) -> None:
     candidate["technical_metrics"] = metrics
     if isinstance(metrics.get("technical_score"), (int, float)):
         candidate["technical_score"] = float(metrics["technical_score"])
+
+
+def _keyframe_reference_metrics(
+    video_path: str,
+    keyframes: list[dict],
+    *,
+    source_fps: float | int | None = None,
+    target_fps: float | int | None = None,
+) -> list[dict]:
+    """Score temporal anchors, preserving their timestamp across FPS conversion."""
+    results = []
+    for item in keyframes:
+        if not isinstance(item, dict):
+            continue
+        source_index = item.get("frame_index")
+        evaluated_index = source_index
+        if (
+            isinstance(source_index, int)
+            and not isinstance(source_index, bool)
+            and isinstance(source_fps, (int, float))
+            and isinstance(target_fps, (int, float))
+            and float(source_fps) > 0
+            and float(target_fps) > 0
+        ):
+            evaluated_index = max(0, round(source_index * float(target_fps) / float(source_fps)))
+        reference_path = item.get("path") or item.get("locator")
+        metrics = video_frame_reference_metrics(
+            video_path,
+            reference_path,
+            evaluated_index,
+        )
+        metrics.update({
+            "source_frame_index": source_index,
+            "frame_index": evaluated_index,
+            "role": item.get("role") or item.get("keyframe_role"),
+            "strength": item.get("strength"),
+        })
+        results.append(metrics)
+    return results
 
 
 def _apply_audio_quality_contract(metrics: dict, provider_metadata: dict | None) -> dict:
@@ -2219,12 +2537,20 @@ def _review_final_video_after_postprocess(
         technical_metrics["end_frame_reference"] = video_end_frame_reference_metrics(
             video_path, end_frame_reference,
         )
+    provider_metadata = quality_report.get("selected_provider_metadata")
+    request_contract = provider_metadata.get("request_contract") if isinstance(provider_metadata, dict) else None
+    keyframes = request_contract.get("keyframes") if isinstance(request_contract, dict) else None
+    if isinstance(keyframes, list):
+        technical_metrics["keyframe_references"] = _keyframe_reference_metrics(
+            video_path,
+            keyframes,
+            source_fps=request_contract.get("fps"),
+            target_fps=technical_metrics.get("fps"),
+        )
     _apply_audio_quality_contract(
         technical_metrics,
         quality_report.get("selected_provider_metadata"),
     )
-    provider_metadata = quality_report.get("selected_provider_metadata")
-    request_contract = provider_metadata.get("request_contract") if isinstance(provider_metadata, dict) else None
     request_contract_audit = audit_video_output_contract(
         request_contract,
         provider_metadata,
@@ -2558,6 +2884,28 @@ def _final_video_acceptance_error(
                     f"{end_frame_score} is below "
                     f"{settings.GENERATION_VIDEO_END_FRAME_REFERENCE_MIN_SCORE}"
                 )
+    keyframe_references = technical_metrics.get("keyframe_references")
+    if isinstance(keyframe_references, list):
+        for item in keyframe_references:
+            if not isinstance(item, dict):
+                continue
+            status = item.get("status")
+            if enforce_technical_evidence and settings.GENERATION_REQUIRE_VIDEO_REVIEW and status != "available":
+                return (
+                    "Final normalized video middle-keyframe evidence is unavailable: "
+                    f"frame={item.get('frame_index')}, error={item.get('error') or status or 'unknown'}"
+                )
+            score = item.get("score")
+            if (
+                status == "available"
+                and isinstance(score, (int, float))
+                and score < settings.GENERATION_VIDEO_KEYFRAME_REFERENCE_MIN_SCORE
+            ):
+                return (
+                    "Final normalized video middle-keyframe reference score "
+                    f"{score} at frame {item.get('frame_index')} is below "
+                    f"{settings.GENERATION_VIDEO_KEYFRAME_REFERENCE_MIN_SCORE}"
+                )
     provider_metadata = final_review.get("provider_metadata")
     requested_resolution = (
         str(provider_metadata.get("requested_resolution") or "").lower()
@@ -2662,12 +3010,45 @@ def _video_candidate_passes(candidate: dict) -> bool:
         candidate.get("platform_score"),
         candidate.get("technical_score"),
         enforce_technical_evidence=settings.GENERATION_REQUIRE_VIDEO_REVIEW,
-    ) is None
+    ) is None and _driving_motion_gate_passes(candidate)
+
+
+def _driving_motion_expected(candidate: dict) -> bool:
+    metadata = candidate.get("provider_metadata") if isinstance(candidate.get("provider_metadata"), dict) else {}
+    contract = metadata.get("request_contract") if isinstance(metadata.get("request_contract"), dict) else {}
+    route = contract.get("local_engine_route") if isinstance(contract.get("local_engine_route"), dict) else {}
+    profile = str(route.get("model_profile") or "").strip().lower()
+    required = set(route.get("requested_capabilities") or [])
+    return profile in {"wan_2_2_animate", "hunyuan_custom"} and "motion_control" in required
+
+
+def _driving_motion_gate_passes(candidate: dict) -> bool:
+    if not _driving_motion_expected(candidate):
+        return True
+    metrics = candidate.get("technical_metrics") if isinstance(candidate.get("technical_metrics"), dict) else {}
+    adherence = metrics.get("driving_motion_reference") if isinstance(metrics.get("driving_motion_reference"), dict) else {}
+    score = adherence.get("score")
+    if (
+        adherence.get("spatial_evidence_status") == "available"
+        and isinstance(adherence.get("direction_similarity"), (int, float))
+        and not isinstance(adherence.get("direction_similarity"), bool)
+        and float(adherence["direction_similarity"])
+        < settings.GENERATION_VIDEO_DRIVING_MOTION_MIN_DIRECTION_SIMILARITY
+    ):
+        return False
+    return bool(
+        adherence.get("status") == "available"
+        and isinstance(score, (int, float))
+        and not isinstance(score, bool)
+        and isfinite(float(score))
+        and float(score) >= settings.GENERATION_VIDEO_DRIVING_MOTION_MIN_SCORE
+    )
 
 
 def _video_candidate_rank(candidate: dict) -> tuple:
     return (
         _video_candidate_passes(candidate),
+        _driving_motion_gate_passes(candidate),
         _video_gate_passes(candidate)[0],
         _video_aesthetic_gate_passes(candidate),
         _platform_reference_gate_passes(candidate),
@@ -2737,15 +3118,22 @@ def _select_best_video_candidate(
         "min_temporal_score": settings.GENERATION_VIDEO_TEMPORAL_MIN_SCORE,
         "min_platform_score": settings.GENERATION_VIDEO_PLATFORM_MIN_SCORE,
         "min_audio_visual_alignment_score": settings.GENERATION_VIDEO_AUDIO_VISUAL_ALIGNMENT_MIN_SCORE,
+        "min_driving_motion_score": settings.GENERATION_VIDEO_DRIVING_MOTION_MIN_SCORE,
         "selected_gate_scores": gate_scores,
         "selected_video_aesthetic_gate": aesthetic_gate,
         "selected_platform_reference_gate": reference_gate,
         "selected_character_distinctiveness_gate": distinctiveness_gate,
         "selected_video_performance_gate": performance_gate,
+        "selected_driving_motion_reference": (
+            best.get("technical_metrics", {}).get("driving_motion_reference")
+            if isinstance(best.get("technical_metrics"), dict) else None
+        ),
         "candidates": ranked,
     }
     if quality_budget:
         report["quality_budget"] = quality_budget
+        if isinstance(quality_budget.get("engine_diversity"), dict):
+            report["engine_diversity"] = quality_budget["engine_diversity"]
     report["generation_run_evidence"] = build_video_generation_evidence(report)
     if best.get("status") != "passed":
         report["error"] = f"Selected video review status={best.get('status') or 'unknown'}"
@@ -2778,6 +3166,11 @@ def _select_best_video_candidate(
             f"Best video technical score {best['technical_score']} is below "
             f"{settings.GENERATION_VIDEO_TECHNICAL_MIN_SCORE}"
         )
+    elif not _driving_motion_gate_passes(best):
+        report["error"] = (
+            "Selected video did not follow the explicit driving-video motion trajectory: "
+            f"{report.get('selected_driving_motion_reference')}"
+        )
     elif settings.GENERATION_REQUIRE_VIDEO_REVIEW and not isinstance(aesthetic_gate, dict):
         report["error"] = "Selected video is missing video aesthetic feature scores from local VLM review"
     elif settings.GENERATION_REQUIRE_VIDEO_REVIEW and not isinstance(reference_gate, dict):
@@ -2807,6 +3200,55 @@ def _select_best_video_candidate(
     return final_path, report
 
 
+def _candidate_local_engine_id(candidate: dict) -> str | None:
+    engine_id = candidate.get("local_engine_id")
+    if engine_id:
+        return str(engine_id)
+    metadata = candidate.get("provider_metadata")
+    if not isinstance(metadata, dict):
+        return None
+    request_contract = metadata.get("request_contract")
+    if not isinstance(request_contract, dict):
+        return None
+    route = request_contract.get("local_engine_route")
+    if not isinstance(route, dict) or not route.get("engine_id"):
+        return None
+    return str(route["engine_id"])
+
+
+def _local_engine_diversity_summary(svd_service, candidates: list[dict]) -> dict | None:
+    routes = getattr(svd_service, "local_engine_routes", None)
+    if not isinstance(routes, list) or not routes:
+        return None
+    eligible = [
+        str(route["engine_id"])
+        for route in routes
+        if isinstance(route, dict) and route.get("engine_id")
+    ]
+    if not eligible:
+        return None
+    counts = {engine_id: 0 for engine_id in eligible}
+    unknown_attempts = 0
+    for candidate in candidates:
+        engine_id = _candidate_local_engine_id(candidate)
+        if engine_id in counts:
+            counts[engine_id] += 1
+        elif engine_id:
+            counts[engine_id] = counts.get(engine_id, 0) + 1
+        else:
+            unknown_attempts += 1
+    attempted = [engine_id for engine_id in eligible if counts.get(engine_id, 0) > 0]
+    missing = [engine_id for engine_id in eligible if counts.get(engine_id, 0) == 0]
+    return {
+        "eligible_engine_ids": eligible,
+        "attempted_engine_ids": attempted,
+        "missing_engine_ids": missing,
+        "candidate_counts": counts,
+        "unknown_engine_attempts": unknown_attempts,
+        "coverage_complete": not missing,
+    }
+
+
 def _generate_quality_video_candidates(
     svd_service,
     scene: Scene,
@@ -2821,13 +3263,13 @@ def _generate_quality_video_candidates(
     shot_plan: VideoShotPlan | None = None,
     repair_action: str | None = None,
 ) -> tuple[str, dict]:
-    budget = video_quality_budget(repair_action)
+    shot_plan_payload = shot_plan.as_dict() if shot_plan else None
+    budget = video_quality_budget(repair_action, shot_plan_payload)
     max_refinement_passes = max(0, min(budget.refinement_passes, 4))
     strongest_budget = budget
     reviewer = GenerationReviewService()
     reference = _reference_for_scene(scene, project_id, db)
     scene_payload = _scene_review_payload(scene, project_id, db)
-    shot_plan_payload = shot_plan.as_dict() if shot_plan else None
     base_quality_pipeline = video_quality_pipeline(shot_plan_payload, repair_action)
     candidate_scene = {
         "scene_number": scene.scene_number,
@@ -2844,12 +3286,15 @@ def _generate_quality_video_candidates(
     current_noise = noise_aug_strength
     pass_index = 0
     next_candidate_index = 1
+    total_generation_attempts = 0
+    duplicate_candidates = 0
     while pass_index <= max_refinement_passes:
         generated = []
+        pass_fingerprints: list[tuple[int, dict]] = []
         current_repair_action = repair_action or (
             _video_repair_action_from_candidates(candidates) if pass_index else None
         )
-        pass_budget = video_quality_budget(current_repair_action)
+        pass_budget = video_quality_budget(current_repair_action, shot_plan_payload)
         if pass_budget.candidate_count >= strongest_budget.candidate_count:
             strongest_budget = pass_budget
         max_refinement_passes = max(max_refinement_passes, max(0, min(pass_budget.refinement_passes, 4)))
@@ -2867,7 +3312,20 @@ def _generate_quality_video_candidates(
         if hasattr(svd_service, "with_repair_action"):
             svd_service.with_repair_action(current_repair_action)
         try:
-            for offset in range(1, pass_budget.candidate_count + 1):
+            local_routes = getattr(svd_service, "local_engine_routes", None)
+            route_count = len(local_routes) if isinstance(local_routes, list) else 0
+            target_candidates = min(
+                pass_budget.max_candidates,
+                max(pass_budget.candidate_count, route_count),
+            )
+            attempt_multiplier = max(1.0, min(float(settings.GENERATION_VIDEO_MAX_ATTEMPT_MULTIPLIER), 3.0))
+            max_attempts = max(target_candidates, int(ceil(target_candidates * attempt_multiplier)))
+            accepted_candidates = 0
+            attempt = 0
+            while accepted_candidates < target_candidates and attempt < max_attempts:
+                attempt += 1
+                total_generation_attempts += 1
+                offset = attempt
                 index = next_candidate_index
                 next_candidate_index += 1
                 candidate_path = _candidate_video_path(output_path, index)
@@ -2885,14 +3343,19 @@ def _generate_quality_video_candidates(
                 except ComfyUIWaitTimeout:
                     raise
                 except (ComfyUIError, GenerationProviderError, SVDError, OSError) as exc:
+                    attempted_route = getattr(svd_service, "last_local_engine_route", None)
                     candidates.append({
                         "index": index, "pass": pass_index, "path": candidate_path,
                         "status": "error", "average": 0, "error": str(exc),
                         "stage": "generation", "scene": dict(pass_scene),
+                        "local_engine_id": (
+                            attempted_route.get("engine_id")
+                            if isinstance(attempted_route, dict) else None
+                        ),
                         "elapsed_seconds": round(time.monotonic() - started, 2),
                     })
                     continue
-                generated.append({
+                generated_candidate = {
                     "index": index,
                     "pass": pass_index,
                     "path": generated_path,
@@ -2911,6 +3374,7 @@ def _generate_quality_video_candidates(
                     "request": {
                         "image_path": scene.image_path,
                         "end_image": getattr(svd_service, "end_image", None),
+                        "keyframe_images": list(getattr(svd_service, "keyframe_images", []) or []),
                         "num_frames": num_frames,
                         "fps": fps,
                         "motion_bucket_id": motion,
@@ -2936,7 +3400,46 @@ def _generate_quality_video_candidates(
                     "quality_pipeline": quality_pipeline.as_dict(),
                     "repair_action": current_repair_action,
                     "elapsed_seconds": round(time.monotonic() - started, 2),
-                })
+                }
+                candidate_metrics = video_candidate_metrics(generated_path)
+                duplicate_of = None
+                duplicate_distance = None
+                if settings.GENERATION_VIDEO_DEDUP_ENABLED and candidate_metrics.get("status") == "available":
+                    for prior_index, prior_metrics in pass_fingerprints:
+                        is_duplicate, distance = video_metrics_are_near_duplicate(
+                            candidate_metrics,
+                            prior_metrics,
+                            max_average_hamming=max(
+                                0.0, float(settings.GENERATION_VIDEO_DEDUP_AVERAGE_HAMMING_DISTANCE)
+                            ),
+                            max_motion_energy_delta=max(
+                                0.0, float(settings.GENERATION_VIDEO_DEDUP_MOTION_ENERGY_DELTA)
+                            ),
+                            max_duration_delta_seconds=max(
+                                0.0, float(settings.GENERATION_VIDEO_DEDUP_DURATION_DELTA_SECONDS)
+                            ),
+                        )
+                        if is_duplicate:
+                            duplicate_of = prior_index
+                            duplicate_distance = distance
+                            break
+                if duplicate_of is not None:
+                    duplicate_candidates += 1
+                    candidates.append({
+                        **generated_candidate,
+                        "status": "duplicate",
+                        "average": 0,
+                        "stage": "perceptual_dedup",
+                        "duplicate_of": duplicate_of,
+                        "duplicate_distance": duplicate_distance,
+                        "technical_metrics": candidate_metrics,
+                    })
+                    continue
+                if candidate_metrics.get("status") == "available":
+                    pass_fingerprints.append((index, candidate_metrics))
+                generated_candidate["technical_metrics"] = candidate_metrics
+                generated.append(generated_candidate)
+                accepted_candidates += 1
         finally:
             release_generation_resources(svd_service)
             cleanup_svd_service()
@@ -2946,7 +3449,7 @@ def _generate_quality_video_candidates(
             index = generated_candidate["index"]
             generated_path = generated_candidate["path"]
             review_path = Path(generated_path).with_suffix(".review.json")
-            candidate_technical_metrics = video_candidate_metrics(generated_path)
+            candidate_technical_metrics = generated_candidate.get("technical_metrics") or video_candidate_metrics(generated_path)
             candidate_technical_metrics["start_frame_reference"] = video_start_frame_reference_metrics(
                 generated_path, scene.image_path,
             )
@@ -3051,11 +3554,17 @@ def _generate_quality_video_candidates(
         attach_repair_queue(report, "video")
         write_report(Path(output_path).with_suffix(".quality.json"), report)
         raise ReviewError("All video candidate reviews failed")
+    engine_diversity = _local_engine_diversity_summary(svd_service, candidates)
     return _select_best_video_candidate(
         candidates,
         output_path,
         Path(output_path).with_suffix(".quality.json"),
-        quality_budget=strongest_budget.as_dict(),
+        quality_budget={
+            **strongest_budget.as_dict(),
+            "generation_attempts": total_generation_attempts,
+            "duplicate_candidates": duplicate_candidates,
+            **({"engine_diversity": engine_diversity} if engine_diversity else {}),
+        },
     )
 
 
@@ -3100,6 +3609,21 @@ def generate_video_task(
                     shot_plan,
                     spatial_plan=spatial_contract.get("spatial_plan") or {},
                 )
+            continuity_contract = _frozen_continuity_contract_for_generation(
+                db, project_id, scene.scene_number,
+            )
+            if continuity_contract:
+                shot_plan = replace(
+                    shot_plan,
+                    director_prompt=_append_prompt_directive(
+                        shot_plan.director_prompt,
+                        ContinuityAssetPackService.prompt_directive(continuity_contract, phase="opening"),
+                    ),
+                    end_frame_prompt=_append_prompt_directive(
+                        shot_plan.end_frame_prompt,
+                        ContinuityAssetPackService.prompt_directive(continuity_contract, phase="ending"),
+                    ),
+                )
             num_frames = max(kwargs.get("num_frames", settings.SVD_NUM_FRAMES), shot_plan.num_frames)
             fps = kwargs.get("fps", shot_plan.fps)
             motion_bucket_id = kwargs.get("motion_bucket_id", shot_plan.motion_bucket_id)
@@ -3112,14 +3636,90 @@ def generate_video_task(
             )
             provider_name = _configured_video_provider_name(kwargs)
             end_image = None
+            middle_keyframes: list[dict] = []
             sequence_level_requested = _sequence_level_multi_shot_enabled(provider_name, kwargs)
+            local_route = None
+            local_routes = ()
+            if provider_name == "local_comfyui":
+                shot_plan = _resolve_shot_motion_reference(
+                    shot_plan,
+                    settings.LOCAL_MOTION_REFERENCE_LIBRARY_PATH,
+                )
+                route_plan = shot_plan.as_dict()
+                route_plan.update({
+                    "has_performance_audio": bool(
+                        str(shot_plan.performance_reference_audio or "").strip()
+                        or (scene.audio_path and Path(scene.audio_path).is_file())
+                    ),
+                    "has_motion_reference_video": bool(
+                        str(shot_plan.motion_reference_video or "").strip()
+                    ),
+                })
+                local_routes = resolve_local_video_engine_routes(
+                    settings.COMFYUI_VIDEO_ENGINE_REGISTRY_PATH,
+                    shot_plan=route_plan,
+                    has_temporal_keyframes=(
+                        "temporal_keyframes" in set(shot_plan.required_engine_capabilities or [])
+                    ),
+                )
+                local_route = local_routes[0] if local_routes else None
+            local_conditioning_frames_enabled = bool(
+                not local_routes
+                or any(route.capabilities.get("temporal_keyframes") for route in local_routes)
+            )
+            if (
+                settings.GENERATION_VIDEO_MID_KEYFRAME_ENABLED
+                and provider_name == "local_comfyui"
+                and _uses_configured_video_provider(provider_name)
+                and not sequence_level_requested
+                and local_conditioning_frames_enabled
+                and shot_plan.target_duration_seconds >= settings.GENERATION_VIDEO_MID_KEYFRAME_MIN_SECONDS
+                and num_frames >= 3
+            ):
+                keyframe_plan = list(shot_plan.temporal_keyframes or [{
+                    "position": settings.GENERATION_VIDEO_MID_KEYFRAME_POSITION,
+                    "strength": 0.85,
+                    "role": "performance_peak",
+                    "prompt": shot_plan.mid_frame_prompt,
+                }])[:max(1, int(settings.GENERATION_VIDEO_MAX_MID_KEYFRAMES))]
+                previous_index = 0
+                temporal_reference = scene.image_path
+                for anchor_index, anchor in enumerate(keyframe_plan, start=1):
+                    position = float(anchor.get("position", settings.GENERATION_VIDEO_MID_KEYFRAME_POSITION))
+                    if not isfinite(position) or not 0.0 < position < 1.0:
+                        raise ValueError("Temporal keyframe position must be within (0, 1)")
+                    frame_index = max(1, min(num_frames - 2, round((num_frames - 1) * position)))
+                    if frame_index <= previous_index:
+                        raise ValueError("Temporal keyframe positions must map to strictly increasing frames")
+                    middle_path = _generate_mid_frame(
+                        scene,
+                        project_id,
+                        shot_plan,
+                        scene_payload=_scene_review_payload(scene, project_id, db),
+                        anchor=anchor,
+                        anchor_index=anchor_index,
+                        reference_image=temporal_reference,
+                    )
+                    middle_keyframes.append({
+                        "path": middle_path,
+                        "frame_index": frame_index,
+                        "strength": float(anchor.get("strength", 0.85)),
+                        "role": str(anchor.get("role") or f"performance_anchor_{anchor_index}"),
+                    })
+                    previous_index = frame_index
+                    temporal_reference = middle_path
             if (
                 settings.GENERATION_VIDEO_END_FRAME_ENABLED
                 and _uses_configured_video_provider(provider_name)
                 and not sequence_level_requested
+                and (provider_name != "local_comfyui" or local_conditioning_frames_enabled)
             ):
                 end_image = _generate_end_frame(
-                    scene, project_id, shot_plan, scene_payload=_scene_review_payload(scene, project_id, db),
+                    scene,
+                    project_id,
+                    shot_plan,
+                    scene_payload=_scene_review_payload(scene, project_id, db),
+                    reference_image=(middle_keyframes[-1]["path"] if middle_keyframes else scene.image_path),
                 )
             def option(name: str):
                 return kwargs.get(name.lower(), kwargs.get(name))
@@ -3142,8 +3742,16 @@ def generate_video_task(
                 "DURATION_SECONDS": option("DURATION_SECONDS"),
                 "SEQUENCE_TIMELINE": option("SEQUENCE_TIMELINE"),
                 "SPATIAL_ASSET_PACK": spatial_contract,
+                "CONTINUITY_ASSET_PACK": continuity_contract,
                 }.items() if value is not None
             }
+            if local_route is not None:
+                route_payload = local_route.as_dict()
+                provider_options.update({
+                    "WORKFLOW_PATH": local_route.workflow_path,
+                    "BINDINGS_PATH": local_route.bindings_path,
+                    "LOCAL_ENGINE_ROUTE": route_payload,
+                })
             if repair_action == "fix_video_output_contract":
                 provider_options = _apply_video_output_contract_repair(provider_name, provider_options)
             provider_ref = {}
@@ -3212,6 +3820,11 @@ def generate_video_task(
             video_generator = _build_video_generator(
                 scene, shot_plan, provider_name, end_image, provider_options=provider_options,
             )
+            if isinstance(video_generator, _ComfyVideoGenerator):
+                video_generator.with_keyframe_images(middle_keyframes)
+                video_generator.with_local_engine_routes([
+                    route.as_dict() for route in local_routes
+                ])
             provider_ref["generator"] = video_generator
             sequence_scenes = None
             if sequence_level_requested:
@@ -3225,6 +3838,13 @@ def generate_video_task(
                 multimodal_refs = _multimodal_references_for_scene(
                     scene, project_id, db, provider_name, option("MODEL"),
                 )
+            if provider_name == "local_comfyui":
+                if not local_routes:
+                    multimodal_refs = _bind_local_engine_conditioning(
+                        multimodal_refs,
+                        shot_plan,
+                        provider_options.get("LOCAL_ENGINE_ROUTE"),
+                    )
             if isinstance(video_generator, _ComfyVideoGenerator):
                 video_generator.with_multimodal_references(**multimodal_refs)
                 video_generator.with_sequence_context(_sequence_context_for_scene(scene, project_id, db))

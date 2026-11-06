@@ -50,6 +50,7 @@ def search(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "GENERATION_REQUIRE_IMAGE_REVIEW", True)
     monkeypatch.setattr(settings, "GENERATION_REQUIRE_IMAGE_POSTPROCESS", False)
     monkeypatch.setattr(settings, "GENERATION_IMAGE_POSTPROCESS_COMMAND", "")
+    monkeypatch.setattr(settings, "GENERATION_IMAGE_DEDUP_ENABLED", False)
     monkeypatch.setattr("src.tasks.image_tasks.image_quality_budget", lambda _action=None: QualityBudget(1, 1, 4, "hongguo_reference"))
     request = ImageGenerationRequest("an actor waiting at the doorway", str(tmp_path / "scene.png"), width=512, height=512, seed=42)
     return ImageProvider(), request
@@ -96,6 +97,56 @@ def test_one_generation_failure_does_not_discard_later_good_candidate(search, mo
     _, result = _generate_quality_candidates(provider, request, {"scene_number": 1}, None)
     assert result["best_index"] == 2
     assert result["search"]["failed_generations"] == 1
+
+
+def test_near_duplicate_candidate_is_skipped_and_replenished(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "GENERATION_REQUIRE_IMAGE_REVIEW", True)
+    monkeypatch.setattr(settings, "GENERATION_REQUIRE_IMAGE_POSTPROCESS", False)
+    monkeypatch.setattr(settings, "GENERATION_IMAGE_POSTPROCESS_COMMAND", "")
+    monkeypatch.setattr(settings, "GENERATION_IMAGE_DEDUP_ENABLED", True)
+    monkeypatch.setattr(settings, "GENERATION_IMAGE_DEDUP_HAMMING_DISTANCE", 4)
+    monkeypatch.setattr(settings, "GENERATION_IMAGE_DEDUP_COLOR_DISTANCE", 12.0)
+    monkeypatch.setattr(settings, "GENERATION_IMAGE_MAX_ATTEMPT_MULTIPLIER", 2.0)
+    monkeypatch.setattr("src.tasks.image_tasks.image_quality_budget", lambda _action=None: QualityBudget(2, 0, 4, "hongguo_reference"))
+
+    class DuplicateProvider(ImageProvider):
+        def generate_image(self, request):
+            self.requests.append(request)
+            color = (80, 100, 120) if len(self.requests) <= 2 else (180, 70, 40)
+            Image.new("RGB", (512, 512), color).save(request.output_path)
+            return GenerationResult("local_comfyui", request.output_path, "image", {})
+
+    provider = DuplicateProvider()
+    request = ImageGenerationRequest("an actor waiting", str(tmp_path / "scene.png"), width=512, height=512, seed=42)
+    review = Mock(side_effect=lambda _self, index, path, *_args: image_report(index, path))
+    monkeypatch.setattr(ImageQualitySelector, "review_candidate", review)
+
+    _, result = _generate_quality_candidates(provider, request, {"scene_number": 1}, None)
+
+    assert len(provider.requests) == 3
+    assert review.call_count == 2
+    assert result["search"]["reviewed_candidates"] == 2
+    assert result["search"]["duplicate_candidates"] == 1
+    duplicate = next(item for item in result["candidates"] if item["status"] == "duplicate")
+    assert duplicate["duplicate_of"] == 1
+
+
+def test_candidate_search_uses_distinct_controlled_visual_emphasis(search, monkeypatch):
+    provider, request = search
+    monkeypatch.setattr(settings, "GENERATION_IMAGE_DIVERSITY_SEARCH_ENABLED", True)
+    monkeypatch.setattr("src.tasks.image_tasks.image_quality_budget", lambda _action=None: QualityBudget(3, 0, 4, "hongguo_reference"))
+    monkeypatch.setattr(
+        ImageQualitySelector,
+        "review_candidate",
+        lambda _self, index, path, *_args: image_report(index, path),
+    )
+
+    _, result = _generate_quality_candidates(provider, request, {"scene_number": 1}, None)
+
+    strategies = [item["request"]["search_strategy"]["name"] for item in result["candidates"]]
+    assert strategies == ["storyboard_fidelity", "performance_readability", "staging_depth"]
+    assert len({item.prompt for item in provider.requests}) == 3
+    assert all("preserv" in item.prompt.lower() for item in provider.requests[:2])
 
 
 def test_postprocess_failure_restores_accepted_pixels(search, monkeypatch):

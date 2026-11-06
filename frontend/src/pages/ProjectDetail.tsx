@@ -127,6 +127,8 @@ export function ProjectDetail() {
                 await projectApi.updateMarketSignals(Number(id), {comparables, differentiation: marketEvidence.differentiation, success_metric: marketEvidence.success_metric, notes: marketEvidence.notes});
             } else if (operation === '冻结空间计划') {
                 await projectApi.freezeSpatialPlan(Number(id), assetNotes);
+            } else if (operation === '冻结连续性资产') {
+                await projectApi.freezeContinuityAssets(Number(id), assetNotes);
             } else if (operation === '冻结视觉风格') {
                 await projectApi.freezeVisualStyle(Number(id), {
                     style_prompt: stylePrompt,
@@ -182,6 +184,10 @@ export function ProjectDetail() {
             await run('冻结空间计划');
             return;
         }
+        if (action === 'freeze_continuity_assets') {
+            await run('冻结连续性资产');
+            return;
+        }
         if (action === 'fix_workflow_profile') {
             setBusy('冻结 Workflow Profile'); setError('');
             try {
@@ -193,7 +199,34 @@ export function ProjectDetail() {
         }
         if (action === 'rewrite_short_drama_story_rhythm') {
             await run('按故事房建议重写剧本');
+            return;
         }
+        if (action === 'compile_shot_execution_contracts') {
+            setBusy('编译镜头执行合同'); setError('');
+            try {
+                const result = await projectApi.compileShotContracts(Number(id));
+                setError(result.changed_count
+                    ? `已补齐 ${result.changed_count} 个分镜合同；受影响镜头的旧视频已失效。`
+                    : '所有分镜合同已经完整。');
+                await reload();
+            } catch(e) { setError(errorText(e)); }
+            finally { setBusy(''); }
+        }
+    };
+    const decomposeScene = async (sceneNumber: number) => {
+        if (locked) return;
+        const confirmed = window.confirm(
+            `将分镜 ${sceneNumber} 拆成多个原子镜头，并重排后续时间轴。受影响镜头的旧图片、音频和视频会失效。是否继续？`,
+        );
+        if (!confirmed) return;
+        setBusy(`拆解分镜 ${sceneNumber}`); setError('');
+        try {
+            const result = await projectApi.decomposeScene(Number(id), sceneNumber, false);
+            setError(`分镜 ${sceneNumber} 已拆成 ${result.atomic_shots.length} 个覆盖镜头。`);
+            setTab('script');
+            await reload();
+        } catch(e) { setError(errorText(e)); }
+        finally { setBusy(''); }
     };
     const uploadBgm = async (file: File) => {
         setBusy('上传 BGM'); setError('');
@@ -430,15 +463,15 @@ export function ProjectDetail() {
         {error && <p role="alert" className="wb-alert">{error}</p>}
         {busy && <p role="status" className="wb-alert"><RefreshCw size={15} className="inline animate-spin"/> {busy}进行中</p>}
         <VideoEngineStatus/>
-        <ProductionReadinessPanel report={readiness} loading={readinessLoading} onRefresh={refreshReadiness} onRepairAction={executeReadinessAction} onApproveStoryRoom={() => run('审批当前故事房版本')}/>
+        <ProductionReadinessPanel report={readiness} loading={readinessLoading} onRefresh={refreshReadiness} onRepairAction={executeReadinessAction} onApproveStoryRoom={() => run('审批当前故事房版本')} onDecomposeScene={decomposeScene}/>
         <section className="wb-item" aria-label="连续性资产锁">
             <div className="wb-row wb-between">
                 <div>
                     <strong>连续性资产锁</strong>
-                    <p className="wb-muted">冻结空间走位和视觉风格后，后续镜头会使用同一套控制约束。</p>
+                    <p className="wb-muted">冻结空间走位、连续性资产和视觉风格后，后续镜头会使用同一套控制约束。</p>
                 </div>
                 <span className="wb-badge">
-                    空间：{readiness?.checks.spatial_continuity?.asset_pack?.status || '未冻结'} · 风格：{readiness?.checks.visual_style?.status || '未冻结'}
+                    空间：{readiness?.checks.spatial_continuity?.asset_pack?.status || '未冻结'} · 状态：{readiness?.checks.continuity_assets?.status || '未配置'} · 风格：{readiness?.checks.visual_style?.status || '未冻结'}
                 </span>
             </div>
             <label>审核备注<input disabled={locked} value={assetNotes} onChange={e => setAssetNotes(e.target.value)} placeholder="可选：记录机位、色调和连续性审核结论" /></label>
@@ -448,6 +481,7 @@ export function ProjectDetail() {
             </div>
             <div className="wb-row">
                 <button className="wb-button" disabled={locked || !project.scenes?.length} onClick={() => run('冻结空间计划')}>冻结空间计划</button>
+                <button className="wb-button" disabled={locked || !project.scenes?.length} onClick={() => run('冻结连续性资产')}>冻结连续性资产</button>
                 <button className="wb-button" disabled={locked || !project.scenes?.length} onClick={() => run('冻结视觉风格')}>冻结视觉风格</button>
             </div>
         </section>

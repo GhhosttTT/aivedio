@@ -90,6 +90,55 @@ def test_output_contract_allows_declared_mov_to_mp4_postprocess_conversion():
     assert "postprocess_container_conversion" in report["checked"]
 
 
+def test_output_contract_v4_verifies_local_reference_asset_hash(tmp_path):
+    asset = tmp_path / "middle.png"
+    asset.write_bytes(b"approved pixels")
+    contract = _v3_contract(
+        provider_request_version=4,
+        reference_assets=[{
+            "role": "keyframe_image",
+            "kind": "local_file",
+            "locator": str(asset),
+            "sha256": hashlib.sha256(asset.read_bytes()).hexdigest(),
+        }],
+    )
+
+    report = audit_video_output_contract(
+        contract,
+        {},
+        _metrics(),
+        tmp_path / "output.mp4",
+    )
+
+    assert report["status"] == "passed"
+    assert "reference_asset_integrity" in report["checked"]
+
+
+def test_output_contract_v4_blocks_mutated_local_reference_asset(tmp_path):
+    asset = tmp_path / "middle.png"
+    asset.write_bytes(b"approved pixels")
+    contract = _v3_contract(
+        provider_request_version=4,
+        reference_assets=[{
+            "role": "keyframe_image",
+            "kind": "local_file",
+            "locator": str(asset),
+            "sha256": hashlib.sha256(asset.read_bytes()).hexdigest(),
+        }],
+    )
+    asset.write_bytes(b"changed pixels")
+
+    report = audit_video_output_contract(
+        contract,
+        {},
+        _metrics(),
+        tmp_path / "output.mp4",
+    )
+
+    assert report["status"] == "needs_review"
+    assert report["issues"][0]["code"] == "reference_asset_hash_mismatch"
+
+
 def test_output_contract_keeps_mov_drift_strict_by_default():
     report = audit_video_output_contract(
         _contract(output_format="mov"),

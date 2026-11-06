@@ -290,6 +290,9 @@ class VideoGenerationRequest:
     negative_prompt: Optional[str] = None
     reference_image: Optional[str] = None
     end_image: Optional[str] = None
+    # Frame-indexed local conditioning, for example LTX multi-keyframe graphs.
+    # Each item carries path, frame_index, strength and a semantic role.
+    keyframe_images: Optional[list[dict]] = None
     # Seedance-style multimodal references. ``reference_image`` remains as a
     # backwards-compatible shortcut for local ComfyUI/SVD workflows.
     reference_images: Optional[list[str]] = None
@@ -304,6 +307,9 @@ class VideoGenerationRequest:
     output_format: Optional[str] = None
     resolution: Optional[str] = None
     model: Optional[str] = None
+    workflow_path: Optional[str] = None
+    bindings_path: Optional[str] = None
+    local_engine_route: Optional[dict] = None
     request_mode: Optional[str] = None
     draft: Optional[bool] = None
     draft_task_id: Optional[str] = None
@@ -422,6 +428,7 @@ class LocalComfyUIProvider:
             negative_prompt=request.negative_prompt or "",
             reference_image=request.reference_image,
             end_image=request.end_image,
+            keyframe_images=request.keyframe_images,
             continuity_reference_image=request.continuity_reference_image,
             reference_images=request.reference_images,
             reference_videos=request.reference_videos,
@@ -438,6 +445,9 @@ class LocalComfyUIProvider:
             repair_action=request.repair_action,
             quality_pipeline=request.quality_pipeline,
             shot_plan=request.shot_plan,
+            local_engine_route=request.local_engine_route,
+            workflow_path=request.workflow_path,
+            bindings_path=request.bindings_path,
         )
         return GenerationResult(
             provider=self.name.value,
@@ -450,9 +460,13 @@ class LocalComfyUIProvider:
                 "height": request.height,
                 "fps": request.fps,
                 "end_image": request.end_image,
+                "keyframe_images": list(request.keyframe_images or []),
                 "continuity_reference_image": request.continuity_reference_image,
                 "reference_images": list(request.reference_images or []),
                 "reference_videos": list(request.reference_videos or []),
+                "local_engine_route": dict(request.local_engine_route or {}),
+                "workflow_path": request.workflow_path,
+                "bindings_path": request.bindings_path,
                 "reference_audios": list(request.reference_audios or []),
                 "motion_bucket_id": request.motion_bucket_id,
                 "noise_aug_strength": request.noise_aug_strength,
@@ -2257,6 +2271,14 @@ def _video_request_fingerprint(
         "prompt": request.prompt,
         "negative_prompt": request.negative_prompt,
         "reference_images": [media_identity(path) for path in request.reference_images or []],
+        "keyframe_images": [
+            {
+                **{key: value for key, value in item.items() if key != "path"},
+                "path": media_identity(item.get("path")),
+            }
+            for item in request.keyframe_images or []
+            if isinstance(item, dict)
+        ],
         "reference_videos": [media_identity(path) for path in request.reference_videos or []],
         "reference_audios": [media_identity(path) for path in request.reference_audios or []],
         "generate_audio": request.generate_audio,
@@ -2282,6 +2304,9 @@ def _video_request_fingerprint(
         "quality_mode": request.quality_mode,
         "repair_action": request.repair_action,
         "quality_pipeline": request.quality_pipeline or {},
+        "workflow_path": media_identity(request.workflow_path),
+        "bindings_path": media_identity(request.bindings_path),
+        "local_engine_route": request.local_engine_route or {},
     }
     for field in media_fields:
         value = getattr(request, field)
@@ -2314,6 +2339,7 @@ def _spatial_prompt_directive(shot_plan: dict | None) -> str:
         ("camera axis", "camera_axis"),
         ("camera movement", "camera_movement"),
         ("character positions", "character_positions"),
+        ("character eyelines", "character_eyelines"),
         ("prop focus", "prop_focus"),
         ("continuity", "continuity_prompt"),
     )

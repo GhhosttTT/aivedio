@@ -104,9 +104,14 @@ def test_split_sequence_video_writes_atomic_segments(tmp_path, monkeypatch):
     def fake_run(command, **_kwargs):
         calls.append(command)
         if command[0] == "ffprobe":
+            entries = command[command.index("-show_entries") + 1]
+            if entries == "stream=codec_type":
+                return type("Result", (), {"stdout": "video\n"})()
+            if entries == "stream=pix_fmt":
+                return type("Result", (), {"stdout": '{"streams":[{"pix_fmt":"yuv420p"}]}'})()
             path = str(command[-1])
             duration = "2.0" if "scene_1" in path else "3.0"
-            if "/sequence.mp4" in path:
+            if Path(path).name == "sequence.mp4":
                 duration = "5.0"
             return type("Result", (), {"stdout": f"{duration}\n"})()
         Path(command[-1]).write_bytes(b"segment")

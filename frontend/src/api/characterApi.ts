@@ -40,6 +40,13 @@ export interface CharacterIdentityScore {
   limitation: string;
 }
 
+export interface CharacterIdentityImageScore extends CharacterIdentityScore {
+  reference_path: string;
+  image_sha256: string;
+  observed_spec: Record<string, string>;
+  observation_evidence: string;
+}
+
 export interface CharacterReferenceGeneration {
   character_id: number;
   reference: CharacterReference;
@@ -134,6 +141,14 @@ export const characterApi = {
     return apiClient.post<any, CharacterIdentityScore>(
       `/projects/${projectId}/characters/${characterId}/identity-score`,
       { observed_spec: observedSpec }
+    );
+  },
+
+  scoreReferenceIdentity: async (projectId: number, characterId: number, referencePath: string) => {
+    return apiClient.post<any, CharacterIdentityImageScore>(
+      `/projects/${projectId}/characters/${characterId}/identity-score-image`,
+      { reference_path: referencePath },
+      { timeout: 300000 },
     );
   },
 

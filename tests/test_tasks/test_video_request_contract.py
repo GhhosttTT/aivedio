@@ -24,7 +24,7 @@ def test_video_request_contract_captures_effective_generation_controls():
         fps=24,
     )
     contract = _video_request_contract(request, request_mode="multi_shot", sequence_level=True)
-    assert contract["provider_request_version"] == 3
+    assert contract["provider_request_version"] == 5
     assert contract["model"] == "doubao-seedance-2-5-260628"
     assert contract["sequence_level_multi_shot"] is True
     assert contract["reference_video_count"] == 1
@@ -54,6 +54,28 @@ def test_video_request_contract_hash_changes_when_a_quality_control_changes():
     first = _video_request_contract(base, request_mode="reference", sequence_level=False)
     changed = replace(base, return_last_frame=True)
     second = _video_request_contract(changed, request_mode="reference", sequence_level=False)
+    assert first["contract_hash"] != second["contract_hash"]
+
+
+def test_video_request_contract_binds_local_engine_workflow(tmp_path):
+    workflow = tmp_path / "ltx.json"
+    bindings = tmp_path / "ltx.bindings.json"
+    workflow.write_bytes(b'{"model":"ltx-2"}')
+    bindings.write_bytes(b'{"version":2}')
+    request = VideoGenerationRequest(
+        prompt="action shot",
+        output_path=str(tmp_path / "shot.mp4"),
+        workflow_path=str(workflow),
+        bindings_path=str(bindings),
+        local_engine_route={"engine_id": "ltx", "model_profile": "ltx_2_keyframes"},
+    )
+
+    first = _video_request_contract(request, request_mode="reference", sequence_level=False)
+    workflow.write_bytes(b'{"model":"ltx-2-updated"}')
+    second = _video_request_contract(request, request_mode="reference", sequence_level=False)
+
+    assert first["local_engine_route"]["engine_id"] == "ltx"
+    assert {item["role"] for item in first["engine_assets"]} == {"workflow", "workflow_bindings"}
     assert first["contract_hash"] != second["contract_hash"]
 
 
