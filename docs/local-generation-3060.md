@@ -48,6 +48,26 @@
 
 ## 3. 3060 起步配置
 
+视频模型应使用显式的12GB注册表合同。先复制
+`configs/local_video_engine_registry.12gb.example.json`，替换为本机真实的 ComfyUI API
+workflow 和 bindings 文件，再配置：
+
+```env
+LOCAL_VIDEO_VRAM_BUDGET_GB=12
+COMFYUI_VIDEO_ENGINE_REGISTRY_PATH=./configs/local_video_engine_registry.json
+GENERATION_WIDTH=544
+GENERATION_HEIGHT=960
+GENERATION_VIDEO_TARGET_SECONDS=3.0
+GENERATION_VIDEO_MODEL_FPS=24
+GENERATION_VIDEO_MAX_FRAMES=72
+CELERY_WORKER_CONCURRENCY=1
+```
+
+这组参数以3秒原生24fps镜头为单位，单镜头72帧。先在480P/540P级别生成并筛选，最终
+再补帧和超分。注册表中超过12GB最低显存的14B全精度工作流会被路由器过滤，避免在渲染
+阶段才发生OOM。示例中的FP8和CPU offload只是工作流合同；ComfyUI图本身仍必须实际加载
+对应量化权重并启用卸载节点。
+
 先使用一套验证过的 SDXL checkpoint 跑通 6 个镜头，避免同时更换模型、LoRA、采样器和镜头设计。
 当前默认 Juggernaut 面向写实画面。动画需要选择匹配风格的 SDXL checkpoint；流程支持保留动画提示词，默认模型不承诺适合所有画风。
 

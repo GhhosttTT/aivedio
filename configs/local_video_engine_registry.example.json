@@ -7,6 +7,12 @@
       "workflow_path": "./wan22_i2v_api.json",
       "bindings_path": "./wan22_i2v_api.bindings.json",
       "priority": 10,
+      "runtime": {
+        "minimum_vram_gb": 60,
+        "precision": "bf16",
+        "cpu_offload": false,
+        "sequential_only": true
+      },
       "capabilities": {
         "identity_reference": true,
         "performance_control": false,
@@ -21,6 +27,12 @@
       "workflow_path": "./hunyuan_custom_api.json",
       "bindings_path": "./hunyuan_custom_api.bindings.json",
       "priority": 35,
+      "runtime": {
+        "minimum_vram_gb": 24,
+        "precision": "fp8",
+        "cpu_offload": true,
+        "sequential_only": true
+      },
       "capabilities": {
         "identity_reference": true,
         "performance_control": true,
@@ -35,6 +47,12 @@
       "workflow_path": "./hunyuan_avatar_api.json",
       "bindings_path": "./hunyuan_avatar_api.bindings.json",
       "priority": 30,
+      "runtime": {
+        "minimum_vram_gb": 24,
+        "precision": "fp8",
+        "cpu_offload": true,
+        "sequential_only": true
+      },
       "capabilities": {
         "identity_reference": true,
         "performance_control": true,
@@ -49,6 +67,12 @@
       "workflow_path": "./wan22_animate_api.json",
       "bindings_path": "./wan22_animate_api.bindings.json",
       "priority": 20,
+      "runtime": {
+        "minimum_vram_gb": 24,
+        "precision": "fp8",
+        "cpu_offload": true,
+        "sequential_only": true
+      },
       "capabilities": {
         "identity_reference": true,
         "performance_control": true,
@@ -63,6 +87,12 @@
       "workflow_path": "./ltx2_keyframes_api.json",
       "bindings_path": "./ltx2_keyframes_api.bindings.json",
       "priority": 15,
+      "runtime": {
+        "minimum_vram_gb": 16,
+        "precision": "fp8",
+        "cpu_offload": true,
+        "sequential_only": true
+      },
       "capabilities": {
         "identity_reference": true,
         "performance_control": false,

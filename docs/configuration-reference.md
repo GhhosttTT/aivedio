@@ -513,6 +513,7 @@
 | `LOCAL_REVIEW_PROBE_TIMEOUT` | `float` | `2.0` |
 | `LOCAL_REVIEW_TIMEOUT` | `int` | `300` |
 | `LOCAL_VIDEO_MODEL_PROFILE` | `str` | `auto` |
+| `LOCAL_VIDEO_VRAM_BUDGET_GB` | `float` | `12.0` |
 
 ## LOCALIZATION
 

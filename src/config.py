@@ -295,6 +295,9 @@ class Settings(BaseSettings):
     # final short-drama shots. Set this to an approved local model profile
     # only when the workflow actually loads that model.
     LOCAL_VIDEO_MODEL_PROFILE: str = "auto"
+    # Hard routing budget for the ComfyUI worker. Engines that declare a
+    # higher minimum in the registry are excluded before a GPU job starts.
+    LOCAL_VIDEO_VRAM_BUDGET_GB: float = 12.0
     JIMENG_ENDPOINT: str = ""
     JIMENG_API_KEY: str = ""
     KLING_ENDPOINT: str = ""

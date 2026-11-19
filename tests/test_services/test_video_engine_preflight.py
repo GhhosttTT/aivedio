@@ -270,6 +270,76 @@ def test_engine_registry_preflight_rejects_unproven_temporal_capability(monkeypa
     assert "does not prove" in report["engines"][0]["capability_issues"][0]
 
 
+def test_engine_registry_preflight_blocks_runtime_above_vram_budget(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = tmp_path / "wan.json"
+    workflow.write_text("{}", encoding="utf-8")
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps({"engines": [{
+        "id": "wan-large",
+        "model_profile": "wan_2_2_i2v_14b",
+        "workflow_path": "wan.json",
+        "capabilities": {"identity_reference": True},
+        "runtime": {"minimum_vram_gb": 60, "precision": "bf16"},
+    }]}), encoding="utf-8")
+    monkeypatch.setattr(module.settings, "LOCAL_VIDEO_VRAM_BUDGET_GB", 12)
+    monkeypatch.setattr(module, "preflight_video_workflow", lambda *_args, **_kwargs: {
+        "status": "ready_for_live_test", "checks": {}, "action_items": [],
+    })
+    monkeypatch.setattr(module, "inspect_local_video_model", lambda *_args, **_kwargs: {
+        "status": "ready",
+        "profile": "wan_2_2_i2v_14b",
+        "supports_temporal_keyframes": False,
+        "native_capabilities": ["identity_reference"],
+        "action_items": [],
+    })
+
+    report = module.preflight_local_video_engine_registry(registry_path=str(registry))
+
+    assert report["status"] == "blocked"
+    assert "requires 60GB VRAM" in report["engines"][0]["capability_issues"][0]
+
+
+def test_engine_registry_preflight_blocks_parallel_low_vram_worker(monkeypatch, tmp_path):
+    import json
+    from src.services import video_engine_preflight as module
+
+    workflow = tmp_path / "wan.json"
+    workflow.write_text("{}", encoding="utf-8")
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps({"engines": [{
+        "id": "wan-low-vram",
+        "model_profile": "wan_2_2_ti2v_5b",
+        "workflow_path": "wan.json",
+        "capabilities": {"identity_reference": True},
+        "runtime": {
+            "minimum_vram_gb": 12,
+            "precision": "fp8",
+            "cpu_offload": True,
+            "sequential_only": True,
+        },
+    }]}), encoding="utf-8")
+    monkeypatch.setenv("CELERY_WORKER_CONCURRENCY", "2")
+    monkeypatch.setattr(module.settings, "LOCAL_VIDEO_VRAM_BUDGET_GB", 12)
+    monkeypatch.setattr(module, "preflight_video_workflow", lambda *_args, **_kwargs: {
+        "status": "ready_for_live_test", "checks": {}, "action_items": [],
+    })
+    monkeypatch.setattr(module, "inspect_local_video_model", lambda *_args, **_kwargs: {
+        "status": "ready",
+        "profile": "wan_2_2_ti2v_5b",
+        "supports_temporal_keyframes": False,
+        "native_capabilities": ["identity_reference"],
+        "action_items": [],
+    })
+
+    report = module.preflight_local_video_engine_registry(registry_path=str(registry))
+
+    assert report["status"] == "blocked"
+    assert "requires sequential rendering" in report["engines"][0]["capability_issues"][0]
+
+
 def test_engine_registry_preflight_rejects_generic_i2v_claiming_dialogue_controls(monkeypatch, tmp_path):
     import json
     from src.services import video_engine_preflight as module

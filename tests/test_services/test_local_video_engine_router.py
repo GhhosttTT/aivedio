@@ -100,6 +100,55 @@ def test_ranked_routes_expose_all_executable_engines_by_priority(tmp_path):
     assert [route.engine_id for route in routes] == ["first", "second"]
 
 
+def test_router_excludes_engine_above_vram_budget(tmp_path):
+    low_vram = tmp_path / "low-vram.json"
+    large = tmp_path / "large.json"
+    low_vram.write_text("{}", encoding="utf-8")
+    large.write_text("{}", encoding="utf-8")
+    engines = [
+        {
+            **_engine("large", large, capabilities={"identity_reference": True}, priority=100),
+            "runtime": {"minimum_vram_gb": 24, "precision": "bf16"},
+        },
+        {
+            **_engine("low-vram", low_vram, capabilities={"identity_reference": True}, priority=1),
+            "runtime": {
+                "minimum_vram_gb": 12,
+                "precision": "fp8",
+                "cpu_offload": True,
+                "sequential_only": True,
+            },
+        },
+    ]
+
+    routes = rank_local_video_engine_routes(
+        engines,
+        shot_plan={"visible_character_count": 1},
+        has_temporal_keyframes=False,
+        available_vram_gb=12,
+    )
+
+    assert [route.engine_id for route in routes] == ["low-vram"]
+    assert routes[0].runtime["cpu_offload"] is True
+
+
+def test_router_reports_vram_shortfall(tmp_path):
+    workflow = tmp_path / "large.json"
+    workflow.write_text("{}", encoding="utf-8")
+    engine = {
+        **_engine("large", workflow, capabilities={"identity_reference": True}),
+        "runtime": {"minimum_vram_gb": 24},
+    }
+
+    with pytest.raises(LocalVideoEngineRoutingError, match="24GB required, 12GB available"):
+        select_local_video_engine(
+            [engine],
+            shot_plan={"visible_character_count": 1},
+            has_temporal_keyframes=False,
+            available_vram_gb=12,
+        )
+
+
 def test_explicit_shot_capabilities_survive_role_inference(tmp_path):
     generic = tmp_path / "generic.json"
     controlled = tmp_path / "controlled.json"
@@ -369,6 +418,53 @@ def test_registry_resolves_paths_relative_to_registry(tmp_path):
 
     assert loaded[0]["workflow_path"] == str(workflow.resolve())
     assert loaded[0]["bindings_path"] == str(bindings.resolve())
+
+
+def test_registry_normalizes_low_vram_runtime_contract(tmp_path):
+    workflow = tmp_path / "wan.json"
+    workflow.write_text("{}", encoding="utf-8")
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps({
+        "engines": [{
+            "id": "wan-low-vram",
+            "model_profile": "wan_2_2_ti2v_5b",
+            "workflow_path": "wan.json",
+            "capabilities": {"identity_reference": True},
+            "runtime": {
+                "minimum_vram_gb": 11.5,
+                "precision": "FP8",
+                "cpu_offload": True,
+                "sequential_only": True,
+            },
+        }],
+    }), encoding="utf-8")
+
+    loaded = load_local_video_engine_registry(registry)
+
+    assert loaded[0]["runtime"] == {
+        "minimum_vram_gb": 11.5,
+        "precision": "fp8",
+        "cpu_offload": True,
+        "sequential_only": True,
+    }
+
+
+def test_registry_rejects_invalid_runtime_precision(tmp_path):
+    workflow = tmp_path / "wan.json"
+    workflow.write_text("{}", encoding="utf-8")
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps({
+        "engines": [{
+            "id": "wan",
+            "model_profile": "wan_2_2_ti2v_5b",
+            "workflow_path": "wan.json",
+            "capabilities": {"identity_reference": True},
+            "runtime": {"precision": "q3_k_m"},
+        }],
+    }), encoding="utf-8")
+
+    with pytest.raises(LocalVideoEngineRoutingError, match="runtime.precision"):
+        load_local_video_engine_registry(registry)
 
 
 def test_registry_rejects_unknown_capability_name(tmp_path):

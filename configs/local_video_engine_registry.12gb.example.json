@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "engines": [
+    {
+      "id": "wan22_ti2v_5b_12gb",
+      "model_profile": "wan_2_2_ti2v_5b",
+      "workflow_path": "./wan22_ti2v_5b_fp8_api.json",
+      "bindings_path": "./wan22_ti2v_5b_fp8_api.bindings.json",
+      "priority": 20,
+      "runtime": {
+        "minimum_vram_gb": 12,
+        "precision": "fp8",
+        "cpu_offload": true,
+        "sequential_only": true
+      },
+      "capabilities": {
+        "identity_reference": true,
+        "performance_control": false,
+        "multi_character": false,
+        "motion_control": false,
+        "temporal_keyframes": false
+      }
+    },
+    {
+      "id": "ltx2_keyframes_12gb",
+      "model_profile": "ltx_2_keyframes",
+      "workflow_path": "./ltx2_keyframes_fp8_api.json",
+      "bindings_path": "./ltx2_keyframes_fp8_api.bindings.json",
+      "priority": 10,
+      "runtime": {
+        "minimum_vram_gb": 12,
+        "precision": "fp8",
+        "cpu_offload": true,
+        "sequential_only": true
+      },
+      "capabilities": {
+        "identity_reference": true,
+        "performance_control": false,
+        "multi_character": false,
+        "motion_control": true,
+        "temporal_keyframes": true
+      }
+    }
+  ]
+}

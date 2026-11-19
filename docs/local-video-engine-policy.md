@@ -70,6 +70,39 @@ python scripts/validate_local_generation.py preflight-production-video
 COMFYUI_VIDEO_ENGINE_REGISTRY_PATH=./configs/local_video_engine_registry.json
 ```
 
+### 12GB 显存路由合同
+
+12GB 机器应从 `configs/local_video_engine_registry.12gb.example.json` 复制实际注册表，
+并将其中的 workflow 和 bindings 路径替换为本机从 ComfyUI 导出的 API 文件。每个引擎的
+`runtime` 字段用于在 GPU 作业启动前做硬约束：
+
+```json
+{
+  "minimum_vram_gb": 12,
+  "precision": "fp8",
+  "cpu_offload": true,
+  "sequential_only": true
+}
+```
+
+推荐起步配置：
+
+```env
+LOCAL_VIDEO_VRAM_BUDGET_GB=12
+COMFYUI_VIDEO_ENGINE_REGISTRY_PATH=./configs/local_video_engine_registry.json
+GENERATION_WIDTH=544
+GENERATION_HEIGHT=960
+GENERATION_VIDEO_TARGET_SECONDS=3.0
+GENERATION_VIDEO_MODEL_FPS=24
+GENERATION_VIDEO_MAX_FRAMES=72
+CELERY_WORKER_CONCURRENCY=1
+```
+
+`minimum_vram_gb` 必须来自本机实测峰值，不能依据模型名称猜测。路由器会排除超过
+`LOCAL_VIDEO_VRAM_BUDGET_GB` 的引擎；如果所有满足镜头能力的引擎都超出预算，任务会在
+提交 ComfyUI 前失败并列出所需显存。`sequential_only=true` 时，生产预检还会阻止并发
+worker 配置。
+
 候选生成前执行以下选择规则：
 
 - 镜头合同明确声明 `temporal_keyframes` 时强制要求该能力。辅助关键帧不会把所有镜头强制路由到关键帧模型；不支持时序条件的专用表演模型不会接收中间帧或末帧输入。

@@ -827,6 +827,20 @@ def preflight_local_video_engine_registry(
         )
         declared = dict(engine.get("capabilities") or {})
         capability_issues = []
+        runtime = dict(engine.get("runtime") or {})
+        vram_budget_gb = float(getattr(settings, "LOCAL_VIDEO_VRAM_BUDGET_GB", 0) or 0)
+        minimum_vram_gb = runtime.get("minimum_vram_gb")
+        if minimum_vram_gb and vram_budget_gb and float(minimum_vram_gb) > vram_budget_gb:
+            capability_issues.append(
+                f"requires {float(minimum_vram_gb):g}GB VRAM but LOCAL_VIDEO_VRAM_BUDGET_GB="
+                f"{vram_budget_gb:g}"
+            )
+        worker_concurrency = int(os.getenv("CELERY_WORKER_CONCURRENCY", "1") or 1)
+        if runtime.get("sequential_only") and worker_concurrency > 1:
+            capability_issues.append(
+                "requires sequential rendering but CELERY_WORKER_CONCURRENCY="
+                f"{worker_concurrency}; set it to 1 for this low-VRAM workflow"
+            )
         native_capabilities = set(model_report.get("native_capabilities") or [])
         unsupported_claims = sorted(
             name for name, enabled in declared.items()
@@ -885,6 +899,7 @@ def preflight_local_video_engine_registry(
             "workflow": workflow_report,
             "model": model_report,
             "capability_issues": capability_issues,
+            "runtime": runtime,
         }
         report["engines"].append(engine_report)
         if status != "ready":
@@ -918,6 +933,8 @@ def preflight_local_video_engine_registry(
         "engine_count": len(report["engines"]),
         "all_engines_ready": all_engines_ready,
         "short_drama_profiles_covered": fleet_coverage["passed"],
+        "vram_budget_gb": float(getattr(settings, "LOCAL_VIDEO_VRAM_BUDGET_GB", 0) or 0),
+        "celery_worker_concurrency": int(os.getenv("CELERY_WORKER_CONCURRENCY", "1") or 1),
     }
     return report
 

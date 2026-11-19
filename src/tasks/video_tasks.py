@@ -3661,6 +3661,7 @@ def generate_video_task(
                     has_temporal_keyframes=(
                         "temporal_keyframes" in set(shot_plan.required_engine_capabilities or [])
                     ),
+                    available_vram_gb=float(settings.LOCAL_VIDEO_VRAM_BUDGET_GB),
                 )
                 local_route = local_routes[0] if local_routes else None
             local_conditioning_frames_enabled = bool(

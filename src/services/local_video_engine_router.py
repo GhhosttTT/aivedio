@@ -16,6 +16,8 @@ LOCAL_VIDEO_ENGINE_CAPABILITIES = frozenset({
     "temporal_keyframes",
 })
 
+LOCAL_VIDEO_PRECISIONS = frozenset({"bf16", "fp16", "fp8", "fp6", "fp4", "int8"})
+
 # Keep runtime routing conservative even when an operator skips the production
 # preflight command. A generic I2V profile cannot become a dialogue, multi-cast,
 # or driven-motion engine merely by setting booleans in the registry.
@@ -82,6 +84,7 @@ class LocalVideoEngineRoute:
     selection_reasons: tuple[str, ...]
     requested_capabilities: tuple[str, ...]
     unmet_preferences: tuple[str, ...]
+    runtime: dict[str, Any]
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -93,6 +96,7 @@ class LocalVideoEngineRoute:
             "selection_reasons": list(self.selection_reasons),
             "requested_capabilities": list(self.requested_capabilities),
             "unmet_preferences": list(self.unmet_preferences),
+            "runtime": dict(self.runtime),
         }
 
 
@@ -167,6 +171,40 @@ def load_local_video_engine_registry(path: str | Path) -> list[dict[str, Any]]:
                 + ", ".join(unsupported_claims)
             )
         bindings_path = item.get("bindings_path")
+        runtime = item.get("runtime") or {}
+        if not isinstance(runtime, dict):
+            raise LocalVideoEngineRoutingError(
+                f"Local video engine {engine_id} runtime must be an object"
+            )
+        minimum_vram_gb = runtime.get("minimum_vram_gb")
+        if minimum_vram_gb is not None:
+            try:
+                minimum_vram_gb = float(minimum_vram_gb)
+            except (TypeError, ValueError) as exc:
+                raise LocalVideoEngineRoutingError(
+                    f"Local video engine {engine_id} runtime.minimum_vram_gb must be numeric"
+                ) from exc
+            if minimum_vram_gb <= 0:
+                raise LocalVideoEngineRoutingError(
+                    f"Local video engine {engine_id} runtime.minimum_vram_gb must be greater than zero"
+                )
+        precision = str(runtime.get("precision") or "").strip().lower()
+        if precision and precision not in LOCAL_VIDEO_PRECISIONS:
+            raise LocalVideoEngineRoutingError(
+                f"Local video engine {engine_id} runtime.precision must be one of: "
+                + ", ".join(sorted(LOCAL_VIDEO_PRECISIONS))
+            )
+        for field in ("cpu_offload", "sequential_only"):
+            if field in runtime and not isinstance(runtime[field], bool):
+                raise LocalVideoEngineRoutingError(
+                    f"Local video engine {engine_id} runtime.{field} must be a JSON boolean"
+                )
+        normalized_runtime = {
+            "minimum_vram_gb": minimum_vram_gb,
+            "precision": precision or None,
+            "cpu_offload": bool(runtime.get("cpu_offload", False)),
+            "sequential_only": bool(runtime.get("sequential_only", False)),
+        }
         normalized.append({
             "id": engine_id,
             "model_profile": model_profile,
@@ -179,6 +217,7 @@ def load_local_video_engine_registry(path: str | Path) -> list[dict[str, Any]]:
             ),
             "capabilities": {str(key): value for key, value in capabilities.items()},
             "priority": int(item.get("priority") or 0),
+            "runtime": normalized_runtime,
         })
     return normalized
 
@@ -312,6 +351,7 @@ def select_local_video_engine(
     *,
     shot_plan: dict | None,
     has_temporal_keyframes: bool,
+    available_vram_gb: float | None = None,
 ) -> LocalVideoEngineRoute:
     """Choose a workflow that can satisfy the complete shot contract.
 
@@ -324,6 +364,7 @@ def select_local_video_engine(
         engines,
         shot_plan=shot_plan,
         has_temporal_keyframes=has_temporal_keyframes,
+        available_vram_gb=available_vram_gb,
     )[0]
 
 
@@ -332,6 +373,7 @@ def rank_local_video_engine_routes(
     *,
     shot_plan: dict | None,
     has_temporal_keyframes: bool,
+    available_vram_gb: float | None = None,
 ) -> tuple[LocalVideoEngineRoute, ...]:
     """Return every executable route in deterministic quality-search order."""
     if not engines:
@@ -339,11 +381,19 @@ def rank_local_video_engine_routes(
     required = list(_shot_preferences(shot_plan))
     if has_temporal_keyframes and "temporal_keyframes" not in required:
         required.insert(0, "temporal_keyframes")
-    eligible = [
+    capability_eligible = [
         item for item in engines
         if all(bool((item.get("capabilities") or {}).get(name)) for name in required)
         and not _engine_missing_conditioning_inputs(item, required, shot_plan)
         and not _engine_role_mismatch(item, shot_plan)
+    ]
+    eligible = [
+        item for item in capability_eligible
+        if (
+            available_vram_gb is None
+            or not (item.get("runtime") or {}).get("minimum_vram_gb")
+            or float((item.get("runtime") or {})["minimum_vram_gb"]) <= float(available_vram_gb)
+        )
     ]
     if not eligible:
         coverage = []
@@ -359,6 +409,15 @@ def rank_local_video_engine_routes(
                 details.append("inputs " + ", ".join(missing_inputs))
             if role_mismatch:
                 details.append(role_mismatch)
+            minimum_vram = (item.get("runtime") or {}).get("minimum_vram_gb")
+            if (
+                available_vram_gb is not None
+                and minimum_vram
+                and float(minimum_vram) > float(available_vram_gb)
+            ):
+                details.append(
+                    f"VRAM {minimum_vram:g}GB required, {float(available_vram_gb):g}GB available"
+                )
             coverage.append(f"{item.get('id')}: missing {'; '.join(details) if details else 'none'}")
         raise LocalVideoEngineRoutingError(
             "No local video engine satisfies this shot's required capabilities "
@@ -383,6 +442,7 @@ def rank_local_video_engine_routes(
             selection_reasons=tuple(reasons),
             requested_capabilities=tuple(required),
             unmet_preferences=(),
+            runtime=dict(selected.get("runtime") or {}),
         )
         for selected in ranked
     )
@@ -393,6 +453,7 @@ def resolve_local_video_engine_route(
     *,
     shot_plan: dict | None,
     has_temporal_keyframes: bool,
+    available_vram_gb: float | None = None,
 ) -> LocalVideoEngineRoute | None:
     if not str(registry_path or "").strip():
         return None
@@ -400,6 +461,7 @@ def resolve_local_video_engine_route(
         load_local_video_engine_registry(str(registry_path)),
         shot_plan=shot_plan,
         has_temporal_keyframes=has_temporal_keyframes,
+        available_vram_gb=available_vram_gb,
     )
 
 
@@ -408,6 +470,7 @@ def resolve_local_video_engine_routes(
     *,
     shot_plan: dict | None,
     has_temporal_keyframes: bool,
+    available_vram_gb: float | None = None,
 ) -> tuple[LocalVideoEngineRoute, ...]:
     if not str(registry_path or "").strip():
         return ()
@@ -415,4 +478,5 @@ def resolve_local_video_engine_routes(
         load_local_video_engine_registry(str(registry_path)),
         shot_plan=shot_plan,
         has_temporal_keyframes=has_temporal_keyframes,
+        available_vram_gb=available_vram_gb,
     )
