@@ -337,7 +337,28 @@ def test_engine_registry_preflight_blocks_parallel_low_vram_worker(monkeypatch, 
     report = module.preflight_local_video_engine_registry(registry_path=str(registry))
 
     assert report["status"] == "blocked"
-    assert "requires sequential rendering" in report["engines"][0]["capability_issues"][0]
+    assert any(
+        "requires sequential rendering" in item
+        for item in report["engines"][0]["capability_issues"]
+    )
+
+
+def test_video_workflow_runtime_inspection_finds_precision_and_offload_evidence():
+    from src.services.video_engine_preflight import inspect_video_workflow_runtime
+
+    report = inspect_video_workflow_runtime({
+        "1": {"class_type": "UNETLoader", "inputs": {
+            "unet_name": "wan2.2_ti2v_5b_fp8_e4m3fn.safetensors",
+            "weight_dtype": "fp8_e4m3fn",
+        }},
+        "2": {"class_type": "BlockSwapOffload", "inputs": {
+            "offload_device": "cpu",
+        }},
+    })
+
+    assert report["model_assets"][0]["input"] == "unet_name"
+    assert report["precision_evidence"]["fp8"]
+    assert report["offload_evidence"]
 
 
 def test_engine_registry_preflight_rejects_generic_i2v_claiming_dialogue_controls(monkeypatch, tmp_path):

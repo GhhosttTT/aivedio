@@ -1117,6 +1117,9 @@ def _generate_quality_candidates(
                 quality_mode="ultra",
                 optimization_mode=request.optimization_mode,
                 character_references=request.character_references,
+                spatial_plan=request.spatial_plan,
+                spatial_control_references=request.spatial_control_references,
+                spatial_asset_pack=request.spatial_asset_pack,
             )
             try:
                 result = provider.generate_image(candidate_request)

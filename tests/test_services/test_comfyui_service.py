@@ -121,6 +121,52 @@ class TestComfyUIService:
             service = ComfyUIService(workflow_path=mock_workflow_config)
             
             assert service.check_status() is True
+
+    def test_preflight_validates_video_model_assets_beyond_checkpoints(
+        self, mock_workflow_config, mock_http_client,
+    ):
+        response = MagicMock()
+        response.json.return_value = {
+            "UNETLoader": {"input": {"required": {
+                "unet_name": [["wan22_fp8.safetensors"]],
+            }}},
+            "VAELoader": {"input": {"required": {
+                "vae_name": [["wan_vae.safetensors"]],
+            }}},
+        }
+        mock_http_client.get.return_value = response
+        workflow = {
+            "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "wan22_fp8.safetensors"}},
+            "2": {"class_type": "VAELoader", "inputs": {"vae_name": "wan_vae.safetensors"}},
+        }
+
+        with patch('src.services.comfyui_service.httpx.Client', return_value=mock_http_client):
+            service = ComfyUIService(workflow_path=mock_workflow_config)
+            report = service.preflight(workflow)
+
+        assert report["node_count"] == 2
+        assert {item["input"] for item in report["model_assets"]} == {"unet_name", "vae_name"}
+        assert all(item["verified"] for item in report["model_assets"])
+
+    def test_preflight_rejects_missing_unet_asset(
+        self, mock_workflow_config, mock_http_client,
+    ):
+        response = MagicMock()
+        response.json.return_value = {
+            "UNETLoader": {"input": {"required": {
+                "unet_name": [["installed.safetensors"]],
+            }}},
+        }
+        mock_http_client.get.return_value = response
+
+        with patch('src.services.comfyui_service.httpx.Client', return_value=mock_http_client):
+            service = ComfyUIService(workflow_path=mock_workflow_config)
+            with pytest.raises(ComfyUIError, match="missing model: unet_name=missing_fp8.safetensors"):
+                service.preflight({
+                    "1": {"class_type": "UNETLoader", "inputs": {
+                        "unet_name": "missing_fp8.safetensors",
+                    }},
+                })
     
     def test_generate_image_empty_prompt(self, mock_workflow_config, mock_http_client):
         """测试：空提示词时抛出异常"""

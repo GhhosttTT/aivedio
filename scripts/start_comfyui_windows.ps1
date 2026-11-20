@@ -3,6 +3,8 @@ param(
     [string]$ComfyUIDir = "F:\study\aishortmovie\aivedio\ComfyUI",
     [int]$Port = 8188,
     [string]$HostAddress = "127.0.0.1",
+    [ValidateSet("normalvram", "lowvram", "novram", "highvram")]
+    [string]$VramMode = "lowvram",
     [switch]$Foreground
 )
 
@@ -34,7 +36,7 @@ $argsList = @(
     "main.py",
     "--listen", $HostAddress,
     "--port", "$Port",
-    "--normalvram",
+    "--$VramMode",
     "--log-stdout"
 )
 
@@ -49,7 +51,13 @@ if ($Foreground) {
     exit $LASTEXITCODE
 }
 
-& cmd /c start "ComfyUI" /D "$ComfyUIDir" /MIN "$PythonExe" @argsList
+$process = Start-Process -FilePath $PythonExe `
+    -ArgumentList $argsList `
+    -WorkingDirectory $ComfyUIDir `
+    -RedirectStandardOutput $stdoutLog `
+    -RedirectStandardError $stderrLog `
+    -WindowStyle Hidden `
+    -PassThru
 
 Start-Sleep -Seconds 8
 $isOpen = Test-NetConnection $HostAddress -Port $Port -InformationLevel Quiet
@@ -62,5 +70,6 @@ if (-not $isOpen) {
 }
 
 Write-Host "ComfyUI is running at http://${HostAddress}:${Port}"
+Write-Host "PID: $($process.Id), VRAM mode: $VramMode"
 Write-Host "stdout: $stdoutLog"
 Write-Host "stderr: $stderrLog"

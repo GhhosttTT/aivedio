@@ -29,7 +29,10 @@ def test_selected_checkpoint_and_parameters_are_not_overwritten(service, monkeyp
     classes = {node["class_type"]: node["inputs"] for node in graph.values()}
     assert classes["CheckpointLoaderSimple"]["ckpt_name"] == "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors"
     assert "LoraLoader" not in classes
-    sampler = classes["KSampler"]
+    sampler = next(
+        node["inputs"] for node in graph.values()
+        if node["class_type"] == "KSampler" and node["inputs"].get("denoise") == 1.0
+    )
     assert (sampler["steps"], sampler["cfg"], sampler["seed"]) == (28, 6, 42)
     assert graph[sampler["positive"][0]]["inputs"]["text"] == "empty room, wide shot, animation"
     assert json.loads((tmp_path / "out.workflow.json").read_text()) == graph

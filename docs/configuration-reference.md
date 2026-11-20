@@ -121,13 +121,14 @@
 | `COMFYUI_IMAGE_REPAIR_WORKFLOW_PATH` | `str` | `""` |
 | `COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH` | `str` | `./configs/comfyui_workflow_sdxl_regional_two_character.json` |
 | `COMFYUI_PRODUCTION_PROFILE_PATH` | `str` | `./configs/production_workflow_profile.json` |
-| `COMFYUI_REFERENCE_WORKFLOW_PATH` | `str` | `./configs/comfyui_workflow_ipadapter_sdxl.json` |
+| `COMFYUI_REFERENCE_WORKFLOW_PATH` | `str` | `./configs/comfyui_workflow_sdxl_production_reference_12gb.json` |
 | `COMFYUI_TIMEOUT` | `int` | `900` |
+| `COMFYUI_VRAM_MODE` | `str` | `lowvram` |
 | `COMFYUI_VIDEO_BINDINGS_PATH` | `str` | `""` |
 | `COMFYUI_VIDEO_ENGINE_REGISTRY_PATH` | `str` | `""` |
 | `COMFYUI_VIDEO_OUTPUT_NODE` | `str` | `""` |
 | `COMFYUI_VIDEO_WORKFLOW_PATH` | `str` | `""` |
-| `COMFYUI_WORKFLOW_PATH` | `str` | `./configs/comfyui_workflow_juggernaut_facedetailer.json` |
+| `COMFYUI_WORKFLOW_PATH` | `str` | `./configs/comfyui_workflow_sdxl_production_12gb.json` |
 
 ## CORS
 

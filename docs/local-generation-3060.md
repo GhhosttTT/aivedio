@@ -68,6 +68,25 @@ CELERY_WORKER_CONCURRENCY=1
 阶段才发生OOM。示例中的FP8和CPU offload只是工作流合同；ComfyUI图本身仍必须实际加载
 对应量化权重并启用卸载节点。
 
+默认制图图已升级为串行生产链：
+
+1. SDXL基础构图采样，确定角色、机位、光线和主体关系。
+2. 潜空间放大1.35倍，保留构图后增加可用细节像素。
+3. 低去噪二次采样，修复材质、服装和背景层次。
+4. CLIPSeg + SAM人脸/眼睛局部修复。
+5. 独立CLIPSeg + SAM手部/手指局部修复，使用更低去噪避免改坏道具。
+6. 角色参考图版本让FaceID模型贯穿上述两次采样和两次局部修复。
+
+这两张图依赖本机存在以下ComfyUI节点和模型：
+
+- `CheckpointLoaderSimple`使用的Juggernaut XL v9权重。
+- 角色版使用的`IPAdapterUnifiedLoaderFaceID`和`IPAdapterFaceID`节点及FaceID资产。
+- `FaceDetailer`、`CLIPSegDetectorProvider`、`SAMLoader`节点。
+- `sam_vit_b_01ec64.pth`。
+
+应用会通过ComfyUI `/object_info`核对节点，并检查checkpoint、UNet、VAE、ControlNet、
+IP-Adapter、视觉编码器和SAM等模型输入。缺少节点或权重时会在提交生成任务前失败。
+
 先使用一套验证过的 SDXL checkpoint 跑通 6 个镜头，避免同时更换模型、LoRA、采样器和镜头设计。
 当前默认 Juggernaut 面向写实画面。动画需要选择匹配风格的 SDXL checkpoint；流程支持保留动画提示词，默认模型不承诺适合所有画风。
 
@@ -75,7 +94,9 @@ CELERY_WORKER_CONCURRENCY=1
 GENERATION_PROVIDER=local_comfyui
 GENERATION_QUALITY_PROFILE=seed_dance_reference
 COMFYUI_DEFAULT_WORKFLOW_TYPE=juggernaut
-COMFYUI_REFERENCE_WORKFLOW_PATH=./configs/comfyui_workflow_ipadapter_sdxl.json
+COMFYUI_WORKFLOW_PATH=./configs/comfyui_workflow_sdxl_production_12gb.json
+COMFYUI_REFERENCE_WORKFLOW_PATH=./configs/comfyui_workflow_sdxl_production_reference_12gb.json
+COMFYUI_VRAM_MODE=lowvram
 COMFYUI_VIDEO_WORKFLOW_PATH=
 GENERATION_WIDTH=768
 GENERATION_HEIGHT=1344

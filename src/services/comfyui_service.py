@@ -41,6 +41,15 @@ from src.services.video_workflow_binding import (
 )
 
 
+COMFYUI_MODEL_ASSET_INPUTS = frozenset({
+    "ckpt_name", "checkpoint_name", "lora_name", "clip_name",
+    "unet_name", "vae_name", "control_net_name", "controlnet_name",
+    "model_name", "diffusion_model", "style_model_name",
+    "ipadapter_file", "ipadapter_name", "image_encoder_name",
+    "vision_model_name", "text_encoder_name",
+})
+
+
 class ComfyUIError(Exception):
     """ComfyUI 服务错误"""
     pass
@@ -57,6 +66,7 @@ class ComfyUIWaitTimeout(ComfyUIError):
 
 class ComfyUIService:
     """ComfyUI 服务（Stable Diffusion 图像生成）"""
+    _MODEL_ASSET_INPUTS = COMFYUI_MODEL_ASSET_INPUTS
     
     def __init__(
         self,
@@ -546,7 +556,12 @@ class ComfyUIService:
                         key: value for key, value in face_detailer_overrides.items()
                         if value is not None
                     })
-                    target = str(getattr(settings, "FACE_DETAILER_TARGET", "") or "").strip()
+                    # Preserve the workflow's dedicated hand detector. Global
+                    # face tuning only applies to face/eye repair stages.
+                    target = (
+                        str(getattr(settings, "FACE_DETAILER_TARGET", "") or "").strip()
+                        if "hand" not in node_name.lower() else ""
+                    )
                     detector_id = graph.link(node["inputs"].get("bbox_detector"))
                     detector = workflow.get(detector_id) if detector_id else None
                     if target and detector and detector["class_type"] == "CLIPSegDetectorProvider":
@@ -808,24 +823,50 @@ class ComfyUIService:
             raise ComfyUIError("ComfyUI media upload did not return an input name")
         return "/".join(part for part in (data.get("subfolder", ""), data["name"]) if part)
 
-    def preflight(self, workflow: Dict) -> None:
+    def preflight(self, workflow: Dict) -> Dict[str, Any]:
         response = self.client.get(f"{self.base_url}/object_info", timeout=15)
         response.raise_for_status()
         info = response.json()
         errors = []
-        for node in workflow.values():
-            name = node["class_type"]
+        checked_assets = []
+        checked_nodes = []
+        for node_id, node in workflow.items():
+            if not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
+                errors.append(f"invalid workflow node: {node_id}")
+                continue
+            name = str(node.get("class_type") or "").strip()
+            if not name:
+                errors.append(f"missing class_type: {node_id}")
+                continue
+            checked_nodes.append(name)
             if name not in info:
                 errors.append(f"missing node: {name}")
                 continue
-            required = info[name].get("input", {}).get("required", {})
-            for key in ("ckpt_name", "lora_name", "clip_name"):
+            node_inputs = info[name].get("input", {})
+            available_inputs = {
+                **(node_inputs.get("required", {}) or {}),
+                **(node_inputs.get("optional", {}) or {}),
+            }
+            for key in self._MODEL_ASSET_INPUTS:
                 value = node["inputs"].get(key)
-                spec = required.get(key)
+                spec = available_inputs.get(key)
                 if value and spec and isinstance(spec[0], list) and value not in spec[0]:
                     errors.append(f"missing model: {key}={value}")
+                if value:
+                    checked_assets.append({
+                        "node_id": str(node_id),
+                        "class_type": name,
+                        "input": key,
+                        "value": str(value),
+                        "verified": bool(spec and isinstance(spec[0], list) and value in spec[0]),
+                    })
         if errors:
             raise ComfyUIError("ComfyUI preflight failed: " + "; ".join(errors))
+        return {
+            "node_count": len(checked_nodes),
+            "node_classes": sorted(set(checked_nodes)),
+            "model_assets": checked_assets,
+        }
 
     def free_memory(self) -> None:
         response = self.client.post(f"{self.base_url}/free", json={"unload_models": True, "free_memory": True})

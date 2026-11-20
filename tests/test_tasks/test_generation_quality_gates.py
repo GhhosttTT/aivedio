@@ -2556,6 +2556,9 @@ def test_image_repair_action_is_recorded_in_candidate_request(tmp_path, monkeypa
         steps=28,
         cfg_scale=6.0,
         seed=123,
+        spatial_plan={"shot_scale": "medium close-up"},
+        spatial_control_references={"pose_reference_prompt": "right hand holds letter"},
+        spatial_asset_pack={"scene_contract_hash": "spatial-123"},
     )
     provider = FakeProvider()
 
@@ -2588,6 +2591,9 @@ def test_image_repair_action_is_recorded_in_candidate_request(tmp_path, monkeypa
     assert "composition_vlm_review" in candidate_request["quality_pipeline"]["stages"]
     assert "important prop visible" in provider.requests[0].prompt
     assert "firm hand-object contact" in provider.requests[0].prompt
+    assert provider.requests[0].spatial_plan == request.spatial_plan
+    assert provider.requests[0].spatial_control_references == request.spatial_control_references
+    assert provider.requests[0].spatial_asset_pack == request.spatial_asset_pack
     assert "disappearing prop" in provider.requests[0].negative_prompt
     assert report["candidates"][0]["scene"]["scene_number"] == 1
     assert report["candidates"][0]["scene"]["repair_action"] == "refine_prompt_composition"

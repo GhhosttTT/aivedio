@@ -49,7 +49,7 @@
     },
     "latent_upscale": {
       "class_type": "LatentUpscaleBy",
-      "inputs": {"samples": ["composition_sampler", 0], "upscale_method": "bislerp", "scale_by": 1.5}
+      "inputs": {"samples": ["composition_sampler", 0], "upscale_method": "bislerp", "scale_by": 1.35}
     },
     "detail_sampler": {
       "class_type": "KSampler",
@@ -59,7 +59,44 @@
       }
     },
     "decode_final": {"class_type": "VAEDecode", "inputs": {"samples": ["detail_sampler", 0], "vae": ["checkpoint", 2]}},
-    "save_final": {"class_type": "SaveImage", "inputs": {"images": ["decode_final", 0], "filename_prefix": "short_drama_two_character"}}
+    "face_detector": {"class_type": "CLIPSegDetectorProvider", "inputs": {"text": "face, eyes", "blur": 7, "threshold": 0.4, "dilation_factor": 4}},
+    "hand_detector": {"class_type": "CLIPSegDetectorProvider", "inputs": {"text": "hands, fingers", "blur": 5, "threshold": 0.38, "dilation_factor": 3}},
+    "sam_loader": {"class_type": "SAMLoader", "inputs": {"model_name": "sam_vit_b_01ec64.pth", "device_mode": "AUTO"}},
+    "face_detailer": {
+      "class_type": "FaceDetailer",
+      "inputs": {
+        "image": ["decode_final", 0], "model": ["right_identity", 0],
+        "clip": ["checkpoint", 1], "vae": ["checkpoint", 2],
+        "guide_size": 704, "guide_size_for": true, "max_size": 960,
+        "seed": 2, "steps": 20, "cfg": 4.8, "sampler_name": "dpmpp_2m_sde",
+        "scheduler": "karras", "positive": ["positive", 0], "negative": ["negative", 0],
+        "denoise": 0.16, "feather": 5, "noise_mask": true, "force_inpaint": true,
+        "bbox_threshold": 0.5, "bbox_dilation": 10, "bbox_crop_factor": 2.8,
+        "sam_detection_hint": "center-1", "sam_dilation": 0, "sam_threshold": 0.93,
+        "sam_bbox_expansion": 0, "sam_mask_hint_threshold": 0.7,
+        "sam_mask_hint_use_negative": "False", "drop_size": 10,
+        "bbox_detector": ["face_detector", 0], "sam_model_opt": ["sam_loader", 0],
+        "wildcard": "", "cycle": 1
+      }
+    },
+    "hand_detailer": {
+      "class_type": "FaceDetailer",
+      "inputs": {
+        "image": ["face_detailer", 0], "model": ["right_identity", 0],
+        "clip": ["checkpoint", 1], "vae": ["checkpoint", 2],
+        "guide_size": 576, "guide_size_for": true, "max_size": 832,
+        "seed": 3, "steps": 14, "cfg": 4.5, "sampler_name": "dpmpp_2m_sde",
+        "scheduler": "karras", "positive": ["positive", 0], "negative": ["negative", 0],
+        "denoise": 0.1, "feather": 6, "noise_mask": true, "force_inpaint": true,
+        "bbox_threshold": 0.45, "bbox_dilation": 8, "bbox_crop_factor": 2.4,
+        "sam_detection_hint": "center-1", "sam_dilation": 0, "sam_threshold": 0.9,
+        "sam_bbox_expansion": 0, "sam_mask_hint_threshold": 0.65,
+        "sam_mask_hint_use_negative": "False", "drop_size": 12,
+        "bbox_detector": ["hand_detector", 0], "sam_model_opt": ["sam_loader", 0],
+        "wildcard": "", "cycle": 1
+      }
+    },
+    "save_final": {"class_type": "SaveImage", "inputs": {"images": ["hand_detailer", 0], "filename_prefix": "short_drama_two_character"}}
   },
   "parameters": {
     "default": {

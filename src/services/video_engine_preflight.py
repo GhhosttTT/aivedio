@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from src.config import settings
-from src.services.comfyui_service import ComfyUIService
+from src.services.comfyui_service import ComfyUIService, COMFYUI_MODEL_ASSET_INPUTS
 from src.services.local_video_engine_router import (
     evaluate_local_video_engine_fleet,
     LocalVideoEngineRoutingError,
@@ -469,6 +469,51 @@ def likely_video_outputs(workflow: dict) -> list[dict]:
     return matches
 
 
+def inspect_video_workflow_runtime(workflow: dict) -> dict:
+    """Collect graph evidence for low-precision weights and explicit offload."""
+    precision_markers = {
+        "bf16": ("bf16", "bfloat16"),
+        "fp16": ("fp16", "float16"),
+        "fp8": ("fp8", "e4m3", "e5m2"),
+        "fp6": ("fp6",),
+        "fp4": ("fp4", "nf4", "int4", "q4"),
+        "int8": ("int8", "q8"),
+    }
+    evidence = {name: [] for name in precision_markers}
+    offload_evidence = []
+    model_assets = []
+    for node_id, node in workflow.items():
+        if not isinstance(node, dict):
+            continue
+        class_type = str(node.get("class_type") or "")
+        inputs = node.get("inputs") if isinstance(node.get("inputs"), dict) else {}
+        for key, value in inputs.items():
+            if key in COMFYUI_MODEL_ASSET_INPUTS and isinstance(value, str) and value.strip():
+                model_assets.append({"node_id": str(node_id), "input": key, "value": value})
+            token = f"{key} {value}".lower()
+            for precision, markers in precision_markers.items():
+                if any(marker in token for marker in markers):
+                    evidence[precision].append({
+                        "node_id": str(node_id), "input": str(key), "value": str(value),
+                    })
+            if (
+                "offload" in key.lower() and value not in (False, 0, "", None, "false", "none")
+            ) or (
+                key.lower() in {"device", "load_device", "offload_device"}
+                and str(value).strip().lower() == "cpu"
+            ):
+                offload_evidence.append({
+                    "node_id": str(node_id), "input": str(key), "value": str(value),
+                })
+        if any(marker in class_type.lower() for marker in ("offload", "blockswap", "block_swap")):
+            offload_evidence.append({"node_id": str(node_id), "class_type": class_type})
+    return {
+        "model_assets": model_assets,
+        "precision_evidence": {key: value for key, value in evidence.items() if value},
+        "offload_evidence": offload_evidence,
+    }
+
+
 def preflight_video_workflow(
     base_url: str | None = None,
     workflow_path: str | None = None,
@@ -514,6 +559,7 @@ def preflight_video_workflow(
             }
         )
         report["binding_manifest"] = binding_validation
+        report["runtime_evidence"] = inspect_video_workflow_runtime(workflow)
         if binding_validation["status"] == "invalid":
             checks["binding_manifest_valid"] = False
             report["action_items"].extend(binding_validation["errors"])
@@ -715,7 +761,7 @@ def preflight_video_workflow(
                     "seed": 31001,
                     "output_prefix": "validation_video",
                 })
-            service.preflight(resolved)
+            report["comfyui_contract"] = service.preflight(resolved)
             checks["comfyui_preflight"] = True
             stats = service.client.get(service.base_url + "/system_stats")
             stats.raise_for_status()
@@ -828,12 +874,29 @@ def preflight_local_video_engine_registry(
         declared = dict(engine.get("capabilities") or {})
         capability_issues = []
         runtime = dict(engine.get("runtime") or {})
+        runtime_evidence = dict(workflow_report.get("runtime_evidence") or {})
         vram_budget_gb = float(getattr(settings, "LOCAL_VIDEO_VRAM_BUDGET_GB", 0) or 0)
         minimum_vram_gb = runtime.get("minimum_vram_gb")
         if minimum_vram_gb and vram_budget_gb and float(minimum_vram_gb) > vram_budget_gb:
             capability_issues.append(
                 f"requires {float(minimum_vram_gb):g}GB VRAM but LOCAL_VIDEO_VRAM_BUDGET_GB="
                 f"{vram_budget_gb:g}"
+            )
+        declared_precision = str(runtime.get("precision") or "").strip().lower()
+        precision_evidence = runtime_evidence.get("precision_evidence") or {}
+        if declared_precision in {"fp8", "fp6", "fp4", "int8"} and declared_precision not in precision_evidence:
+            capability_issues.append(
+                f"declares {declared_precision} precision but the workflow has no matching model filename "
+                "or weight_dtype evidence"
+            )
+        vram_mode = str(getattr(settings, "COMFYUI_VRAM_MODE", "") or "").strip().lower()
+        if (
+            runtime.get("cpu_offload")
+            and vram_mode not in {"lowvram", "novram"}
+            and not runtime_evidence.get("offload_evidence")
+        ):
+            capability_issues.append(
+                "declares cpu_offload but neither the workflow nor COMFYUI_VRAM_MODE proves low-VRAM offload"
             )
         worker_concurrency = int(os.getenv("CELERY_WORKER_CONCURRENCY", "1") or 1)
         if runtime.get("sequential_only") and worker_concurrency > 1:
@@ -900,6 +963,7 @@ def preflight_local_video_engine_registry(
             "model": model_report,
             "capability_issues": capability_issues,
             "runtime": runtime,
+            "runtime_evidence": runtime_evidence,
         }
         report["engines"].append(engine_report)
         if status != "ready":
@@ -935,6 +999,7 @@ def preflight_local_video_engine_registry(
         "short_drama_profiles_covered": fleet_coverage["passed"],
         "vram_budget_gb": float(getattr(settings, "LOCAL_VIDEO_VRAM_BUDGET_GB", 0) or 0),
         "celery_worker_concurrency": int(os.getenv("CELERY_WORKER_CONCURRENCY", "1") or 1),
+        "comfyui_vram_mode": str(getattr(settings, "COMFYUI_VRAM_MODE", "") or ""),
     }
     return report
 

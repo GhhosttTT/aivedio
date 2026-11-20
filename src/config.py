@@ -34,8 +34,10 @@ class Settings(BaseSettings):
 
     # ComfyUI 配置
     COMFYUI_BASE_URL: str = "http://127.0.0.1:8188"
-    COMFYUI_WORKFLOW_PATH: str = "./configs/comfyui_workflow_juggernaut_facedetailer.json"
-    COMFYUI_REFERENCE_WORKFLOW_PATH: str = "./configs/comfyui_workflow_ipadapter_sdxl.json"
+    # Must match the mode used to launch the ComfyUI worker.
+    COMFYUI_VRAM_MODE: str = "lowvram"
+    COMFYUI_WORKFLOW_PATH: str = "./configs/comfyui_workflow_sdxl_production_12gb.json"
+    COMFYUI_REFERENCE_WORKFLOW_PATH: str = "./configs/comfyui_workflow_sdxl_production_reference_12gb.json"
     # Optional input-image repair graph. Unlike the primary generation graph,
     # this graph must preserve the accepted frame and only inpaint detected defects.
     COMFYUI_IMAGE_REPAIR_WORKFLOW_PATH: str = ""
