@@ -1,0 +1,22 @@
+{
+  "workflow": {
+    "name": "Flux Kontext GGUF accepted-keyframe editor",
+    "version": "1.0.0",
+    "description": "Low-VRAM semantic editing after candidate selection. Requires ComfyUI-GGUF and native Flux Kontext nodes."
+  },
+  "parameters": {"default": {"output_node": "save_image"}},
+  "nodes": {
+    "unet": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": "flux1-kontext-dev-Q4_K_M.gguf"}},
+    "clip": {"class_type": "DualCLIPLoader", "inputs": {"clip_name1": "clip_l.safetensors", "clip_name2": "t5xxl_fp8_e4m3fn_scaled.safetensors", "type": "flux", "device": "default"}},
+    "vae": {"class_type": "VAELoader", "inputs": {"vae_name": "ae.safetensors"}},
+    "source_image": {"class_type": "LoadImage", "inputs": {"image": "{input_image}"}},
+    "source_latent": {"class_type": "VAEEncode", "inputs": {"pixels": ["source_image", 0], "vae": ["vae", 0]}},
+    "reference": {"class_type": "ReferenceLatent", "inputs": {"conditioning": ["positive", 0], "latent": ["source_latent", 0]}},
+    "positive": {"class_type": "CLIPTextEncode", "inputs": {"text": "{edit_instruction}", "clip": ["clip", 0]}},
+    "guidance": {"class_type": "FluxGuidance", "inputs": {"conditioning": ["reference", 0], "guidance": "{cfg}"}},
+    "negative": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["guidance", 0]}},
+    "sampler": {"class_type": "KSampler", "inputs": {"model": ["unet", 0], "positive": ["guidance", 0], "negative": ["negative", 0], "latent_image": ["source_latent", 0], "seed": "{seed}", "steps": "{steps}", "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": "{denoise}"}},
+    "decode": {"class_type": "VAEDecode", "inputs": {"samples": ["sampler", 0], "vae": ["vae", 0]}},
+    "save_image": {"class_type": "SaveImage", "inputs": {"filename_prefix": "{output_prefix}", "images": ["decode", 0]}}
+  }
+}

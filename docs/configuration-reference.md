@@ -7,7 +7,7 @@
 
 另有少量由脚本或适配器直接读取、不属于 `Settings` 的变量（如 `DEFAULT_ADMIN_*`、`ENCRYPTION_KEY`），见 `.env.example`。
 
-共 299 项，按变量前缀分组。
+共 309 项，按变量前缀分组。
 
 ## 目录
 
@@ -15,7 +15,7 @@
 - [ASR](#asr)（8 项）
 - [AUTO](#auto)（1 项）
 - [CELERY](#celery)（3 项）
-- [COMFYUI](#comfyui)（13 项）
+- [COMFYUI](#comfyui)（17 项）
 - [CORS](#cors)（1 项）
 - [DATABASE](#database)（1 项）
 - [DEEPSEEK](#deepseek)（6 项）
@@ -31,7 +31,7 @@
 - [GENERATION_EPISODE](#generation_episode)（10 项）
 - [GENERATION_HEIGHT](#generation_height)（1 项）
 - [GENERATION_HYBRID](#generation_hybrid)（1 项）
-- [GENERATION_IMAGE](#generation_image)（16 项）
+- [GENERATION_IMAGE](#generation_image)（19 项）
 - [GENERATION_MAX](#generation_max)（2 项）
 - [GENERATION_MIN](#generation_min)（1 项）
 - [GENERATION_PREFER](#generation_prefer)（1 项）
@@ -54,7 +54,7 @@
 - [JWT](#jwt)（4 项）
 - [KLING](#kling)（2 项）
 - [LLM](#llm)（4 项）
-- [LOCAL](#local)（7 项）
+- [LOCAL](#local)（10 项）
 - [LOCALIZATION](#localization)（3 项）
 - [LOG](#log)（2 项）
 - [MAX](#max)（1 项）
@@ -117,17 +117,20 @@
 | --- | --- | --- |
 | `COMFYUI_BASE_URL` | `str` | `http://127.0.0.1:8188` |
 | `COMFYUI_DEFAULT_WORKFLOW_TYPE` | `str` | `juggernaut` |
+| `COMFYUI_IMAGE_EDIT_ENABLED` | `bool` | `False` |
+| `COMFYUI_IMAGE_EDIT_ENGINE` | `str` | `auto` |
+| `COMFYUI_IMAGE_EDIT_ENGINE_REGISTRY_PATH` | `str` | `""` |
 | `COMFYUI_IMAGE_REPAIR_OUTPUT_NODE` | `str` | `""` |
 | `COMFYUI_IMAGE_REPAIR_WORKFLOW_PATH` | `str` | `""` |
 | `COMFYUI_MULTI_REFERENCE_WORKFLOW_PATH` | `str` | `./configs/comfyui_workflow_sdxl_regional_two_character.json` |
 | `COMFYUI_PRODUCTION_PROFILE_PATH` | `str` | `./configs/production_workflow_profile.json` |
 | `COMFYUI_REFERENCE_WORKFLOW_PATH` | `str` | `./configs/comfyui_workflow_sdxl_production_reference_12gb.json` |
 | `COMFYUI_TIMEOUT` | `int` | `900` |
-| `COMFYUI_VRAM_MODE` | `str` | `lowvram` |
 | `COMFYUI_VIDEO_BINDINGS_PATH` | `str` | `""` |
 | `COMFYUI_VIDEO_ENGINE_REGISTRY_PATH` | `str` | `""` |
 | `COMFYUI_VIDEO_OUTPUT_NODE` | `str` | `""` |
 | `COMFYUI_VIDEO_WORKFLOW_PATH` | `str` | `""` |
+| `COMFYUI_VRAM_MODE` | `str` | `lowvram` |
 | `COMFYUI_WORKFLOW_PATH` | `str` | `./configs/comfyui_workflow_sdxl_production_12gb.json` |
 
 ## CORS
@@ -261,6 +264,9 @@
 | `GENERATION_IMAGE_DEDUP_ENABLED` | `bool` | `True` |
 | `GENERATION_IMAGE_DEDUP_HAMMING_DISTANCE` | `int` | `4` |
 | `GENERATION_IMAGE_DIVERSITY_SEARCH_ENABLED` | `bool` | `True` |
+| `GENERATION_IMAGE_EDIT_DEFAULT_CFG` | `float` | `2.5` |
+| `GENERATION_IMAGE_EDIT_DEFAULT_DENOISE` | `float` | `1.0` |
+| `GENERATION_IMAGE_EDIT_DEFAULT_STEPS` | `int` | `20` |
 | `GENERATION_IMAGE_IDENTITY_MIN_SCORE` | `float` | `4.0` |
 | `GENERATION_IMAGE_MAX_ATTEMPT_MULTIPLIER` | `float` | `2.0` |
 | `GENERATION_IMAGE_MIN_SCORE` | `float` | `4.0` |
@@ -507,6 +513,8 @@
 
 | 变量 | 类型 | 默认值 |
 | --- | --- | --- |
+| `LOCAL_IMAGE_EDIT_ALLOW_CPU_OFFLOAD` | `bool` | `True` |
+| `LOCAL_IMAGE_EDIT_VRAM_BUDGET_GB` | `float` | `12.0` |
 | `LOCAL_MOTION_REFERENCE_LIBRARY_PATH` | `str` | `""` |
 | `LOCAL_REVIEW_BACKEND` | `str` | `llama_cpp` |
 | `LOCAL_REVIEW_BASE_URL` | `str` | `http://127.0.0.1:8080/v1` |

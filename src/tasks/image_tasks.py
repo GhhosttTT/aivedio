@@ -971,6 +971,52 @@ def _image_local_repair_plan(candidate: dict) -> list[dict]:
     text = " ".join(compact).lower()
     base_seed = int((candidate.get("request") or {}).get("seed") or 0)
     stages: list[dict] = []
+    semantic_rules = (
+        (
+            "identity_edit",
+            ("identity drift", "wrong person", "different person", "变脸", "身份漂移", "不像同一人"),
+            "identity_consistency",
+            "Preserve the entire frame, camera, pose, expression, lighting and wardrobe. Restore only the approved character identity from the visual references.",
+            "changed camera, changed pose, changed expression, changed wardrobe, changed background",
+        ),
+        (
+            "wardrobe_edit",
+            ("wardrobe", "clothing", "costume", "服装", "衣服", "穿帮"),
+            "wardrobe_continuity",
+            "Preserve composition, pose, face, lighting and background. Correct only the wardrobe so it matches the approved character asset and adjacent shots.",
+            "changed identity, changed pose, changed camera, redesigned costume, extra accessories",
+        ),
+        (
+            "prop_edit",
+            ("missing prop", "changed prop", "wrong prop", "道具消失", "道具错误", "道具变化"),
+            "prop_continuity",
+            "Preserve the full frame and actors. Correct only the named prop, its shape, position and hand contact to match continuity.",
+            "changed actor, changed background, floating prop, extra prop, changed camera",
+        ),
+        (
+            "text_cleanup",
+            ("random text", "watermark", "logo", "乱码", "水印", "错误文字"),
+            "text_cleanup",
+            "Remove only unintended text, logos and watermark-like artifacts. Reconstruct the original local texture and preserve all story content.",
+            "changed face, changed composition, blurred subject, new text, new logo",
+        ),
+    )
+    for engine_task, keywords, name, positive, negative in semantic_rules:
+        matched = [item for item in compact if any(term in item.lower() for term in keywords)]
+        if not matched:
+            continue
+        stages.append({
+            "name": name,
+            "target": ", ".join(keywords[:3]),
+            "engine_task": engine_task,
+            "denoise": 1.0,
+            "steps": 20,
+            "cfg": 2.5,
+            "seed": base_seed + 1103 + len(stages),
+            "positive_terms": positive,
+            "negative_terms": negative,
+            "evidence": matched,
+        })
     face_terms = (
         "face", "facial", "eye", "skin", "portrait", "identity", "waxy", "plastic",
         "airbrush", "五官", "脸", "面部", "眼", "皮肤", "蜡像",
@@ -996,6 +1042,7 @@ def _image_local_repair_plan(candidate: dict) -> list[dict]:
                 "beauty filter, inpaint seam"
             ),
             "evidence": [item for item in compact if any(term in item.lower() for term in face_terms)],
+            "engine_task": "local_repair",
         })
     if any(term in text for term in hand_terms):
         stages.append({
@@ -1014,6 +1061,7 @@ def _image_local_repair_plan(candidate: dict) -> list[dict]:
                 "changed prop, inpaint seam"
             ),
             "evidence": [item for item in compact if any(term in item.lower() for term in hand_terms)],
+            "engine_task": "local_repair",
         })
     return stages
 

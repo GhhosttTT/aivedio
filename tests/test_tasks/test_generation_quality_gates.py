@@ -79,6 +79,28 @@ def test_image_local_repair_plan_does_not_modify_clean_candidate():
     assert _image_local_repair_plan(candidate) == []
 
 
+def test_image_repair_plan_routes_continuity_errors_to_semantic_editor():
+    candidate = {
+        "request": {"seed": 101},
+        "review": {
+            "issues": [
+                {"reason": "identity drift: actor looks like a different person"},
+                {"reason": "wardrobe changed from the approved red coat"},
+                {"reason": "random text and watermark in the background"},
+            ],
+        },
+    }
+
+    plan = _image_local_repair_plan(candidate)
+
+    assert [stage["engine_task"] for stage in plan[:3]] == [
+        "identity_edit", "wardrobe_edit", "text_cleanup",
+    ]
+    assert all(stage["denoise"] == 1.0 for stage in plan[:3])
+    assert plan[-1]["engine_task"] == "local_repair"
+
+
+
 def test_audio_quality_contract_penalizes_missing_requested_audio():
     metrics = {"technical_score": 4.8, "audio_present": False}
 

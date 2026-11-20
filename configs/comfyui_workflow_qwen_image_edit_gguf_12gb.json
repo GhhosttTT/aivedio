@@ -1,0 +1,23 @@
+{
+  "workflow": {
+    "name": "Qwen Image Edit GGUF accepted-keyframe editor",
+    "version": "1.0.0",
+    "description": "Slow Q3 semantic repair for high-value frames. Requires ComfyUI-GGUF with Qwen Image support."
+  },
+  "parameters": {"default": {"output_node": "save_image"}},
+  "nodes": {
+    "unet": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": "Qwen_Image_Edit-Q3_K_M.gguf"}},
+    "clip": {"class_type": "CLIPLoaderGGUF", "inputs": {"clip_name": "qwen_2.5_vl_7b_instruct-Q4_K_M.gguf", "type": "qwen_image"}},
+    "vae": {"class_type": "VAELoader", "inputs": {"vae_name": "qwen_image_vae.safetensors"}},
+    "source_image": {"class_type": "LoadImage", "inputs": {"image": "{input_image}"}},
+    "identity_reference": {"class_type": "LoadImage", "inputs": {"image": "{reference_image}"}},
+    "source_latent": {"class_type": "VAEEncode", "inputs": {"pixels": ["source_image", 0], "vae": ["vae", 0]}},
+    "positive": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["clip", 0], "vae": ["vae", 0], "image1": ["source_image", 0], "image2": ["identity_reference", 0], "prompt": "{edit_instruction}"}},
+    "negative": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["clip", 0], "vae": ["vae", 0], "image1": ["source_image", 0], "image2": ["identity_reference", 0], "prompt": "{negative_prompt}"}},
+    "sampling_model": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["unet", 0], "shift": 3.0}},
+    "cfg_model": {"class_type": "CFGNorm", "inputs": {"model": ["sampling_model", 0], "strength": 1.0}},
+    "sampler": {"class_type": "KSampler", "inputs": {"model": ["cfg_model", 0], "positive": ["positive", 0], "negative": ["negative", 0], "latent_image": ["source_latent", 0], "seed": "{seed}", "steps": "{steps}", "cfg": "{cfg}", "sampler_name": "euler", "scheduler": "simple", "denoise": "{denoise}"}},
+    "decode": {"class_type": "VAEDecode", "inputs": {"samples": ["sampler", 0], "vae": ["vae", 0]}},
+    "save_image": {"class_type": "SaveImage", "inputs": {"filename_prefix": "{output_prefix}", "images": ["decode", 0]}}
+  }
+}

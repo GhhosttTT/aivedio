@@ -763,5 +763,50 @@ def test_repair_image_uses_source_frame_and_targeted_low_denoise_graph(tmp_path,
     assert output.with_suffix(".workflow.json").is_file()
 
 
+def test_quantized_edit_image_routes_only_selected_frame(tmp_path, monkeypatch):
+    from src.config import settings
+
+    source = tmp_path / "accepted.png"
+    source.write_bytes(b"source")
+    output = tmp_path / "edited.png"
+    workflow = tmp_path / "edit.json"
+    workflow.write_text(json.dumps({
+        "parameters": {"default": {"output_node": "save_image"}},
+        "nodes": {
+            "model": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": "model-q4.gguf"}},
+            "source": {"class_type": "LoadImage", "inputs": {"image": "{input_image}"}},
+            "instruction": {"class_type": "CLIPTextEncode", "inputs": {"text": "{edit_instruction}"}},
+            "save_image": {"class_type": "SaveImage", "inputs": {"images": ["source", 0], "filename_prefix": "{output_prefix}"}},
+        },
+    }), encoding="utf-8")
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps({"engines": [{
+        "id": "flux", "family": "flux_kontext", "workflow_path": "edit.json",
+        "output_node": "save_image", "quantization": "Q4", "minimum_vram_gb": 12,
+        "tasks": ["wardrobe_edit"],
+    }]}), encoding="utf-8")
+    service = object.__new__(ComfyUIService)
+    monkeypatch.setattr(settings, "COMFYUI_IMAGE_EDIT_ENABLED", True)
+    monkeypatch.setattr(settings, "COMFYUI_IMAGE_EDIT_ENGINE_REGISTRY_PATH", str(registry))
+    monkeypatch.setattr(settings, "COMFYUI_IMAGE_EDIT_ENGINE", "auto")
+    monkeypatch.setattr(settings, "LOCAL_IMAGE_EDIT_VRAM_BUDGET_GB", 12)
+    monkeypatch.setattr(settings, "LOCAL_IMAGE_EDIT_ALLOW_CPU_OFFLOAD", True)
+    monkeypatch.setattr(service, "_upload_reference_image", lambda path: "input/accepted.png")
+    captured = {}
+    monkeypatch.setattr(service, "preflight", lambda graph: captured.setdefault("graph", graph) or {})
+    monkeypatch.setattr(service, "_run_submitted_job", lambda *args, **kwargs: str(output))
+
+    result = service.edit_image(
+        str(source), output_path=str(output), instruction="Keep everything; fix only the red coat",
+        task="wardrobe_edit", denoise=0.3, steps=18, cfg_scale=2.4, seed=77,
+    )
+
+    graph = captured["graph"]
+    assert result["route"]["engine_id"] == "flux"
+    assert next(node for node in graph.values() if node["class_type"] == "LoadImage")["inputs"]["image"] == "input/accepted.png"
+    assert next(node for node in graph.values() if node["class_type"] == "CLIPTextEncode")["inputs"]["text"] == "Keep everything; fix only the red coat"
+    assert output.with_suffix(".workflow.json").is_file()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

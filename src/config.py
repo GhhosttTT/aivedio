@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     # this graph must preserve the accepted frame and only inpaint detected defects.
     COMFYUI_IMAGE_REPAIR_WORKFLOW_PATH: str = ""
     COMFYUI_IMAGE_REPAIR_OUTPUT_NODE: str = ""
+    # Slow semantic editors run only after candidate selection. A 12GB card
+    # needs GGUF plus lowvram/offload; the registry keeps those model families
+    # out of the SDXL seed-search worker until they are explicitly required.
+    COMFYUI_IMAGE_EDIT_ENGINE_REGISTRY_PATH: str = ""
+    COMFYUI_IMAGE_EDIT_ENGINE: str = "auto"
+    COMFYUI_IMAGE_EDIT_ENABLED: bool = False
+    LOCAL_IMAGE_EDIT_VRAM_BUDGET_GB: float = 12.0
+    LOCAL_IMAGE_EDIT_ALLOW_CPU_OFFLOAD: bool = True
     # The bundled graph has two independent FaceID regions. Larger casts must
     # be split into reverse shots until a separately validated regional graph
     # is supplied.
@@ -91,6 +99,9 @@ class Settings(BaseSettings):
     GENERATION_IMAGE_REPAIR_DEFAULT_DENOISE: float = 0.24
     GENERATION_IMAGE_REPAIR_DEFAULT_STEPS: int = 22
     GENERATION_IMAGE_REPAIR_DEFAULT_CFG: float = 5.0
+    GENERATION_IMAGE_EDIT_DEFAULT_DENOISE: float = 1.0
+    GENERATION_IMAGE_EDIT_DEFAULT_STEPS: int = 20
+    GENERATION_IMAGE_EDIT_DEFAULT_CFG: float = 2.5
     GENERATION_BLOCK_COMPLEX_SHOTS: bool = False
     GENERATION_QUALITY_PROMPT_APPEND: str = "clean cinematic composition, coherent anatomy, readable main action, balanced lighting, polished short-drama keyframe"
     GENERATION_QUALITY_NEGATIVE_APPEND: str = "amateur snapshot, dull composition, muddy lighting, deformed face, deformed hands, broken fingers, extra people, random text, logo, watermark, bad crop, messy background"

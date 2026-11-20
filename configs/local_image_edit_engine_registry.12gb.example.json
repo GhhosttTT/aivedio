@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "notes": "Only accepted keyframes enter these slow semantic-edit engines. Model files are intentionally not downloaded by the application.",
+  "engines": [
+    {
+      "id": "flux_kontext_q4",
+      "family": "flux_kontext",
+      "enabled": true,
+      "priority": 10,
+      "workflow_path": "comfyui_workflow_flux_kontext_gguf_12gb.json",
+      "output_node": "save_image",
+      "quantization": "Q4_K_M + T5XXL FP8",
+      "minimum_vram_gb": 12,
+      "cpu_offload": true,
+      "tasks": ["semantic_edit", "wardrobe_edit", "prop_edit", "text_cleanup"]
+    },
+    {
+      "id": "qwen_image_edit_q3",
+      "family": "qwen_image_edit",
+      "enabled": true,
+      "priority": 20,
+      "workflow_path": "comfyui_workflow_qwen_image_edit_gguf_12gb.json",
+      "output_node": "save_image",
+      "quantization": "Q3_K_M + Qwen2.5-VL GGUF",
+      "minimum_vram_gb": 12,
+      "cpu_offload": true,
+      "tasks": ["semantic_edit", "identity_edit", "wardrobe_edit", "prop_edit", "text_cleanup"]
+    }
+  ]
+}

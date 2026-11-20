@@ -142,3 +142,54 @@ def test_comfyui_repair_stages_are_chained_and_promoted_atomically(tmp_path, mon
     assert calls[1][1]["repair_target"] == "hands, fingers"
     with Image.open(image) as result:
         assert result.getpixel((0, 0)) == (102, 20, 20)
+
+
+def test_semantic_stage_uses_quantized_editor_before_local_detail(tmp_path, monkeypatch):
+    image = tmp_path / "scene.png"
+    Image.new("RGB", (64, 64), (10, 10, 10)).save(image)
+    calls = []
+
+    class FakeClient:
+        def close(self):
+            pass
+
+    class FakeComfyUIService:
+        def __init__(self, **_kwargs):
+            self.client = FakeClient()
+
+        def edit_image(self, source_image, **kwargs):
+            calls.append(("edit", source_image, kwargs))
+            Image.new("RGB", (64, 64), (80, 20, 20)).save(kwargs["output_path"])
+            return {"output_path": kwargs["output_path"], "route": {"engine_id": "flux_kontext_q4"}}
+
+        def repair_image(self, source_image, **kwargs):
+            calls.append(("repair", source_image, kwargs))
+            Image.new("RGB", (64, 64), (90, 20, 20)).save(kwargs["output_path"])
+            return kwargs["output_path"]
+
+    monkeypatch.setattr("src.services.image_postprocess.settings.COMFYUI_IMAGE_EDIT_ENABLED", True)
+    monkeypatch.setattr(
+        "src.services.image_postprocess.settings.COMFYUI_IMAGE_EDIT_ENGINE_REGISTRY_PATH",
+        "registry.json",
+    )
+    monkeypatch.setattr(
+        "src.services.image_postprocess.settings.COMFYUI_IMAGE_REPAIR_WORKFLOW_PATH",
+        "repair.json",
+    )
+    with patch("src.services.comfyui_service.ComfyUIService", FakeComfyUIService):
+        report = ImagePostprocessor(command="", required=True).process(
+            image,
+            prompt="same actor in the approved coat",
+            negative_prompt="identity drift",
+            repair_plan=[
+                {"name": "wardrobe", "target": "coat", "engine_task": "wardrobe_edit", "denoise": 0.28},
+                {"name": "face", "target": "face, eyes", "engine_task": "local_repair", "denoise": 0.2},
+            ],
+        )
+
+    assert report["status"] == "passed"
+    assert [call[0] for call in calls] == ["edit", "repair"]
+    assert calls[1][1] == calls[0][2]["output_path"]
+    assert report["stages"][0]["edit_route"]["engine_id"] == "flux_kontext_q4"
+    with Image.open(image) as result:
+        assert result.getpixel((0, 0)) == (90, 20, 20)

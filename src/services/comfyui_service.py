@@ -42,7 +42,7 @@ from src.services.video_workflow_binding import (
 
 
 COMFYUI_MODEL_ASSET_INPUTS = frozenset({
-    "ckpt_name", "checkpoint_name", "lora_name", "clip_name",
+    "ckpt_name", "checkpoint_name", "lora_name", "clip_name", "clip_name1", "clip_name2",
     "unet_name", "vae_name", "control_net_name", "controlnet_name",
     "model_name", "diffusion_model", "style_model_name",
     "ipadapter_file", "ipadapter_name", "image_encoder_name",
@@ -751,6 +751,108 @@ class ComfyUIService:
             output_node,
             lambda result: self._get_generated_image(result, output_path, output_node),
         )
+
+    def edit_image(
+        self,
+        source_image: str,
+        *,
+        output_path: str,
+        instruction: str,
+        negative_prompt: str = "identity drift, changed composition, changed camera, artifacts",
+        reference_image: str | None = None,
+        task: str = "semantic_edit",
+        preferred_engine: str | None = None,
+        denoise: float | None = None,
+        steps: int | None = None,
+        cfg_scale: float | None = None,
+        seed: int = 0,
+    ) -> dict[str, Any]:
+        """Run a quantized semantic editor on one already-selected keyframe."""
+        from src.services.image_edit_engine_router import (
+            ImageEditEngineError,
+            ImageEditEngineRouter,
+        )
+
+        source = Path(source_image)
+        if not source.is_file():
+            raise ComfyUIError(f"Image-edit source does not exist: {source}")
+        instruction = str(instruction or "").strip()
+        if not instruction:
+            raise ComfyUIError("Image edit requires a non-empty instruction")
+        registry = str(settings.COMFYUI_IMAGE_EDIT_ENGINE_REGISTRY_PATH or "").strip()
+        if not settings.COMFYUI_IMAGE_EDIT_ENABLED or not registry:
+            raise ComfyUIError("Quantized image editing is disabled or its registry is not configured")
+        router = ImageEditEngineRouter(
+            registry,
+            vram_budget_gb=settings.LOCAL_IMAGE_EDIT_VRAM_BUDGET_GB,
+            allow_cpu_offload=settings.LOCAL_IMAGE_EDIT_ALLOW_CPU_OFFLOAD,
+        )
+        try:
+            route = router.select(
+                task,
+                preferred_engine or settings.COMFYUI_IMAGE_EDIT_ENGINE,
+            )
+        except ImageEditEngineError as exc:
+            raise ComfyUIError(str(exc)) from exc
+        try:
+            payload = json.loads(Path(route.workflow_path).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ComfyUIError(f"Cannot load image-edit workflow: {exc}") from exc
+        nodes = payload.get("nodes") if isinstance(payload, dict) else None
+        if not isinstance(nodes, dict) or not nodes:
+            raise ComfyUIError("Image-edit workflow has no named nodes")
+        workflow, name_to_id = self._named_nodes_to_api_workflow(nodes)
+        uploaded = self._upload_reference_image(str(source))
+        uploaded_reference = (
+            self._upload_reference_image(str(reference_image))
+            if reference_image and Path(reference_image).is_file()
+            else uploaded
+        )
+        denoise = settings.GENERATION_IMAGE_EDIT_DEFAULT_DENOISE if denoise is None else float(denoise)
+        steps = settings.GENERATION_IMAGE_EDIT_DEFAULT_STEPS if steps is None else int(steps)
+        cfg_scale = settings.GENERATION_IMAGE_EDIT_DEFAULT_CFG if cfg_scale is None else float(cfg_scale)
+        if not 0.0 < denoise <= 1.0 or steps < 1 or cfg_scale <= 0:
+            raise ComfyUIError("Invalid semantic image-edit controls")
+        output_prefix = f"aivedio_edit_{uuid.uuid4().hex[:8]}"
+        workflow = self._replace_workflow_placeholders(workflow, {
+            "input_image": uploaded,
+            "reference_image": uploaded_reference,
+            "edit_instruction": instruction,
+            "prompt": instruction,
+            "negative_prompt": str(negative_prompt or "identity drift, changed composition, changed camera, artifacts"),
+            "denoise": denoise,
+            "steps": steps,
+            "cfg": cfg_scale,
+            "seed": int(seed),
+            "output_prefix": output_prefix,
+        })
+        output_node = name_to_id.get(route.output_node, route.output_node) or None
+        if output_node not in workflow:
+            raise ComfyUIError(f"Image-edit output node does not exist: {output_node}")
+        if not any(
+            node.get("class_type") == "LoadImage"
+            and node.get("inputs", {}).get("image") == uploaded
+            for node in workflow.values()
+        ):
+            raise ComfyUIError("Image-edit workflow does not bind the accepted source image")
+        preflight = self.preflight(workflow)
+        artifact = Path(output_path).with_suffix(".workflow.json")
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text(json.dumps(workflow, ensure_ascii=False, indent=2), encoding="utf-8")
+        result_path = self._run_submitted_job(
+            workflow,
+            output_path,
+            "image_edit",
+            output_node,
+            lambda result: self._get_generated_image(result, output_path, output_node),
+        )
+        return {
+            "output_path": result_path,
+            "route": route.as_dict(),
+            "preflight": preflight,
+            "task": task,
+            "instruction": instruction,
+        }
 
     @staticmethod
     def _named_nodes_to_api_workflow(nodes: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, str]]:

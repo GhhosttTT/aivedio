@@ -54,7 +54,11 @@ class ImagePostprocessor:
         workflow_configured = bool(
             str(getattr(settings, "COMFYUI_IMAGE_REPAIR_WORKFLOW_PATH", "") or "").strip()
         )
-        backend = "command" if self.command.strip() else "comfyui" if workflow_configured else None
+        edit_configured = bool(
+            getattr(settings, "COMFYUI_IMAGE_EDIT_ENABLED", False)
+            and str(getattr(settings, "COMFYUI_IMAGE_EDIT_ENGINE_REGISTRY_PATH", "") or "").strip()
+        )
+        backend = "command" if self.command.strip() else "comfyui" if (workflow_configured or edit_configured) else None
         report = {
             "kind": "image_postprocess",
             "status": "skipped",
@@ -62,6 +66,7 @@ class ImagePostprocessor:
             "input_path": str(source),
             "command_configured": bool(self.command.strip()),
             "workflow_configured": workflow_configured,
+            "semantic_edit_configured": edit_configured,
             "backend": backend,
             "repair_plan": stages,
             "stages": [],
@@ -106,6 +111,7 @@ class ImagePostprocessor:
                     "input_path": str(current),
                     "output_path": str(output),
                     "backend": backend,
+                    "engine_task": stage.get("engine_task", "local_repair"),
                     "denoise": stage["denoise"],
                     "steps": stage["steps"],
                     "cfg": stage["cfg"],
@@ -147,17 +153,42 @@ class ImagePostprocessor:
                         from src.services.comfyui_service import ComfyUIService
 
                         comfyui = ComfyUIService(timeout=self.timeout)
-                    comfyui.repair_image(
-                        str(current),
-                        output_path=str(output),
-                        prompt=stage_prompt,
-                        negative_prompt=stage_negative,
-                        repair_target=stage["target"],
-                        denoise=stage["denoise"],
-                        steps=stage["steps"],
-                        cfg_scale=stage["cfg"],
-                        seed=stage["seed"],
-                    )
+                    if stage.get("engine_task") and stage["engine_task"] != "local_repair":
+                        if not edit_configured:
+                            raise ImagePostprocessError(
+                                f"Semantic image edit is required for stage {stage['name']} but no engine registry is configured"
+                            )
+                        stage_report["backend"] = "comfyui_semantic_edit"
+                        result = comfyui.edit_image(
+                            str(current),
+                            output_path=str(output),
+                            instruction=stage_prompt,
+                            negative_prompt=stage_negative,
+                            reference_image=reference_image,
+                            task=stage["engine_task"],
+                            denoise=stage["denoise"],
+                            steps=stage["steps"],
+                            cfg_scale=stage["cfg"],
+                            seed=stage["seed"],
+                        )
+                        stage_report["edit_route"] = result.get("route", {})
+                    else:
+                        if not workflow_configured:
+                            raise ImagePostprocessError(
+                                f"Local image repair is required for stage {stage['name']} but its workflow is not configured"
+                            )
+                        stage_report["backend"] = "comfyui_local_repair"
+                        comfyui.repair_image(
+                            str(current),
+                            output_path=str(output),
+                            prompt=stage_prompt,
+                            negative_prompt=stage_negative,
+                            repair_target=stage["target"],
+                            denoise=stage["denoise"],
+                            steps=stage["steps"],
+                            cfg_scale=stage["cfg"],
+                            seed=stage["seed"],
+                        )
                 stage_report["elapsed_seconds"] = round(time.monotonic() - started, 2)
                 self._verify_image(output)
                 with Image.open(output) as image:
@@ -250,6 +281,7 @@ class ImagePostprocessor:
                 "seed": 0,
                 "positive_terms": "",
                 "negative_terms": "",
+                "engine_task": "local_repair",
             }]
         normalized = []
         seen = set()
@@ -266,7 +298,9 @@ class ImagePostprocessor:
             denoise = float(raw.get("denoise", settings.GENERATION_IMAGE_REPAIR_DEFAULT_DENOISE))
             steps = int(raw.get("steps", settings.GENERATION_IMAGE_REPAIR_DEFAULT_STEPS))
             cfg = float(raw.get("cfg", settings.GENERATION_IMAGE_REPAIR_DEFAULT_CFG))
-            if not 0.0 < denoise <= 0.6 or steps < 1 or cfg <= 0:
+            engine_task = str(raw.get("engine_task") or "local_repair").strip().lower()
+            maximum_denoise = 0.6 if engine_task == "local_repair" else 1.0
+            if not 0.0 < denoise <= maximum_denoise or steps < 1 or cfg <= 0:
                 raise ImagePostprocessError(f"Invalid controls for image repair stage {name}")
             stage_evidence = raw.get("evidence") or []
             if isinstance(stage_evidence, str):
@@ -281,6 +315,7 @@ class ImagePostprocessor:
                 "positive_terms": str(raw.get("positive_terms") or ""),
                 "negative_terms": str(raw.get("negative_terms") or ""),
                 "evidence": list(stage_evidence),
+                "engine_task": engine_task,
             })
         return normalized
 
